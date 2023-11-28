@@ -1,5 +1,5 @@
 {
-    "ets_export": "ets_gruppenadressen.csv", 
+    "ets_export": "charne.csv", 
 
     "things_path": "openhab/things/knx.things",
     "items_path": "openhab/items/knx.items",
@@ -9,25 +9,27 @@
 
     "defines" : {
         "switch":
-            {"status_suffix": "Status",
+            {"switch_suffix": ["Schalten",":(An/Aus)",":(Schalten)"],
+             "status_suffix": ["Status","RM",":(RM Schalten)"],
              "poweroutlet_name" : "Steckdose",
              "speaker_name": "Audio",
              "light_name": "Licht",
              "heating_name": "Heizen"
             },
         "dimmer": 
-            {"absolut_suffix": "Dimmen absolut", 
-             "status_suffix": "Status Dimmwert",
-             "switch_suffix": "Schalten",
-             "switch_status_suffix": "Status Ein/Aus",
-             "relativ_suffix": "Dimmen relativ"
+            {"absolut_suffix": ["Dimmen absolut",":(Dimm Wert)"], 
+             "status_suffix": ["Rückmeldung Dimmen","Dimmen Rückmeldung","Dimmen rm","Status Dimmwert",":(Status Dimm Wert)"],
+             "switch_suffix": ["Schalten",":(An/Aus)",":(Schalten)"],
+             "switch_status_suffix": ["Status Ein/Aus","Rückmeldung","Schalten Rückmeldung","Schalten rm",":(Status An/Aus)"],
+             "relativ_suffix": ["Dimmen relativ",":(Heller/Dunkler)"],
+             "drop": []
             },
         "rollershutter":
-            {"up_down_suffix": "Auf/Ab", 
-             "stop_suffix": "Stop",
-             "absolute_position_suffix": "absolute Position",
-             "status_suffix": "Status",
-             "drop": ["Status Richtung"]
+            {"up_down_suffix": ["Auf/Ab",":(Jalousie Auf/Ab)",":(Rolladen Auf/Ab)"], 
+             "stop_suffix": ["Stop","Stop/Lamellen","Lamellen",":(Lamellenverstellung/Stop)",":(Stop)"],
+             "absolute_position_suffix": ["absolute Position",":(Absolute Position)"],
+             "status_suffix": ["Status","Rückmeldung",":(Status Absolute Position)",":(Status aktuelle Position)"],
+             "drop": ["Status Richtung",":(Status aktuelle Richtung)",":(Status obere Position)",":(Status untere Position)"]
              },
         "drop_words": ["Fensterkontakt", "Licht", "Steckdose", "Steckdosen", "Strom", "Leistung"]
     }

@@ -1,41 +1,75 @@
 import csv
 import os.path
 import json
+import re
 
-with open('config.json') as f:
+with open('config.json', encoding='utf8') as f:
     config = json.load(f)
 
-def data_of_name(data, name):
+def data_of_name(data, name, suffix,replace=''):
+    if isinstance(suffix, str):
+        suffix= [suffix,]
+    if isinstance(replace, str):
+        replace= [replace,]
     for x in data:
         if x['Group name'] == name:
-            return x
+            continue
+        for s in suffix:
+            if x['Group name'] == name + s:
+                return x
+            if x['Group name'] == name + ' ' + s:
+                return x
+            for r in replace:
+                if x['Group name'] == name.replace(r,s):
+                    return x
     return None
 
 csvfile = open(config['ets_export'], newline='', encoding='cp1252')
 reader = csv.DictReader(csvfile, delimiter='\t')
 
+special_char_map = {
+    ord('Ä'):'Ae',
+    ord('Ü'):'Ue',
+    ord('Ö'):'Oe',
+    ord('ä'):'ae',
+    ord('ü'):'ue',
+    ord('ö'):'oe',
+    ord('ß'):'ss',
+    ord('é'):'e',
+    ord('è'):'e',
+    ord('á'):'a',
+    ord('à'):'a'
+    }
 house = {}
 export_to_influx = []
 used_addresses = []
+all_addresses = []
 
 for row in reader:
     #print(row)
     # check if floor:
     if row['Address'].endswith('/-/-'):
+        if not 'Group name' in row:
+            row['Group name'] = row['Main']
         row['rooms'] = {}
         house[row['Address'].split('/')[0]] = row
     # check if room
     elif row['Address'].endswith('/-'):
+        if not 'Group name' in row:
+            row['Group name'] = row['Middle']
         splitter = row['Address'].split('/')
         row['Addresses'] = []
         house[splitter[0]]['rooms'][splitter[1]] = row
     # normal group address
     else:
+        if not 'Group name' in row:
+            row['Group name'] = row['Sub']
         splitter = row['Address'].split('/')
         if 'ignore' in row['Description']:
             print("ignoreflag in description for: " + row['Group name'])
             continue
         house[splitter[0]]['rooms'][splitter[1]]['Addresses'].append(row)
+        all_addresses.append(row)
 
 items = ''
 sitemap = ''
@@ -121,72 +155,89 @@ for floorNr in house.keys():
                     continue
 
                 shortened_name = ' '.join(address['Group name'].replace(house[floorNr]['rooms'][roomNr]['Group name'],'').replace(house[floorNr]['Group name'],'').split())
-                item_name = f"i_{cnt}_{house[floorNr]['Group name']}_{house[floorNr]['rooms'][roomNr]['Group name']}_{shortened_name}".replace('/','_').replace(' ','_')
-                item_name = item_name.replace('ü','ue').replace('ä','ae').replace('ß','ss')
+                item_name = f"i_{cnt}_{house[floorNr]['Group name']}_{house[floorNr]['rooms'][roomNr]['Group name']}_{shortened_name}"
+                item_name = item_name.translate(special_char_map)
+                item_name = re.sub('[^A-Za-z0-9_]+', '', item_name)
                 
                 # dimmer
-                if address['Group name'].endswith(config['defines']['dimmer']['absolut_suffix']):
-                    basename = address['Group name'].replace(config['defines']['dimmer']['absolut_suffix'],'')
-                    dimmwert_status = data_of_name(addresses, basename + config['defines']['dimmer']['status_suffix'])
+                
+                if address['DatapointType'] == 'DPST-5-1':
+                    bol = [x for x in config['defines']['dimmer']['absolut_suffix'] if(x in address['Group name'])]
+                    if not bool(bol):
+                        continue
+
+                    basename = address['Group name']#.replace(config['defines']['dimmer']['absolut_suffix'],'')
+                    dimmwert_status =data_of_name(all_addresses, basename, config['defines']['dimmer']['status_suffix'],config['defines']['dimmer']['absolut_suffix'])
+                    for drop_name in config['defines']['dimmer']['drop']:
+                        drop_addr = data_of_name(all_addresses, basename, drop_name,config['defines']['dimmer']['absolut_suffix'])
+                        if drop_addr:
+                            used_addresses.append(drop_addr['Address'])
+                    
+                    switch_option = ''; switch_option_status = ''
                     if dimmwert_status:
-                        used = True
-                        switch_option = ''
-                        relative_option = ''
+                        used = True 
                         used_addresses.append(dimmwert_status['Address'])
-
-                        relative_command = data_of_name(addresses, basename + config['defines']['dimmer']['relativ_suffix'])
-
-                        if relative_command:
+                        relative_command = data_of_name(all_addresses, basename, config['defines']['dimmer']['relativ_suffix'],config['defines']['dimmer']['absolut_suffix'])
+                        switch_command = data_of_name(all_addresses, basename, config['defines']['dimmer']['switch_suffix'],config['defines']['dimmer']['absolut_suffix'])
+                        
+                        if relative_command: 
                             used_addresses.append(relative_command['Address'])
                             relative_option = f", increaseDecrease=\"{relative_command['Address']}\""
-
-                        switch_command = data_of_name(addresses, basename + config['defines']['dimmer']['switch_suffix'])
                         if switch_command:
                             used_addresses.append(switch_command['Address'])
-                            switch_status_command = data_of_name(addresses, basename + config['defines']['dimmer']['switch_status_suffix'])
-                            switch_option_status = ''
+                            switch_status_command = data_of_name(all_addresses, basename, config['defines']['dimmer']['switch_status_suffix'],config['defines']['dimmer']['absolut_suffix'])
                             if switch_status_command:
                                 used_addresses.append(switch_status_command['Address'])
                                 switch_option_status = f"+<{switch_status_command['Address']}"
                             switch_option = f", switch=\"{switch_command['Address']}{switch_option_status}\""
-                        
+    
                         lovely_name = ' '.join(lovely_name.replace('Dimmen','').replace('Dimmer','').replace('absolut','').replace('Licht','').split())
 
                         auto_add = True
                         item_type = "Dimmer"
-                        item_label = f"{lovely_name} [%d %%]"
                         thing_address_info = f"position=\"{address['Address']}+<{dimmwert_status['Address']}\"{switch_option}{relative_option}"
-                        item_icon = "light"
+                        item_label = f"{lovely_name} [%d %%]"
                         equipment = 'Lightbulb'
                         semantic_info = "[\"Light\"]"
+                        item_icon = "light"
+                    else:
+                        print(f"incomplete dimmer: {basename}")
 
                 # rollos / jalousien
                 if address['DatapointType'] == 'DPST-1-8':
-                    if not address['Group name'].endswith(config['defines']['rollershutter']['up_down_suffix']):
+                    bol = [x for x in config['defines']['rollershutter']['up_down_suffix'] if(x in address['Group name'])]
+                    if not bool(bol):
                         continue
                     
-                    basename = address['Group name'].replace(config['defines']['rollershutter']['up_down_suffix'],'')
-                    fahren_auf_ab = data_of_name(addresses, basename + config['defines']['rollershutter']['up_down_suffix'])
-                    fahren_stop = data_of_name(addresses, basename + config['defines']['rollershutter']['stop_suffix'])
-                    absolute_position = data_of_name(addresses, basename + config['defines']['rollershutter']['absolute_position_suffix'])
-                    absolute_position_status = data_of_name(addresses, basename + config['defines']['rollershutter']['status_suffix'])
+                    basename = address['Group name'] #.replace(config['defines']['rollershutter']['up_down_suffix'],'')
+                    fahren_auf_ab = address
                     #Status Richtung nicht in verwendung durch openhab
                     for drop_name in config['defines']['rollershutter']['drop']:
-                        drop_addr = data_of_name(addresses, basename + drop_name)
+                        drop_addr = data_of_name(all_addresses, basename, drop_name,config['defines']['rollershutter']['up_down_suffix'])
                         if drop_addr:
                             used_addresses.append(drop_addr['Address'])
-
-                    lovely_name = basename
                     
-                    if fahren_auf_ab and fahren_stop and absolute_position and absolute_position_status:
+                    option_stop =''; option_position=''; option_position_absolute=''; option_position_status=''
+                    if fahren_auf_ab:
                         used_addresses.append(fahren_auf_ab['Address'])
-                        used_addresses.append(fahren_stop['Address'])
-                        used_addresses.append(absolute_position['Address'])
-                        used_addresses.append(absolute_position_status['Address'])
+                        fahren_stop = data_of_name(all_addresses, basename, config['defines']['rollershutter']['stop_suffix'],config['defines']['rollershutter']['up_down_suffix'])
+                        if fahren_stop:
+                            used_addresses.append(fahren_stop['Address'])
+                            option_stop = f", stopMove=\"{fahren_stop['Address']}\""
+                            absolute_position = data_of_name(all_addresses, basename, config['defines']['rollershutter']['absolute_position_suffix'],config['defines']['rollershutter']['up_down_suffix'])
+                            absolute_position_status = data_of_name(all_addresses, basename, config['defines']['rollershutter']['status_suffix'],config['defines']['rollershutter']['up_down_suffix'])
+                        if absolute_position or absolute_position_status:
+                            if absolute_position:
+                                used_addresses.append(absolute_position['Address'])
+                                option_position_absolute =f"{absolute_position['Address']}"
+                            if absolute_position_status:
+                                used_addresses.append(absolute_position_status['Address'])
+                                option_position_status = f"+<{absolute_position_status['Address']}"
+                            option_position = f", position=\"{option_position_absolute}{option_position_status}\""
 
                         auto_add = True
                         item_type = "Rollershutter"
-                        thing_address_info = f"upDown=\"{fahren_auf_ab['Address']}\", stopMove=\"{fahren_stop['Address']}\", position=\"{absolute_position['Address']}+<{absolute_position_status['Address']}\""
+                        thing_address_info = f"upDown=\"{fahren_auf_ab['Address']}\"{option_stop}{option_position }"
                         item_label = f"{lovely_name} [%d %%]"
                         semantic_info = "[\"Blinds\"]"
                         item_icon = "rollershutter"
@@ -200,8 +251,9 @@ for floorNr in house.keys():
                     item_label = lovely_name
                     # umschalten (Licht, Steckdosen)
                     # only add in first round, if there is a status GA for feedback
-                    if not address['Group name'].endswith(' '+config['defines']['switch']['status_suffix']):
-                        status = data_of_name(addresses, address['Group name'] + ' ' + config['defines']['switch']['status_suffix'])
+                    bol = [x for x in config['defines']['switch']['status_suffix'] if(x in address['Group name'])]
+                    if not bool(bol):
+                        status = data_of_name(all_addresses, address['Group name'], config['defines']['switch']['status_suffix'],config['defines']['switch']['switch_suffix'])
                         if status:
                             #if status['DatapointType'] == 'DPST-1-11':
                                 auto_add = True
@@ -492,7 +544,7 @@ for floorNr in house.keys():
             lovely_name = ' '.join(address['Group name'].replace(house[floorNr]['Group name'],'').replace(house[floorNr]['rooms'][roomNr]['Group name'],'').split())
 
             item_name = f"i_{cnt}_{house[floorNr]['Group name']}_{house[floorNr]['rooms'][roomNr]['Group name']}_{lovely_name}".replace('/','_').replace(' ','_')
-            item_name = item_name.replace('ü','ue').replace('ä','ae').replace('ß','ss')
+            item_name = item_name.translate(special_char_map)
 
             if not (address['Address'] in used_addresses):
                 print(f"unused: {address['Address']}: {address['Group name']} with type {address['DatapointType']}")
@@ -504,10 +556,10 @@ for floorNr in house.keys():
 # export things:
 things_template = open('things.template','r').read()
 things = things_template.replace('###things###', things)
-open(config['things_path'],'w').write(things)
+open(config['things_path'],'w', encoding='utf8').write(things)
 # export items:
 items = 'Group           Home                  "Our Home"                                     [\"Location\"]\n' + items
-open(config['items_path'],'w').write(items)
+open(config['items_path'],'w', encoding='utf8').write(items)
 
 # export sitemap:
 sitemap_template_file = 'sitemap.template'
@@ -516,7 +568,7 @@ if os.path.isfile(f"private_{sitemap_template_file}"):
 sitemap_template = open(sitemap_template_file,'r').read()
 sitemap = sitemap_template.replace('###sitemap###', sitemap)
 sitemap = sitemap.replace('###selections###', selections)
-open(config['sitemaps_path'],'w').write(sitemap)
+open(config['sitemaps_path'],'w', encoding='utf8').write(sitemap)
 
 #export persistent
 private_persistence = ''
@@ -535,7 +587,7 @@ for i in export_to_influx:
     persist += f"{i}: strategy = everyUpdate\n"
 persist += private_persistence + '\n}'
 
-open(config['influx_path'],'w').write(persist)
+open(config['influx_path'],'w', encoding='utf8').write(persist)
 
 
 print(fensterkontakte)
@@ -562,5 +614,5 @@ fenster_rule += '''
 end
 '''
 
-open('openhab/rules/fenster.rules','w').write(fenster_rule)
+open('openhab/rules/fenster.rules','w', encoding='utf8').write(fenster_rule)
 

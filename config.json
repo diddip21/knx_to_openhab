@@ -1,5 +1,5 @@
 {
-    "ets_export": "charne.csv", 
+    "ets_export": "C:\\Users\\Username\\Nextcloud\\LogiHome\\charne.csv", 
 
     "things_path": "openhab/things/knx.things",
     "items_path": "openhab/items/knx.items",

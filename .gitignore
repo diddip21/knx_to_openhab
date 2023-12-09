@@ -1,3 +1,4 @@
 openhab/*
 *.csv
 *.knxproj*
+example.ini

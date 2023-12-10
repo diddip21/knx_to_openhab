@@ -10,7 +10,7 @@
     "defines" : {
         "switch":
             {"switch_suffix": ["Schalten",":(An/Aus)",":(Schalten)"],
-             "status_suffix": ["Status","RM",":(RM Schalten)"],
+             "status_suffix": ["Status"," RM","Rückmeldung",":(RM Schalten)"],
              "poweroutlet_name" : "Steckdose",
              "speaker_name": "Audio",
              "light_name": "Licht",

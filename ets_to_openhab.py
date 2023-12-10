@@ -38,7 +38,8 @@ special_char_map = {
     ord('à'):'a'
     }
 
-house = {}
+global house,all_addresses,used_addresses
+house = []
 all_addresses = []
 export_to_influx = []
 used_addresses = []
@@ -61,15 +62,16 @@ def read_csvexport():
         if row['Address'].endswith('/-/-'):
             if not 'Group name' in row:
                 row['Group name'] = row['Main']
-            row['rooms'] = {}
-            house[row['Address'].split('/')[0]] = row
+            row['rooms'] = []
+            house.insert(int(row['Address'].split('/')[0]),row)
+            #house[int(row['Address'].split('/')[0])] = row
         # check if room
         elif row['Address'].endswith('/-'):
             if not 'Group name' in row:
                 row['Group name'] = row['Middle']
             splitter = row['Address'].split('/')
             row['Addresses'] = []
-            house[splitter[0]]['rooms'][splitter[1]] = row
+            house[int(splitter[0])]['rooms'].insert(int(splitter[1]),row)
         # normal group address
         else:
             if not 'Group name' in row:
@@ -78,13 +80,15 @@ def read_csvexport():
             if 'ignore' in row['Description']:
                 print("ignoreflag in description for: " + row['Group name'])
                 continue
-            house[splitter[0]]['rooms'][splitter[1]]['Addresses'].append(row)
+            house[int(splitter[0])]['rooms'][int(splitter[1])]['Addresses'].append(row)
             all_addresses.append(row)
 
 def genBuilding():
     global items,sitemap,things
-    for floorNr in house.keys():
-        descriptions = house[floorNr]['Description'].split(';')
+    floorNr=0
+    for floor in house:
+        floorNr+=1
+        descriptions = floor['Description'].split(';')
         visibility = ''
         semantic = '["Location"]'
         synonyms = ''
@@ -99,13 +103,14 @@ def genBuilding():
             if description.startswith('synonyms='):
                 synonyms = '{ ' + description.replace('synonyms=','synonyms="').replace(',',', ') + '" } '
 
-        items += f"Group   map{floorNr}   \"{house[floorNr]['Group name']}\" {icon}  {semantic} {synonyms} \n" # {location}  \n" # {visibility}
-        sitemap += f"Frame label=\"{house[floorNr]['Group name']}\" {{\n"
-
-        for roomNr in house[floorNr]['rooms'].keys():
-            roomName = house[floorNr]['rooms'][roomNr]['Group name']
+        items += f"Group   map{floorNr}   \"{floor['Group name']}\" {icon}  {semantic} {synonyms} \n" # {location}  \n" # {visibility}
+        sitemap += f"Frame label=\"{floor['Group name']}\" {{\n"
+        roomNr=0
+        for room in floor['rooms']:
+            roomNr+=1
+            roomName = room['Group name']
             roomNameOrig = roomName
-            descriptions = house[floorNr]['rooms'][roomNr]['Description'].split(';')
+            descriptions = room['Description'].split(';')
             visibility = ''
             semantic = f"[\"Location\", \"Room\", \"{roomName}\"]"
             icon = ''
@@ -126,7 +131,7 @@ def genBuilding():
             sitemap += f"     Group item=map{floorNr}_{roomNr} {visibility} label=\"{roomName}\" "
             group = ""
 
-            addresses = house[floorNr]['rooms'][roomNr]['Addresses']
+            addresses = room['Addresses']
 
             # the loop has to be executed twice.
             # - during the first run, all GAs are processed which can have a reference to another GA (e.g. a switch with status feedback)
@@ -135,7 +140,7 @@ def genBuilding():
             for run in [0, 1]:
                 for i in range(len(addresses)):
 
-                    address = house[floorNr]['rooms'][roomNr]['Addresses'][i]
+                    address = room['Addresses'][i]
                     # in the second run: only process not already used addresses
                     if run == 1:
                         if address['Address'] in used_addresses:
@@ -158,8 +163,8 @@ def genBuilding():
                     if 'IGNORE' in address.keys():
                         continue
 
-                    shortened_name = ' '.join(address['Group name'].replace(house[floorNr]['rooms'][roomNr]['Group name'],'').replace(house[floorNr]['Group name'],'').split())
-                    item_name = f"i_{cnt}_{house[floorNr]['Group name']}_{house[floorNr]['rooms'][roomNr]['Group name']}_{shortened_name}"
+                    shortened_name = ' '.join(address['Group name'].replace(room['Group name'],'').replace(floor['Group name'],'').split())
+                    item_name = f"i_{cnt}_{floor['Group name']}_{room['Group name']}_{shortened_name}"
                     item_name = item_name.translate(special_char_map)
                     item_name = re.sub('[^A-Za-z0-9_]+', '', item_name)
                     
@@ -537,18 +542,18 @@ def genBuilding():
 
 def check_unusedAddresses():
     # process all addresses which were not used
-    for floorNr in house.keys():
-        for roomNr in house[floorNr]['rooms'].keys():
-            addresses = house[floorNr]['rooms'][roomNr]['Addresses']
+    for floor in house:
+        for room in floor['rooms']:
+            addresses = room['Addresses']
             for i in range(len(addresses)):
 
-                address = house[floorNr]['rooms'][roomNr]['Addresses'][i]
+                address = room['Addresses'][i]
                 if 'IGNORE' in address.keys():
                     continue
 
-                lovely_name = ' '.join(address['Group name'].replace(house[floorNr]['Group name'],'').replace(house[floorNr]['rooms'][roomNr]['Group name'],'').split())
+                lovely_name = ' '.join(address['Group name'].replace(floor['Group name'],'').replace(room['Group name'],'').split())
 
-                item_name = f"i_{cnt}_{house[floorNr]['Group name']}_{house[floorNr]['rooms'][roomNr]['Group name']}_{lovely_name}".replace('/','_').replace(' ','_')
+                item_name = f"i_{cnt}_{floor['Group name']}_{room['Group name']}_{lovely_name}".replace('/','_').replace(' ','_')
                 item_name = item_name.translate(special_char_map)
 
                 if not (address['Address'] in used_addresses):

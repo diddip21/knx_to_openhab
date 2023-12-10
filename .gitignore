@@ -2,3 +2,4 @@ openhab/*
 *.csv
 *.knxproj*
 example.ini
+.vscode/*

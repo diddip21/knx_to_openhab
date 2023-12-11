@@ -1,4 +1,6 @@
+readDump=True
 #pip install xknxproject
+#pip install git+https://github.com/XKNX/xknxproject.git
 
 """Extract and parse a KNX project file."""
 from xknxproject.models import KNXProject
@@ -42,24 +44,28 @@ pattern_item_Floor=config['RegexPattern'].get('item_Floor',default_pattern_item_
 pattern_floor_nameshort=config['RegexPattern'].get('item_Floor_nameshort',default_pattern_item_Floor_nameshort)
 item_Floor_nameshort_prefix=config['defaults'].get('item_Floor_nameshort_prefix',default_item_Floor_nameshort_prefix)
 
-#cregpatt.get('CompressionLevel', '3')
-
-knxproj: XKNXProj = XKNXProj(
-    path=r"C:\Users\Username\Nextcloud\LogiHome\xx_ETS\Archiv\Charne.knxprojarchive",
-    #path="Dr.knxproj",
-    #path=r"C:\Users\Username\Nextcloud\LogiHome\xx_ETS\Archiv\Brückner.knxprojarchive",
-    #path=r"C:\Users\Username\Nextcloud\LogiHome\xx_ETS\Archiv\Selzam.knxprojarchive",
-    #path=r"C:\Users\Username\Nextcloud\LogiHome\xx_ETS\Archiv\Dr. Keß, Praxis.knxprojarchive",
-    #password="password",  # optional
-    language="de-DE",  # optional
-)
-project: KNXProject = knxproj.parse()
+if readDump:
+    proj: KNXProject
+    with open("tests/Charne.knxprojarchive.json", encoding="utf-8") as f:
+        project = json.load(f)
+else:
+    knxproj: XKNXProj = XKNXProj(
+        path=r"C:\Users\Username\Nextcloud\LogiHome\xx_ETS\Archiv\Charne.knxprojarchive",
+        #path="Dr.knxproj",
+        #path=r"C:\Users\Username\Nextcloud\LogiHome\xx_ETS\Archiv\Brückner.knxprojarchive",
+        #path=r"C:\Users\Username\Nextcloud\LogiHome\xx_ETS\Archiv\Selzam.knxprojarchive",
+        #path=r"C:\Users\Username\Nextcloud\LogiHome\xx_ETS\Archiv\Dr. Keß, Praxis.knxprojarchive",
+        #password="password",  # optional
+        language="de-DE",  # optional
+    )
+    project: KNXProject = knxproj.parse()
 
 re_item_Room =re.compile(pattern_item_Room)
 re_item_Floor =re.compile(pattern_item_Floor)
 re_floor_nameshort =re.compile(pattern_floor_nameshort)
 
-def createBuilding(locations):
+def createBuilding(project: KNXProject):
+    locations = project['locations']
     if len(locations)==0:
         raise ValueError("'locations' is Empty.")
     prj = []
@@ -143,9 +149,13 @@ def createBuilding(locations):
                 #print(f"Floor: {floor['name']} -> {floor['name_short']} - {floor['name_long']}")
     return prj
 
-def getAddresses(groupaddresses):
+def getAddresses(project: KNXProject):
+    groupaddresses=project['group_addresses']
     if len(groupaddresses)==0:
         raise ValueError("'groupaddresses' is Empty.")
+    communication_objects=project["communication_objects" ]
+    if len(communication_objects)==0:
+        raise ValueError("'communication_objects' is Empty.")
     _addresses = []
     for address in groupaddresses.values():
         ignore = False
@@ -168,6 +178,10 @@ def getAddresses(groupaddresses):
             laddress["Group name"]=address["name"]
             laddress["Address"]=address["address"]
             laddress["Description"]=address["description"]
+            laddress["communication_object"]=[]
+            for co_id in address['communication_object_ids']:
+                coo = communication_objects[co_id]
+                laddress["communication_object"].append(coo)
             if resFloor:
                 laddress["Floor"]=resFloor.group(0)
             else:
@@ -205,11 +219,11 @@ def putAddressesInBuilding(building,addresses):
 
     return building
 
-building=createBuilding(project['locations'])
-pretty = json.dumps(building, indent=2, ensure_ascii=False)#, sort_keys=True)
+building=createBuilding(project)
+#pretty = json.dumps(building, indent=2, ensure_ascii=False)#, sort_keys=True)
 #print(pretty)
 
-addresses=getAddresses(project['group_addresses'])
+addresses=getAddresses(project)
 #print(addresses)
 
 house=putAddressesInBuilding(building,addresses)
@@ -218,3 +232,7 @@ ets_to_openhab.all_addresses = addresses
 ets_to_openhab.genBuilding()
 ets_to_openhab.check_unusedAddresses()
 ets_to_openhab.export_output()
+
+
+
+# Sammle zusammengehörige Channels z.B. ('MD-2_M-42_MI-1_CH-4') dort müssen sich Schalten/Status oder Auf/Ab + Position zusammengehörende Adressen gruppieren

@@ -339,7 +339,7 @@ def genBuilding():
                         # temperature
                         if address['DatapointType'] == 'DPST-9-1':
                             auto_add = True
-                            item_type = "Number"
+                            item_type = "Number:Temperature"
                             thing_address_info = f"ga=\"9.001:{address['Address']}\""
                             item_label = f"{lovely_name} [%.1f °C]"
 
@@ -352,7 +352,7 @@ def genBuilding():
                         # humidity
                         if address['DatapointType'] == 'DPST-9-7':
                             auto_add = True
-                            item_type = "Number"
+                            item_type = "Number:Dimensionless"
                             thing_address_info = f"ga=\"9.001:{address['Address']}\""
                             item_label = f"{lovely_name} [%.1f %%]"
 
@@ -375,7 +375,7 @@ def genBuilding():
                         # Arbeit (wh)
                         if address['DatapointType'] == 'DPST-13-10':
                             auto_add = True
-                            item_type = "Number"
+                            item_type = "Number:Energy"
                             thing_address_info = f"ga=\"13.010:{address['Address']}\""
                             item_label = f"{lovely_name} [%.1f Wh]"
                             semantic_info = "[\"Measurement\", \"Energy\"]"
@@ -402,7 +402,7 @@ def genBuilding():
                         # Leistung (W)
                         if address['DatapointType'] == 'DPST-14-56':
                             auto_add = True
-                            item_type = "Number"
+                            item_type = "Number:Power"
                             thing_address_info = f"ga=\"14.056:{address['Address']}\""
                             item_label = f"{lovely_name} [%.1f W]"
                             semantic_info = "[\"Measurement\", \"Power\"]"
@@ -411,7 +411,7 @@ def genBuilding():
                         # Strom
                         if address['DatapointType'] == 'DPST-7-12':
                             auto_add = True
-                            item_type = "Number"
+                            item_type = "Number:ElectricCurrent"
                             thing_address_info = f"ga=\"7.012:{address['Address']}\""
                             item_label = f"{lovely_name} [%.1f mA]"
                             semantic_info = "[\"Measurement\", \"Current\"]"
@@ -420,7 +420,7 @@ def genBuilding():
                         # Volumen (l)
                         if address['DatapointType'] == 'DPST-12-1200':
                             auto_add = True
-                            item_type = "Number"
+                            item_type = "Number:Volume"
                             thing_address_info = f"ga=\"12.1200:{address['Address']}\""
                             item_label = f"{lovely_name} [%.0f l]"
                             semantic_info = "[\"Measurement\", \"Volume\"]"
@@ -436,7 +436,7 @@ def genBuilding():
                         # Lux
                         if address['DatapointType'] == 'DPST-9-4':
                             auto_add = True
-                            item_type = "Number"
+                            item_type = "Number:Illuminance"
                             thing_address_info = f"ga=\"9.004:{address['Address']}\""
                             item_label = f"{lovely_name} [%.1f Lux]"
                             semantic_info = "[\"Measurement\", \"Light\"]"
@@ -445,7 +445,7 @@ def genBuilding():
                         # Geschwindigkeit m/s
                         if address['DatapointType'] == 'DPST-9-5':
                             auto_add = True
-                            item_type = "Number"
+                            item_type = "Number:Speed"
                             thing_address_info = f"ga=\"9.005:{address['Address']}\""
                             item_label = f"{lovely_name} [%.1f m/s]"
                             semantic_info = "[\"Measurement\", \"Wind\"]"
@@ -454,7 +454,7 @@ def genBuilding():
                         # ppm
                         if address['DatapointType'] == 'DPST-9-8':
                             auto_add = True
-                            item_type = "Number"
+                            item_type = "Number:Dimensionless"
                             thing_address_info = f"ga=\"9.008:{address['Address']}\""
                             item_label = f"{lovely_name} [%.1f ppm]"
                             semantic_info = "[\"Measurement\"]"
@@ -471,7 +471,7 @@ def genBuilding():
                         # Zeitdifferenz 
                         if address['DatapointType'] == 'DPST-13-100':
                             auto_add = True
-                            item_type = "Number"
+                            item_type = "Number:Time"
                             thing_address_info = f"ga=\"13.100:{address['Address']}\""
                             item_label = f"{lovely_name} [%.1f s]"
                             semantic_info = "[\"Measurement\", \"Duration\"]"
@@ -546,6 +546,8 @@ def genBuilding():
                         item_label_short = item_label
                         for drop in config['defines']['drop_words']:
                                 item_label_short = item_label_short.replace(drop,'')
+                        # remove leading "[....]@"
+                        item_label_short = re.sub('^\[\w*\]\@', '', item_label_short)
                         item_label_short = ' '.join(item_label_short.split())
                         if item_label_short != '':
                             item_label = item_label_short
@@ -557,7 +559,7 @@ def genBuilding():
 
                         item_label = item_label.replace(roomNameOrig, roomName)
 
-                        thing_type = item_type.lower()
+                        thing_type = item_type.lower().split(":")[0]
                         things += f"Type {thing_type}    :   {item_name}   \"{address['Group name']}\"   [ {thing_address_info} ]\n"
 
                         root = f"map{floorNr}_{roomNr}"

@@ -47,7 +47,7 @@ item_Floor_nameshort_prefix=config['defaults'].get('item_Floor_nameshort_prefix'
 
 if readDump:
     proj: KNXProject
-    with open("tests/Dr.knxproj.json", encoding="utf-8") as f:
+    with open("tests/Dr. Keß, Praxis.knxprojarchive.json", encoding="utf-8") as f:
         project = json.load(f)
 else:
     knxproj: XKNXProj = XKNXProj(
@@ -159,7 +159,10 @@ def getAddresses(project: KNXProject):
         raise ValueError("'communication_objects' is Empty.")
     devices=project["devices"]
     if len(devices)==0:
-        raise ValueError("'devices' is Empty.")    
+        raise ValueError("'devices' is Empty.")
+    group_ranges=project["group_ranges"]
+    if len(group_ranges)==0:
+        raise ValueError("'group_ranges' is Empty.")  
     _addresses = []
     for address in groupaddresses.values():
         ignore = False
@@ -172,6 +175,17 @@ def getAddresses(project: KNXProject):
         else:
             resRoom = re_item_Room.search(address['name'])
             resFloor = re_item_Floor.search(address['name'])
+            if not resFloor:
+                address_split = address['address'].split("/")
+                grTop =group_ranges.get(address_split[0])
+                grMiddle =grTop['group_ranges'].get(address_split[0] + "/" + address_split[1])
+                resFloor = re_item_Floor.search(grMiddle['name'])
+                if not resFloor:
+                    resFloor = re_item_Floor.search(grTop['name'])
+                    if not resFloor:
+                        resFloor = re_floor_nameshort.search(grMiddle['name'])
+                        if not resFloor:
+                            resFloor = re_floor_nameshort.search(grTop['name'])
             # if resRoom:
             #     print(f"OK: {address['name']} - {resRoom.group(0)}")
             # else:
@@ -204,6 +218,8 @@ def getAddresses(project: KNXProject):
                 laddress["communication_object"].append(co_o)
             if resFloor:
                 laddress["Floor"]=resFloor.group(0)
+                if not laddress["Floor"].startswith(item_Floor_nameshort_prefix) and len(laddress["Floor"]) < 6:
+                    laddress["Floor"]=item_Floor_nameshort_prefix+laddress["Floor"]
             else:
                 laddress["Floor"]=default_Floor
             if resRoom:

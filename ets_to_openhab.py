@@ -1,5 +1,5 @@
 import csv
-import os.path
+import os
 import json
 import re
 
@@ -84,6 +84,23 @@ def read_csvexport():
             all_addresses.append(row)
 
 def genBuilding():
+    def getFromDco(co,config_functiontexts):
+        if "device_communication_objects" in co:
+            for y in co["device_communication_objects"]:
+                if y["function_text"] in config_functiontexts:
+                    search_address = [x for x in all_addresses if (x["Address"] in y['group_address_links'])]
+                    if len(search_address)==1:
+                        return search_address[0]
+                    elif len(search_address) > 1:
+                        lowLenCo = 99
+                        lowCo=None
+                        for sa in search_address:
+                            if "communication_object" in sa:
+                                if len(sa["communication_object"]) < lowLenCo:
+                                    lowLenCo=len(sa["communication_object"])
+                                    lowCo = sa
+                        return lowCo
+        return None
     global items,sitemap,things
     floorNr=0
     for floor in house:
@@ -137,12 +154,12 @@ def genBuilding():
             # - during the first run, all GAs are processed which can have a reference to another GA (e.g. a switch with status feedback)
             #   and also all GAs which can not have a reference to another GA. (e.g. temperatures)
             # - during the second run, all not marked componentes are processed directly with no reference check
-            for run in [0, 1]:
+            for run in range(2):
                 for i in range(len(addresses)):
 
                     address = room['Addresses'][i]
                     # in the second run: only process not already used addresses
-                    if run == 1:
+                    if run > 0:
                         if address['Address'] in used_addresses:
                             continue
 
@@ -172,11 +189,21 @@ def genBuilding():
                     
                     if address['DatapointType'] == 'DPST-5-1':
                         bol = [x for x in config['defines']['dimmer']['absolut_suffix'] if(x in address['Group name'])]
-                        if not bool(bol):
+                        if not bool(bol) and not "communication_object" in address:
                             continue
+                        elif not bool(bol) and "communication_object" in address:
+                            found=False
+                            for co in address["communication_object"]:
+                                if co["function_text"] in config['defines']['dimmer']['absolut_suffix']:
+                                    found=True
+                                    break
+                            if not found:
+                                continue
 
                         basename = address['Group name']#.replace(config['defines']['dimmer']['absolut_suffix'],'')
                         dimmwert_status =data_of_name(all_addresses, basename, config['defines']['dimmer']['status_suffix'],config['defines']['dimmer']['absolut_suffix'])
+                        if not dimmwert_status and co:
+                            dimmwert_status=getFromDco(co,config['defines']['dimmer']['status_suffix'])
                         for drop_name in config['defines']['dimmer']['drop']:
                             drop_addr = data_of_name(all_addresses, basename, drop_name,config['defines']['dimmer']['absolut_suffix'])
                             if drop_addr:
@@ -187,8 +214,11 @@ def genBuilding():
                             used = True 
                             used_addresses.append(dimmwert_status['Address'])
                             relative_command = data_of_name(all_addresses, basename, config['defines']['dimmer']['relativ_suffix'],config['defines']['dimmer']['absolut_suffix'])
+                            if not relative_command and co:
+                                relative_command=getFromDco(co,config['defines']['dimmer']['relativ_suffix'])  
                             switch_command = data_of_name(all_addresses, basename, config['defines']['dimmer']['switch_suffix'],config['defines']['dimmer']['absolut_suffix'])
-                            
+                            if not switch_command and co:
+                                switch_command=getFromDco(co,config['defines']['dimmer']['switch_suffix'])  
                             if relative_command: 
                                 used_addresses.append(relative_command['Address'])
                                 relative_option = f", increaseDecrease=\"{relative_command['Address']}\""
@@ -233,8 +263,8 @@ def genBuilding():
                             if fahren_stop:
                                 used_addresses.append(fahren_stop['Address'])
                                 option_stop = f", stopMove=\"{fahren_stop['Address']}\""
-                                absolute_position = data_of_name(all_addresses, basename, config['defines']['rollershutter']['absolute_position_suffix'],config['defines']['rollershutter']['up_down_suffix'])
-                                absolute_position_status = data_of_name(all_addresses, basename, config['defines']['rollershutter']['status_suffix'],config['defines']['rollershutter']['up_down_suffix'])
+                            absolute_position = data_of_name(all_addresses, basename, config['defines']['rollershutter']['absolute_position_suffix'],config['defines']['rollershutter']['up_down_suffix'])
+                            absolute_position_status = data_of_name(all_addresses, basename, config['defines']['rollershutter']['status_suffix'],config['defines']['rollershutter']['up_down_suffix'])
                             if absolute_position or absolute_position_status:
                                 if absolute_position:
                                     used_addresses.append(absolute_position['Address'])
@@ -253,50 +283,59 @@ def genBuilding():
                         else:
                             print(f"incomplete rollershutter: {basename}")
 
-                    # Schalten or bool
-                    if address['DatapointType'] == 'DPST-1-1' or address['DatapointType'] == 'DPST-1-2':
-                        item_type = "Switch"
-                        item_icon = "switch"
-                        item_label = lovely_name
-                        # umschalten (Licht, Steckdosen)
-                        # only add in first round, if there is a status GA for feedback
-                        bol = [x for x in config['defines']['switch']['status_suffix'] if(x in address['Group name'])]
-                        if not bool(bol):
-                            status = data_of_name(all_addresses, address['Group name'], config['defines']['switch']['status_suffix'],config['defines']['switch']['switch_suffix'])
-                            if status:
-                                #if status['DatapointType'] == 'DPST-1-11':
-                                    auto_add = True
-                                    used_addresses.append(status['Address'])
-                                    thing_address_info = f"ga=\"{address['Address']}+{status['Address']}\""
+                    #  erst im zweiten durchlauf prüfen damit integrierte Schaltobjekte (z.B. dimmen) vorher schon erkannt werden.
+                    if run > 0:
+                        # Schalten or bool
+                        if address['DatapointType'] == 'DPST-1-1' or address['DatapointType'] == 'DPST-1-2':
+                            item_type = "Switch"
+                            item_label = lovely_name
+                            # umschalten (Licht, Steckdosen)
+                            # only add in first round, if there is a status GA for feedback
+                            bol = [x for x in config['defines']['switch']['status_suffix'] if(x in address['Group name'])]
+                            if not bool(bol):
+                                status = data_of_name(all_addresses, address['Group name'], config['defines']['switch']['status_suffix'],config['defines']['switch']['switch_suffix'])
+                                if not status and "communication_object" in address:
+                                    hupps =[x for x in address["communication_object"] if( "device_communication_objects" in x)]
+                                    for x in hupps:
+                                        status=getFromDco(x,config['defines']['switch']['status_suffix'])                                    
+                                if status:
+                                    #if status['DatapointType'] == 'DPST-1-11':
+                                        auto_add = True
+                                        used_addresses.append(status['Address'])
+                                        thing_address_info = f"ga=\"{address['Address']}+{status['Address']}\""
 
-                        # in the second run, we accept everything ;)
-                        if run == 1:
-                            auto_add = True
-                            thing_address_info = f"ga=\"1.001:{address['Address']}\""
-                            #item_label = f"{lovely_name} [%d]"
-                            semantic_info = "[\"Control\", \"Status\"]"
+                            # in the second run, we accept everything ;)
+                            if run > 0:
+                                auto_add = True
+                                thing_address_info = f"ga=\"1.001:{address['Address']}\""
+                                #item_label = f"{lovely_name} [%d]"
+                                semantic_info = "[\"Control\", \"Status\"]"
 
-                        if config['defines']['switch']['light_name'] in address['Group name']:
-                            semantic_info = "[\"Control\", \"Light\"]"
-                            equipment = 'Lightbulb'
-                            item_icon = 'light'
-                        if config['defines']['switch']['poweroutlet_name'] in address['Group name']:
-                            semantic_info = "[\"Control\", \"Switch\"]"
-                            equipment = 'PowerOutlet'
-                            item_icon = 'poweroutlet'
-                        if config['defines']['switch']['speaker_name'] in address['Group name']:
-                            semantic_info = "[\"Control\", \"Switch\"]"
-                            equipment = 'Speaker'
-                            item_icon = 'soundvolume'
-                        if config['defines']['switch']['heating_name'] in address['Group name']:
-                            semantic_info = "[\"Heating\", \"Switch\"]"
-                            equipment = 'HVAC'
-                            item_icon = 'radiator'
+                            if config['defines']['switch']['light_name'] in address['Group name']:
+                                semantic_info = "[\"Control\", \"Light\"]"
+                                equipment = 'Lightbulb'
+                                item_icon = 'light'
+                            elif config['defines']['switch']['poweroutlet_name'] in address['Group name']:
+                                semantic_info = "[\"Control\", \"Switch\"]"
+                                equipment = 'PowerOutlet'
+                                item_icon = 'poweroutlet'
+                            elif config['defines']['switch']['speaker_name'] in address['Group name']:
+                                semantic_info = "[\"Control\", \"Switch\"]"
+                                equipment = 'Speaker'
+                                item_icon = 'soundvolume'
+                            elif config['defines']['switch']['heating_name'] in address['Group name']:
+                                semantic_info = "[\"Heating\", \"Switch\"]"
+                                equipment = 'HVAC'
+                                item_icon = 'radiator'
+                            else:
+                                semantic_info = "[\"Control\", \"Switch\"]"
+                                item_icon = "switch"
+
 
                     ######## determined only by datapoint
                     # do this only after items with multiple addresses are processed:
                     # e.g. the state datapoint could be an own thing or the feedback from a switch or so
-                    if run == 1:
+                    if run > 0:
                         # temperature
                         if address['DatapointType'] == 'DPST-9-1':
                             auto_add = True
@@ -561,12 +600,15 @@ def check_unusedAddresses():
                     
 def export_output():
     global items,sitemap,things
+
     # export things:
     things_template = open('things.template','r').read()
     things = things_template.replace('###things###', things)
+    os.makedirs(os.path.dirname(config['things_path']), exist_ok=True)
     open(config['things_path'],'w', encoding='utf8').write(things)
     # export items:
     items = 'Group           Home                  "Our Home"                                     [\"Location\"]\n' + items
+    os.makedirs(os.path.dirname(config['items_path']), exist_ok=True)
     open(config['items_path'],'w', encoding='utf8').write(items)
 
     # export sitemap:
@@ -576,6 +618,7 @@ def export_output():
     sitemap_template = open(sitemap_template_file,'r').read()
     sitemap = sitemap_template.replace('###sitemap###', sitemap)
     sitemap = sitemap.replace('###selections###', selections)
+    os.makedirs(os.path.dirname(config['sitemaps_path']), exist_ok=True)
     open(config['sitemaps_path'],'w', encoding='utf8').write(sitemap)
 
     #export persistent
@@ -595,6 +638,7 @@ def export_output():
         persist += f"{i}: strategy = everyUpdate\n"
     persist += private_persistence + '\n}'
 
+    os.makedirs(os.path.dirname(config['influx_path']), exist_ok=True)
     open(config['influx_path'],'w', encoding='utf8').write(persist)
 
 
@@ -621,7 +665,7 @@ def export_output():
     fenster_rule += '''
     end
     '''
-
+    os.makedirs(os.path.dirname('openhab/rules/fenster.rules'), exist_ok=True)
     open('openhab/rules/fenster.rules','w', encoding='utf8').write(fenster_rule)
 
 def main():

@@ -13,6 +13,7 @@ import re, json
 import configparser
 config = configparser.ConfigParser()
 
+addUnkownItemsToEnd=True
 default_Floor="unkonwn"
 default_Room="unknown"
 default_pattern_item_Room = r"\++[A-Z].[0-9]+"
@@ -46,7 +47,7 @@ item_Floor_nameshort_prefix=config['defaults'].get('item_Floor_nameshort_prefix'
 
 if readDump:
     proj: KNXProject
-    with open("tests/Charne.knxprojarchive.json", encoding="utf-8") as f:
+    with open("tests/Dr.knxproj.json", encoding="utf-8") as f:
         project = json.load(f)
 else:
     knxproj: XKNXProj = XKNXProj(
@@ -156,21 +157,27 @@ def getAddresses(project: KNXProject):
     communication_objects=project["communication_objects" ]
     if len(communication_objects)==0:
         raise ValueError("'communication_objects' is Empty.")
+    devices=project["devices"]
+    if len(devices)==0:
+        raise ValueError("'devices' is Empty.")    
     _addresses = []
     for address in groupaddresses.values():
         ignore = False
-        if 'ignore' in address['comment'] or not address['communication_object_ids']:
+        if 'ignore' in address['comment']:
             print(f"Ignore: {address['name']}")
+            ignore = True
+        elif not address['communication_object_ids']:
+            print(f"Ignore: {address['name']} because no communication object connected")
             ignore = True
         else:
             resRoom = re_item_Room.search(address['name'])
             resFloor = re_item_Floor.search(address['name'])
-            if resRoom:
-                print(f"OK: {address['name']} - {resRoom.group(0)}")
-            else:
-                print(f"OK: {address['name']} - No Room detected: {address['name']}")
-            if resFloor:
-                print(f"     {address['name']} -> {resFloor.group(0)}")    
+            # if resRoom:
+            #     print(f"OK: {address['name']} - {resRoom.group(0)}")
+            # else:
+            #     print(f"OK: {address['name']} - No Room detected: {address['name']}")
+            # if resFloor:
+            #     print(f"     {address['name']} -> {resFloor.group(0)}")    
            
         if not ignore:
             _addresses.append({})
@@ -180,8 +187,21 @@ def getAddresses(project: KNXProject):
             laddress["Description"]=address["description"]
             laddress["communication_object"]=[]
             for co_id in address['communication_object_ids']:
-                coo = communication_objects[co_id]
-                laddress["communication_object"].append(coo)
+                co_o = communication_objects[co_id]
+                if co_o['flags']:
+                    if co_o['flags']['read'] or co_o['flags']['write']:
+                        device_id = co_o['device_address']
+                        device_o=devices[device_id]
+                        if device_o['communication_object_ids']:
+                            co_o["device_communication_objects"]=[]
+                            for device_co_id in device_o['communication_object_ids']:
+                                device_co_o = communication_objects[device_co_id]
+                                if co_o['channel']:
+                                    if co_o['channel'] == device_co_o["channel"]:# and co_o["number"] != device_co_o["number"]:
+                                        co_o["device_communication_objects"].append(device_co_o)
+                                else:
+                                    co_o["device_communication_objects"].append(device_co_o)
+                laddress["communication_object"].append(co_o)
             if resFloor:
                 laddress["Floor"]=resFloor.group(0)
             else:
@@ -215,7 +235,25 @@ def putAddressesInBuilding(building,addresses):
         if not found:
             unknown.append(address)
             #print("add to unknown")
-    print(f"Unknown addresses = '{len(unknown)}'")
+    if addUnkownItemsToEnd:
+        building[0]["floors"].append({
+                    'Description':default_Floor,
+                    'Group name':default_Floor,
+                    'name_long':default_Floor,
+                    'name_short':default_Floor,
+                    'rooms':[]
+                    })
+        building[0]["floors"][-1]["rooms"].append({
+                            'Description':default_Room,
+                            'Group name':default_Room,
+                            'name_long':default_Room,
+                            'name_short':default_Room,
+                            'Addresses':[]
+                        })
+        building[0]["floors"][-1]["rooms"][-1]["Addresses"]=unknown
+    else:
+        print(unknown)
+        print(f"Unknown addresses = '{len(unknown)}'")
 
     return building
 
@@ -232,7 +270,3 @@ ets_to_openhab.all_addresses = addresses
 ets_to_openhab.genBuilding()
 ets_to_openhab.check_unusedAddresses()
 ets_to_openhab.export_output()
-
-
-
-# Sammle zusammengehörige Channels z.B. ('MD-2_M-42_MI-1_CH-4') dort müssen sich Schalten/Status oder Auf/Ab + Position zusammengehörende Adressen gruppieren

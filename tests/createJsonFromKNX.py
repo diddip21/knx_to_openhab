@@ -3,7 +3,9 @@ import json
 from xknxproject import XKNXProj
 
 file_names = [
-    ("Charne.knxprojarchive", None, "de-DE"),
+    ("Charne.knxproj", None, "de-DE"),
+    ("Dr.knxproj", None, "de-DE"),
+    ("Praxis.knxprojarchive", None, "de-DE"),
 ]
 
 for file_name, password, language in file_names:

@@ -3,3 +3,4 @@ openhab/*
 *.knxproj*
 example.ini
 .vscode/*
+__pycache__/*

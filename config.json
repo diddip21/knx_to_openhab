@@ -9,8 +9,8 @@
 
     "defines" : {
         "switch":
-            {"switch_suffix": ["Schalten",":(An/Aus)",":(Schalten)"],
-             "status_suffix": ["Status"," RM","Rückmeldung",":(RM Schalten)"],
+            {"switch_suffix": ["Schalten",":(An/Aus)",":(Schalten)","Ein/Aus"],
+             "status_suffix": ["Status"," RM","Rückmeldung",":(RM Schalten)","Status Ein/Aus"],
              "poweroutlet_name" : "Steckdose",
              "speaker_name": "Audio",
              "light_name": "Licht",
@@ -19,7 +19,7 @@
         "dimmer": 
             {"absolut_suffix": ["Dimmen absolut",":(Dimm Wert)"], 
              "status_suffix": ["Rückmeldung Dimmen","Dimmen Rückmeldung","Dimmen rm","Status Dimmwert",":(Status Dimm Wert)"],
-             "switch_suffix": ["Schalten",":(An/Aus)",":(Schalten)"],
+             "switch_suffix": ["Schalten",":(An/Aus)",":(Schalten)","Ein/Aus","Schalten EIN/AUS"],
              "switch_status_suffix": ["Status Ein/Aus","Rückmeldung","Schalten Rückmeldung","Schalten rm",":(Status An/Aus)"],
              "relativ_suffix": ["Dimmen relativ",":(Heller/Dunkler)"],
              "drop": []

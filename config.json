@@ -1,36 +1,107 @@
 {
-    "ets_export": "C:\\Users\\Username\\Nextcloud\\LogiHome\\charne.csv", 
-
+    "ets_export": "C:\\Users\\Username\\Nextcloud\\LogiHome\\charne.csv",
     "things_path": "openhab/things/knx.things",
     "items_path": "openhab/items/knx.items",
     "sitemaps_path": "openhab/sitemaps/knx.sitemap",
     "influx_path": "openhab/persistence/influxdb.persist",
     "transform_dir_path": "openhab/transform",
-
-    "defines" : {
-        "switch":
-            {"switch_suffix": ["Schalten",":(An/Aus)",":(Schalten)","Ein/Aus"],
-             "status_suffix": ["Status"," RM","Rückmeldung",":(RM Schalten)","Status Ein/Aus"],
-             "poweroutlet_name" : "Steckdose",
-             "speaker_name": "Audio",
-             "light_name": "Licht",
-             "heating_name": "Heizen"
-            },
-        "dimmer": 
-            {"absolut_suffix": ["Dimmen absolut",":(Dimm Wert)"], 
-             "status_suffix": ["Rückmeldung Dimmen","Dimmen Rückmeldung","Dimmen rm","Status Dimmwert",":(Status Dimm Wert)"],
-             "switch_suffix": ["Schalten",":(An/Aus)",":(Schalten)","Ein/Aus","Schalten EIN/AUS"],
-             "switch_status_suffix": ["Status Ein/Aus","Rückmeldung","Schalten Rückmeldung","Schalten rm",":(Status An/Aus)"],
-             "relativ_suffix": ["Dimmen relativ",":(Heller/Dunkler)"],
-             "drop": []
-            },
-        "rollershutter":
-            {"up_down_suffix": ["Auf/Ab",":(Jalousie Auf/Ab)",":(Rolladen Auf/Ab)"], 
-             "stop_suffix": ["Stop","Stop/Lamellen","Lamellen",":(Lamellenverstellung/Stop)",":(Stop)"],
-             "absolute_position_suffix": ["absolute Position",":(Absolute Position)"],
-             "status_suffix": ["Status","Rückmeldung",":(Status Absolute Position)",":(Status aktuelle Position)"],
-             "drop": ["Status Richtung",":(Status aktuelle Richtung)",":(Status obere Position)",":(Status untere Position)"]
-             },
-        "drop_words": ["Fensterkontakt", "Licht", "Steckdose", "Steckdosen", "Strom", "Leistung"]
+    "defines": {
+        "switch": {
+            "switch_suffix": [
+                "Schalten",
+                ":(An/Aus)",
+                ":(Schalten)",
+                "Ein/Aus"
+            ],
+            "status_suffix": [
+                "Status",
+                " RM",
+                "Rückmeldung",
+                ":(RM Schalten)",
+                "Status Ein/Aus"
+            ],
+            "poweroutlet_name": "Steckdose",
+            "speaker_name": "Audio",
+            "light_name": "Licht",
+            "heating_name": "Heizen"
+        },
+        "dimmer": {
+            "absolut_suffix": [
+                "Dimmen absolut",
+                ":(Dimm Wert)"
+            ],
+            "status_suffix": [
+                "Rückmeldung Dimmen",
+                "Dimmen Rückmeldung",
+                "Dimmen rm",
+                "Status Dimmwert",
+                ":(Status Dimm Wert)"
+            ],
+            "switch_suffix": [
+                "Schalten",
+                ":(An/Aus)",
+                ":(Schalten)",
+                "Ein/Aus",
+                "Schalten EIN/AUS"
+            ],
+            "switch_status_suffix": [
+                "Status Ein/Aus",
+                "Rückmeldung",
+                "Schalten Rückmeldung",
+                "Schalten rm",
+                ":(Status An/Aus)"
+            ],
+            "relativ_suffix": [
+                "Dimmen relativ",
+                ":(Heller/Dunkler)"
+            ],
+            "drop": []
+        },
+        "rollershutter": {
+            "up_down_suffix": [
+                "Auf/Ab",
+                ":(Jalousie Auf/Ab)",
+                ":(Rolladen Auf/Ab)"
+            ],
+            "stop_suffix": [
+                "Stop",
+                "Stop/Lamellen",
+                "Lamellen",
+                ":(Lamellenverstellung/Stop)",
+                ":(Stop)"
+            ],
+            "absolute_position_suffix": [
+                "absolute Position",
+                ":(Absolute Position)"
+            ],
+            "status_suffix": [
+                "Status",
+                "Rückmeldung",
+                ":(Status Absolute Position)",
+                ":(Status aktuelle Position)"
+            ],
+            "drop": [
+                "Status Richtung",
+                ":(Status aktuelle Richtung)",
+                ":(Status obere Position)",
+                ":(Status untere Position)"
+            ]
+        },
+        "heating": {
+            "level_suffix": [
+                "Betriebsmodus"
+            ],
+            "status_level_suffix": [
+                "Status Betriebsmodus"
+            ]
+        },
+        "drop_words": [
+            "Fensterkontakt",
+            "Licht",
+            "Steckdose",
+            "Steckdosen",
+            "Strom",
+            "Leistung"
+        ]
     }
 }

@@ -166,8 +166,10 @@ def genBuilding():
                     used = False
                     auto_add = False
                     item_icon = None
+                    co=None
                     sitemap_type = 'Default'
                     mappings = ''
+                    synonyms = ''
                     #lovely_name = ' '.join(address['Group name'].replace(house[floorNr]['rooms'][roomNr]['Group name'],'').replace(house[floorNr]['Group name'],'').split())
                     lovely_name = address['Group name']
                     item_label = lovely_name
@@ -186,7 +188,6 @@ def genBuilding():
                     item_name = re.sub('[^A-Za-z0-9_]+', '', item_name)
                     
                     # dimmer
-                    
                     if address['DatapointType'] == 'DPST-5-1':
                         bol = [x for x in config['defines']['dimmer']['absolut_suffix'] if(x in address['Group name'])]
                         if not bool(bol) and not "communication_object" in address:
@@ -243,7 +244,7 @@ def genBuilding():
                             print(f"incomplete dimmer: {basename}")
 
                     # rollos / jalousien
-                    if address['DatapointType'] == 'DPST-1-8':
+                    elif address['DatapointType'] == 'DPST-1-8':
                         bol = [x for x in config['defines']['rollershutter']['up_down_suffix'] if(x in address['Group name'])]
                         if not bool(bol):
                             continue
@@ -282,6 +283,47 @@ def genBuilding():
                             item_icon = "rollershutter"
                         else:
                             print(f"incomplete rollershutter: {basename}")
+
+                    # Heizung
+                    elif address['DatapointType'] in ('DPST-5-010','DPST-20-102'):
+                        if address['Address'] in used_addresses:
+                            continue
+                        bol = [x for x in config['defines']['heating']['level_suffix'] if(x in address['Group name'])]
+                        if not bool(bol) and not "communication_object" in address:
+                            continue
+                        elif not bool(bol) and "communication_object" in address:
+                            found=False
+                            for co in address["communication_object"]:
+                                if co["function_text"] in config['defines']['heating']['level_suffix']:
+                                    found=True
+                                    break
+                            if not found:
+                                continue     
+                        basename = address['Group name'] #.replace(config['defines']['rollershutter']['up_down_suffix'],'')
+                        betriebsmodus = address
+                        option_status_betriebsmodus=''
+                        if betriebsmodus:
+                            used_addresses.append(betriebsmodus['Address'])
+                            betriebsmodus_status = data_of_name(all_addresses, basename, config['defines']['heating']['status_level_suffix'],config['defines']['heating']['level_suffix'])
+                            if not betriebsmodus_status and co:
+                                betriebsmodus_status=getFromDco(co,config['defines']['heating']['status_level_suffix'])
+                            if betriebsmodus_status:
+                                used_addresses.append(betriebsmodus_status['Address'])
+                                option_status_betriebsmodus = f"+<{betriebsmodus_status['Address']}"
+                            
+                            auto_add = True
+                            item_type = "Number:Dimensionless"
+                            ga = "5.010"
+                            if address['DatapointType'] == 'DPST-20-102':
+                                ga="20.102"
+                            thing_address_info = f"ga=\"{ga}:{address['Address']}{option_status_betriebsmodus}\""
+                            item_label = f"{lovely_name}"
+                            semantic_info = "[\"HVAC\"]"
+                            item_icon = "heating_mode"
+                            synonyms=", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]"                        
+
+                        else:
+                            print(f"incomplete heating: {basename}")
 
                     #  erst im zweiten durchlauf prüfen damit integrierte Schaltobjekte (z.B. dimmen) vorher schon erkannt werden.
                     if run > 0:
@@ -467,7 +509,6 @@ def genBuilding():
                             item_label = f"{lovely_name} [%d %%]"
                             semantic_info = "[\"Measurement\"]"
 
-
                         # Zeitdifferenz 
                         if address['DatapointType'] == 'DPST-13-100':
                             auto_add = True
@@ -522,13 +563,31 @@ def genBuilding():
                             item_label = f"{lovely_name}" # [%d]
                             semantic_info = "[\"Measurement\", \"Status\"]"
                             item_icon = "switch"
+                        
+                        # Betriebsartvorwahl 
+                        if address['DatapointType'] == 'DPST-20-102':
+                            auto_add = True
+                            item_type = "Number:Dimensionless"
+                            thing_address_info = f"ga=\"20.102:{address['Address']}\""
+                            item_label = f"{lovely_name}"
+                            semantic_info = "[\"HVAC\"]"
+                            item_icon = "heating_mode"
+                            synonyms=", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]"
+                        # Betriebsartvorwahl 
+                        if address['DatapointType'] == 'DPST-5-010':
+                            auto_add = True
+                            item_type = "Number:Dimensionless"
+                            thing_address_info = f"ga=\"5.010:{address['Address']}\""
+                            item_label = f"{lovely_name}"
+                            semantic_info = "[\"HVAC\"]"
+                            item_icon = "heating_mode"
+                            synonyms=", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]"                        
 
                     # TODO: get rid of this
                     if used:
                         used_addresses.append(address['Address'])
 
                     if auto_add:
-                        synonyms = ''
                         used_addresses.append(address['Address'])
                         visibility = ''
                         for description in descriptions:

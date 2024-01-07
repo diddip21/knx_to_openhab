@@ -5,6 +5,10 @@
     "sitemaps_path": "openhab/sitemaps/knx.sitemap",
     "influx_path": "openhab/persistence/influxdb.persist",
     "transform_dir_path": "openhab/transform",
+    "general":{
+        "FloorNameFromDescription": true,
+        "RoomNameFromDescription": true
+    },
     "defines": {
         "switch": {
             "switch_suffix": [

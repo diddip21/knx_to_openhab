@@ -539,8 +539,11 @@ def genBuilding():
                             semantic_info = ""
                             item_icon = "time"
                         # Szene
-                        if address['DatapointType'] == 'DPST-17-1':
+                        if address['DatapointType'] in ('DPST-17-1','DPST-18-1'):
                             used = True
+                            ga = "17.001"
+                            if address['DatapointType'] == 'DPST-18-1':
+                                ga="18.001"
                             
                             for description in descriptions:
                                 if description.startswith('mappings='):
@@ -548,6 +551,7 @@ def genBuilding():
                                     break
 
                             if mappings!= '':
+                                #TODO: Mappings noch über metadata abbilden
                                 mapfile = f"gen_{item_name}.map"
                                 mappings = mappings.replace("'",'"')
 
@@ -557,7 +561,7 @@ def genBuilding():
 
                                 auto_add = True
                                 item_type = "Number"
-                                thing_address_info = f"ga=\"17.001:{address['Address']}\""
+                                thing_address_info = f"ga=\"{ga}:{address['Address']}\""
                                 item_label = f"{lovely_name} [MAP({mapfile}):%s]"
                                 semantic_info = "[\"Control\"]"
                                 item_icon = "movecontrol"

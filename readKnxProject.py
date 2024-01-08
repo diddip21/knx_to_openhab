@@ -9,57 +9,50 @@ from xknxproject import XKNXProj
 #from ets_to_openhab import house,genBuilding,check_unusedAddresses,export_output
 import ets_to_openhab
 
+import logging
+logger = logging.getLogger(__name__)
 import re, json
 import configparser
 config = configparser.ConfigParser()
 
-addUnkownItemsToEnd=True
+
 default_Floor="unkonwn"
 default_Room="unknown"
+default_addMissingItems=True
 default_pattern_item_Room = r"\++[A-Z].[0-9]+"
 default_pattern_item_Floor = r"=[A-Z]+"
 default_pattern_item_Floor_nameshort = r'[A-Z]. ' #^[a-zA-Z]{1,5}$
 default_item_Floor_nameshort_prefix = r"="
 
-config['knxproject']= {}
-cknxproject = config['knxproject']
-cknxproject['path']=r'.\myknxproject.knxproj'
+def createConfigExample():
+    config['knxproject']= {}
+    cknxproject = config['knxproject']
+    cknxproject['path']=r'.\myknxproject.knxproj'
 
-config['RegexPattern']= {}
-cregpatt = config['RegexPattern']
-cregpatt['item_Floor']=default_pattern_item_Floor
-cregpatt['item_Floor_nameshort']=default_pattern_item_Floor_nameshort
-cregpatt['item_Room']=default_pattern_item_Room
+    config['RegexPattern']= {}
+    cregpatt = config['RegexPattern']
+    cregpatt['item_Floor']=default_pattern_item_Floor
+    cregpatt['item_Floor_nameshort']=default_pattern_item_Floor_nameshort
+    cregpatt['item_Room']=default_pattern_item_Room
 
-config['defaults']= {}
-cdefaults = config['defaults']
-cdefaults['item_Floor_nameshort_prefix']=default_item_Floor_nameshort_prefix
+    config['defaults']= {}
+    cdefaults = config['defaults']
+    cdefaults['unkown_floorname']=default_Floor
+    cdefaults['unkown_roomname']=default_Room
+    cdefaults['addMissingItems']=default_addMissingItems
+    cdefaults['item_Floor_nameshort_prefix']=default_item_Floor_nameshort_prefix
 
-with open('example.ini', 'w') as configfile:
-  config.write(configfile)
+    with open('example.ini', 'w') as configfile:
+        config.write(configfile)
 
 config.read('config.ini')
-
 pattern_item_Room=config['RegexPattern'].get('item_Room',default_pattern_item_Room)
 pattern_item_Floor=config['RegexPattern'].get('item_Floor',default_pattern_item_Floor)
 pattern_floor_nameshort=config['RegexPattern'].get('item_Floor_nameshort',default_pattern_item_Floor_nameshort)
 item_Floor_nameshort_prefix=config['defaults'].get('item_Floor_nameshort_prefix',default_item_Floor_nameshort_prefix)
-
-if readDump:
-    proj: KNXProject
-    with open("tests/Dr. Keß, Praxis.knxprojarchive.json", encoding="utf-8") as f:
-        project = json.load(f)
-else:
-    knxproj: XKNXProj = XKNXProj(
-        path=r"C:\Users\Username\Nextcloud\LogiHome\xx_ETS\Archiv\Charne.knxprojarchive",
-        #path="Dr.knxproj",
-        #path=r"C:\Users\Username\Nextcloud\LogiHome\xx_ETS\Archiv\Brückner.knxprojarchive",
-        #path=r"C:\Users\Username\Nextcloud\LogiHome\xx_ETS\Archiv\Selzam.knxprojarchive",
-        #path=r"C:\Users\Username\Nextcloud\LogiHome\xx_ETS\Archiv\Dr. Keß, Praxis.knxprojarchive",
-        #password="password",  # optional
-        language="de-DE",  # optional
-    )
-    project: KNXProject = knxproj.parse()
+unkown_floorname=config['defaults'].get('unkown_floorname',default_Floor)
+unkown_roomname=config['defaults'].get('unkown_roomname',default_Room)
+addMissingItems=config['defaults'].get('addMissingItems',default_addMissingItems)
 
 re_item_Room =re.compile(pattern_item_Room)
 re_item_Floor =re.compile(pattern_item_Floor)
@@ -142,12 +135,10 @@ def createBuilding(project: KNXProject):
                             prj_room['name_long']=roomNameLong
                         if not prj_room['Group name']:
                             prj_room['Group name']=prj_room['name_short']
-                        #print(f"Room: {room['name']} -> {room['name_short']} - {room['name_long']}")
                 if prj_floor['name_long'] == '':
                     prj_floor['name_long']=prj_floor['name_short']
                 if not prj_floor['Group name']:
                     prj_floor['Group name']=prj_floor['name_short']
-                #print(f"Floor: {floor['name']} -> {floor['name_short']} - {floor['name_long']}")
     return prj
 
 def getAddresses(project: KNXProject):
@@ -167,10 +158,10 @@ def getAddresses(project: KNXProject):
     for address in groupaddresses.values():
         ignore = False
         if 'ignore' in address['comment']:
-            print(f"Ignore: {address['name']}")
+            logger.info(f"Ignore: {address['name']}")
             ignore = True
         elif not address['communication_object_ids']:
-            print(f"Ignore: {address['name']} because no communication object connected")
+            logger.info(f"Ignore: {address['name']} because no communication object connected")
             ignore = True
         else:
             resRoom = re_item_Room.search(address['name'])
@@ -186,12 +177,6 @@ def getAddresses(project: KNXProject):
                         resFloor = re_floor_nameshort.search(grMiddle['name'])
                         if not resFloor:
                             resFloor = re_floor_nameshort.search(grTop['name'])
-            # if resRoom:
-            #     print(f"OK: {address['name']} - {resRoom.group(0)}")
-            # else:
-            #     print(f"OK: {address['name']} - No Room detected: {address['name']}")
-            # if resFloor:
-            #     print(f"     {address['name']} -> {resFloor.group(0)}")    
            
         if not ignore:
             _addresses.append({})
@@ -221,11 +206,11 @@ def getAddresses(project: KNXProject):
                 if not laddress["Floor"].startswith(item_Floor_nameshort_prefix) and len(laddress["Floor"]) < 6:
                     laddress["Floor"]=item_Floor_nameshort_prefix+laddress["Floor"]
             else:
-                laddress["Floor"]=default_Floor
+                laddress["Floor"]=unkown_floorname
             if resRoom:
                 laddress["Room"]=resRoom.group(0)
             else:
-                laddress["Room"]=default_Room
+                laddress["Room"]=unkown_roomname
             laddress["DatapointType"] = "DPST-{}-{}".format(address["dpt"]["main"],address["dpt"]["sub"])  if address["dpt"]["sub"] else "DPT-{}".format(address["dpt"]["main"]) 
     return _addresses            
 
@@ -236,7 +221,6 @@ def putAddressesInBuilding(building,addresses):
         raise ValueError("'addresses' is Empty.")
     unknown =[]
     for address in addresses:
-        #print (address)
         found=False
         for itembuilding in building:
             for floor in itembuilding["floors"]:
@@ -250,39 +234,54 @@ def putAddressesInBuilding(building,addresses):
                             break
         if not found:
             unknown.append(address)
-            #print("add to unknown")
-    if addUnkownItemsToEnd:
+    if default_addMissingItems:
         building[0]["floors"].append({
-                    'Description':default_Floor,
-                    'Group name':default_Floor,
-                    'name_long':default_Floor,
-                    'name_short':default_Floor,
+                    'Description':unkown_floorname,
+                    'Group name':unkown_floorname,
+                    'name_long':unkown_floorname,
+                    'name_short':unkown_floorname,
                     'rooms':[]
                     })
         building[0]["floors"][-1]["rooms"].append({
-                            'Description':default_Room,
-                            'Group name':default_Room,
-                            'name_long':default_Room,
-                            'name_short':default_Room,
+                            'Description':unkown_roomname,
+                            'Group name':unkown_roomname,
+                            'name_long':unkown_roomname,
+                            'name_short':unkown_roomname,
                             'Addresses':[]
                         })
         building[0]["floors"][-1]["rooms"][-1]["Addresses"]=unknown
     else:
-        print(unknown)
-        print(f"Unknown addresses = '{len(unknown)}'")
+        logger.info(unknown)
+        logger.info(f"Unknown addresses = '{len(unknown)}'")
 
     return building
 
-building=createBuilding(project)
-#pretty = json.dumps(building, indent=2, ensure_ascii=False)#, sort_keys=True)
-#print(pretty)
+def main():
+    logging.basicConfig()
 
-addresses=getAddresses(project)
-#print(addresses)
+    if readDump:
+        project: KNXProject
+        with open("tests/Charne.knxprojarchive.json", encoding="utf-8") as f:
+            project = json.load(f)
+    else:
+        knxproj: XKNXProj = XKNXProj(
+            path=r"C:\Users\Username\Nextcloud\LogiHome\xx_ETS\Archiv\Charne.knxprojarchive",
+            #password="password",  # optional
+            language="de-DE",  # optional
+        )
+        project: KNXProject = knxproj.parse()
 
-house=putAddressesInBuilding(building,addresses)
-ets_to_openhab.house = house[0]["floors"]
-ets_to_openhab.all_addresses = addresses
-ets_to_openhab.genBuilding()
-ets_to_openhab.check_unusedAddresses()
-ets_to_openhab.export_output()
+
+    building=createBuilding(project)
+    addresses=getAddresses(project)
+    house=putAddressesInBuilding(building,addresses)
+
+    ets_to_openhab.house = house[0]["floors"]
+    ets_to_openhab.all_addresses = addresses
+    ets_to_openhab.genBuilding()
+    ets_to_openhab.check_unusedAddresses()
+    ets_to_openhab.export_output()
+
+
+if __name__ == "__main__":
+    main()

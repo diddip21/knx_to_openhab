@@ -530,6 +530,14 @@ def genBuilding():
                             semantic_info = "[\"Measurement\", \"Duration\"]"
                             item_icon = "time"
 
+                        # Datum/Uhrzeit 
+                        if address['DatapointType'] == 'DPST-19-1':
+                            auto_add = True
+                            item_type = "datetime"
+                            thing_address_info = f"ga=\"{address['Address']}\""
+                            item_label = f"{lovely_name}"
+                            semantic_info = ""
+                            item_icon = "time"
                         # Szene
                         if address['DatapointType'] == 'DPST-17-1':
                             used = True

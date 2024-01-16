@@ -84,6 +84,19 @@ def read_csvexport():
             all_addresses.append(row)
 
 def genBuilding():
+    def getCoByFunctionText(cos,config_functiontexts):
+        if "communication_object" in cos:
+            for co in cos["communication_object"]:
+                 if co["function_text"] in config_functiontexts:
+                     return co
+        return None        
+    def getFromMultiCo(cos,config_functiontexts):
+        if "communication_object" in cos:
+            for co in cos["communication_object"]:
+                itemco=getFromDco(co,config_functiontexts)
+                if itemco is not None:
+                    return itemco
+        return None
     def getFromDco(co,config_functiontexts):
         if "device_communication_objects" in co:
             for y in co["device_communication_objects"]:
@@ -198,16 +211,9 @@ def genBuilding():
                         # dimmer
                         if address['DatapointType'] == 'DPST-5-1':
                             bol = [x for x in config['defines']['dimmer']['absolut_suffix'] if(x in address['Group name'])]
-                            if not bool(bol) and not "communication_object" in address:
+                            co = getCoByFunctionText(address,config['defines']['dimmer']['absolut_suffix'])
+                            if not bool(bol) and not co:
                                 continue
-                            elif not bool(bol) and "communication_object" in address:
-                                found=False
-                                for co in address["communication_object"]:
-                                    if co["function_text"] in config['defines']['dimmer']['absolut_suffix']:
-                                        found=True
-                                        break
-                                if not found:
-                                    continue
 
                             basename = address['Group name']#.replace(config['defines']['dimmer']['absolut_suffix'],'')
                             dimmwert_status =data_of_name(all_addresses, basename, config['defines']['dimmer']['status_suffix'],config['defines']['dimmer']['absolut_suffix'])
@@ -254,7 +260,8 @@ def genBuilding():
                         # rollos / jalousien
                         elif address['DatapointType'] == 'DPST-1-8':
                             bol = [x for x in config['defines']['rollershutter']['up_down_suffix'] if(x in address['Group name'])]
-                            if not bool(bol):
+                            co = getCoByFunctionText(address,config['defines']['rollershutter']['up_down_suffix'])
+                            if not bool(bol) and not co:
                                 continue
                             
                             basename = address['Group name'] #.replace(config['defines']['rollershutter']['up_down_suffix'],'')
@@ -297,16 +304,9 @@ def genBuilding():
                             if address['Address'] in used_addresses:
                                 continue
                             bol = [x for x in config['defines']['heating']['level_suffix'] if(x in address['Group name'])]
-                            if not bool(bol) and not "communication_object" in address:
+                            co = getCoByFunctionText(address,config['defines']['heating']['level_suffix'])
+                            if not bool(bol) and not co:
                                 continue
-                            elif not bool(bol) and "communication_object" in address:
-                                found=False
-                                for co in address["communication_object"]:
-                                    if co["function_text"] in config['defines']['heating']['level_suffix']:
-                                        found=True
-                                        break
-                                if not found:
-                                    continue     
                             basename = address['Group name'] #.replace(config['defines']['rollershutter']['up_down_suffix'],'')
                             betriebsmodus = address
                             option_status_betriebsmodus=''

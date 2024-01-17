@@ -249,7 +249,7 @@ def genBuilding():
                                 semantic_info = "[\"Light\"]"
                                 item_icon = "light"
                             else:
-                                print(f"incomplete dimmer: {basename}")
+                                print(f"incomplete dimmer: {basename} / {address['Address']}")
 
                         # rollos / jalousien
                         elif address['DatapointType'] == 'DPST-1-8':
@@ -269,11 +269,17 @@ def genBuilding():
                             if fahren_auf_ab:
                                 used_addresses.append(fahren_auf_ab['Address'])
                                 fahren_stop = data_of_name(all_addresses, basename, config['defines']['rollershutter']['stop_suffix'],config['defines']['rollershutter']['up_down_suffix'])
+                                if not fahren_stop and co:
+                                    fahren_stop=getFromDco(co,config['defines']['rollershutter']['stop_suffix']) 
                                 if fahren_stop:
                                     used_addresses.append(fahren_stop['Address'])
                                     option_stop = f", stopMove=\"{fahren_stop['Address']}\""
                                 absolute_position = data_of_name(all_addresses, basename, config['defines']['rollershutter']['absolute_position_suffix'],config['defines']['rollershutter']['up_down_suffix'])
                                 absolute_position_status = data_of_name(all_addresses, basename, config['defines']['rollershutter']['status_suffix'],config['defines']['rollershutter']['up_down_suffix'])
+                                if not absolute_position and co:
+                                    absolute_position=getFromDco(co,config['defines']['rollershutter']['absolute_position_suffix']) 
+                                if not absolute_position_status and co:
+                                    absolute_position_status=getFromDco(co,config['defines']['rollershutter']['status_suffix']) 
                                 if absolute_position or absolute_position_status:
                                     if absolute_position:
                                         used_addresses.append(absolute_position['Address'])

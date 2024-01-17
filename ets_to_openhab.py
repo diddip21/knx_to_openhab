@@ -84,6 +84,19 @@ def read_csvexport():
             all_addresses.append(row)
 
 def genBuilding():
+    def getCoByFunctionText(cos,config_functiontexts):
+        if "communication_object" in cos:
+            for co in cos["communication_object"]:
+                 if co["function_text"] in config_functiontexts:
+                     return co
+        return None        
+    def getFromMultiCo(cos,config_functiontexts):
+        if "communication_object" in cos:
+            for co in cos["communication_object"]:
+                itemco=getFromDco(co,config_functiontexts)
+                if itemco is not None:
+                    return itemco
+        return None
     def getFromDco(co,config_functiontexts):
         if "device_communication_objects" in co:
             for y in co["device_communication_objects"]:
@@ -198,16 +211,9 @@ def genBuilding():
                         # dimmer
                         if address['DatapointType'] == 'DPST-5-1':
                             bol = [x for x in config['defines']['dimmer']['absolut_suffix'] if(x in address['Group name'])]
-                            if not bool(bol) and not "communication_object" in address:
+                            co = getCoByFunctionText(address,config['defines']['dimmer']['absolut_suffix'])
+                            if not bool(bol) and not co:
                                 continue
-                            elif not bool(bol) and "communication_object" in address:
-                                found=False
-                                for co in address["communication_object"]:
-                                    if co["function_text"] in config['defines']['dimmer']['absolut_suffix']:
-                                        found=True
-                                        break
-                                if not found:
-                                    continue
 
                             basename = address['Group name']#.replace(config['defines']['dimmer']['absolut_suffix'],'')
                             dimmwert_status =data_of_name(all_addresses, basename, config['defines']['dimmer']['status_suffix'],config['defines']['dimmer']['absolut_suffix'])
@@ -254,7 +260,8 @@ def genBuilding():
                         # rollos / jalousien
                         elif address['DatapointType'] == 'DPST-1-8':
                             bol = [x for x in config['defines']['rollershutter']['up_down_suffix'] if(x in address['Group name'])]
-                            if not bool(bol):
+                            co = getCoByFunctionText(address,config['defines']['rollershutter']['up_down_suffix'])
+                            if not bool(bol) and not co:
                                 continue
                             
                             basename = address['Group name'] #.replace(config['defines']['rollershutter']['up_down_suffix'],'')
@@ -303,16 +310,9 @@ def genBuilding():
                             if address['Address'] in used_addresses:
                                 continue
                             bol = [x for x in config['defines']['heating']['level_suffix'] if(x in address['Group name'])]
-                            if not bool(bol) and not "communication_object" in address:
+                            co = getCoByFunctionText(address,config['defines']['heating']['level_suffix'])
+                            if not bool(bol) and not co:
                                 continue
-                            elif not bool(bol) and "communication_object" in address:
-                                found=False
-                                for co in address["communication_object"]:
-                                    if co["function_text"] in config['defines']['heating']['level_suffix']:
-                                        found=True
-                                        break
-                                if not found:
-                                    continue     
                             basename = address['Group name'] #.replace(config['defines']['rollershutter']['up_down_suffix'],'')
                             betriebsmodus = address
                             option_status_betriebsmodus=''
@@ -536,9 +536,20 @@ def genBuilding():
                             semantic_info = "[\"Measurement\", \"Duration\"]"
                             item_icon = "time"
 
+                        # Datum/Uhrzeit 
+                        if address['DatapointType'] == 'DPST-19-1':
+                            auto_add = True
+                            item_type = "datetime"
+                            thing_address_info = f"ga=\"{address['Address']}\""
+                            item_label = f"{lovely_name}"
+                            semantic_info = ""
+                            item_icon = "time"
                         # Szene
-                        if address['DatapointType'] == 'DPST-17-1':
+                        if address['DatapointType'] in ('DPST-17-1','DPST-18-1'):
                             used = True
+                            ga = "17.001"
+                            if address['DatapointType'] == 'DPST-18-1':
+                                ga="18.001"
                             
                             for description in descriptions:
                                 if description.startswith('mappings='):
@@ -546,6 +557,7 @@ def genBuilding():
                                     break
 
                             if mappings!= '':
+                                #TODO: Mappings noch über metadata abbilden
                                 mapfile = f"gen_{item_name}.map"
                                 mappings = mappings.replace("'",'"')
 
@@ -555,7 +567,7 @@ def genBuilding():
 
                                 auto_add = True
                                 item_type = "Number"
-                                thing_address_info = f"ga=\"17.001:{address['Address']}\""
+                                thing_address_info = f"ga=\"{ga}:{address['Address']}\""
                                 item_label = f"{lovely_name} [MAP({mapfile}):%s]"
                                 semantic_info = "[\"Control\"]"
                                 item_icon = "movecontrol"

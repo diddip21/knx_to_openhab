@@ -5,7 +5,7 @@
     "sitemaps_path": "openhab/sitemaps/knx.sitemap",
     "influx_path": "openhab/persistence/influxdb.persist",
     "transform_dir_path": "openhab/transform",
-    "general":{
+    "general": {
         "FloorNameFromDescription": true,
         "RoomNameFromDescription": true
     },
@@ -15,14 +15,16 @@
                 "Schalten",
                 ":(An/Aus)",
                 ":(Schalten)",
-                "Ein/Aus"
+                "Ein/Aus",
+                "Schalten EIN/AUS"
             ],
             "status_suffix": [
                 "Status",
                 " RM",
                 "Rückmeldung",
                 ":(RM Schalten)",
-                "Status Ein/Aus"
+                "Status Ein/Aus",
+                "Status Aktorkanal"
             ],
             "poweroutlet_name": "Steckdose",
             "speaker_name": "Audio",
@@ -65,14 +67,17 @@
             "up_down_suffix": [
                 "Auf/Ab",
                 ":(Jalousie Auf/Ab)",
-                ":(Rolladen Auf/Ab)"
+                ":(Rolladen Auf/Ab)",
+                "Rollladen Auf/Ab",
+                "Jalousie Auf/Ab"
             ],
             "stop_suffix": [
                 "Stop",
                 "Stop/Lamellen",
                 "Lamellen",
                 ":(Lamellenverstellung/Stop)",
-                ":(Stop)"
+                ":(Stop)",
+                "Stopp"
             ],
             "absolute_position_suffix": [
                 "absolute Position",
@@ -93,10 +98,12 @@
         },
         "heating": {
             "level_suffix": [
-                "Betriebsmodus"
+                "Betriebsmodus",
+                "Betriebsartvorwahl"
             ],
             "status_level_suffix": [
-                "Status Betriebsmodus"
+                "Status Betriebsmodus",
+                "DPT_HVAC Mode: Reglerstatus senden"
             ]
         },
         "drop_words": [

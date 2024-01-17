@@ -177,11 +177,11 @@ def genBuilding():
 
                     address = room['Addresses'][i]
                     # in the second run: only process not already used addresses
-                    if run > 0:
-                        if address['Address'] in used_addresses:
-                            continue
-                        if address['Address'] == '4/1/61x':
-                            print("Adress found - Breakpoint?")
+                    #if run > 0:
+                    if address['Address'] in used_addresses:
+                        continue
+                    if address['Address'] == '3/0/14':
+                        print("Adress found - Breakpoint?")
 
                     used = False
                     auto_add = False
@@ -240,6 +240,8 @@ def genBuilding():
                                 if switch_command:
                                     used_addresses.append(switch_command['Address'])
                                     switch_status_command = data_of_name(all_addresses, basename, config['defines']['dimmer']['switch_status_suffix'],config['defines']['dimmer']['absolut_suffix'])
+                                    if not switch_status_command and co:
+                                         switch_status_command=getFromDco(co,config['defines']['dimmer']['switch_status_suffix'])  
                                     if switch_status_command:
                                         used_addresses.append(switch_status_command['Address'])
                                         switch_option_status = f"+<{switch_status_command['Address']}"
@@ -351,13 +353,15 @@ def genBuilding():
                             item_label = lovely_name
                             # umschalten (Licht, Steckdosen)
                             # only add in first round, if there is a status GA for feedback
-                            bol = [x for x in config['defines']['switch']['status_suffix'] if(x in address['Group name'])]
-                            if not bool(bol):
-                                status = data_of_name(all_addresses, address['Group name'], config['defines']['switch']['status_suffix'],config['defines']['switch']['switch_suffix'])
-                                if not status and "communication_object" in address:
-                                    hupps =[x for x in address["communication_object"] if( "device_communication_objects" in x)]
-                                    for x in hupps:
-                                        status=getFromDco(x,config['defines']['switch']['status_suffix'])                                    
+                            bol = [x for x in config['defines']['switch']['switch_suffix'] if(x in address['Group name'])]
+                            co = getCoByFunctionText(address,config['defines']['switch']['switch_suffix'])
+                            if not bool(bol) and not co:
+                                continue
+
+                            basename = address['Group name']#.replace(config['defines']['dimmer']['absolut_suffix'],'')
+                            status =data_of_name(all_addresses, basename, config['defines']['switch']['status_suffix'],config['defines']['switch']['switch_suffix'])
+                            if not status and co:
+                                status=getFromDco(co,config['defines']['switch']['status_suffix'])                                  
                                 if status:
                                     #if status['DatapointType'] == 'DPST-1-11':
                                         auto_add = True

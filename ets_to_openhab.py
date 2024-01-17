@@ -280,7 +280,10 @@ def genBuilding():
                                         option_position_absolute =f"{absolute_position['Address']}"
                                     if absolute_position_status:
                                         used_addresses.append(absolute_position_status['Address'])
-                                        option_position_status = f"+<{absolute_position_status['Address']}"
+                                        if absolute_position:
+                                            option_position_status = f"+<{absolute_position_status['Address']}"
+                                        else:
+                                            option_position_status = f"<{absolute_position_status['Address']}"
                                     option_position = f", position=\"{option_position_absolute}{option_position_status}\""
 
                                 auto_add = True
@@ -323,6 +326,7 @@ def genBuilding():
                                 item_type = "Number:Dimensionless"
                                 ga = "5.010"
                                 if address['DatapointType'] == 'DPST-20-102':
+                                    item_type = "Number"
                                     ga="20.102"
                                 thing_address_info = f"ga=\"{ga}:{address['Address']}{option_status_betriebsmodus}\""
                                 item_label = f"{lovely_name}"
@@ -533,7 +537,7 @@ def genBuilding():
                         # Datum/Uhrzeit 
                         if address['DatapointType'] == 'DPST-19-1':
                             auto_add = True
-                            item_type = "datetime"
+                            item_type = "DateTime"
                             thing_address_info = f"ga=\"{address['Address']}\""
                             item_label = f"{lovely_name}"
                             semantic_info = ""

@@ -84,9 +84,14 @@ def read_csvexport():
             all_addresses.append(row)
 
 def genBuilding():
-    def getCoByFunctionText(cos,config_functiontexts):
+    def getCoByFunctionText(cos,config_functiontexts,checkwriteflag=True):
         if "communication_object" in cos:
             for co in cos["communication_object"]:
+                 if checkwriteflag:
+                     if "flags" in co:
+                         if "write" in co["flags"]:
+                             if co["flags"]["write"] != True:
+                                 continue
                  if co["function_text"] in config_functiontexts:
                      return co
         return None        
@@ -98,8 +103,19 @@ def genBuilding():
                     return itemco
         return None
     def getFromDco(co,config_functiontexts):
+        # use "channel" for groups alternative "text"
+        if "channel" in co:
+            group_channel = co["channel"]
+        if "text" in co:
+            group_text = co["text"]
         if "device_communication_objects" in co:
             for y in co["device_communication_objects"]:
+                if group_channel:
+                    if group_channel != y["channel"]:
+                        continue
+                if group_text:
+                    if group_text != y["text"]:
+                        continue                
                 if y["function_text"] in config_functiontexts:
                     search_address = [x for x in all_addresses if (x["Address"] in y['group_address_links'])]
                     if len(search_address)==1:
@@ -180,7 +196,7 @@ def genBuilding():
                     #if run > 0:
                     if address['Address'] in used_addresses:
                         continue
-                    if address['Address'] == '3/0/14':
+                    if address['Address'] == '1/1/12':
                         print("Adress found - Breakpoint?")
 
                     used = False
@@ -362,11 +378,11 @@ def genBuilding():
                             status =data_of_name(all_addresses, basename, config['defines']['switch']['status_suffix'],config['defines']['switch']['switch_suffix'])
                             if not status and co:
                                 status=getFromDco(co,config['defines']['switch']['status_suffix'])                                  
-                                if status:
-                                    #if status['DatapointType'] == 'DPST-1-11':
-                                        auto_add = True
-                                        used_addresses.append(status['Address'])
-                                        thing_address_info = f"ga=\"{address['Address']}+{status['Address']}\""
+                            if status:
+                                #if status['DatapointType'] == 'DPST-1-11':
+                                    auto_add = True
+                                    used_addresses.append(status['Address'])
+                                    thing_address_info = f"ga=\"{address['Address']}+{status['Address']}\""
 
                             # in the second run, we accept everything ;)
                             if run > 0:

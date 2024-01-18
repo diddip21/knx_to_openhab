@@ -103,6 +103,7 @@ def createBuilding(project: KNXProject):
                             'Group name':None,
                             'name_long':room['description'],
                             'name_short':None,
+                            'devices':room['devices'],
                             'Addresses':[]
                         })
                         prj_room=prj_floor['rooms'][-1]
@@ -222,6 +223,7 @@ def putAddressesInBuilding(building,addresses):
     unknown =[]
     for address in addresses:
         found=False
+        #TODO: match address co (read=true) with room devices 
         for itembuilding in building:
             for floor in itembuilding["floors"]:
                 if floor["name_short"] == address["Floor"]:
@@ -261,11 +263,11 @@ def main():
 
     if readDump:
         project: KNXProject
-        with open("tests/Charne.knxprojarchive.json", encoding="utf-8") as f:
+        with open("tests/Charne.knxproj.json", encoding="utf-8") as f:
             project = json.load(f)
     else:
         knxproj: XKNXProj = XKNXProj(
-            path=r"C:\Users\Username\Nextcloud\LogiHome\xx_ETS\Archiv\Charne.knxprojarchive",
+            path=r"tests/Charne.knxproj",
             #password="password",  # optional
             language="de-DE",  # optional
         )

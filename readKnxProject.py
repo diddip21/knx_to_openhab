@@ -5,57 +5,25 @@
 from xknxproject.models import KNXProject
 from xknxproject import XKNXProj
 
-#from ets_to_openhab import house,genBuilding,check_unusedAddresses,export_output
 import ets_to_openhab
 
 import logging
 logger = logging.getLogger(__name__)
 import re, json
-import configparser
-config = configparser.ConfigParser()
+from config import config
 from pathlib import Path
 import argparse
 import tkinter as tk
 from tkinter import filedialog
 
-
-default_Floor="unkonwn"
-default_Room="unknown"
-default_addMissingItems=True
-default_pattern_item_Room = r"\++[A-Z].[0-9]+"
-default_pattern_item_Floor = r"=[A-Z]+"
-default_pattern_item_Floor_nameshort = r'[A-Z]. ' #^[a-zA-Z]{1,5}$
-default_item_Floor_nameshort_prefix = r"="
-
-def createConfigExample():
-    config['knxproject']= {}
-    cknxproject = config['knxproject']
-    cknxproject['path']=r'.\myknxproject.knxproj'
-
-    config['RegexPattern']= {}
-    cregpatt = config['RegexPattern']
-    cregpatt['item_Floor']=default_pattern_item_Floor
-    cregpatt['item_Floor_nameshort']=default_pattern_item_Floor_nameshort
-    cregpatt['item_Room']=default_pattern_item_Room
-
-    config['defaults']= {}
-    cdefaults = config['defaults']
-    cdefaults['unkown_floorname']=default_Floor
-    cdefaults['unkown_roomname']=default_Room
-    cdefaults['addMissingItems']=default_addMissingItems
-    cdefaults['item_Floor_nameshort_prefix']=default_item_Floor_nameshort_prefix
-
-    with open('example.ini', 'w') as configfile:
-        config.write(configfile)
-
-config.read('config.ini')
-pattern_item_Room=config['RegexPattern'].get('item_Room',default_pattern_item_Room)
-pattern_item_Floor=config['RegexPattern'].get('item_Floor',default_pattern_item_Floor)
-pattern_floor_nameshort=config['RegexPattern'].get('item_Floor_nameshort',default_pattern_item_Floor_nameshort)
-item_Floor_nameshort_prefix=config['defaults'].get('item_Floor_nameshort_prefix',default_item_Floor_nameshort_prefix)
-unkown_floorname=config['defaults'].get('unkown_floorname',default_Floor)
-unkown_roomname=config['defaults'].get('unkown_roomname',default_Room)
-addMissingItems=config['defaults'].get('addMissingItems',default_addMissingItems)
+pattern_item_Room=config['regexpattern']['item_Room']
+pattern_item_Floor=config['regexpattern']['item_Floor']
+pattern_floor_nameshort=config['regexpattern']['item_Floor_nameshort']
+item_Floor_nameshort_prefix=config['general']['item_Floor_nameshort_prefix']
+item_Room_nameshort_prefix=config['general']['item_Room_nameshort_prefix']
+unkown_floorname=config['general']['unkown_floorname']
+unkown_roomname=config['general']['unkown_roomname']
+addMissingItems=config['general']['addMissingItems']
 
 re_item_Room =re.compile(pattern_item_Room)
 re_item_Floor =re.compile(pattern_item_Floor)
@@ -124,14 +92,14 @@ def createBuilding(project: KNXProject):
                             if not prj_floor['name_short'] == '':
                                 roomNameLong+=prj_floor['name_short']
                             else:
-                                roomNameLong+='=XX'
+                                roomNameLong+=item_Floor_nameshort_prefix+'XX'
                         if resRoom is not None:
                             roomNameLong+=resRoom.group(0)
                             roomNamePlain=str.replace(roomNamePlain,resRoom.group(0),"").strip()
                             prj_room['name_short']=resRoom.group(0)
                         else:
-                            prj_room['name_short']='+RMxx'
-                            roomNameLong+='+RMxx'
+                            prj_room['name_short']=item_Room_nameshort_prefix+'RMxx'
+                            roomNameLong+=item_Room_nameshort_prefix+'RMxx'
                         if roomNamePlain == '':
                             roomNamePlain=room['usage_text']
                         prj_room['Description']=roomNamePlain
@@ -144,7 +112,6 @@ def createBuilding(project: KNXProject):
                 if not prj_floor['Group name']:
                     prj_floor['Group name']=prj_floor['name_short']
     return prj
-
 def getAddresses(project: KNXProject):
     groupaddresses=project['group_addresses']
     if len(groupaddresses)==0:
@@ -259,7 +226,7 @@ def putAddressesInBuilding(building,addresses):
                                  break
         if not found:
             unknown.append(address)
-    if default_addMissingItems:
+    if addMissingItems:
         building[0]["floors"].append({
                     'Description':unkown_floorname,
                     'Group name':unkown_floorname,
@@ -282,7 +249,7 @@ def putAddressesInBuilding(building,addresses):
     return building
 
 def main():
-    logging.basicConfig()
+    logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(description='Reads KNX project file and creates an openhab output for things / items / sitemap')
     parser.add_argument("--file_path", type=Path,
@@ -320,10 +287,7 @@ def main():
 
     ets_to_openhab.house = house[0]["floors"]
     ets_to_openhab.all_addresses = addresses
-    ets_to_openhab.genBuilding()
-    ets_to_openhab.check_unusedAddresses()
-    ets_to_openhab.export_output()
-
+    ets_to_openhab.main()
 
 if __name__ == "__main__":
     main()

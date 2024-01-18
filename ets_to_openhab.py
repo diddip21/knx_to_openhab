@@ -1,10 +1,12 @@
 import csv
-import os
-import json
 import re
+import os
+import logging
+logger = logging.getLogger(__name__)
+from config import config
 
-with open('config.json', encoding='utf8') as f:
-    config = json.load(f)
+pattern_items_Name=config['regexpattern']['items_Name']
+pattern_items_Label=config['regexpattern']['items_Label']
 
 def data_of_name(data, name, suffix,replace=''):
     if isinstance(suffix, str):
@@ -23,20 +25,6 @@ def data_of_name(data, name, suffix,replace=''):
                 if x['Group name'] == name.replace(r,s):
                     return x
     return None
-
-special_char_map = {
-    ord('Ä'):'Ae',
-    ord('Ü'):'Ue',
-    ord('Ö'):'Oe',
-    ord('ä'):'ae',
-    ord('ü'):'ue',
-    ord('ö'):'oe',
-    ord('ß'):'ss',
-    ord('é'):'e',
-    ord('è'):'e',
-    ord('á'):'a',
-    ord('à'):'a'
-    }
 
 global house,all_addresses,used_addresses
 house = []
@@ -78,7 +66,7 @@ def read_csvexport():
                 row['Group name'] = row['Sub']
             splitter = row['Address'].split('/')
             if 'ignore' in row['Description']:
-                print("ignoreflag in description for: " + row['Group name'])
+                logging.debug("ignoreflag in description for: " + row['Group name'])
                 continue
             house[int(splitter[0])]['rooms'][int(splitter[1])]['Addresses'].append(row)
             all_addresses.append(row)
@@ -113,9 +101,10 @@ def genBuilding():
                 if group_channel:
                     if group_channel != y["channel"]:
                         continue
-                if group_text:
-                    if group_text != y["text"]:
-                        continue                
+                else:
+                    if group_text:
+                        if group_text != y["text"]:
+                            continue                
                 if y["function_text"] in config_functiontexts:
                     search_address = [x for x in all_addresses if (x["Address"] in y['group_address_links'])]
                     if len(search_address)==1:
@@ -155,6 +144,7 @@ def genBuilding():
         items += f"Group   map{floorNr}   \"{floorName}\" {icon}  {semantic} {synonyms} \n" # {location}  \n" # {visibility}
         sitemap += f"Frame label=\"{floorName}\" {{\n"
         roomNr=0
+        logging.debug(f"Floor: {floorName}")
         for room in floor['rooms']:
             roomNr+=1
             roomName = room['Group name']
@@ -183,7 +173,7 @@ def genBuilding():
             group = ""
 
             addresses = room['Addresses']
-
+            logging.debug(f"Room: {roomName} and {len(addresses)} Adresses")
             # the loop has to be executed twice.
             # - during the first run, all GAs are processed which can have a reference to another GA (e.g. a switch with status feedback)
             #   and also all GAs which can not have a reference to another GA. (e.g. temperatures)
@@ -196,8 +186,8 @@ def genBuilding():
                     #if run > 0:
                     if address['Address'] in used_addresses:
                         continue
-                    if address['Address'] == '1/1/12':
-                        print("Adress found - Breakpoint?")
+                    if address['Address'] == '3/0/8':
+                        logger.debug("Adress found - Breakpoint?")
 
                     used = False
                     auto_add = False
@@ -220,8 +210,8 @@ def genBuilding():
 
                     shortened_name = ' '.join(address['Group name'].replace(room['Group name'],'').replace(floor['Group name'],'').split())
                     item_name = f"i_{cnt}_{floor['Group name']}_{room['Group name']}_{shortened_name}"
-                    item_name = item_name.translate(special_char_map)
-                    item_name = re.sub('[^A-Za-z0-9_]+', '', item_name)
+                    item_name = item_name.translate(config['special_char_map'])
+                    item_name = re.sub(pattern_items_Name, '', item_name)
                     
                     if run == 0:
                         # dimmer
@@ -273,7 +263,7 @@ def genBuilding():
                                 semantic_info = "[\"Light\"]"
                                 item_icon = "light"
                             else:
-                                print(f"incomplete dimmer: {basename} / {address['Address']}")
+                                logger.warn(f"incomplete dimmer: {basename} / {address['Address']}")
 
                         # rollos / jalousien
                         elif address['DatapointType'] == 'DPST-1-8':
@@ -324,7 +314,7 @@ def genBuilding():
                                 semantic_info = "[\"Blinds\"]"
                                 item_icon = "rollershutter"
                             else:
-                                print(f"incomplete rollershutter: {basename}")
+                                logging.warn(f"incomplete rollershutter: {basename}")
 
                         # Heizung
                         elif address['DatapointType'] in ('DPST-5-010','DPST-20-102'):
@@ -359,7 +349,7 @@ def genBuilding():
                                 metadata=", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]"                        
 
                             else:
-                                print(f"incomplete heating: {basename}")
+                                logging.warn(f"incomplete heating: {basename}")
 
                     #  erst im zweiten durchlauf prüfen damit integrierte Schaltobjekte (z.B. dimmen) vorher schon erkannt werden.
                     if run > 0:
@@ -597,7 +587,7 @@ def genBuilding():
                                 item_icon = "movecontrol"
                                 sitemap_type = "Selection"
                             else:
-                                print(f"no mapping for scene {address['Address']} {address['Group name']} ")
+                                logging.info(f"no mapping for scene {address['Address']} {address['Group name']} ")
                             #else:
                             #    items += f"Number        {item_name}         \"{lovely_name} [%d]\"                <movecontrol>          {{ channel=\"knx:device:bridge:generic:{item_name}\" }}\n"
                             #    group += f"        Selection item={item_name} label=\"{lovely_name}\"  {visibility}\n"
@@ -660,7 +650,7 @@ def genBuilding():
                         for drop in config['defines']['drop_words']:
                                 item_label_short = item_label_short.replace(drop,'')
                         # remove leading "[....]@"
-                        item_label_short = re.sub('^\[\w*\]\@', '', item_label_short)
+                        item_label_short = re.sub(pattern_items_Label, '', item_label_short)
                         item_label_short = ' '.join(item_label_short.split())
                         if item_label_short != '':
                             item_label = item_label_short
@@ -708,10 +698,10 @@ def check_unusedAddresses():
                 lovely_name = ' '.join(address['Group name'].replace(floor['Group name'],'').replace(room['Group name'],'').split())
 
                 item_name = f"i_{cnt}_{floor['Group name']}_{room['Group name']}_{lovely_name}".replace('/','_').replace(' ','_')
-                item_name = item_name.translate(special_char_map)
+                item_name = item_name.translate(config['special_char_map'])
 
                 if not (address['Address'] in used_addresses):
-                    print(f"unused: {address['Address']}: {address['Group name']} with type {address['DatapointType']}")
+                    logging.info(f"unused: {address['Address']}: {address['Group name']} with type {address['DatapointType']}")
                     
 def export_output():
     global items,sitemap,things
@@ -722,17 +712,14 @@ def export_output():
     os.makedirs(os.path.dirname(config['things_path']), exist_ok=True)
     open(config['things_path'],'w', encoding='utf8').write(things)
     # export items:
-    items = 'Group           Home                  "Our Home"                                     [\"Location\"]\n' + items
+    items_template =  open('items.template','r').read()
+    items = items_template.replace('###items###', items)
     os.makedirs(os.path.dirname(config['items_path']), exist_ok=True)
     open(config['items_path'],'w', encoding='utf8').write(items)
-
     # export sitemap:
-    sitemap_template_file = 'sitemap.template'
-    if os.path.isfile(f"private_{sitemap_template_file}"):
-        sitemap_template_file = f"private_{sitemap_template_file}"
-    sitemap_template = open(sitemap_template_file,'r').read()
+    sitemap_template = open('sitemap.template','r').read()
     sitemap = sitemap_template.replace('###sitemap###', sitemap)
-    sitemap = sitemap.replace('###selections###', selections)
+    #sitemap = sitemap.replace('###selections###', selections)
     os.makedirs(os.path.dirname(config['sitemaps_path']), exist_ok=True)
     open(config['sitemaps_path'],'w', encoding='utf8').write(sitemap)
 
@@ -757,7 +744,6 @@ def export_output():
     open(config['influx_path'],'w', encoding='utf8').write(persist)
 
 
-    print(fensterkontakte)
     fenster_rule = ''
     for i in fensterkontakte:
         fenster_rule += f'var save_fk_count_{i["item_name"]} = 0 \n'
@@ -780,11 +766,12 @@ def export_output():
     fenster_rule += '''
     end
     '''
-    os.makedirs(os.path.dirname('openhab/rules/fenster.rules'), exist_ok=True)
-    open('openhab/rules/fenster.rules','w', encoding='utf8').write(fenster_rule)
+    os.makedirs(os.path.dirname(config['fenster_path']), exist_ok=True)
+    open(config['fenster_path'],'w', encoding='utf8').write(fenster_rule)
 
 def main():
-    read_csvexport()
+    logging.basicConfig()
+    #read_csvexport()
     genBuilding()
     check_unusedAddresses()
     export_output()

@@ -1,13 +1,26 @@
 {
-    "ets_export": "C:\\Users\\Username\\Nextcloud\\LogiHome\\charne.csv",
+    "ets_export": "",
     "things_path": "openhab/things/knx.things",
     "items_path": "openhab/items/knx.items",
     "sitemaps_path": "openhab/sitemaps/knx.sitemap",
     "influx_path": "openhab/persistence/influxdb.persist",
+    "fenster_path": "openhab/rules/fenster.rules",
     "transform_dir_path": "openhab/transform",
     "general": {
         "FloorNameFromDescription": true,
-        "RoomNameFromDescription": true
+        "RoomNameFromDescription": true,
+        "addMissingItems": true,
+        "unkown_floorname": "unkonwn",
+        "unkown_roomname": "unkonwn",
+        "item_Floor_nameshort_prefix": "=",
+        "item_Room_nameshort_prefix": "+"
+    },
+    "regexpattern": {
+        "item_Floor": "=[A-Z]+",
+        "item_Floor_nameshort": "^[a-zA-Z]{1,5}$",
+        "item_Room": "\\++[A-Z].[0-9]+",
+        "items_Name": "[^A-Za-z0-9_]+",
+        "items_Label": "^\\[\\w*\\]\\@"
     },
     "defines": {
         "switch": {
@@ -69,7 +82,8 @@
                 ":(Jalousie Auf/Ab)",
                 ":(Rolladen Auf/Ab)",
                 "Rollladen Auf/Ab",
-                "Jalousie Auf/Ab"
+                "Jalousie Auf/Ab",
+                "Jalousie Auf /Ab"
             ],
             "stop_suffix": [
                 "Stop",
@@ -77,7 +91,8 @@
                 "Lamellen",
                 ":(Lamellenverstellung/Stop)",
                 ":(Stop)",
-                "Stopp"
+                "Stopp",
+                "Lamellenverstellung / Stopp"
             ],
             "absolute_position_suffix": [
                 "absolute Position",

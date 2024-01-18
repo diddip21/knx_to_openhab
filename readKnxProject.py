@@ -1,4 +1,3 @@
-readDump=True
 #pip install xknxproject
 #pip install git+https://github.com/XKNX/xknxproject.git
 
@@ -14,6 +13,10 @@ logger = logging.getLogger(__name__)
 import re, json
 import configparser
 config = configparser.ConfigParser()
+from pathlib import Path
+import argparse
+import tkinter as tk
+from tkinter import filedialog
 
 
 default_Floor="unkonwn"
@@ -214,7 +217,17 @@ def getAddresses(project: KNXProject):
                 laddress["Room"]=unkown_roomname
             laddress["DatapointType"] = "DPST-{}-{}".format(address["dpt"]["main"],address["dpt"]["sub"])  if address["dpt"]["sub"] else "DPT-{}".format(address["dpt"]["main"]) 
     return _addresses            
-
+def _getSensorCoFromList(cos):
+    if "communication_object" in cos:
+        for co in cos["communication_object"]:
+            if "flags" in co:
+                if "read" in co["flags"]:
+                    if co["flags"]["read"] == True:
+                        return co
+                if "transmit" in co["flags"]:
+                    if co["flags"]["transmit"] == True:
+                        return co
+    return None
 def putAddressesInBuilding(building,addresses):
     if len(building)==0:
         raise ValueError("'building' is Empty.")
@@ -223,7 +236,8 @@ def putAddressesInBuilding(building,addresses):
     unknown =[]
     for address in addresses:
         found=False
-        #TODO: match address co (read=true) with room devices 
+        read_co = _getSensorCoFromList(address)
+        #read_co=None
         for itembuilding in building:
             for floor in itembuilding["floors"]:
                 if floor["name_short"] == address["Floor"]:
@@ -234,6 +248,15 @@ def putAddressesInBuilding(building,addresses):
                             room["Addresses"].append(address)
                             found=True
                             break
+        if not found:
+            if read_co:
+                for floor in itembuilding["floors"]:
+                    for room in floor["rooms"]:
+                        if 'devices' in room:
+                            if read_co['device_address'] in room['devices']:
+                                 room["Addresses"].append(address)
+                                 found=True
+                                 break
         if not found:
             unknown.append(address)
     if default_addMissingItems:
@@ -261,14 +284,31 @@ def putAddressesInBuilding(building,addresses):
 def main():
     logging.basicConfig()
 
-    if readDump:
+    parser = argparse.ArgumentParser(description='Reads KNX project file and creates an openhab output for things / items / sitemap')
+    parser.add_argument("--file_path", type=Path,
+                        help='Path to the input knx project.')
+    parser.add_argument("--knxPW", type=str, help="Password for knxproj-File if protected")
+    parser.add_argument("--readDump", action="store_true", 
+                        help="Reading KNX Project from .json Dump") 
+    pargs = parser.parse_args()
+    if pargs.file_path is None:
+        root = tk.Tk()
+        root.withdraw()
+        file_path = filedialog.askopenfilename()
+        if file_path == "":
+            raise SystemExit
+        pargs.file_path = Path(file_path)
+        if pargs.file_path.suffix == ".json":
+            pargs.readDump = True
+
+    if pargs.readDump:
         project: KNXProject
-        with open("tests/Charne.knxproj.json", encoding="utf-8") as f:
+        with open(pargs.file_path, encoding="utf-8") as f:
             project = json.load(f)
     else:
         knxproj: XKNXProj = XKNXProj(
-            path=r"tests/Charne.knxproj",
-            #password="password",  # optional
+            path=pargs.file_path,
+            password=pargs.knxPW,  # optional
             language="de-DE",  # optional
         )
         project: KNXProject = knxproj.parse()

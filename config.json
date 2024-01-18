@@ -87,7 +87,8 @@
                 "Status",
                 "Rückmeldung",
                 ":(Status Absolute Position)",
-                ":(Status aktuelle Position)"
+                ":(Status aktuelle Position)",
+                "Status aktuelle Position"
             ],
             "drop": [
                 "Status Richtung",

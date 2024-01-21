@@ -10,8 +10,8 @@
         "FloorNameFromDescription": true,
         "RoomNameFromDescription": true,
         "addMissingItems": true,
-        "unkown_floorname": "unkonwn",
-        "unkown_roomname": "unkonwn",
+        "unknown_floorname": "unkonwn",
+        "unknown_roomname": "unkonwn",
         "item_Floor_nameshort_prefix": "=",
         "item_Room_nameshort_prefix": "+"
     },

@@ -73,42 +73,67 @@ def read_csvexport():
 
 def genBuilding():
     def getCoByFunctionText(cos,config_functiontexts,checkwriteflag=True):
+        """
+        Diese Funktion sucht in einer Liste von Kommunikationsobjekten (cos) nach einem bestimmten Funktions-Text.
+
+        Args:
+            cos (list): Eine Liste von Kommunikationsobjekten.
+            config_functiontexts (list): Eine Liste von Funktions-Texten, die gesucht werden sollen.
+            checkwriteflag (bool): Ein optionaler Parameter, der angibt, ob das 'write'-Flag überprüft werden soll. Standardmäßig True.
+
+        Returns:
+            dict or None: Das gefundene Kommunikationsobjekt oder None, wenn keines gefunden wurde.
+        """
+        # Überprüfen, ob Kommunikationsobjekte vorhanden sind
         if "communication_object" in cos:
             for co in cos["communication_object"]:
+                 # Überprüfen, ob das 'write'-Flag überprüft werden soll und ob es aktiviert ist
                  if checkwriteflag:
                      if "flags" in co:
                          if "write" in co["flags"]:
                              if co["flags"]["write"] != True:
                                  continue
+                 # Überprüfen, ob der Funktions-Text in der Konfiguration vorhanden ist
                  if co["function_text"] in config_functiontexts:
                      return co
         return None        
-    def getFromMultiCo(cos,config_functiontexts):
-        if "communication_object" in cos:
-            for co in cos["communication_object"]:
-                itemco=getFromDco(co,config_functiontexts)
-                if itemco is not None:
-                    return itemco
-        return None
     def getFromDco(co,config_functiontexts):
-        # use "channel" for groups alternative "text"
+        """
+        Diese Funktion sucht in einem Kommunikationsobjekt (co) nach einem Funktions-Text und filtert nach Gruppenzugehörigkeit entweder über die Channels oder über den 'text'.
+
+        Args:
+            co (dict): Ein einzelnes Kommunikationsobjekt.
+            config_functiontexts (list): Eine Liste von Funktions-Texten, die gesucht werden sollen.
+
+        Returns:
+            dict or None: Das gefundene Kommunikationsobjekt oder None, wenn keines gefunden wurde.
+        """        
+        # Verwende "channel" für die Gruppierung oder alternativ "text"
         if "channel" in co:
             group_channel = co["channel"]
         if "text" in co:
             group_text = co["text"]
+        
+        # Überprüfen, ob "device_communication_objects" im Kommunikationsobjekt vorhanden ist
         if "device_communication_objects" in co:
             for y in co["device_communication_objects"]:
+                # Überprüfen, ob der Kanal übereinstimmt (falls vorhanden)
                 if group_channel:
                     if group_channel != y["channel"]:
                         continue
                 else:
+                    # Überprüfen, ob der Text übereinstimmt (falls vorhanden)
                     if group_text:
                         if group_text != y["text"]:
-                            continue                
+                            continue
+                # Überprüfen, ob der Funktions-Text in der Konfiguration vorhanden ist
                 if y["function_text"] in config_functiontexts:
+                    # Suche nach der Adresse, die mit den Gruppenadressen verknüpft ist
                     search_address = [x for x in all_addresses if (x["Address"] in y['group_address_links'])]
+                    # Wenn genau eine Adresse gefunden wurde, gib sie zurück
                     if len(search_address)==1:
                         return search_address[0]
+                    # Wenn mehrere Adressen gefunden wurden, wähle die mit den wenigsten Kommunikationsobjekten
                     elif len(search_address) > 1:
                         lowLenCo = 99
                         lowCo=None
@@ -148,6 +173,7 @@ def genBuilding():
         for room in floor['rooms']:
             roomNr+=1
             roomName = room['Group name']
+            # Überprüfe, ob der Raumname aus der Beschreibung genommen werden soll
             if config['general']['RoomNameFromDescription'] and room['Description'] != '':
                 roomName = room['Description']
             roomNameOrig = roomName
@@ -406,158 +432,79 @@ def genBuilding():
                     # do this only after items with multiple addresses are processed:
                     # e.g. the state datapoint could be an own thing or the feedback from a switch or so
                     if run > 0:
-                        # temperature
-                        if address['DatapointType'] == 'DPST-9-1':
-                            auto_add = True
-                            item_type = "Number:Temperature"
-                            thing_address_info = f"ga=\"9.001:{address['Address']}\""
-                            item_label = f"{lovely_name}"
-                            metadata=", stateDescription=\"\"[pattern=\"%.1f %unit%\"]"
-
-                            semantic_info = "[\"Measurement\", \"Temperature\"]"
-                            if 'Soll' in lovely_name:
-                                semantic_info = "[\"Setpoint\", \"Temperature\"]"
-                            
-                            item_icon = "temperature" 
-
-                        # humidity
-                        if address['DatapointType'] == 'DPST-9-7':
-                            auto_add = True
-                            item_type = "Number:Dimensionless"
-                            thing_address_info = f"ga=\"9.001:{address['Address']}\""
-                            item_label = f"{lovely_name}"
-                            metadata=", unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]"
-
-                            semantic_info = "[\"Measurement\", \"Humidity\"]"
-                            if 'Soll' in lovely_name:
-                                semantic_info = "[\"Setpoint\", \"Humidity\"]"
-                            
-                            item_icon = "humidity" 
-
+                        # Mappings für Datenpunkttypen
+                        datapoint_mappings = {
+                            # Tag / Nacht
+                            'DPST-1-24': {'item_type': 'Switch', 'ga_prefix': '1.024', 'metadata': '','semantic_info':"[\"Control\"]", 'item_icon':"moon"},
+                            # Alarm
+                            'DPST-1-5': {'item_type': 'Switch', 'ga_prefix': '1.005', 'metadata': '','semantic_info':"[\"Alarm\"]", 'item_icon':"alarm"},
+                            # Status
+                            'DPST-1-11': {'item_type': 'Switch', 'ga_prefix': '1.011', 'metadata': '','semantic_info':"[\"Measurement\", \"Status\"]", 'item_icon':"switch"},
+                            # Temperatur
+                            'DPST-9-1': {'item_type': 'Number:Temperature', 'ga_prefix': '9.001', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+                                         'semantic_info':"[\"Measurement\", \"Temperature\"]", 'item_icon':"temperature"},
+                            # Luftfeuchtigkeit
+                            'DPST-9-7': {'item_type': 'Number:Dimensionless', 'ga_prefix': '9.001', 'metadata': ', unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]',
+                                         'semantic_info':"[\"Measurement\", \"Humidity\"]", 'item_icon':"humidity"},
+                            # Fensterkontakt
+                            'DPST-1-19': {'item_type': 'Contact', 'ga_prefix': '1.019', 'metadata': ', unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]',
+                                         'semantic_info':"[\"OpenState\", \"Opening\"]", 'item_icon':"window"},
+                            # Energie
+                            'DPST-13-10': {'item_type': 'Number:Energy', 'ga_prefix': '13.010', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+                                         'semantic_info':"[\"Measurement\", \"Energy\"]", 'item_icon':"batterylevel"},
+                            # Leistung
+                            'DPST-14-56': {'item_type': 'Number:Power', 'ga_prefix': '14.056', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+                                         'semantic_info':"[\"Measurement\", \"Power\"]", 'item_icon':"energy"},
+                            # Strom
+                            'DPST-7-12': {'item_type': 'Number:ElectricCurrent', 'ga_prefix': '7.012', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+                                         'semantic_info':"[\"Measurement\", \"Current\"]", 'item_icon':"energy"},
+                            # Volumen (l)            
+                            'DPST-12-1200': {'item_type': 'Number:Volume', 'ga_prefix': '12.1200', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+                                         'semantic_info':"[\"Measurement\", \"Volume\"]", 'item_icon':"water"},
+                            # String            
+                            'DPST-16-0': {'item_type': 'String', 'ga_prefix': '16.000:', 'metadata': '','semantic_info':"", 'item_icon':"text"},
+                            'DPT-16': {'item_type': 'String', 'ga_prefix': '16.000:', 'metadata': '','semantic_info':"", 'item_icon':"text"},
+                            # Beleuchtungsstärke (Lux)            
+                            'DPST-9-4': {'item_type': 'Number:Illuminance', 'ga_prefix': '9.004', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+                                         'semantic_info':"[\"Measurement\", \"Light\"]", 'item_icon':"sun"},
+                            # Geschwindigkeit (m/s)            
+                            'DPST-9-5': {'item_type': 'Number:Speed', 'ga_prefix': '9.005', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+                                         'semantic_info':"[\"Measurement\", \"Wind\"]", 'item_icon':"wind"},
+                            # Luftqualität (ppm)            
+                            'DPST-9-8': {'item_type': 'Number:Dimensionless', 'ga_prefix': '9.005', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f ppm\"]',
+                                         'semantic_info':"[\"Measurement\"]", 'item_icon':""},
+                            # Prozent
+                            'DPST-5-1': {'item_type': 'Dimmer', 'ga_prefix': '5.001', 'metadata': ', unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]',
+                                         'semantic_info':"[\"Measurement\"]", 'item_icon':""},
+                            # Zeitdifferenz
+                            'DPST-13-100': {'item_type': 'Number:Time', 'ga_prefix': '13.100', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+                                         'semantic_info':"[\"Measurement\", \"Duration\"]", 'item_icon':"time"},
+                            # Datum/Uhrzeit
+                            'DPST-19-1': {'item_type': 'DateTime', 'ga_prefix': '', 'metadata': '', 'semantic_info':"", 'item_icon':"time"},
+                            # Betriebsartvorwahl           
+                            'DPST-20-102': {'item_type': 'Number:Dimensionless', 'ga_prefix': '20.102', 'metadata': ', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]',
+                                         'semantic_info':"[\"HVAC\"]", 'item_icon':"heating_mode"},
+                            'DPST-5-010': {'item_type': 'Number:Dimensionless', 'ga_prefix': '5.010', 'metadata': ', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]',
+                                         'semantic_info':"[\"HVAC\"]", 'item_icon':"heating_mode"},
+                        }
+                        # Iterate über die Mappings
+                        for datapoint_type, mapping_info in datapoint_mappings.items():
+                            if address['DatapointType'] == datapoint_type:
+                                auto_add = True
+                                item_type = mapping_info['item_type']
+                                thing_address_info = f"ga=\"{mapping_info['ga_prefix']}:{address['Address']}\""
+                                item_label = f"{lovely_name}"
+                                metadata=f"{mapping_info['metadata']}"
+                                semantic_info = f"{mapping_info['semantic_info']}"
+                                item_icon = mapping_info['item_icon']
+                                if 'Soll' in lovely_name:
+                                    semantic_info = semantic_info.replace("Measurement","Setpoint")
+                                break
                         # window/door
                         if address['DatapointType'] == 'DPST-1-19':
-                            auto_add = True
-                            item_type = "Contact"
-                            thing_address_info = f"ga=\"1.019:{address['Address']}\""
                             equipment = 'Window'
-                            semantic_info = "[\"OpenState\", \"Opening\"]"
-                            
                             fensterkontakte.append({'item_name': item_name, 'name': address['Group name']})
 
-                        # Arbeit (wh)
-                        if address['DatapointType'] == 'DPST-13-10':
-                            auto_add = True
-                            item_type = "Number:Energy"
-                            thing_address_info = f"ga=\"13.010:{address['Address']}\""
-                            item_label = f"{lovely_name} [%.1f Wh]"
-                            semantic_info = "[\"Measurement\", \"Energy\"]"
-                            item_icon = "batterylevel"
-
-                        # Tag/Nacht
-                        if address['DatapointType'] == 'DPST-1-24':
-                            auto_add = True
-                            item_type = "Switch"
-                            thing_address_info = f"ga=\"1.024:{address['Address']}\""
-                            item_label = f"{lovely_name}"
-                            semantic_info = "[\"Control\"]"
-                            item_icon = "moon"
-
-                        # Alarm
-                        if address['DatapointType'] == 'DPST-1-5':
-                            auto_add = True
-                            item_type = "Switch"
-                            thing_address_info = f"ga=\"1.005:{address['Address']}\""
-                            item_label = f"{lovely_name}"
-                            semantic_info = "[\"Alarm\"]"
-                            item_icon = "alarm"
-
-                        # Leistung (W)
-                        if address['DatapointType'] == 'DPST-14-56':
-                            auto_add = True
-                            item_type = "Number:Power"
-                            thing_address_info = f"ga=\"14.056:{address['Address']}\""
-                            item_label = f"{lovely_name} [%.1f W]"
-                            semantic_info = "[\"Measurement\", \"Power\"]"
-                            item_icon = "energy"
-
-                        # Strom
-                        if address['DatapointType'] == 'DPST-7-12':
-                            auto_add = True
-                            item_type = "Number:ElectricCurrent"
-                            thing_address_info = f"ga=\"7.012:{address['Address']}\""
-                            item_label = f"{lovely_name} [%.1f mA]"
-                            semantic_info = "[\"Measurement\", \"Current\"]"
-                            item_icon = "energy"
-
-                        # Volumen (l)
-                        if address['DatapointType'] == 'DPST-12-1200':
-                            auto_add = True
-                            item_type = "Number:Volume"
-                            thing_address_info = f"ga=\"12.1200:{address['Address']}\""
-                            item_label = f"{lovely_name} [%.0f l]"
-                            semantic_info = "[\"Measurement\", \"Volume\"]"
-                            item_icon = "water"
-
-                        # String
-                        if address['DatapointType'] == 'DPST-16-0' or address['DatapointType'] == 'DPT-16':
-                            auto_add = True
-                            item_type = "String"
-                            thing_address_info = f"ga=\"16.000:{address['Address']}\""
-                            #item_label = f"{lovely_name}"
-                            #semantic_info = ""
-                            item_icon = "text"
-
-                        # Lux
-                        if address['DatapointType'] == 'DPST-9-4':
-                            auto_add = True
-                            item_type = "Number:Illuminance"
-                            thing_address_info = f"ga=\"9.004:{address['Address']}\""
-                            item_label = f"{lovely_name} [%.1f Lux]"
-                            semantic_info = "[\"Measurement\", \"Light\"]"
-                            item_icon = "sun"
-
-                        # Geschwindigkeit m/s
-                        if address['DatapointType'] == 'DPST-9-5':
-                            auto_add = True
-                            item_type = "Number:Speed"
-                            thing_address_info = f"ga=\"9.005:{address['Address']}\""
-                            item_label = f"{lovely_name} [%.1f m/s]"
-                            semantic_info = "[\"Measurement\", \"Wind\"]"
-                            item_icon = "wind"
-
-                        # ppm
-                        if address['DatapointType'] == 'DPST-9-8':
-                            auto_add = True
-                            item_type = "Number:Dimensionless"
-                            thing_address_info = f"ga=\"9.008:{address['Address']}\""
-                            item_label = f"{lovely_name} [%.1f ppm]"
-                            semantic_info = "[\"Measurement\"]"
-
-                        # percent
-                        if address['DatapointType'] == 'DPST-5-1':
-                            auto_add = True
-                            item_type = "Dimmer"
-                            thing_address_info = f"ga=\"5.001:{address['Address']}\""
-                            item_label = f"{lovely_name} [%d %%]"
-                            semantic_info = "[\"Measurement\"]"
-
-                        # Zeitdifferenz 
-                        if address['DatapointType'] == 'DPST-13-100':
-                            auto_add = True
-                            item_type = "Number:Time"
-                            thing_address_info = f"ga=\"13.100:{address['Address']}\""
-                            item_label = f"{lovely_name} [%.1f s]"
-                            semantic_info = "[\"Measurement\", \"Duration\"]"
-                            item_icon = "time"
-
-                        # Datum/Uhrzeit 
-                        if address['DatapointType'] == 'DPST-19-1':
-                            auto_add = True
-                            item_type = "DateTime"
-                            thing_address_info = f"ga=\"{address['Address']}\""
-                            item_label = f"{lovely_name}"
-                            semantic_info = ""
-                            item_icon = "time"
                         # Szene
                         if address['DatapointType'] in ('DPST-17-1','DPST-18-1'):
                             used = True
@@ -598,34 +545,6 @@ def genBuilding():
                         #    used = True
                         #    things += f"Type number        : {item_name}        \"{address['Group name']}\"       [ ga=\"18.001:{address['Address']}\" ]\n"
                         #    items += f"Number        {item_name}         \"{lovely_name} [%d]\"                <sun>  (map{floorNr}_{roomNr})        {{ channel=\"knx:device:bridge:generic:{item_name}\" }}\n"
-
-                        # Status
-                        if address['DatapointType'] == 'DPST-1-11':
-                            auto_add = True
-                            item_type = "Switch"
-                            thing_address_info = f"ga=\"1.011:{address['Address']}\""
-                            item_label = f"{lovely_name}" # [%d]
-                            semantic_info = "[\"Measurement\", \"Status\"]"
-                            item_icon = "switch"
-                        
-                        # Betriebsartvorwahl 
-                        if address['DatapointType'] == 'DPST-20-102':
-                            auto_add = True
-                            item_type = "Number:Dimensionless"
-                            thing_address_info = f"ga=\"20.102:{address['Address']}\""
-                            item_label = f"{lovely_name}"
-                            semantic_info = "[\"HVAC\"]"
-                            item_icon = "heating_mode"
-                            metadata=", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]"
-                        # Betriebsartvorwahl 
-                        if address['DatapointType'] == 'DPST-5-010':
-                            auto_add = True
-                            item_type = "Number:Dimensionless"
-                            thing_address_info = f"ga=\"5.010:{address['Address']}\""
-                            item_label = f"{lovely_name}"
-                            semantic_info = "[\"HVAC\"]"
-                            item_icon = "heating_mode"
-                            metadata=", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]"                        
 
                     # TODO: get rid of this
                     if used:

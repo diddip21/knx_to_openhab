@@ -28,6 +28,9 @@ there are some addons based on the description field of the GA in ETS. Multiple 
 
 ## Processed types:
 ### Components determined only by GA
+
+DPT Types [DPTTypes](https://github.com/openhab/openhab-addons/blob/main/bundles/org.openhab.binding.knx/doc/dpt.txt)
+Numbers are now member of [UoM](https://www.openhab.org/docs/concepts/units-of-measurement.html#implementing-uom)
 - Temperature based on Datatype
 - Humidity  based on Datatype
 - Window Contact based on Datatype 1.019

@@ -580,6 +580,8 @@ def genBuilding():
                             item_icon = ""
 
                         item_label = item_label.replace(roomNameOrig, roomName)
+                        item_label = re.sub('\[.*\]', '', item_label)
+                        item_label = re.sub('\|.*\:', '', item_label)
 
                         thing_type = item_type.lower().split(":")[0]
                         things += f"Type {thing_type}    :   {item_name}   \"{address['Group name']}\"   [ {thing_address_info} ]\n"

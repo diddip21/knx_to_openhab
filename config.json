@@ -41,10 +41,28 @@
                 "Status Aktorkanal",
                 "HCL Status"
             ],
-            "poweroutlet_name": "Steckdose",
-            "speaker_name": "Audio",
-            "light_name": "Licht",
-            "heating_name": "Heizen"
+            "change_metadata":{
+                "Licht":{
+                    "semantic_info" : "[\"Control\", \"Light\"]",
+                    "equipment" : "Lightbulb",
+                    "item_icon" : "light"                   
+                },
+                "Steckdose":{
+                    "semantic_info" : "[\"Control\", \"Switch\"]",
+                    "equipment" : "PowerOutlet",
+                    "item_icon" : "poweroutlet"   
+                },
+                "Audio":{
+                    "semantic_info" : "[\"Control\", \"Switch\"]",
+                    "equipment" : "Speaker",
+                    "item_icon" : "soundvolume"                   
+                },
+                "Heizen":{
+                    "semantic_info" : "[\"Heating\", \"Switch\"]",
+                    "equipment" : "HVAC",
+                    "item_icon" : "radiator"                   
+                }
+            }
         },
         "dimmer": {
             "absolut_suffix": [
@@ -78,7 +96,13 @@
                 "Dimmen relativ",
                 ":(Heller/Dunkler)"
             ],
-            "drop": []
+            "drop": [],
+            "change_metadata":{
+                "Lamellenposition":{
+                    "semantic_info" : "[\"Blinds\"]",
+                    "item_icon" : "rollershutter"                   
+                }
+            }
         },
         "rollershutter": {
             "up_down_suffix": [

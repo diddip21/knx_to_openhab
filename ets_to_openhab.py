@@ -269,9 +269,10 @@ def gen_building():
                     address = room['Addresses'][i]
                     # in the second run: only process not already used addresses
                     #if run > 0:
-                    if address['Address'] in used_addresses:
+                    if not any(item['Address'] == address['Address'] for item in all_addresses):
+                    #if address['Address'] not in all_addresses:
                         continue
-                    if address['Address'] == '3/1/83':
+                    if address['Address'] == '1/1/26':
                         logger.debug("Adress found - Breakpoint?")
 
                     used = False
@@ -281,11 +282,13 @@ def gen_building():
                     sitemap_type = 'Default'
                     mappings = ''
                     metadata = ''
+                    semantic_info=''
                     #lovely_name = ' '.join(address['Group name'].replace(house[floor_nr]['rooms'][room_nr]['Group name'],'').replace(house[floor_nr]['Group name'],'').split())
                     lovely_name = address['Group name']
                     item_label = lovely_name
                     descriptions = address['Description'].split(';')
                     equipment = ''
+                    define=None
 
                     #print(f"--- processing: {lovely_name}")
                     #print(address)
@@ -300,38 +303,40 @@ def gen_building():
                     if run == 0:
                         # dimmer
                         if address['DatapointType'] == 'DPST-5-1':
-                            bol = [x for x in config['defines']['dimmer']['absolut_suffix'] if x in address['Group name']]
-                            co = get_co_by_functiontext(address,config['defines']['dimmer']['absolut_suffix'])
+                            define=config['defines']['dimmer']
+                            bol = [x for x in define['absolut_suffix'] if x in address['Group name']]
+                            co = get_co_by_functiontext(address,define['absolut_suffix'])
                             if not bool(bol) and not co:
                                 continue
 
-                            basename = address['Group name']#.replace(config['defines']['dimmer']['absolut_suffix'],'')
-                            dimmwert_status =data_of_name(all_addresses, basename, config['defines']['dimmer']['status_suffix'],config['defines']['dimmer']['absolut_suffix'])
+                            basename = address['Group name']
+                            dimmwert_status =data_of_name(all_addresses, basename, define['status_suffix'],define['absolut_suffix'])
                             if not dimmwert_status and co:
-                                dimmwert_status=get_address_from_dco(co,config['defines']['dimmer']['status_suffix'])
-                            for drop_name in config['defines']['dimmer']['drop']:
-                                drop_addr = data_of_name(all_addresses, basename, drop_name,config['defines']['dimmer']['absolut_suffix'])
+                                dimmwert_status=get_address_from_dco(co,define['status_suffix'])
+                            for drop_name in define['drop']:
+                                drop_addr = data_of_name(all_addresses, basename, drop_name,define['absolut_suffix'])
                                 if drop_addr:
                                     used_addresses.append(drop_addr['Address'])
+                            relative_option=''
                             switch_option = ''
                             switch_option_status = ''
                             if dimmwert_status:
                                 used = True
                                 used_addresses.append(dimmwert_status['Address'])
-                                relative_command = data_of_name(all_addresses, basename, config['defines']['dimmer']['relativ_suffix'],config['defines']['dimmer']['absolut_suffix'])
+                                relative_command = data_of_name(all_addresses, basename, define['relativ_suffix'],define['absolut_suffix'])
                                 if not relative_command and co:
-                                    relative_command=get_address_from_dco(co,config['defines']['dimmer']['relativ_suffix'])
-                                switch_command = data_of_name(all_addresses, basename, config['defines']['dimmer']['switch_suffix'],config['defines']['dimmer']['absolut_suffix'])
+                                    relative_command=get_address_from_dco(co,define['relativ_suffix'])
+                                switch_command = data_of_name(all_addresses, basename, define['switch_suffix'],define['absolut_suffix'])
                                 if not switch_command and co:
-                                    switch_command=get_address_from_dco(co,config['defines']['dimmer']['switch_suffix'])
+                                    switch_command=get_address_from_dco(co,define['switch_suffix'])
                                 if relative_command:
                                     used_addresses.append(relative_command['Address'])
                                     relative_option = f", increaseDecrease=\"{relative_command['Address']}\""
                                 if switch_command:
                                     used_addresses.append(switch_command['Address'])
-                                    switch_status_command = data_of_name(all_addresses, basename, config['defines']['dimmer']['switch_status_suffix'],config['defines']['dimmer']['absolut_suffix'])
+                                    switch_status_command = data_of_name(all_addresses, basename, define['switch_status_suffix'],define['absolut_suffix'])
                                     if not switch_status_command and co:
-                                        switch_status_command=get_address_from_dco(co,config['defines']['dimmer']['switch_status_suffix'])
+                                        switch_status_command=get_address_from_dco(co,define['switch_status_suffix'])
                                     if switch_status_command:
                                         used_addresses.append(switch_status_command['Address'])
                                         switch_option_status = f"+<{switch_status_command['Address']}"
@@ -350,16 +355,17 @@ def gen_building():
 
                         # rollos / jalousien
                         elif address['DatapointType'] == 'DPST-1-8':
-                            bol = [x for x in config['defines']['rollershutter']['up_down_suffix'] if x in address['Group name']]
-                            co = get_co_by_functiontext(address,config['defines']['rollershutter']['up_down_suffix'])
+                            define=config['defines']['rollershutter']
+                            bol = [x for x in define['up_down_suffix'] if x in address['Group name']]
+                            co = get_co_by_functiontext(address,define['up_down_suffix'])
                             if not bool(bol) and not co:
                                 continue
 
-                            basename = address['Group name'] #.replace(config['defines']['rollershutter']['up_down_suffix'],'')
+                            basename = address['Group name'] #.replace(define['up_down_suffix'],'')
                             fahren_auf_ab = address
                             #Status Richtung nicht in verwendung durch openhab
-                            for drop_name in config['defines']['rollershutter']['drop']:
-                                drop_addr = data_of_name(all_addresses, basename, drop_name,config['defines']['rollershutter']['up_down_suffix'])
+                            for drop_name in define['drop']:
+                                drop_addr = data_of_name(all_addresses, basename, drop_name,define['up_down_suffix'])
                                 if drop_addr:
                                     used_addresses.append(drop_addr['Address'])
                             option_stop =''
@@ -368,18 +374,18 @@ def gen_building():
                             option_position_status=''
                             if fahren_auf_ab:
                                 used_addresses.append(fahren_auf_ab['Address'])
-                                fahren_stop = data_of_name(all_addresses, basename, config['defines']['rollershutter']['stop_suffix'],config['defines']['rollershutter']['up_down_suffix'])
+                                fahren_stop = data_of_name(all_addresses, basename, define['stop_suffix'],define['up_down_suffix'])
                                 if not fahren_stop and co:
-                                    fahren_stop=get_address_from_dco(co,config['defines']['rollershutter']['stop_suffix'])
+                                    fahren_stop=get_address_from_dco(co,define['stop_suffix'])
                                 if fahren_stop:
                                     used_addresses.append(fahren_stop['Address'])
                                     option_stop = f", stopMove=\"{fahren_stop['Address']}\""
-                                absolute_position = data_of_name(all_addresses, basename, config['defines']['rollershutter']['absolute_position_suffix'],config['defines']['rollershutter']['up_down_suffix'])
-                                absolute_position_status = data_of_name(all_addresses, basename, config['defines']['rollershutter']['status_suffix'],config['defines']['rollershutter']['up_down_suffix'])
+                                absolute_position = data_of_name(all_addresses, basename, define['absolute_position_suffix'],define['up_down_suffix'])
+                                absolute_position_status = data_of_name(all_addresses, basename, define['status_suffix'],define['up_down_suffix'])
                                 if not absolute_position and co:
-                                    absolute_position=get_address_from_dco(co,config['defines']['rollershutter']['absolute_position_suffix'])
+                                    absolute_position=get_address_from_dco(co,define['absolute_position_suffix'])
                                 if not absolute_position_status and co:
-                                    absolute_position_status=get_address_from_dco(co,config['defines']['rollershutter']['status_suffix'])
+                                    absolute_position_status=get_address_from_dco(co,define['status_suffix'])
                                 if absolute_position or absolute_position_status:
                                     if absolute_position:
                                         used_addresses.append(absolute_position['Address'])
@@ -403,20 +409,19 @@ def gen_building():
 
                         # Heizung
                         elif address['DatapointType'] in ('DPST-5-010','DPST-20-102'):
-                            if address['Address'] in used_addresses:
-                                continue
-                            bol = [x for x in config['defines']['heating']['level_suffix'] if x in address['Group name']]
-                            co = get_co_by_functiontext(address,config['defines']['heating']['level_suffix'])
+                            define=config['defines']['heating']
+                            bol = [x for x in define['level_suffix'] if x in address['Group name']]
+                            co = get_co_by_functiontext(address,define['level_suffix'])
                             if not bool(bol) and not co:
                                 continue
-                            basename = address['Group name'] #.replace(config['defines']['rollershutter']['up_down_suffix'],'')
+                            basename = address['Group name'] #.replace(define['up_down_suffix'],'')
                             betriebsmodus = address
                             option_status_betriebsmodus=''
                             if betriebsmodus:
                                 used_addresses.append(betriebsmodus['Address'])
-                                betriebsmodus_status = data_of_name(all_addresses, basename, config['defines']['heating']['status_level_suffix'],config['defines']['heating']['level_suffix'])
+                                betriebsmodus_status = data_of_name(all_addresses, basename, define['status_level_suffix'],define['level_suffix'])
                                 if not betriebsmodus_status and co:
-                                    betriebsmodus_status=get_address_from_dco(co,config['defines']['heating']['status_level_suffix'])
+                                    betriebsmodus_status=get_address_from_dco(co,define['status_level_suffix'])
                                 if betriebsmodus_status:
                                     used_addresses.append(betriebsmodus_status['Address'])
                                     option_status_betriebsmodus = f"+<{betriebsmodus_status['Address']}"
@@ -439,19 +444,20 @@ def gen_building():
                     if run > 0:
                         # Schalten or bool
                         if address['DatapointType'] == 'DPST-1-1' or address['DatapointType'] == 'DPST-1-2':
+                            define=config['defines']['switch']
                             item_type = "Switch"
                             item_label = lovely_name
                             # umschalten (Licht, Steckdosen)
                             # only add in first round, if there is a status GA for feedback
-                            bol = [x for x in config['defines']['switch']['switch_suffix'] if x in address['Group name']]
-                            co = get_co_by_functiontext(address,config['defines']['switch']['switch_suffix'])
+                            bol = [x for x in define['switch_suffix'] if x in address['Group name']]
+                            co = get_co_by_functiontext(address,define['switch_suffix'])
                             if not bool(bol) and not co:
                                 continue
 
                             basename = address['Group name']
-                            status =data_of_name(all_addresses, basename, config['defines']['switch']['status_suffix'],config['defines']['switch']['switch_suffix'])
+                            status =data_of_name(all_addresses, basename, define['status_suffix'],define['switch_suffix'])
                             if not status and co:
-                                status=get_address_from_dco(co,config['defines']['switch']['status_suffix'])
+                                status=get_address_from_dco(co,define['status_suffix'])
                             if status:
                                 #if status['DatapointType'] == 'DPST-1-11':
                                 auto_add = True
@@ -460,25 +466,6 @@ def gen_building():
                             else:
                                 auto_add = True
                                 thing_address_info = f"ga=\"{address['Address']}\""
-                                #semantic_info = "[\"Control\", \"Status\"]"
-
-                            if config['defines']['switch']['light_name'] in address['Group name']:
-                                semantic_info = "[\"Control\", \"Light\"]"
-                                equipment = 'Lightbulb'
-                                item_icon = 'light'
-                            elif config['defines']['switch']['poweroutlet_name'] in address['Group name']:
-                                semantic_info = "[\"Control\", \"Switch\"]"
-                                equipment = 'PowerOutlet'
-                                item_icon = 'poweroutlet'
-                            elif config['defines']['switch']['speaker_name'] in address['Group name']:
-                                semantic_info = "[\"Control\", \"Switch\"]"
-                                equipment = 'Speaker'
-                                item_icon = 'soundvolume'
-                            elif config['defines']['switch']['heating_name'] in address['Group name']:
-                                semantic_info = "[\"Heating\", \"Switch\"]"
-                                equipment = 'HVAC'
-                                item_icon = 'radiator'
-                            else:
                                 semantic_info = "[\"Control\", \"Switch\"]"
                                 item_icon = "switch"
 
@@ -547,6 +534,16 @@ def gen_building():
                         #    items += f"Number        {item_name}         \"{lovely_name} [%d]\"                <sun>  (map{floor_nr}_{room_nr})        {{ channel=\"knx:device:bridge:generic:{item_name}\" }}\n"
 
                     # TODO: get rid of this
+                    if define and 'change_metadata' in define:
+                        for item in define['change_metadata']:
+                            if item in address['Group name']:
+                                for var in define['change_metadata'][item]:
+                                    match var:
+                                        case 'semantic_info':
+                                            semantic_info = define['change_metadata'][item][var]
+                                        case 'item_icon':
+                                            item_icon = define['change_metadata'][item][var]
+
                     if used:
                         used_addresses.append(address['Address'])
 

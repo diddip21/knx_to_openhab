@@ -58,7 +58,7 @@ def create_building(project: KNXProject):
                     'rooms':[]
                     })
                 prj_floor=prj_loc['floors'][-1]
-                logging.debug("Added floor: %s",floor['description'])
+                logging.debug("Added floor: %s %s",floor['description'],floor['name'])
                 res = re_floor_nameshort.search(floor['name'])
                 if res is not None:
                     if res.group(0).startswith(item_Floor_nameshort_prefix):
@@ -74,7 +74,7 @@ def create_building(project: KNXProject):
                     prj_floor['Description']=floor['name']
                 logging.debug("Processed floor: %s",prj_floor['Description'])
                 for room in floor['spaces'].values():
-                    if room['type'] == 'Room':
+                    if room['type'] in ('Room','Corridor','Stairway'):
                         prj_floor['rooms'].append({
                             'Description':room['description'],
                             'Group name':None,
@@ -84,7 +84,7 @@ def create_building(project: KNXProject):
                             'Addresses':[]
                         })
                         prj_room=prj_floor['rooms'][-1]
-                        logging.debug("Added room: %s",room['description'])
+                        logging.debug("Added room: %s %s",room['description'],room['name'])
                         res_floor = re_item_Floor.search(room['name'])
                         res_room = re_item_Room.search(room['name'])
                         room_nameplain = room['name']
@@ -159,6 +159,8 @@ def get_addresses(project: KNXProject):
         raise ValueError("'group_ranges' is Empty.")
     _addresses = []
     for address in group_addresses.values():
+        if address['address']=='6/1/0':
+            logger.warning("Breakpoint!!!")
         ignore = False
 
         # Check for 'ignore' flag in comment

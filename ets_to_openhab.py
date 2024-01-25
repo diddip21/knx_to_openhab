@@ -42,6 +42,62 @@ semantic_cnt = 0
 fensterkontakte = []
 cnt = 0
 
+# Mappings für Datenpunkttypen
+datapoint_mappings = {
+    # Tag / Nacht
+    'DPST-1-24': {'item_type': 'Switch', 'ga_prefix': '1.024', 'metadata': '','semantic_info':"[\"Control\"]", 'item_icon':"moon"},
+    # Alarm
+    'DPST-1-5': {'item_type': 'Switch', 'ga_prefix': '1.005', 'metadata': '','semantic_info':"[\"Alarm\"]", 'item_icon':"alarm"},
+    # Status
+    'DPST-1-11': {'item_type': 'Switch', 'ga_prefix': '1.011', 'metadata': '','semantic_info':"[\"Measurement\", \"Status\"]", 'item_icon':"switch"},
+    # Temperatur
+    'DPST-9-1': {'item_type': 'Number:Temperature', 'ga_prefix': '9.001', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+                    'semantic_info':"[\"Measurement\", \"Temperature\"]", 'item_icon':"temperature"},
+    # Luftfeuchtigkeit
+    'DPST-9-7': {'item_type': 'Number:Dimensionless', 'ga_prefix': '9.001', 'metadata': ', unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]',
+                    'semantic_info':"[\"Measurement\", \"Humidity\"]", 'item_icon':"humidity"},
+    # Fensterkontakt
+    'DPST-1-19': {'item_type': 'Contact', 'ga_prefix': '1.019', 'metadata': ', unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]',
+                    'semantic_info':"[\"OpenState\", \"Opening\"]", 'item_icon':"window"},
+    # Energie
+    'DPST-13-10': {'item_type': 'Number:Energy', 'ga_prefix': '13.010', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+                    'semantic_info':"[\"Measurement\", \"Energy\"]", 'item_icon':"batterylevel"},
+    # Leistung
+    'DPST-14-56': {'item_type': 'Number:Power', 'ga_prefix': '14.056', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+                    'semantic_info':"[\"Measurement\", \"Power\"]", 'item_icon':"energy"},
+    # Strom
+    'DPST-7-12': {'item_type': 'Number:ElectricCurrent', 'ga_prefix': '7.012', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+                    'semantic_info':"[\"Measurement\", \"Current\"]", 'item_icon':"energy"},
+    # Volumen (l)
+    'DPST-12-1200': {'item_type': 'Number:Volume', 'ga_prefix': '12.1200', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+                    'semantic_info':"[\"Measurement\", \"Volume\"]", 'item_icon':"water"},
+    # String
+    'DPST-16-0': {'item_type': 'String', 'ga_prefix': '16.000', 'metadata': '','semantic_info':"", 'item_icon':"text"},
+    'DPT-16': {'item_type': 'String', 'ga_prefix': '16.000', 'metadata': '','semantic_info':"", 'item_icon':"text"},
+    # Beleuchtungsstärke (Lux)
+    'DPST-9-4': {'item_type': 'Number:Illuminance', 'ga_prefix': '9.004', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+                    'semantic_info':"[\"Measurement\", \"Light\"]", 'item_icon':"sun"},
+    # Geschwindigkeit (m/s)
+    'DPST-9-5': {'item_type': 'Number:Speed', 'ga_prefix': '9.005', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+                    'semantic_info':"[\"Measurement\", \"Wind\"]", 'item_icon':"wind"},
+    # Luftqualität (ppm)
+    'DPST-9-8': {'item_type': 'Number:Dimensionless', 'ga_prefix': '9.005', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f ppm\"]',
+                    'semantic_info':"[\"Measurement\"]", 'item_icon':""},
+    # Prozent
+    'DPST-5-1': {'item_type': 'Dimmer', 'ga_prefix': '5.001', 'metadata': ', unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]',
+                    'semantic_info':"[\"Measurement\"]", 'item_icon':""},
+    # Zeitdifferenz
+    'DPST-13-100': {'item_type': 'Number:Time', 'ga_prefix': '13.100', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+                    'semantic_info':"[\"Measurement\", \"Duration\"]", 'item_icon':"time"},
+    # Datum/Uhrzeit
+    'DPST-19-1': {'item_type': 'DateTime', 'ga_prefix': '19.001', 'metadata': '', 'semantic_info':"", 'item_icon':"time"},
+    # Betriebsartvorwahl
+    'DPST-20-102': {'item_type': 'Number:Dimensionless', 'ga_prefix': '20.102', 'metadata': ', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]',
+                    'semantic_info':"[\"HVAC\"]", 'item_icon':"heating_mode"},
+    'DPST-5-010': {'item_type': 'Number:Dimensionless', 'ga_prefix': '5.010', 'metadata': ', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]',
+                    'semantic_info':"[\"HVAC\"]", 'item_icon':"heating_mode"},
+}
+
 def read_csvexport():
     """Reads an ETS csv Export"""
     csvfile = open(config['ets_export'], newline='', encoding='cp1252')
@@ -101,7 +157,7 @@ def gen_building():
                 if co["function_text"] in config_functiontexts:
                     return co
         return None
-    def get_from_dco(co,config_functiontexts):
+    def get_address_from_dco(co,config_functiontexts):
         """
         Diese Funktion sucht in einem Kommunikationsobjekt (co) nach einem Funktions-Text und filtert nach Gruppenzugehörigkeit entweder über die Channels oder über den 'text'.
 
@@ -152,7 +208,7 @@ def gen_building():
     for floor in house:
         floor_nr+=1
         floor_name = floor['Group name']
-        if config['general']['floor_nameFromDescription'] and floor['Description'] != '':
+        if config['general']['FloorNameFromDescription'] and floor['Description'] != '':
             floor_name = floor['Description']
         descriptions = floor['Description'].split(';')
         visibility = ''
@@ -177,7 +233,7 @@ def gen_building():
             room_nr+=1
             room_name = room['Group name']
             # Überprüfe, ob der Raumname aus der Beschreibung genommen werden soll
-            if config['general']['room_nameFromDescription'] and room['Description'] != '':
+            if config['general']['RoomNameFromDescription'] and room['Description'] != '':
                 room_name = room['Description']
             room_nameoriginal = room_name
             descriptions = room['Description'].split(';')
@@ -215,7 +271,7 @@ def gen_building():
                     #if run > 0:
                     if address['Address'] in used_addresses:
                         continue
-                    if address['Address'] == '1/1/158':
+                    if address['Address'] == '3/1/83':
                         logger.debug("Adress found - Breakpoint?")
 
                     used = False
@@ -252,7 +308,7 @@ def gen_building():
                             basename = address['Group name']#.replace(config['defines']['dimmer']['absolut_suffix'],'')
                             dimmwert_status =data_of_name(all_addresses, basename, config['defines']['dimmer']['status_suffix'],config['defines']['dimmer']['absolut_suffix'])
                             if not dimmwert_status and co:
-                                dimmwert_status=get_from_dco(co,config['defines']['dimmer']['status_suffix'])
+                                dimmwert_status=get_address_from_dco(co,config['defines']['dimmer']['status_suffix'])
                             for drop_name in config['defines']['dimmer']['drop']:
                                 drop_addr = data_of_name(all_addresses, basename, drop_name,config['defines']['dimmer']['absolut_suffix'])
                                 if drop_addr:
@@ -264,10 +320,10 @@ def gen_building():
                                 used_addresses.append(dimmwert_status['Address'])
                                 relative_command = data_of_name(all_addresses, basename, config['defines']['dimmer']['relativ_suffix'],config['defines']['dimmer']['absolut_suffix'])
                                 if not relative_command and co:
-                                    relative_command=get_from_dco(co,config['defines']['dimmer']['relativ_suffix'])
+                                    relative_command=get_address_from_dco(co,config['defines']['dimmer']['relativ_suffix'])
                                 switch_command = data_of_name(all_addresses, basename, config['defines']['dimmer']['switch_suffix'],config['defines']['dimmer']['absolut_suffix'])
                                 if not switch_command and co:
-                                    switch_command=get_from_dco(co,config['defines']['dimmer']['switch_suffix'])
+                                    switch_command=get_address_from_dco(co,config['defines']['dimmer']['switch_suffix'])
                                 if relative_command:
                                     used_addresses.append(relative_command['Address'])
                                     relative_option = f", increaseDecrease=\"{relative_command['Address']}\""
@@ -275,7 +331,7 @@ def gen_building():
                                     used_addresses.append(switch_command['Address'])
                                     switch_status_command = data_of_name(all_addresses, basename, config['defines']['dimmer']['switch_status_suffix'],config['defines']['dimmer']['absolut_suffix'])
                                     if not switch_status_command and co:
-                                        switch_status_command=get_from_dco(co,config['defines']['dimmer']['switch_status_suffix'])
+                                        switch_status_command=get_address_from_dco(co,config['defines']['dimmer']['switch_status_suffix'])
                                     if switch_status_command:
                                         used_addresses.append(switch_status_command['Address'])
                                         switch_option_status = f"+<{switch_status_command['Address']}"
@@ -314,16 +370,16 @@ def gen_building():
                                 used_addresses.append(fahren_auf_ab['Address'])
                                 fahren_stop = data_of_name(all_addresses, basename, config['defines']['rollershutter']['stop_suffix'],config['defines']['rollershutter']['up_down_suffix'])
                                 if not fahren_stop and co:
-                                    fahren_stop=get_from_dco(co,config['defines']['rollershutter']['stop_suffix'])
+                                    fahren_stop=get_address_from_dco(co,config['defines']['rollershutter']['stop_suffix'])
                                 if fahren_stop:
                                     used_addresses.append(fahren_stop['Address'])
                                     option_stop = f", stopMove=\"{fahren_stop['Address']}\""
                                 absolute_position = data_of_name(all_addresses, basename, config['defines']['rollershutter']['absolute_position_suffix'],config['defines']['rollershutter']['up_down_suffix'])
                                 absolute_position_status = data_of_name(all_addresses, basename, config['defines']['rollershutter']['status_suffix'],config['defines']['rollershutter']['up_down_suffix'])
                                 if not absolute_position and co:
-                                    absolute_position=get_from_dco(co,config['defines']['rollershutter']['absolute_position_suffix'])
+                                    absolute_position=get_address_from_dco(co,config['defines']['rollershutter']['absolute_position_suffix'])
                                 if not absolute_position_status and co:
-                                    absolute_position_status=get_from_dco(co,config['defines']['rollershutter']['status_suffix'])
+                                    absolute_position_status=get_address_from_dco(co,config['defines']['rollershutter']['status_suffix'])
                                 if absolute_position or absolute_position_status:
                                     if absolute_position:
                                         used_addresses.append(absolute_position['Address'])
@@ -360,7 +416,7 @@ def gen_building():
                                 used_addresses.append(betriebsmodus['Address'])
                                 betriebsmodus_status = data_of_name(all_addresses, basename, config['defines']['heating']['status_level_suffix'],config['defines']['heating']['level_suffix'])
                                 if not betriebsmodus_status and co:
-                                    betriebsmodus_status=get_from_dco(co,config['defines']['heating']['status_level_suffix'])
+                                    betriebsmodus_status=get_address_from_dco(co,config['defines']['heating']['status_level_suffix'])
                                 if betriebsmodus_status:
                                     used_addresses.append(betriebsmodus_status['Address'])
                                     option_status_betriebsmodus = f"+<{betriebsmodus_status['Address']}"
@@ -392,22 +448,19 @@ def gen_building():
                             if not bool(bol) and not co:
                                 continue
 
-                            basename = address['Group name']#.replace(config['defines']['dimmer']['absolut_suffix'],'')
+                            basename = address['Group name']
                             status =data_of_name(all_addresses, basename, config['defines']['switch']['status_suffix'],config['defines']['switch']['switch_suffix'])
                             if not status and co:
-                                status=get_from_dco(co,config['defines']['switch']['status_suffix'])
+                                status=get_address_from_dco(co,config['defines']['switch']['status_suffix'])
                             if status:
                                 #if status['DatapointType'] == 'DPST-1-11':
                                 auto_add = True
                                 used_addresses.append(status['Address'])
-                                thing_address_info = f"ga=\"{address['Address']}+{status['Address']}\""
-
-                            # in the second run, we accept everything ;)
-                            if run > 0:
+                                thing_address_info = f"ga=\"{address['Address']}+<{status['Address']}\""
+                            else:
                                 auto_add = True
-                                thing_address_info = f"ga=\"1.001:{address['Address']}\""
-                                #item_label = f"{lovely_name} [%d]"
-                                semantic_info = "[\"Control\", \"Status\"]"
+                                thing_address_info = f"ga=\"{address['Address']}\""
+                                #semantic_info = "[\"Control\", \"Status\"]"
 
                             if config['defines']['switch']['light_name'] in address['Group name']:
                                 semantic_info = "[\"Control\", \"Light\"]"
@@ -434,61 +487,6 @@ def gen_building():
                     # do this only after items with multiple addresses are processed:
                     # e.g. the state datapoint could be an own thing or the feedback from a switch or so
                     if run > 0:
-                        # Mappings für Datenpunkttypen
-                        datapoint_mappings = {
-                            # Tag / Nacht
-                            'DPST-1-24': {'item_type': 'Switch', 'ga_prefix': '1.024', 'metadata': '','semantic_info':"[\"Control\"]", 'item_icon':"moon"},
-                            # Alarm
-                            'DPST-1-5': {'item_type': 'Switch', 'ga_prefix': '1.005', 'metadata': '','semantic_info':"[\"Alarm\"]", 'item_icon':"alarm"},
-                            # Status
-                            'DPST-1-11': {'item_type': 'Switch', 'ga_prefix': '1.011', 'metadata': '','semantic_info':"[\"Measurement\", \"Status\"]", 'item_icon':"switch"},
-                            # Temperatur
-                            'DPST-9-1': {'item_type': 'Number:Temperature', 'ga_prefix': '9.001', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
-                                         'semantic_info':"[\"Measurement\", \"Temperature\"]", 'item_icon':"temperature"},
-                            # Luftfeuchtigkeit
-                            'DPST-9-7': {'item_type': 'Number:Dimensionless', 'ga_prefix': '9.001', 'metadata': ', unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]',
-                                         'semantic_info':"[\"Measurement\", \"Humidity\"]", 'item_icon':"humidity"},
-                            # Fensterkontakt
-                            'DPST-1-19': {'item_type': 'Contact', 'ga_prefix': '1.019', 'metadata': ', unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]',
-                                         'semantic_info':"[\"OpenState\", \"Opening\"]", 'item_icon':"window"},
-                            # Energie
-                            'DPST-13-10': {'item_type': 'Number:Energy', 'ga_prefix': '13.010', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
-                                         'semantic_info':"[\"Measurement\", \"Energy\"]", 'item_icon':"batterylevel"},
-                            # Leistung
-                            'DPST-14-56': {'item_type': 'Number:Power', 'ga_prefix': '14.056', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
-                                         'semantic_info':"[\"Measurement\", \"Power\"]", 'item_icon':"energy"},
-                            # Strom
-                            'DPST-7-12': {'item_type': 'Number:ElectricCurrent', 'ga_prefix': '7.012', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
-                                         'semantic_info':"[\"Measurement\", \"Current\"]", 'item_icon':"energy"},
-                            # Volumen (l)
-                            'DPST-12-1200': {'item_type': 'Number:Volume', 'ga_prefix': '12.1200', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
-                                         'semantic_info':"[\"Measurement\", \"Volume\"]", 'item_icon':"water"},
-                            # String
-                            'DPST-16-0': {'item_type': 'String', 'ga_prefix': '16.000:', 'metadata': '','semantic_info':"", 'item_icon':"text"},
-                            'DPT-16': {'item_type': 'String', 'ga_prefix': '16.000:', 'metadata': '','semantic_info':"", 'item_icon':"text"},
-                            # Beleuchtungsstärke (Lux)
-                            'DPST-9-4': {'item_type': 'Number:Illuminance', 'ga_prefix': '9.004', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
-                                         'semantic_info':"[\"Measurement\", \"Light\"]", 'item_icon':"sun"},
-                            # Geschwindigkeit (m/s)
-                            'DPST-9-5': {'item_type': 'Number:Speed', 'ga_prefix': '9.005', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
-                                         'semantic_info':"[\"Measurement\", \"Wind\"]", 'item_icon':"wind"},
-                            # Luftqualität (ppm)
-                            'DPST-9-8': {'item_type': 'Number:Dimensionless', 'ga_prefix': '9.005', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f ppm\"]',
-                                         'semantic_info':"[\"Measurement\"]", 'item_icon':""},
-                            # Prozent
-                            'DPST-5-1': {'item_type': 'Dimmer', 'ga_prefix': '5.001', 'metadata': ', unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]',
-                                         'semantic_info':"[\"Measurement\"]", 'item_icon':""},
-                            # Zeitdifferenz
-                            'DPST-13-100': {'item_type': 'Number:Time', 'ga_prefix': '13.100', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
-                                         'semantic_info':"[\"Measurement\", \"Duration\"]", 'item_icon':"time"},
-                            # Datum/Uhrzeit
-                            'DPST-19-1': {'item_type': 'DateTime', 'ga_prefix': '', 'metadata': '', 'semantic_info':"", 'item_icon':"time"},
-                            # Betriebsartvorwahl
-                            'DPST-20-102': {'item_type': 'Number:Dimensionless', 'ga_prefix': '20.102', 'metadata': ', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]',
-                                         'semantic_info':"[\"HVAC\"]", 'item_icon':"heating_mode"},
-                            'DPST-5-010': {'item_type': 'Number:Dimensionless', 'ga_prefix': '5.010', 'metadata': ', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]',
-                                         'semantic_info':"[\"HVAC\"]", 'item_icon':"heating_mode"},
-                        }
                         # Iterate über die Mappings
                         for datapoint_type, mapping_info in datapoint_mappings.items():
                             if address['DatapointType'] == datapoint_type:
@@ -589,9 +587,9 @@ def gen_building():
                         things += f"Type {thing_type}    :   {item_name}   \"{address['Group name']}\"   [ {thing_address_info} ]\n"
 
                         root = f"map{floor_nr}_{room_nr}"
-                        if equipment != '':
-                            items += f"Group   equipment_{item_name}   \"{item_label}\"  {item_icon}  ({root})   [\"{equipment}\"]\n"
-                            root = f"equipment_{item_name}"
+                        # if equipment != '':
+                        #     items += f"Group   equipment_{item_name}   \"{item_label}\"  {item_icon}  ({root})   [\"{equipment}\"]\n"
+                        #     root = f"equipment_{item_name}"
 
                         items += f"{item_type}   {item_name}   \"{item_label}\"   {item_icon}   ({root})   {semantic_info}    {{ channel=\"knx:device:bridge:generic:{item_name}\" {metadata}{synonyms} }}\n"
                         group += f"        {sitemap_type} item={item_name} label=\"{item_label}\" {mappings} {visibility}\n"
@@ -600,32 +598,23 @@ def gen_building():
                             #print('influx @ ')
                             #print(address)
                             export_to_influx.append(item_name)
+                    while used_addresses:
+                        a = used_addresses.pop()
+                        found_item = next((item for item in all_addresses if item['Address'] == a), None)
+                        if found_item:
+                            all_addresses.remove(found_item)
 
             if group != '':
                 sitemap += f" {{\n{group}\n    }}\n"
             else:
                 sitemap += "\n "
-        sitemap += "}}\n "
+        sitemap += "}\n "
 
 def check_unused_addresses():
     """Logs all unused addresses for further manual actions"""
     # process all addresses which were not used
-    for floor in house:
-        for room in floor['rooms']:
-            addresses = room['Addresses']
-            for i in range(len(addresses)):
-
-                address = room['Addresses'][i]
-                if 'IGNORE' in address.keys():
-                    continue
-
-                lovely_name = ' '.join(address['Group name'].replace(floor['Group name'],'').replace(room['Group name'],'').split())
-
-                item_name = f"i_{cnt}_{floor['Group name']}_{room['Group name']}_{lovely_name}".replace('/','_').replace(' ','_')
-                item_name = item_name.translate(config['special_char_map'])
-
-                if not address['Address'] in used_addresses:
-                    logger.info("unused: %s: %s with type %s",address['Address'],address['Group name'],address['DatapointType'])
+    for address in all_addresses:
+        logger.info("unused: %s: %s with type %s",address['Address'],address['Group name'],address['DatapointType'])
 
 def export_output():
     """Exports things / items / sitemap / ...  Files"""

@@ -49,14 +49,16 @@
         "dimmer": {
             "absolut_suffix": [
                 "Dimmen absolut",
-                ":(Dimm Wert)"
+                ":(Dimm Wert)",
+                "Absolute Lamellenposition"
             ],
             "status_suffix": [
                 "Rückmeldung Dimmen",
                 "Dimmen Rückmeldung",
                 "Dimmen rm",
                 "Status Dimmwert",
-                ":(Status Dimm Wert)"
+                ":(Status Dimm Wert)",
+                "Status Absolute Lamellenposition"
             ],
             "switch_suffix": [
                 "Schalten",

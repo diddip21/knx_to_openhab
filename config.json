@@ -29,7 +29,8 @@
                 ":(An/Aus)",
                 ":(Schalten)",
                 "Ein/Aus",
-                "Schalten EIN/AUS"
+                "Schalten EIN/AUS",
+                "HCL starten"
             ],
             "status_suffix": [
                 "Status",
@@ -37,7 +38,8 @@
                 "Rückmeldung",
                 ":(RM Schalten)",
                 "Status Ein/Aus",
-                "Status Aktorkanal"
+                "Status Aktorkanal",
+                "HCL Status"
             ],
             "poweroutlet_name": "Steckdose",
             "speaker_name": "Audio",

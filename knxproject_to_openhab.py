@@ -2,19 +2,20 @@
 #pip install git+https://github.com/XKNX/xknxproject.git
 
 """Extract and parse a KNX project file."""
-from xknxproject.models import KNXProject
-from xknxproject import XKNXProj
-
-import ets_to_openhab
-
 import logging
-logger = logging.getLogger(__name__)
-import re, json
-from config import config
-from pathlib import Path
+import re
+import json
 import argparse
 import tkinter as tk
 from tkinter import filedialog
+from pathlib import Path
+from xknxproject.models import KNXProject
+from xknxproject import XKNXProj
+from config import config
+
+import ets_to_openhab
+
+logger = logging.getLogger(__name__)
 
 pattern_item_Room=config['regexpattern']['item_Room']
 pattern_item_Floor=config['regexpattern']['item_Floor']
@@ -29,7 +30,8 @@ re_item_Room =re.compile(pattern_item_Room)
 re_item_Floor =re.compile(pattern_item_Floor)
 re_floor_nameshort =re.compile(pattern_floor_nameshort)
 
-def createBuilding(project: KNXProject):
+def create_building(project: KNXProject):
+    """Creats an Building with all Floors and Rooms"""
     locations = project['locations']
     if len(locations)==0:
         logging.error("'locations' is Empty.")
@@ -45,7 +47,7 @@ def createBuilding(project: KNXProject):
                 'floors':[]
                 })
             prj_loc=prj[-1]
-            logging.debug(f"Added building: {loc['name']}")
+            logging.debug("Added building: %s",loc['name'])
         for floor in loc['spaces'].values():
             if floor['type'] in ('Floor','Stairway','Corridor','BuildingPart'):
                 prj_loc['floors'].append({
@@ -56,7 +58,7 @@ def createBuilding(project: KNXProject):
                     'rooms':[]
                     })
                 prj_floor=prj_loc['floors'][-1]
-                logging.debug(f"Added floor: {floor['description']}")
+                logging.debug("Added floor: %s",floor['description'])
                 res = re_floor_nameshort.search(floor['name'])
                 if res is not None:
                     if res.group(0).startswith(item_Floor_nameshort_prefix):
@@ -70,7 +72,7 @@ def createBuilding(project: KNXProject):
                     prj_floor['name_short']=item_Floor_nameshort_prefix+floor['name']
                 if prj_floor['Description'] == '':
                     prj_floor['Description']=floor['name']
-                logging.debug(f"Processed floor: {prj_floor['Description']}")
+                logging.debug("Processed floor: %s",prj_floor['Description'])
                 for room in floor['spaces'].values():
                     if room['type'] == 'Room':
                         prj_floor['rooms'].append({
@@ -82,47 +84,61 @@ def createBuilding(project: KNXProject):
                             'Addresses':[]
                         })
                         prj_room=prj_floor['rooms'][-1]
-                        logging.debug(f"Added room: {room['description']}")
-                        resFloor = re_item_Floor.search(room['name'])
-                        resRoom = re_item_Room.search(room['name'])
-                        roomNamePlain = room['name']
-                        roomNameLong = ''
-                        if resFloor is not None:
-                            roomNameLong+=resFloor.group(0)
-                            roomNamePlain=str.replace(roomNamePlain,resFloor.group(0),"").strip()
+                        logging.debug("Added room: %s",room['description'])
+                        res_floor = re_item_Floor.search(room['name'])
+                        res_room = re_item_Room.search(room['name'])
+                        room_nameplain = room['name']
+                        room_namelong = ''
+                        if res_floor is not None:
+                            room_namelong+=res_floor.group(0)
+                            room_nameplain=str.replace(room_nameplain,res_floor.group(0),"").strip()
                             if prj_floor['name_short']==floor['name'] or prj_floor['name_short']==item_Floor_nameshort_prefix+floor['name']:
-                                prj_floor['name_short']=resFloor.group(0)
-                                prj_floor['Description']=str.replace(floor['name'],resFloor.group(0),"").strip()
+                                prj_floor['name_short']=res_floor.group(0)
+                                prj_floor['Description']=str.replace(floor['name'],res_floor.group(0),"").strip()
                         else:
                             if not prj_floor['name_short'] == '':
-                                roomNameLong+=prj_floor['name_short']
+                                room_namelong+=prj_floor['name_short']
                             else:
-                                roomNameLong+=item_Floor_nameshort_prefix+'XX'
-                        if resRoom is not None:
-                            roomNameLong+=resRoom.group(0)
-                            roomNamePlain=str.replace(roomNamePlain,resRoom.group(0),"").strip()
-                            prj_room['name_short']=resRoom.group(0)
+                                room_namelong+=item_Floor_nameshort_prefix+'XX'
+                        if res_room is not None:
+                            room_namelong+=res_room.group(0)
+                            room_nameplain=str.replace(room_nameplain,res_room.group(0),"").strip()
+                            prj_room['name_short']=res_room.group(0)
                         else:
                             prj_room['name_short']=item_Room_nameshort_prefix+'RMxx'
-                            roomNameLong+=item_Room_nameshort_prefix+'RMxx'
-                        if roomNamePlain == '':
-                            roomNamePlain=room['usage_text']
-                        prj_room['Description']=roomNamePlain
+                            room_namelong+=item_Room_nameshort_prefix+'RMxx'
+                        if room_nameplain == '':
+                            room_nameplain=room['usage_text']
+                        prj_room['Description']=room_nameplain
                         if prj_room['name_long'] == '':
-                            prj_room['name_long']=roomNameLong
+                            prj_room['name_long']=room_namelong
                         if not prj_room['Group name']:
                             prj_room['Group name']=prj_room['name_short']
                 if prj_floor['name_long'] == '':
                     prj_floor['name_long']=prj_floor['name_short']
                 if not prj_floor['Group name']:
                     prj_floor['Group name']=prj_floor['name_short']
-                logging.debug(f"Processed room: {prj_room['Description']}")
+                logging.debug("Processed room: %s",prj_room['Description'])
 
     # Logging information about the final building structure
     #logging.info(f"Building structure created: {prj}")
     return prj
-def getAddresses(project: KNXProject):
-    # Extract relevant information from the KNXProject
+def get_addresses(project: KNXProject):
+    """
+    Extracts and processes information from a KNX project.
+
+    Args:
+        project (KNXProject): An object representing a KNX project.
+
+    Returns:
+        List[Dict[str, Any]]: A list of dictionaries containing processed information
+        for each group address, including details on communication objects, devices,
+        floor, room, and datapoint type.
+        
+    Raises:
+        ValueError: If essential data structures (group_addresses, communication_objects,
+        devices, group_ranges) are empty.
+    """
     group_addresses = project['group_addresses']
     communication_objects = project['communication_objects']
     devices = project['devices']
@@ -140,35 +156,33 @@ def getAddresses(project: KNXProject):
         raise ValueError("'devices' is Empty.")
     if len(group_ranges) == 0:
         logging.error("'group_ranges' is Empty.")
-        raise ValueError("'group_ranges' is Empty.") 
+        raise ValueError("'group_ranges' is Empty.")
     _addresses = []
     for address in group_addresses.values():
         ignore = False
 
         # Check for 'ignore' flag in comment
         if 'ignore' in address['comment']:
-            logger.info(f"Ignore: {address['name']}")
+            logger.info("Ignore: %s",address['name'])
             ignore = True
         elif not address['communication_object_ids']:
-            logger.info(f"Ignore: {address['name']} because no communication object connected")
+            logger.info("Ignore: %s because no communication object connected",address['name'])
             ignore = True
         else:
-            resRoom = re_item_Room.search(address['name'])
-            resFloor = re_item_Floor.search(address['name'])
+            res_room = re_item_Room.search(address['name'])
+            res_floor = re_item_Floor.search(address['name'])
 
-            if not resFloor:
+            if not res_floor:
                 address_split = address['address'].split("/")
-                grTop =group_ranges.get(address_split[0])
-                grMiddle =grTop['group_ranges'].get(address_split[0] + "/" + address_split[1])
-                resFloor = re_item_Floor.search(grMiddle['name'])
-                
-                if not resFloor:
-                    resFloor = re_item_Floor.search(grTop['name'])
-                    if not resFloor:
-                        resFloor = re_floor_nameshort.search(grMiddle['name'])
-                        if not resFloor:
-                            resFloor = re_floor_nameshort.search(grTop['name'])
-           
+                gr_top =group_ranges.get(address_split[0])
+                gr_middle =gr_top['group_ranges'].get(address_split[0] + "/" + address_split[1])
+                res_floor = re_item_Floor.search(gr_middle['name'])
+                if not res_floor:
+                    res_floor = re_item_Floor.search(gr_top['name'])
+                    if not res_floor:
+                        res_floor = re_floor_nameshort.search(gr_middle['name'])
+                        if not res_floor:
+                            res_floor = re_floor_nameshort.search(gr_top['name'])
         if not ignore:
             _addresses.append({})
             laddress=_addresses[-1]
@@ -196,21 +210,21 @@ def getAddresses(project: KNXProject):
                                 else:
                                     co_o["device_communication_objects"].append(device_co_o)
                 laddress["communication_object"].append(co_o)
-            if resFloor:
-                laddress["Floor"]=resFloor.group(0)
+            if res_floor:
+                laddress["Floor"]=res_floor.group(0)
                 if not laddress["Floor"].startswith(item_Floor_nameshort_prefix) and len(laddress["Floor"]) < 6:
                     laddress["Floor"]=item_Floor_nameshort_prefix+laddress["Floor"]
             else:
                 laddress["Floor"]=unknown_floorname
-            if resRoom:
-                laddress["Room"]=resRoom.group(0)
+            if res_room:
+                laddress["Room"]=res_room.group(0)
             else:
                 laddress["Room"]=unknown_roomname
-            laddress["DatapointType"] = "DPST-{}-{}".format(address["dpt"]["main"],address["dpt"]["sub"])  if address["dpt"]["sub"] else "DPT-{}".format(address["dpt"]["main"]) 
+            laddress["DatapointType"] = f'DPST-{address["dpt"]["main"]}-{address["dpt"]["sub"]}' if address["dpt"]["sub"] else f'DPT-{address["dpt"]["main"]}'
 
             #logging.debug(f"Processed address: {laddress}")
-    return _addresses            
-def _getSensorCoFromList(cos):
+    return _addresses
+def _get_sensor_co_from_list(cos):
     """
     Diese Funktion sucht in einer Liste von Kommunikationsobjekten (cos) nach einem Sensor-Kommunikationsobjekt,
     das für das Lesen oder Übertragen (transmit) aktiviert ist.
@@ -228,17 +242,17 @@ def _getSensorCoFromList(cos):
             if "flags" in co:
                 # Überprüfen, ob das Flag 'read' aktiviert ist
                 if "read" in co["flags"]:
-                    if co["flags"]["read"] == True:
-                        logging.debug(f"Found sensor communication object for reading: {co['name']}")
+                    if co["flags"]["read"]:
+                        logging.debug("Found sensor communication object for reading: %s",co['name'])
                         return co
                 # Überprüfen, ob das Flag 'transmit' aktiviert ist
                 if "transmit" in co["flags"]:
-                    if co["flags"]["transmit"] == True:
-                        logging.debug(f"Found sensor communication object for transmitting: {co['name']}")
+                    if co["flags"]["transmit"]:
+                        logging.debug("Found sensor communication object for transmitting: %s",co['name'])
                         return co
     logging.debug("No sensor communication object found.")
     return None
-def putAddressesInBuilding(building,addresses):
+def put_addresses_in_building(building,addresses):
     """
     Diese Funktion platziert Adressen in einem Gebäudeobjekt basierend auf den zugehörigen Etagen und Räumen.
 
@@ -249,7 +263,7 @@ def putAddressesInBuilding(building,addresses):
 
     Returns:
         list: Das aktualisierte Gebäudeobjekt.
-    """    
+    """
     if len(building)==0:
         raise ValueError("'building' is Empty.")
     if len(addresses)==0:
@@ -259,7 +273,7 @@ def putAddressesInBuilding(building,addresses):
     for address in addresses:
         found=False
         # Versuche, das Sensor-Kommunikationsobjekt für das Lesen zu erhalten
-        read_co = _getSensorCoFromList(address)
+        read_co = _get_sensor_co_from_list(address)
 
         # Durchlaufe jedes Gebäudeobjekt
         for itembuilding in building:
@@ -273,23 +287,24 @@ def putAddressesInBuilding(building,addresses):
                             if not "Addresses" in room:
                                 room["Addresses"]=[]
                             room["Addresses"].append(address)
-                            logger.info(f"Address {address['Address']} placed in Room: {room['name_short']}, Floor: {floor['name_short']}")
+                            logger.info("Address %s placed in Room: %s, Floor: %s",address['Address'],room['name_short'],floor['name_short'])
                             found=True
                             break
         # Wenn Adresse nicht in Etagen und Räumen gefunden wurde und ein Sensor-Kommunikationsobjekt vorhanden ist
         if not found:
             if read_co:
-                # Durchlaufe erneut jede Etage und Raum
-                for floor in itembuilding["floors"]:
-                    for room in floor["rooms"]:
-                        # Überprüfe, ob der Raum ein Gerät mit dem Sensor-Kommunikationsobjekt enthält
-                        if 'devices' in room:
-                            if read_co['device_address'] in room['devices']:
-                                 # Füge die Adresse dem Raum hinzu
-                                 room["Addresses"].append(address)
-                                 found=True
-                                 logger.info(f"Address {address['Address']} placed in Room (via device association): {room['name_short']}, Floor: {floor['name_short']}")
-                                 break
+                # Durchlaufe erneut jedes Gebäudeobjekt, Etage und Raum
+                for itembuilding in building:
+                    for floor in itembuilding["floors"]:
+                        for room in floor["rooms"]:
+                            # Überprüfe, ob der Raum ein Gerät mit dem Sensor-Kommunikationsobjekt enthält
+                            if 'devices' in room:
+                                if read_co['device_address'] in room['devices']:
+                                    # Füge die Adresse dem Raum hinzu
+                                    room["Addresses"].append(address)
+                                    found=True
+                                    logger.info("Address %s placed in Room (via device association): %s, Floor: %s",address['Address'],room['name_short'],floor['name_short'])
+                                    break
         if not found:
             unknown.append(address)
     if addMissingItems:
@@ -310,15 +325,16 @@ def putAddressesInBuilding(building,addresses):
                         })
         # Füge die unbekannten Adressen dem Standardraum hinzu
         building[0]["floors"][-1]["rooms"][-1]["Addresses"]=unknown
-        logger.info(f"Added default Floor and Room for unknown addresses: {unknown_floorname}, {unknown_roomname}")
+        logger.info("Added default Floor and Room for unknown addresses: %s, %s",unknown_floorname,unknown_roomname)
     else:
         if unknown:
-            logger.info(f"Unknown addresses: {unknown}")
-        logger.info(f"Total unknown addresses: {len(unknown)}")
+            logger.info("Unknown addresses: %s",unknown)
+        logger.info("Total unknown addresses: %s",len(unknown))
 
     return building
 
 def main():
+    """Main function"""
      # Konfiguration des Logging-Levels auf DEBUG
     logging.basicConfig(level=logging.DEBUG)
 
@@ -327,8 +343,8 @@ def main():
     parser.add_argument("--file_path", type=Path,
                         help='Path to the input knx project.')
     parser.add_argument("--knxPW", type=str, help="Password for knxproj-File if protected")
-    parser.add_argument("--readDump", action="store_true", 
-                        help="Reading KNX Project from .json Dump") 
+    parser.add_argument("--readDump", action="store_true",
+                        help="Reading KNX Project from .json Dump")
     pargs = parser.parse_args()
 
     # Überprüfen, ob ein Dateipfad angegeben wurde, sonst den Benutzer nach einer Datei fragen
@@ -356,11 +372,11 @@ def main():
         project: KNXProject = knxproj.parse()
 
     # Gebäude erstellen
-    building=createBuilding(project)
+    building=create_building(project)
     # Adressen extrahieren
-    addresses=getAddresses(project)
+    addresses=get_addresses(project)
     # Adressen im Gebäude platzieren
-    house=putAddressesInBuilding(building,addresses)
+    house=put_addresses_in_building(building,addresses)
 
     # Konfiguration für OpenHAB setzen
     ets_to_openhab.house = house[0]["floors"]

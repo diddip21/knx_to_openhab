@@ -91,16 +91,16 @@ def gen_building():
         # Überprüfen, ob Kommunikationsobjekte vorhanden sind
         if "communication_object" in cos:
             for co in cos["communication_object"]:
-                 # Überprüfen, ob das 'write'-Flag überprüft werden soll und ob es aktiviert ist
-                 if checkwriteflag:
-                     if "flags" in co:
-                         if "write" in co["flags"]:
-                              if not co["flags"]["write"]:
-                                 continue
-                 # Überprüfen, ob der Funktions-Text in der Konfiguration vorhanden ist
-                 if co["function_text"] in config_functiontexts:
-                     return co
-        return None        
+                # Überprüfen, ob das 'write'-Flag überprüft werden soll und ob es aktiviert ist
+                if checkwriteflag:
+                    if "flags" in co:
+                        if "write" in co["flags"]:
+                            if not co["flags"]["write"]:
+                                continue
+                # Überprüfen, ob der Funktions-Text in der Konfiguration vorhanden ist
+                if co["function_text"] in config_functiontexts:
+                    return co
+        return None
     def get_from_dco(co,config_functiontexts):
         """
         Diese Funktion sucht in einem Kommunikationsobjekt (co) nach einem Funktions-Text und filtert nach Gruppenzugehörigkeit entweder über die Channels oder über den 'text'.
@@ -132,7 +132,7 @@ def gen_building():
                 # Überprüfen, ob der Funktions-Text in der Konfiguration vorhanden ist
                 if y["function_text"] in config_functiontexts:
                     # Suche nach der Adresse, die mit den Gruppenadressen verknüpft ist
-                    search_address = [x for x in all_addresses if (x["Address"] in y['group_address_links'])]
+                    search_address = [x for x in all_addresses if x["Address"] in y['group_address_links']]
                     # Wenn genau eine Adresse gefunden wurde, gib sie zurück
                     if len(search_address)==1:
                         return search_address[0]
@@ -244,7 +244,7 @@ def gen_building():
                     if run == 0:
                         # dimmer
                         if address['DatapointType'] == 'DPST-5-1':
-                            bol = [x for x in config['defines']['dimmer']['absolut_suffix'] if(x in address['Group name'])]
+                            bol = [x for x in config['defines']['dimmer']['absolut_suffix'] if x in address['Group name']]
                             co = get_co_by_functiontext(address,config['defines']['dimmer']['absolut_suffix'])
                             if not bool(bol) and not co:
                                 continue
@@ -294,7 +294,7 @@ def gen_building():
 
                         # rollos / jalousien
                         elif address['DatapointType'] == 'DPST-1-8':
-                            bol = [x for x in config['defines']['rollershutter']['up_down_suffix'] if(x in address['Group name'])]
+                            bol = [x for x in config['defines']['rollershutter']['up_down_suffix'] if x in address['Group name']]
                             co = get_co_by_functiontext(address,config['defines']['rollershutter']['up_down_suffix'])
                             if not bool(bol) and not co:
                                 continue
@@ -349,7 +349,7 @@ def gen_building():
                         elif address['DatapointType'] in ('DPST-5-010','DPST-20-102'):
                             if address['Address'] in used_addresses:
                                 continue
-                            bol = [x for x in config['defines']['heating']['level_suffix'] if(x in address['Group name'])]
+                            bol = [x for x in config['defines']['heating']['level_suffix'] if x in address['Group name']]
                             co = get_co_by_functiontext(address,config['defines']['heating']['level_suffix'])
                             if not bool(bol) and not co:
                                 continue
@@ -387,7 +387,7 @@ def gen_building():
                             item_label = lovely_name
                             # umschalten (Licht, Steckdosen)
                             # only add in first round, if there is a status GA for feedback
-                            bol = [x for x in config['defines']['switch']['switch_suffix'] if(x in address['Group name'])]
+                            bol = [x for x in config['defines']['switch']['switch_suffix'] if x in address['Group name']]
                             co = get_co_by_functiontext(address,config['defines']['switch']['switch_suffix'])
                             if not bool(bol) and not co:
                                 continue
@@ -460,19 +460,19 @@ def gen_building():
                             # Strom
                             'DPST-7-12': {'item_type': 'Number:ElectricCurrent', 'ga_prefix': '7.012', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
                                          'semantic_info':"[\"Measurement\", \"Current\"]", 'item_icon':"energy"},
-                            # Volumen (l)            
+                            # Volumen (l)
                             'DPST-12-1200': {'item_type': 'Number:Volume', 'ga_prefix': '12.1200', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
                                          'semantic_info':"[\"Measurement\", \"Volume\"]", 'item_icon':"water"},
-                            # String            
+                            # String
                             'DPST-16-0': {'item_type': 'String', 'ga_prefix': '16.000:', 'metadata': '','semantic_info':"", 'item_icon':"text"},
                             'DPT-16': {'item_type': 'String', 'ga_prefix': '16.000:', 'metadata': '','semantic_info':"", 'item_icon':"text"},
-                            # Beleuchtungsstärke (Lux)            
+                            # Beleuchtungsstärke (Lux)
                             'DPST-9-4': {'item_type': 'Number:Illuminance', 'ga_prefix': '9.004', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
                                          'semantic_info':"[\"Measurement\", \"Light\"]", 'item_icon':"sun"},
-                            # Geschwindigkeit (m/s)            
+                            # Geschwindigkeit (m/s)
                             'DPST-9-5': {'item_type': 'Number:Speed', 'ga_prefix': '9.005', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
                                          'semantic_info':"[\"Measurement\", \"Wind\"]", 'item_icon':"wind"},
-                            # Luftqualität (ppm)            
+                            # Luftqualität (ppm)
                             'DPST-9-8': {'item_type': 'Number:Dimensionless', 'ga_prefix': '9.005', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f ppm\"]',
                                          'semantic_info':"[\"Measurement\"]", 'item_icon':""},
                             # Prozent
@@ -483,7 +483,7 @@ def gen_building():
                                          'semantic_info':"[\"Measurement\", \"Duration\"]", 'item_icon':"time"},
                             # Datum/Uhrzeit
                             'DPST-19-1': {'item_type': 'DateTime', 'ga_prefix': '', 'metadata': '', 'semantic_info':"", 'item_icon':"time"},
-                            # Betriebsartvorwahl           
+                            # Betriebsartvorwahl
                             'DPST-20-102': {'item_type': 'Number:Dimensionless', 'ga_prefix': '20.102', 'metadata': ', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]',
                                          'semantic_info':"[\"HVAC\"]", 'item_icon':"heating_mode"},
                             'DPST-5-010': {'item_type': 'Number:Dimensionless', 'ga_prefix': '5.010', 'metadata': ', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]',
@@ -582,8 +582,8 @@ def gen_building():
                             item_icon = ""
 
                         item_label = item_label.replace(room_nameoriginal, room_name)
-                        item_label = re.sub('\[.*\]', '', item_label)
-                        item_label = re.sub('\|.*\:', '', item_label)
+                        item_label = re.sub(r'\[.*\]', '', item_label)
+                        item_label = re.sub(r'\|.*\:', '', item_label)
 
                         thing_type = item_type.lower().split(":")[0]
                         things += f"Type {thing_type}    :   {item_name}   \"{address['Group name']}\"   [ {thing_address_info} ]\n"
@@ -624,7 +624,7 @@ def check_unused_addresses():
                 item_name = f"i_{cnt}_{floor['Group name']}_{room['Group name']}_{lovely_name}".replace('/','_').replace(' ','_')
                 item_name = item_name.translate(config['special_char_map'])
 
-                if not (address['Address'] in used_addresses):
+                if not address['Address'] in used_addresses:
                     logger.info("unused: %s: %s with type %s",address['Address'],address['Group name'],address['DatapointType'])
 
 def export_output():

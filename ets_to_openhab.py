@@ -47,7 +47,7 @@ datapoint_mappings = {
     # Tag / Nacht
     'DPST-1-24': {'item_type': 'Switch', 'ga_prefix': '1.024', 'metadata': '','semantic_info':"[\"Control\"]", 'item_icon':"moon"},
     # Alarm
-    'DPST-1-5': {'item_type': 'Switch', 'ga_prefix': '1.005', 'metadata': '','semantic_info':"[\"Alarm\"]", 'item_icon':"alarm"},
+    'DPST-1-5': {'item_type': 'Switch', 'ga_prefix': '1.005', 'metadata': '','semantic_info':"[\"Alarm\"]", 'item_icon':"siren"},
     # Status
     'DPST-1-11': {'item_type': 'Switch', 'ga_prefix': '1.011', 'metadata': '','semantic_info':"[\"Measurement\", \"Status\"]", 'item_icon':"switch"},
     # Temperatur
@@ -84,7 +84,7 @@ datapoint_mappings = {
     'DPST-9-8': {'item_type': 'Number:Dimensionless', 'ga_prefix': '9.005', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f ppm\"]',
                     'semantic_info':"[\"Measurement\"]", 'item_icon':""},
     # Prozent
-    'DPST-5-1': {'item_type': 'Dimmer', 'ga_prefix': '5.001', 'metadata': ', unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]',
+    'DPST-5-1': {'item_type': 'Dimmer', 'ga_prefix': 'position=5.001', 'metadata': ', unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]',
                     'semantic_info':"[\"Measurement\"]", 'item_icon':""},
     # Zeitdifferenz
     'DPST-13-100': {'item_type': 'Number:Time', 'ga_prefix': '13.100', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
@@ -479,7 +479,12 @@ def gen_building():
                             if address['DatapointType'] == datapoint_type:
                                 auto_add = True
                                 item_type = mapping_info['item_type']
+                                if item_type.casefold() in config['defines']:
+                                    define = config['defines'][item_type.casefold()]
                                 thing_address_info = f"ga=\"{mapping_info['ga_prefix']}:{address['Address']}\""
+                                if "=" in mapping_info['ga_prefix']:
+                                    split_info=mapping_info['ga_prefix'].split("=")
+                                    thing_address_info = f"{split_info[0]}=\"{split_info[1]}:{address['Address']}\""
                                 item_label = f"{lovely_name}"
                                 metadata=f"{mapping_info['metadata']}"
                                 semantic_info = f"{mapping_info['semantic_info']}"

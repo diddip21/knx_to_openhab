@@ -41,26 +41,26 @@
                 "Status Aktorkanal",
                 "HCL Status"
             ],
-            "change_metadata":{
-                "Licht":{
-                    "semantic_info" : "[\"Control\", \"Light\"]",
-                    "equipment" : "Lightbulb",
-                    "item_icon" : "light"                   
+            "change_metadata": {
+                "Licht": {
+                    "semantic_info": "[\"Control\", \"Light\"]",
+                    "equipment": "Lightbulb",
+                    "item_icon": "light"
                 },
-                "Steckdose":{
-                    "semantic_info" : "[\"Control\", \"Switch\"]",
-                    "equipment" : "PowerOutlet",
-                    "item_icon" : "poweroutlet"   
+                "Steckdose": {
+                    "semantic_info": "[\"Control\", \"Switch\"]",
+                    "equipment": "PowerOutlet",
+                    "item_icon": "poweroutlet"
                 },
-                "Audio":{
-                    "semantic_info" : "[\"Control\", \"Switch\"]",
-                    "equipment" : "Speaker",
-                    "item_icon" : "soundvolume"                   
+                "Audio": {
+                    "semantic_info": "[\"Control\", \"Switch\"]",
+                    "equipment": "Speaker",
+                    "item_icon": "soundvolume"
                 },
-                "Heizen":{
-                    "semantic_info" : "[\"Heating\", \"Switch\"]",
-                    "equipment" : "HVAC",
-                    "item_icon" : "radiator"                   
+                "Heizen": {
+                    "semantic_info": "[\"Heating\", \"Switch\"]",
+                    "equipment": "HVAC",
+                    "item_icon": "radiator"
                 }
             }
         },
@@ -97,10 +97,14 @@
                 ":(Heller/Dunkler)"
             ],
             "drop": [],
-            "change_metadata":{
-                "Lamellenposition":{
-                    "semantic_info" : "[\"Blinds\"]",
-                    "item_icon" : "rollershutter"                   
+            "change_metadata": {
+                "Lamellenposition": {
+                    "semantic_info": "[\"Blinds\"]",
+                    "item_icon": "rollershutter"
+                },
+                "Stellwert": {
+                    "semantic_info": "[\"HVAC\"]",
+                    "item_icon": "heating"
                 }
             }
         },

@@ -334,6 +334,12 @@ def put_addresses_in_building(building,addresses):
         logger.info("Total unknown addresses: %s",len(unknown))
 
     return building
+def create_json_dump(project: KNXProject,file_path: Path):
+    '''Create Json Dump from KNXproject File '''
+    
+    #os.makedirs(os.path.dirname("tests"), exist_ok=True)
+    with open(f"tests/{file_path.name}.json", "w", encoding="utf8") as f:
+        json.dump(project, f, indent=2, ensure_ascii=False)
 
 def main():
     """Main function"""
@@ -372,6 +378,8 @@ def main():
             language="de-DE",  # optional
         )
         project: KNXProject = knxproj.parse()
+        # Erstelle ein JSON Dump des aktuellen Projekts
+        create_json_dump(project,pargs.file_path)
 
     # Gebäude erstellen
     building=create_building(project)

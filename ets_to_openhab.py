@@ -50,6 +50,8 @@ datapoint_mappings = {
     'DPST-1-5': {'item_type': 'Switch', 'ga_prefix': '1.005', 'metadata': '','semantic_info':"[\"Alarm\"]", 'item_icon':"siren"},
     # Status
     'DPST-1-11': {'item_type': 'Switch', 'ga_prefix': '1.011', 'metadata': '','semantic_info':"[\"Measurement\", \"Status\"]", 'item_icon':"switch"},
+    # Heizen / Kühlen
+    'DPST-1-100': {'item_type': 'Switch', 'ga_prefix': '1.100', 'metadata': '','semantic_info':"[\"Measurement\", \"Status\"]", 'item_icon':"temperature"},
     # Temperatur
     'DPST-9-1': {'item_type': 'Number:Temperature', 'ga_prefix': '9.001', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
                     'semantic_info':"[\"Measurement\", \"Temperature\"]", 'item_icon':"temperature"},
@@ -154,7 +156,7 @@ def gen_building():
                             if not co["flags"]["write"]:
                                 continue
                 # Überprüfen, ob der Funktions-Text in der Konfiguration vorhanden ist
-                if co["function_text"] in config_functiontexts:
+                if co["function_text"].casefold() in (text.casefold() for text in config_functiontexts):
                     return co
         return None
     def get_address_from_dco(co,config_functiontexts):
@@ -186,7 +188,7 @@ def gen_building():
                         if group_text != y["text"]:
                             continue
                 # Überprüfen, ob der Funktions-Text in der Konfiguration vorhanden ist
-                if y["function_text"] in config_functiontexts:
+                if y["function_text"].casefold() in (text.casefold() for text in config_functiontexts):
                     # Suche nach der Adresse, die mit den Gruppenadressen verknüpft ist
                     search_address = [x for x in all_addresses if x["Address"] in y['group_address_links']]
                     # Wenn genau eine Adresse gefunden wurde, gib sie zurück
@@ -272,7 +274,7 @@ def gen_building():
                     if not any(item['Address'] == address['Address'] for item in all_addresses):
                     #if address['Address'] not in all_addresses:
                         continue
-                    if address['Address'] == '1/1/26':
+                    if address['Address'] == '3/0/9':
                         logger.debug("Adress found - Breakpoint?")
 
                     used = False
@@ -570,6 +572,11 @@ def gen_building():
                         item_label_short = item_label
                         for drop in config['defines']['drop_words']:
                             item_label_short = item_label_short.replace(drop,'')
+                        # remvoe floor and room from label
+                        if floor['name_short']:
+                            item_label_short=item_label_short.replace(floor['name_short'],'')
+                        if room['name_short']:
+                            item_label_short=item_label_short.replace(room['name_short'],'')
                         # remove leading "[....]@"
                         item_label_short = re.sub(pattern_items_Label, '', item_label_short)
                         item_label_short = ' '.join(item_label_short.split())
@@ -589,9 +596,9 @@ def gen_building():
                         things += f"Type {thing_type}    :   {item_name}   \"{address['Group name']}\"   [ {thing_address_info} ]\n"
 
                         root = f"map{floor_nr}_{room_nr}"
-                        # if equipment != '':
-                        #     items += f"Group   equipment_{item_name}   \"{item_label}\"  {item_icon}  ({root})   [\"{equipment}\"]\n"
-                        #     root = f"equipment_{item_name}"
+                        if equipment != '':
+                            items += f"Group   equipment_{item_name}   \"{item_label}\"  {item_icon}  ({root})   [\"{equipment}\"]\n"
+                            root = f"equipment_{item_name}"
 
                         items += f"{item_type}   {item_name}   \"{item_label}\"   {item_icon}   ({root})   {semantic_info}    {{ channel=\"knx:device:bridge:generic:{item_name}\" {metadata}{synonyms} }}\n"
                         group += f"        {sitemap_type} item={item_name} label=\"{item_label}\" {mappings} {visibility}\n"

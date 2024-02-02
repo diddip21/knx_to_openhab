@@ -1,9 +1,8 @@
 Bridge knx:ip:bridge [ 
     type="TUNNEL",
-    ipAddress="192.168.30.252",
+    ipAddress="192.132.88.41",
     portNumber=3671, 
-	autoReconnectPeriod=30,
-	localSourceAddr="1.1.200"
+	autoReconnectPeriod=30
 ] {
     Thing device generic [
     ] {

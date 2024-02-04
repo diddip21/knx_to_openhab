@@ -3,7 +3,7 @@ import csv
 import re
 import os
 import logging
-from config import config
+from config import config,normalize_string
 logger = logging.getLogger(__name__)
 
 pattern_items_Name=config['regexpattern']['items_Name']
@@ -156,7 +156,7 @@ def gen_building():
                             if not co["flags"]["write"]:
                                 continue
                 # Überprüfen, ob der Funktions-Text in der Konfiguration vorhanden ist
-                if co["function_text"].casefold() in (text.casefold() for text in config_functiontexts):
+                if normalize_string(co["function_text"]) in config_functiontexts:
                     return co
         return None
     def get_address_from_dco(co,config_functiontexts):
@@ -188,7 +188,7 @@ def gen_building():
                         if group_text != y["text"]:
                             continue
                 # Überprüfen, ob der Funktions-Text in der Konfiguration vorhanden ist
-                if y["function_text"].casefold() in (text.casefold() for text in config_functiontexts):
+                if normalize_string(y["function_text"]) in config_functiontexts:
                     # Suche nach der Adresse, die mit den Gruppenadressen verknüpft ist
                     search_address = [x for x in all_addresses if x["Address"] in y['group_address_links']]
                     # Wenn genau eine Adresse gefunden wurde, gib sie zurück
@@ -306,15 +306,15 @@ def gen_building():
                         # dimmer
                         if address['DatapointType'] == 'DPST-5-1':
                             define=config['defines']['dimmer']
-                            bol = [x for x in define['absolut_suffix'] if x in address['Group name']]
+                            #bol = [x for x in define['absolut_suffix'] if x in address['Group name']]
                             co = get_co_by_functiontext(address,define['absolut_suffix'])
-                            if not bool(bol) and not co:
+                            if not co:
                                 continue
 
                             basename = address['Group name']
-                            dimmwert_status =data_of_name(all_addresses, basename, define['status_suffix'],define['absolut_suffix'])
-                            if not dimmwert_status and co:
-                                dimmwert_status=get_address_from_dco(co,define['status_suffix'])
+                            #dimmwert_status =data_of_name(all_addresses, basename, define['status_suffix'],define['absolut_suffix'])
+                            #if not dimmwert_status and co:
+                            dimmwert_status=get_address_from_dco(co,define['status_suffix'])
                             for drop_name in define['drop']:
                                 drop_addr = data_of_name(all_addresses, basename, drop_name,define['absolut_suffix'])
                                 if drop_addr:
@@ -325,20 +325,20 @@ def gen_building():
                             if dimmwert_status:
                                 used = True
                                 used_addresses.append(dimmwert_status['Address'])
-                                relative_command = data_of_name(all_addresses, basename, define['relativ_suffix'],define['absolut_suffix'])
-                                if not relative_command and co:
-                                    relative_command=get_address_from_dco(co,define['relativ_suffix'])
-                                switch_command = data_of_name(all_addresses, basename, define['switch_suffix'],define['absolut_suffix'])
-                                if not switch_command and co:
-                                    switch_command=get_address_from_dco(co,define['switch_suffix'])
+                                #relative_command = data_of_name(all_addresses, basename, define['relativ_suffix'],define['absolut_suffix'])
+                                #if not relative_command and co:
+                                relative_command=get_address_from_dco(co,define['relativ_suffix'])
+                                #switch_command = data_of_name(all_addresses, basename, define['switch_suffix'],define['absolut_suffix'])
+                                #if not switch_command and co:
                                 if relative_command:
                                     used_addresses.append(relative_command['Address'])
                                     relative_option = f", increaseDecrease=\"{relative_command['Address']}\""
+                                switch_command=get_address_from_dco(co,define['switch_suffix'])
                                 if switch_command:
                                     used_addresses.append(switch_command['Address'])
-                                    switch_status_command = data_of_name(all_addresses, basename, define['switch_status_suffix'],define['absolut_suffix'])
-                                    if not switch_status_command and co:
-                                        switch_status_command=get_address_from_dco(co,define['switch_status_suffix'])
+                                    #switch_status_command = data_of_name(all_addresses, basename, define['switch_status_suffix'],define['absolut_suffix'])
+                                    #if not switch_status_command and co:
+                                    switch_status_command=get_address_from_dco(co,define['switch_status_suffix'])
                                     if switch_status_command:
                                         used_addresses.append(switch_status_command['Address'])
                                         switch_option_status = f"+<{switch_status_command['Address']}"
@@ -358,9 +358,9 @@ def gen_building():
                         # rollos / jalousien
                         elif address['DatapointType'] == 'DPST-1-8':
                             define=config['defines']['rollershutter']
-                            bol = [x for x in define['up_down_suffix'] if x in address['Group name']]
+                            #bol = [x for x in define['up_down_suffix'] if x in address['Group name']]
                             co = get_co_by_functiontext(address,define['up_down_suffix'])
-                            if not bool(bol) and not co:
+                            if not co:
                                 continue
 
                             basename = address['Group name'] #.replace(define['up_down_suffix'],'')
@@ -376,18 +376,18 @@ def gen_building():
                             option_position_status=''
                             if fahren_auf_ab:
                                 used_addresses.append(fahren_auf_ab['Address'])
-                                fahren_stop = data_of_name(all_addresses, basename, define['stop_suffix'],define['up_down_suffix'])
-                                if not fahren_stop and co:
-                                    fahren_stop=get_address_from_dco(co,define['stop_suffix'])
+                                #fahren_stop = data_of_name(all_addresses, basename, define['stop_suffix'],define['up_down_suffix'])
+                                #if not fahren_stop and co:
+                                fahren_stop=get_address_from_dco(co,define['stop_suffix'])
                                 if fahren_stop:
                                     used_addresses.append(fahren_stop['Address'])
                                     option_stop = f", stopMove=\"{fahren_stop['Address']}\""
-                                absolute_position = data_of_name(all_addresses, basename, define['absolute_position_suffix'],define['up_down_suffix'])
-                                absolute_position_status = data_of_name(all_addresses, basename, define['status_suffix'],define['up_down_suffix'])
-                                if not absolute_position and co:
-                                    absolute_position=get_address_from_dco(co,define['absolute_position_suffix'])
-                                if not absolute_position_status and co:
-                                    absolute_position_status=get_address_from_dco(co,define['status_suffix'])
+                                #absolute_position = data_of_name(all_addresses, basename, define['absolute_position_suffix'],define['up_down_suffix'])
+                                #if not absolute_position and co:
+                                absolute_position=get_address_from_dco(co,define['absolute_position_suffix'])
+                                #absolute_position_status = data_of_name(all_addresses, basename, define['status_suffix'],define['up_down_suffix'])
+                                #if not absolute_position_status and co:
+                                absolute_position_status=get_address_from_dco(co,define['status_suffix'])
                                 if absolute_position or absolute_position_status:
                                     if absolute_position:
                                         used_addresses.append(absolute_position['Address'])
@@ -412,18 +412,18 @@ def gen_building():
                         # Heizung
                         elif address['DatapointType'] in ('DPST-5-010','DPST-20-102'):
                             define=config['defines']['heating']
-                            bol = [x for x in define['level_suffix'] if x in address['Group name']]
+                            #bol = [x for x in define['level_suffix'] if x in address['Group name']]
                             co = get_co_by_functiontext(address,define['level_suffix'])
-                            if not bool(bol) and not co:
+                            if  not co:
                                 continue
                             basename = address['Group name'] #.replace(define['up_down_suffix'],'')
                             betriebsmodus = address
                             option_status_betriebsmodus=''
                             if betriebsmodus:
                                 used_addresses.append(betriebsmodus['Address'])
-                                betriebsmodus_status = data_of_name(all_addresses, basename, define['status_level_suffix'],define['level_suffix'])
-                                if not betriebsmodus_status and co:
-                                    betriebsmodus_status=get_address_from_dco(co,define['status_level_suffix'])
+                                #betriebsmodus_status = data_of_name(all_addresses, basename, define['status_level_suffix'],define['level_suffix'])
+                                #if not betriebsmodus_status and co:
+                                betriebsmodus_status=get_address_from_dco(co,define['status_level_suffix'])
                                 if betriebsmodus_status:
                                     used_addresses.append(betriebsmodus_status['Address'])
                                     option_status_betriebsmodus = f"+<{betriebsmodus_status['Address']}"
@@ -451,15 +451,15 @@ def gen_building():
                             item_label = lovely_name
                             # umschalten (Licht, Steckdosen)
                             # only add in first round, if there is a status GA for feedback
-                            bol = [x for x in define['switch_suffix'] if x in address['Group name']]
+                            #bol = [x for x in define['switch_suffix'] if x in address['Group name']]
                             co = get_co_by_functiontext(address,define['switch_suffix'])
-                            if not bool(bol) and not co:
+                            if  not co:
                                 continue
 
                             basename = address['Group name']
-                            status =data_of_name(all_addresses, basename, define['status_suffix'],define['switch_suffix'])
-                            if not status and co:
-                                status=get_address_from_dco(co,define['status_suffix'])
+                            #status =data_of_name(all_addresses, basename, define['status_suffix'],define['switch_suffix'])
+                            #if not status and co:
+                            status=get_address_from_dco(co,define['status_suffix'])
                             if status:
                                 #if status['DatapointType'] == 'DPST-1-11':
                                 auto_add = True

@@ -336,7 +336,6 @@ def put_addresses_in_building(building,addresses):
     return building
 def create_json_dump(project: KNXProject,file_path: Path):
     '''Create Json Dump from KNXproject File '''
-    
     #os.makedirs(os.path.dirname("tests"), exist_ok=True)
     with open(f"tests/{file_path.name}.json", "w", encoding="utf8") as f:
         json.dump(project, f, indent=2, ensure_ascii=False)

@@ -94,9 +94,9 @@ datapoint_mappings = {
     # Datum/Uhrzeit
     'DPST-19-1': {'item_type': 'DateTime', 'ga_prefix': '19.001', 'metadata': '', 'semantic_info':"", 'item_icon':"time"},
     # Betriebsartvorwahl
-    'DPST-20-102': {'item_type': 'Number:Dimensionless', 'ga_prefix': '20.102', 'metadata': ', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]',
+    'DPST-20-102': {'item_type': 'Number:Dimensionless', 'ga_prefix': '20.102', 'metadata': ', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]',
                     'semantic_info':"[\"HVAC\"]", 'item_icon':"heating_mode"},
-    'DPST-5-010': {'item_type': 'Number:Dimensionless', 'ga_prefix': '5.010', 'metadata': ', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]',
+    'DPST-5-010': {'item_type': 'Number:Dimensionless', 'ga_prefix': '5.010', 'metadata': ', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]',
                     'semantic_info':"[\"HVAC\"]", 'item_icon':"heating_mode"},
 }
 
@@ -407,7 +407,7 @@ def gen_building():
                                 semantic_info = "[\"Blinds\"]"
                                 item_icon = "rollershutter"
                             else:
-                                logger.warninging("incomplete rollershutter: %s",basename)
+                                logger.warning("incomplete rollershutter: %s",basename)
 
                         # Heizung
                         elif address['DatapointType'] in ('DPST-5-010','DPST-20-102'):
@@ -437,10 +437,10 @@ def gen_building():
                                 item_label = f"{lovely_name}"
                                 semantic_info = "[\"HVAC\"]"
                                 item_icon = "heating_mode"
-                                metadata=", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"],commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"]"
+                                metadata=', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]'
 
                             else:
-                                logger.warninging("incomplete heating: %s",basename)
+                                logger.warning("incomplete heating: %s",basename)
 
                     #  erst im zweiten durchlauf prüfen damit integrierte Schaltobjekte (z.B. dimmen) vorher schon erkannt werden.
                     if run > 0:
@@ -507,24 +507,28 @@ def gen_building():
                                 ga="18.001"
 
                             for description in descriptions:
-                                if description.startswith('mappings='):
+                                if '=' in description:
                                     mappings = description
                                     break
 
                             if mappings!= '':
+                                data_map = mappings.replace("'",'"').replace('"','').replace('=','.0=')
+                                metadata=f', stateDescription=\"\"[options=\"NULL=unbekannt ...,{data_map}\"], commandDescription=\"\"[options=\"{data_map}\"]'
+                                item_label = lovely_name
                                 #TODO: Mappings noch über metadata abbilden
-                                mapfile = f"gen_{item_name}.map"
-                                mappings = mappings.replace("'",'"')
+                                #mapfile = f"gen_{item_name}.map"
+                                #mappings = mappings.replace("'",'"')
 
-                                mapfile_content = mappings.replace('"','').replace(',','\n').replace('mappings=[','').replace(']','').replace(' ','')
-                                mapfile_content += '\n' + mapfile_content.replace('=','.0=') + '\n-=unknown'
-                                open(os.path.join(config['transform_dir_path'], mapfile),'w', encoding='utf8').write(mapfile_content)
+                                #mapfile_content = mappings.replace('"','').replace(',','\n').replace('mappings=[','').replace(']','').replace(' ','')
+                                #mapfile_content += '\n' + mapfile_content.replace('=','.0=') + '\n-=unknown'
+                                #os.makedirs(os.path.realpath(config['transform_dir_path']), exist_ok=True)
+                                #open(os.path.join(config['transform_dir_path'], mapfile),'w', encoding='utf8').write(mapfile_content)
 
                                 auto_add = True
                                 item_type = "Number"
                                 thing_address_info = f"ga=\"{ga}:{address['Address']}\""
-                                item_label = f"{lovely_name} [MAP({mapfile}):%s]"
-                                semantic_info = "[\"Control\"]"
+                                #item_label = f"{lovely_name} [MAP({mapfile}):%s]"
+                                semantic_info = "[\"Equipment\"]"
                                 item_icon = "movecontrol"
                                 sitemap_type = "Selection"
                             else:
@@ -591,6 +595,7 @@ def gen_building():
                         item_label = item_label.replace(room_nameoriginal, room_name)
                         item_label = re.sub(r'\[.*\]', '', item_label)
                         item_label = re.sub(r'\|.*\:', '', item_label)
+                        item_label = item_label.strip()
 
                         thing_type = item_type.lower().split(":")[0]
                         things += f"Type {thing_type}    :   {item_name}   \"{address['Group name']}\"   [ {thing_address_info} ]\n"
@@ -601,7 +606,7 @@ def gen_building():
                             root = f"equipment_{item_name}"
 
                         items += f"{item_type}   {item_name}   \"{item_label}\"   {item_icon}   ({root})   {semantic_info}    {{ channel=\"knx:device:bridge:generic:{item_name}\" {metadata}{synonyms} }}\n"
-                        group += f"        {sitemap_type} item={item_name} label=\"{item_label}\" {mappings} {visibility}\n"
+                        group += f"        {sitemap_type} item={item_name} label=\"{item_label}\" {visibility}\n"
 
                         if 'influx' in address['Description']:
                             #print('influx @ ')

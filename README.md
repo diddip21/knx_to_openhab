@@ -42,7 +42,7 @@ Numbers are now member of [UoM](https://www.openhab.org/docs/concepts/units-of-m
 - Alarm based on Datatype 1.005
 - Speed m/s based on Datatype
 - Timedifference based on Datatype 13.100
-- Scene based on Datatype. Add for example `mappings=[63='Aus', 62='Automatik', 1='Kochen', 2='Beamer', 3='Allgemein']` to description in ETS to generate automatic mapping. MAP transformation plugin required!
+- Scene based on Datatype. Add for example `63='Aus', 62='Automatik', 1='Kochen', 2='Beamer', 3='Allgemein'` to description in ETS to generate automatic mapping.
 - ppm based on Datatype
 - Percent based on Datatype
 - Volume based on Datatype

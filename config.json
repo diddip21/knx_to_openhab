@@ -166,5 +166,13 @@
             "Strom",
             "Leistung"
         ]
+    },
+    "devices": {
+        "gateway": {
+            "hardware_name": [
+                "IP Interface Secure",
+                "KNX IP Interface"
+            ]
+        }
     }
 }

@@ -339,7 +339,18 @@ def create_json_dump(project: KNXProject,file_path: Path):
     #os.makedirs(os.path.dirname("tests"), exist_ok=True)
     with open(f"tests/{file_path.name}.json", "w", encoding="utf8") as f:
         json.dump(project, f, indent=2, ensure_ascii=False)
-
+def _get_gwip(project: KNXProject):
+    devices = project['devices']
+    # Check if data is available
+    if len(devices) == 0:
+        logging.error("'devices' is Empty.")
+        raise ValueError("'devices' is Empty.")
+    for device in devices:
+        if devices[device]['hardware_name'] in config['devices']['gateway']['hardware_name']:
+            description = devices[device]['description']
+            ip = re.search(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}',description).group()
+            return ip
+    return None
 def main():
     """Main function"""
      # Konfiguration des Logging-Levels auf DEBUG
@@ -386,10 +397,12 @@ def main():
     addresses=get_addresses(project)
     # Adressen im Gebäude platzieren
     house=put_addresses_in_building(building,addresses)
+    ip=_get_gwip(project)
 
     # Konfiguration für OpenHAB setzen
     ets_to_openhab.house = house[0]["floors"]
     ets_to_openhab.all_addresses = addresses
+    ets_to_openhab.gwip=ip
     # OpenHAB-Konvertierung durchführen
     logging.info("Calling ets_to_openhab.main()")
     ets_to_openhab.main()

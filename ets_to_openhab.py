@@ -29,6 +29,7 @@ def data_of_name(data, name, suffix,replace=''):
     return None
 
 #global house,all_addresses,used_addresses
+gwip=None
 house = []
 all_addresses = []
 export_to_influx = []
@@ -405,6 +406,7 @@ def gen_building():
                                 item_type = "Rollershutter"
                                 thing_address_info = f"upDown=\"{fahren_auf_ab['Address']}\"{option_stop}{option_position }"
                                 #item_label = f"{lovely_name} [%d %%]"
+                                equipment = 'Blinds'
                                 semantic_info = "[\"Blinds\"]"
                                 item_icon = "rollershutter"
                             else:
@@ -436,6 +438,7 @@ def gen_building():
                                     ga="20.102"
                                 thing_address_info = f"ga=\"{ga}:{address['Address']}{option_status_betriebsmodus}\""
                                 item_label = f"{lovely_name}"
+                                equipment = 'HVAC'
                                 semantic_info = "[\"HVAC\"]"
                                 item_icon = "heating_mode"
                                 metadata=', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]'
@@ -610,6 +613,8 @@ def gen_building():
                                 root = f"equipment_{item_name}"
                             else:
                                 root = f"equipment_{equipments[item_label]}"
+                        if item_label in equipments.keys():
+                            root = f"equipment_{equipments[item_label]}"
 
                         items += f"{item_type}   {item_name}   \"{item_label}\"   {item_icon}   ({root})   {semantic_info}    {{ channel=\"knx:device:bridge:generic:{item_name}\" {metadata}{synonyms} }}\n"
                         group += f"        {sitemap_type} item={item_name} label=\"{item_label}\" {visibility}\n"
@@ -642,6 +647,7 @@ def export_output():
 
     # export things:
     things_template = open('things.template','r', encoding='utf8').read()
+    things_template = things_template.replace('###gwip###', gwip)
     things = things_template.replace('###things###', things)
     os.makedirs(os.path.dirname(config['things_path']), exist_ok=True)
     open(config['things_path'],'w', encoding='utf8').write(things)

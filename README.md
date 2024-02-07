@@ -1,17 +1,18 @@
 # KNX to openhab generator
-Generate an openhab text configuration based on an ETS GA export. 
+Generate an openhab text configuration based on an ETS project File. 
 Despite all things and items, the sitemap for basicui is generated. The semantic model is supported. 
-
-## Export GAs:
-Select all GAs in ETS. Exportformat: CSV. Format 1/1 "Name/Adresse", SCV Seperator Tabulator. The GAs should follow the scheme floor/room/message.
 
 ## Run
 - edit `config.json`
     - the default locations for the output files match directly, if you create a `openhab` directory and mount the `/etc/openhab` there. (under linux use e.g. `sshfs pi@[myIP]:/etc/openhab openhab`)
-- run `python3 ets_to_openhab.py`
+- run `python3 knxproject_to_openhab.py`
 
 ## drop words
 Within the configuration, there is a field `drop_words`. There you can define words which should not be used in labels. E.g. lights have already a bulb symbol. So the word light is not needed in the description. However, if the description would be empty after cleanup, the words are not dropped! (e.g. you have a `light right` and a `light left` -> bulb symbols with the words `right` and `left`. If you have only one light, the name will not be shortend as it is already short ;) )
+
+## ETS devices
+
+IP Gateway: will match by `config` - devices - gateway - hardware_name and gets IPv4 Address from description field
 
 ## ETS description field
 

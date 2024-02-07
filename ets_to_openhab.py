@@ -34,6 +34,7 @@ all_addresses = []
 export_to_influx = []
 used_addresses = []
 items = ''
+equipments={}
 sitemap = ''
 things = ''
 semantic_things = ''
@@ -274,7 +275,7 @@ def gen_building():
                     if not any(item['Address'] == address['Address'] for item in all_addresses):
                     #if address['Address'] not in all_addresses:
                         continue
-                    if address['Address'] == '3/0/9':
+                    if address['Address'] == '1/0/10':
                         logger.debug("Adress found - Breakpoint?")
 
                     used = False
@@ -343,12 +344,12 @@ def gen_building():
                                         used_addresses.append(switch_status_command['Address'])
                                         switch_option_status = f"+<{switch_status_command['Address']}"
                                     switch_option = f", switch=\"{switch_command['Address']}{switch_option_status}\""
-                                lovely_name = ' '.join(lovely_name.replace('Dimmen','').replace('Dimmer','').replace('absolut','').replace('Licht','').split())
+                                #lovely_name = ' '.join(lovely_name.replace('Dimmen','').replace('Dimmer','').replace('absolut','').replace('Licht','').split())
 
                                 auto_add = True
                                 item_type = "Dimmer"
                                 thing_address_info = f"position=\"{address['Address']}+<{dimmwert_status['Address']}\"{switch_option}{relative_option}"
-                                item_label = f"{lovely_name} [%d %%]"
+                                #item_label = f"{lovely_name} [%d %%]"
                                 equipment = 'Lightbulb'
                                 semantic_info = "[\"Light\"]"
                                 item_icon = "light"
@@ -403,7 +404,7 @@ def gen_building():
                                 auto_add = True
                                 item_type = "Rollershutter"
                                 thing_address_info = f"upDown=\"{fahren_auf_ab['Address']}\"{option_stop}{option_position }"
-                                item_label = f"{lovely_name} [%d %%]"
+                                #item_label = f"{lovely_name} [%d %%]"
                                 semantic_info = "[\"Blinds\"]"
                                 item_icon = "rollershutter"
                             else:
@@ -581,9 +582,10 @@ def gen_building():
                             item_label_short=item_label_short.replace(floor['name_short'],'')
                         if room['name_short']:
                             item_label_short=item_label_short.replace(room['name_short'],'')
-                        # remove leading "[....]@"
+                        # remove text by item_label pattern
                         item_label_short = re.sub(pattern_items_Label, '', item_label_short)
-                        item_label_short = ' '.join(item_label_short.split())
+                        item_label_short=item_label_short.replace('|',' ')
+                        #item_label_short = ' '.join(item_label_short.split())
                         if item_label_short != '':
                             item_label = item_label_short
 
@@ -602,8 +604,12 @@ def gen_building():
 
                         root = f"map{floor_nr}_{room_nr}"
                         if equipment != '':
-                            items += f"Group   equipment_{item_name}   \"{item_label}\"  {item_icon}  ({root})   [\"{equipment}\"]\n"
-                            root = f"equipment_{item_name}"
+                            if not item_label in equipments.keys():
+                                equipments[item_label]=item_name
+                                items += f"Group   equipment_{item_name}   \"{item_label}\"  {item_icon}  ({root})   [\"{equipment}\"]\n"
+                                root = f"equipment_{item_name}"
+                            else:
+                                root = f"equipment_{equipments[item_label]}"
 
                         items += f"{item_type}   {item_name}   \"{item_label}\"   {item_icon}   ({root})   {semantic_info}    {{ channel=\"knx:device:bridge:generic:{item_name}\" {metadata}{synonyms} }}\n"
                         group += f"        {sitemap_type} item={item_name} label=\"{item_label}\" {visibility}\n"

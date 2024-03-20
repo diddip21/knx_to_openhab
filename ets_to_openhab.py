@@ -588,6 +588,7 @@ def gen_building():
                         # remove text by item_label pattern
                         item_label_short = re.sub(pattern_items_Label, '', item_label_short)
                         item_label_short=item_label_short.replace('|',' ')
+                        item_label_short=item_label_short.replace('  ',' ')
                         #item_label_short = ' '.join(item_label_short.split())
                         if item_label_short != '':
                             item_label = item_label_short

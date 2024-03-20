@@ -164,7 +164,9 @@
             "Steckdose",
             "Steckdosen",
             "Strom",
-            "Leistung"
+            "Leistung",
+            "AUF/ZU",
+            "AUF"
         ]
     },
     "devices": {

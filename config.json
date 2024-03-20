@@ -16,7 +16,7 @@
         "item_Room_nameshort_prefix": "+"
     },
     "regexpattern": {
-        "item_Floor": "=[1-9\\.A-Z]+",
+        "item_Floor": "^=?[1-9\\.A-Z]{1,5}$",
         "item_Floor_nameshort": "^[a-zA-Z]{1,5}$",
         "item_Room": "\\++[A-Z].[0-9]+",
         "items_Name": "[^A-Za-z0-9_]+",

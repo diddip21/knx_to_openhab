@@ -647,7 +647,8 @@ def export_output():
 
     # export things:
     things_template = open('things.template','r', encoding='utf8').read()
-    things_template = things_template.replace('###gwip###', gwip)
+    if gwip:
+        things_template = things_template.replace('###gwip###', gwip)
     things = things_template.replace('###things###', things)
     os.makedirs(os.path.dirname(config['things_path']), exist_ok=True)
     open(config['things_path'],'w', encoding='utf8').write(things)

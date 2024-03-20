@@ -348,8 +348,9 @@ def _get_gwip(project: KNXProject):
     for device in devices:
         if devices[device]['hardware_name'] in config['devices']['gateway']['hardware_name']:
             description = devices[device]['description']
-            ip = re.search(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}',description).group()
-            return ip
+            if not len(description) == 0:
+                ip = re.search(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}',description).group()
+                return ip
     return None
 def main():
     """Main function"""

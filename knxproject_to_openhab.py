@@ -226,7 +226,7 @@ def get_addresses(project: KNXProject):
 
             #logging.debug(f"Processed address: {laddress}")
     return _addresses
-def _get_sensor_co_from_list(cos):
+def _get_sensor_co_from_list(cos,ign_devices=None):
     """
     Diese Funktion sucht in einer Liste von Kommunikationsobjekten (cos) nach einem Sensor-Kommunikationsobjekt,
     das für das Lesen oder Übertragen (transmit) aktiviert ist.
@@ -240,6 +240,8 @@ def _get_sensor_co_from_list(cos):
     # Überprüfen, ob die Kommunikationsobjekte vorhanden sind
     if "communication_object" in cos:
         for co in cos["communication_object"]:
+            if ign_devices and co['device_address'] in ign_devices:
+                continue
             # Überprüfen, ob das Kommunikationsobjekt Flags enthält
             if "flags" in co:
                 # Überprüfen, ob das Flag 'read' aktiviert ist
@@ -254,7 +256,7 @@ def _get_sensor_co_from_list(cos):
                         return co
     logging.debug("No sensor communication object found.")
     return None
-def put_addresses_in_building(building,addresses):
+def put_addresses_in_building(building,addresses,project: KNXProject):
     """
     Diese Funktion platziert Adressen in einem Gebäudeobjekt basierend auf den zugehörigen Etagen und Räumen.
 
@@ -270,12 +272,15 @@ def put_addresses_in_building(building,addresses):
         raise ValueError("'building' is Empty.")
     if len(addresses)==0:
         raise ValueError("'addresses' is Empty.")
+    if len(project)==0:
+        raise ValueError("'project' is Empty.")
+    cabinet_devices= _get_distributionboard_devices(project)
     # Liste für unbekannte Adressen initialisieren
     unknown =[]
     for address in addresses:
         found=False
         # Versuche, das Sensor-Kommunikationsobjekt für das Lesen zu erhalten
-        read_co = _get_sensor_co_from_list(address)
+        read_co = _get_sensor_co_from_list(address,cabinet_devices)
 
         # Durchlaufe jedes Gebäudeobjekt
         for itembuilding in building:
@@ -352,6 +357,22 @@ def _get_gwip(project: KNXProject):
                 ip = re.search(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}',description).group()
                 return ip
     return None
+def _get_distributionboard_devices(project: KNXProject):
+    locations = project['locations']
+    _schaltschrank=[]
+    for loc in locations.values():
+        _schaltschrank.extend(_get_recursive_spaces(loc['spaces']))
+    return _schaltschrank
+def _get_recursive_spaces(spaces: dict):
+    _schaltschrank=[]
+    for space in spaces.values():
+        if space['type'] in ('DistributionBoard'):
+            _schaltschrank.extend(space['devices'])
+
+        if 'spaces' in space:
+           _schaltschrank.extend(_get_recursive_spaces(space['spaces']))
+    return _schaltschrank
+    
 def main():
     """Main function"""
      # Konfiguration des Logging-Levels auf DEBUG
@@ -391,13 +412,13 @@ def main():
         project: KNXProject = knxproj.parse()
         # Erstelle ein JSON Dump des aktuellen Projekts
         create_json_dump(project,pargs.file_path)
-
+    
     # Gebäude erstellen
     building=create_building(project)
     # Adressen extrahieren
     addresses=get_addresses(project)
     # Adressen im Gebäude platzieren
-    house=put_addresses_in_building(building,addresses)
+    house=put_addresses_in_building(building,addresses,project)
     ip=_get_gwip(project)
 
     # Konfiguration für OpenHAB setzen

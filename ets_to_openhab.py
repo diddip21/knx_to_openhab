@@ -82,7 +82,7 @@ datapoint_mappings = {
     'DPST-9-4': {'item_type': 'Number:Illuminance', 'ga_prefix': '9.004', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
                     'semantic_info':"[\"Measurement\", \"Light\"]", 'item_icon':"sun"},
     # Geschwindigkeit (m/s)
-    'DPST-9-5': {'item_type': 'Number:Speed', 'ga_prefix': '9.005', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
+    'DPST-9-5': {'item_type': 'Number:Speed', 'ga_prefix': '9.005', 'metadata': ', unit="m/s", stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
                     'semantic_info':"[\"Measurement\", \"Wind\"]", 'item_icon':"wind"},
     # Luftqualität (ppm)
     'DPST-9-8': {'item_type': 'Number:Dimensionless', 'ga_prefix': '9.005', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f ppm\"]',

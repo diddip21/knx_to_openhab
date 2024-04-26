@@ -601,6 +601,7 @@ def gen_building():
                         item_label = item_label.replace(room_nameoriginal, room_name)
                         item_label = re.sub(r'\[.*\]', '', item_label)
                         item_label = re.sub(r'\|.*\:', '', item_label)
+                        item_label = re.sub(r'^\W+|\W+$', '', item_label) # removes special cahrs on start/end
                         item_label = item_label.strip()
 
                         thing_type = item_type.lower().split(":")[0]

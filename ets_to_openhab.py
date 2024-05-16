@@ -276,7 +276,7 @@ def gen_building():
                     if not any(item['Address'] == address['Address'] for item in all_addresses):
                     #if address['Address'] not in all_addresses:
                         continue
-                    if address['Address'] == '1/0/10':
+                    if address['Address'] == '1/2/37':
                         logger.debug("Adress found - Breakpoint?")
 
                     used = False
@@ -583,8 +583,8 @@ def gen_building():
                         # remvoe floor and room from label
                         if floor['name_short']:
                             item_label_short=item_label_short.replace(floor['name_short'],'')
-                        if room['name_short']:
-                            item_label_short=item_label_short.replace(room['name_short'],'')
+                        # if room['name_short']:
+                        #     item_label_short=item_label_short.replace(room['name_short'],'')
                         # remove text by item_label pattern
                         item_label_short = re.sub(pattern_items_Label, '', item_label_short)
                         item_label_short=item_label_short.replace('|',' ')

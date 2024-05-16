@@ -20,7 +20,7 @@
         "item_Floor_nameshort": "^[a-zA-Z]{1,5}$",
         "item_Room": "\\++[A-Z].[0-9]+",
         "items_Name": "[^A-Za-z0-9_]+",
-        "items_Label": "^\\[\\w*\\]\\@\\s?|^[^A-Za-z0-9]|:\\(.*\\)\\s?"
+        "items_Label": "^\\[\\w*\\]\\@\\s?(\\+RM(\\d+(\\/|\\\\|-)*)*(\\d+))*\\s|:\\(.*\\)\\s?"
     },
     "defines": {
         "switch": {

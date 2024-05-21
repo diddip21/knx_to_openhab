@@ -53,6 +53,6 @@ Numbers are now member of [UoM](https://www.openhab.org/docs/concepts/units-of-m
 - Rollershutter based on Name
 - Switch - based on Datatype. Looking for a status GA with the same name and suffix configured in config.json/"switch"/"status_suffix". Default: "Status" 
     - Example: GAs "Light right" + "Light right Status"
-    - Lights, powerplugs and audio devices can be detected by names configured at config.json -> defines -> switch -  "poweroutlet_name" / "speaker_name" / "light_name". The configured name has to be part of the GA Name.
+    - Lights, powerplugs and audio devices can be detected by names configured at config.json -> defines -> switch - change_metadata -> "poweroutlet_name" / "speaker_name" / "light_name". The configured name has to be part of the GA Name.
 - Dimmer - based on suffix in config.json/"dimmer"/"suffix_absolut" (default: "Dimmen absolut"). Also searching for: "status_suffix" (default "Status Dimmwert") Dropping all GA suffixes within config.json/"dimmer"/"drop".
     -  Example: GAs "Light Dimmen absolut" + "Light Status Dimmwert"

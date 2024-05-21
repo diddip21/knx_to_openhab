@@ -170,6 +170,9 @@ def get_addresses(project: KNXProject):
         elif not address['communication_object_ids']:
             logger.info("Ignore: %s because no communication object connected",address['name'])
             ignore = True
+        elif not address["dpt"]:
+            logger.info("Ignore: %s because no dpt set",address['name'])
+            ignore = True
         else:
             res_room = re_item_Room.search(address['name'])
             res_floor = re_item_Floor.search(address['name'])
@@ -368,11 +371,15 @@ def _get_recursive_spaces(spaces: dict):
     for space in spaces.values():
         if space['type'] in ('DistributionBoard'):
             _schaltschrank.extend(space['devices'])
-
         if 'spaces' in space:
-           _schaltschrank.extend(_get_recursive_spaces(space['spaces']))
+            _schaltschrank.extend(_get_recursive_spaces(space['spaces']))
     return _schaltschrank
-    
+def _get_enabled_homekit(project: KNXProject):
+    b_homekit=False
+    #TODO: Read Project Info or so to geht Homekitenabled or not
+    b_homekit=True
+    return b_homekit
+
 def main():
     """Main function"""
      # Konfiguration des Logging-Levels auf DEBUG
@@ -412,7 +419,7 @@ def main():
         project: KNXProject = knxproj.parse()
         # Erstelle ein JSON Dump des aktuellen Projekts
         create_json_dump(project,pargs.file_path)
-    
+
     # Gebäude erstellen
     building=create_building(project)
     # Adressen extrahieren
@@ -420,11 +427,13 @@ def main():
     # Adressen im Gebäude platzieren
     house=put_addresses_in_building(building,addresses,project)
     ip=_get_gwip(project)
+    b_homekit=_get_enabled_homekit(project)
 
     # Konfiguration für OpenHAB setzen
     ets_to_openhab.house = house[0]["floors"]
     ets_to_openhab.all_addresses = addresses
     ets_to_openhab.gwip=ip
+    ets_to_openhab.b_homekit=b_homekit
     # OpenHAB-Konvertierung durchführen
     logging.info("Calling ets_to_openhab.main()")
     ets_to_openhab.main()

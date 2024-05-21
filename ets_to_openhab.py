@@ -3,7 +3,7 @@ import csv
 import re
 import os
 import logging
-from config import config,normalize_string
+from config import config, datapoint_mappings,normalize_string
 logger = logging.getLogger(__name__)
 
 pattern_items_Name=config['regexpattern']['items_Name']
@@ -30,6 +30,7 @@ def data_of_name(data, name, suffix,replace=''):
 
 #global house,all_addresses,used_addresses
 gwip=None
+b_homekit=False
 house = []
 all_addresses = []
 export_to_influx = []
@@ -43,64 +44,6 @@ selections = ''
 semantic_cnt = 0
 fensterkontakte = []
 cnt = 0
-
-# Mappings für Datenpunkttypen
-datapoint_mappings = {
-    # Tag / Nacht
-    'DPST-1-24': {'item_type': 'Switch', 'ga_prefix': '1.024', 'metadata': '','semantic_info':"[\"Control\"]", 'item_icon':"moon"},
-    # Alarm
-    'DPST-1-5': {'item_type': 'Switch', 'ga_prefix': '1.005', 'metadata': '','semantic_info':"[\"Alarm\"]", 'item_icon':"siren"},
-    # Status
-    'DPST-1-11': {'item_type': 'Switch', 'ga_prefix': '1.011', 'metadata': '','semantic_info':"[\"Measurement\", \"Status\"]", 'item_icon':"switch"},
-    # Heizen / Kühlen
-    'DPST-1-100': {'item_type': 'Switch', 'ga_prefix': '1.100', 'metadata': '','semantic_info':"[\"Measurement\", \"Status\"]", 'item_icon':"temperature"},
-    # Temperatur
-    'DPST-9-1': {'item_type': 'Number:Temperature', 'ga_prefix': '9.001', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
-                    'semantic_info':"[\"Measurement\", \"Temperature\"]", 'item_icon':"temperature"},
-    # Luftfeuchtigkeit
-    'DPST-9-7': {'item_type': 'Number:Dimensionless', 'ga_prefix': '9.001', 'metadata': ', unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]',
-                    'semantic_info':"[\"Measurement\", \"Humidity\"]", 'item_icon':"humidity"},
-    # Fensterkontakt
-    'DPST-1-19': {'item_type': 'Contact', 'ga_prefix': '1.019', 'metadata': ', unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]',
-                    'semantic_info':"[\"OpenState\", \"Opening\"]", 'item_icon':"window"},
-    # Energie
-    'DPST-13-10': {'item_type': 'Number:Energy', 'ga_prefix': '13.010', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
-                    'semantic_info':"[\"Measurement\", \"Energy\"]", 'item_icon':"batterylevel"},
-    # Leistung
-    'DPST-14-56': {'item_type': 'Number:Power', 'ga_prefix': '14.056', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
-                    'semantic_info':"[\"Measurement\", \"Power\"]", 'item_icon':"energy"},
-    # Strom
-    'DPST-7-12': {'item_type': 'Number:ElectricCurrent', 'ga_prefix': '7.012', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
-                    'semantic_info':"[\"Measurement\", \"Current\"]", 'item_icon':"energy"},
-    # Volumen (l)
-    'DPST-12-1200': {'item_type': 'Number:Volume', 'ga_prefix': '12.1200', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
-                    'semantic_info':"[\"Measurement\", \"Volume\"]", 'item_icon':"water"},
-    # String
-    'DPST-16-0': {'item_type': 'String', 'ga_prefix': '16.000', 'metadata': '','semantic_info':"", 'item_icon':"text"},
-    'DPT-16': {'item_type': 'String', 'ga_prefix': '16.000', 'metadata': '','semantic_info':"", 'item_icon':"text"},
-    # Beleuchtungsstärke (Lux)
-    'DPST-9-4': {'item_type': 'Number:Illuminance', 'ga_prefix': '9.004', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
-                    'semantic_info':"[\"Measurement\", \"Light\"]", 'item_icon':"sun"},
-    # Geschwindigkeit (m/s)
-    'DPST-9-5': {'item_type': 'Number:Speed', 'ga_prefix': '9.005', 'metadata': ', unit="m/s", stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
-                    'semantic_info':"[\"Measurement\", \"Wind\"]", 'item_icon':"wind"},
-    # Luftqualität (ppm)
-    'DPST-9-8': {'item_type': 'Number:Dimensionless', 'ga_prefix': '9.005', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f ppm\"]',
-                    'semantic_info':"[\"Measurement\"]", 'item_icon':""},
-    # Prozent
-    'DPST-5-1': {'item_type': 'Dimmer', 'ga_prefix': 'position=5.001', 'metadata': ', unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]',
-                    'semantic_info':"[\"Measurement\"]", 'item_icon':""},
-    # Zeitdifferenz
-    'DPST-13-100': {'item_type': 'Number:Time', 'ga_prefix': '13.100', 'metadata': ', stateDescription=\"\"[pattern=\"%.1f %unit%\"]',
-                    'semantic_info':"[\"Measurement\", \"Duration\"]", 'item_icon':"time"},
-    # Datum/Uhrzeit
-    'DPST-19-1': {'item_type': 'DateTime', 'ga_prefix': '19.001', 'metadata': '', 'semantic_info':"", 'item_icon':"time"},
-    # Betriebsartvorwahl
-    'DPST-20-102': {'item_type': 'Number:Dimensionless', 'ga_prefix': '20.102', 'metadata': ', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]',
-                    'semantic_info':"[\"HVAC\"]", 'item_icon':"heating_mode"},
-    'DPST-5-010': {'item_type': 'Number:Dimensionless', 'ga_prefix': '5.010', 'metadata': ', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]',
-                    'semantic_info':"[\"HVAC\"]", 'item_icon':"heating_mode"},
-}
 
 def read_csvexport():
     """Reads an ETS csv Export"""
@@ -354,6 +297,8 @@ def gen_building():
                                 equipment = 'Lightbulb'
                                 semantic_info = "[\"Light\"]"
                                 item_icon = "light"
+                                if b_homekit:
+                                    metadata+=', homekit="Lighting, Lighting.Brightness"'
                             else:
                                 logger.warning("incomplete dimmer: %s / %s",basename,address['Address'])
 
@@ -409,6 +354,8 @@ def gen_building():
                                 equipment = 'Blinds'
                                 semantic_info = "[\"Blinds\"]"
                                 item_icon = "rollershutter"
+                                if b_homekit:
+                                    metadata+=', homekit="Window"'
                             else:
                                 logger.warning("incomplete rollershutter: %s",basename)
 
@@ -548,7 +495,6 @@ def gen_building():
                         #    things += f"Type number        : {item_name}        \"{address['Group name']}\"       [ ga=\"18.001:{address['Address']}\" ]\n"
                         #    items += f"Number        {item_name}         \"{lovely_name} [%d]\"                <sun>  (map{floor_nr}_{room_nr})        {{ channel=\"knx:device:bridge:generic:{item_name}\" }}\n"
 
-                    # TODO: get rid of this
                     if define and 'change_metadata' in define:
                         for item in define['change_metadata']:
                             if item in address['Group name']:
@@ -609,13 +555,13 @@ def gen_building():
 
                         root = f"map{floor_nr}_{room_nr}"
                         if equipment != '':
-                            if not item_label in equipments.keys():
+                            if not item_label in equipments:
                                 equipments[item_label]=item_name
                                 items += f"Group   equipment_{item_name}   \"{item_label}\"  {item_icon}  ({root})   [\"{equipment}\"]\n"
                                 root = f"equipment_{item_name}"
                             else:
                                 root = f"equipment_{equipments[item_label]}"
-                        if item_label in equipments.keys():
+                        if item_label in equipments:
                             root = f"equipment_{equipments[item_label]}"
 
                         items += f"{item_type}   {item_name}   \"{item_label}\"   {item_icon}   ({root})   {semantic_info}    {{ channel=\"knx:device:bridge:generic:{item_name}\" {metadata}{synonyms} }}\n"

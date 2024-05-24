@@ -29,21 +29,14 @@ def data_of_name(data, name, suffix,replace=''):
     return None
 
 #global house,all_addresses,used_addresses
-gwip=None
-b_homekit=False
+GWIP=None
+B_HOMEKIT=False
 house = []
 all_addresses = []
 export_to_influx = []
 used_addresses = []
-items = ''
 equipments={}
-sitemap = ''
-things = ''
-semantic_things = ''
-selections = ''
-semantic_cnt = 0
-fensterkontakte = []
-cnt = 0
+FENSTERKONTAKTE = []
 
 def read_csvexport():
     """Reads an ETS csv Export"""
@@ -150,7 +143,9 @@ def gen_building():
                                     lowco = sa
                         return lowco
         return None
-    global items,sitemap,things
+    items=''
+    sitemap=''
+    things=''
     floor_nr=0
     for floor in house:
         floor_nr+=1
@@ -244,7 +239,7 @@ def gen_building():
                         continue
 
                     shortened_name = ' '.join(address['Group name'].replace(room['Group name'],'').replace(floor['Group name'],'').split())
-                    item_name = f"i_{cnt}_{floor['Group name']}_{room['Group name']}_{shortened_name}"
+                    item_name = f"i_{floor['Group name']}_{room['Group name']}_{shortened_name}"
                     item_name = item_name.translate(config['special_char_map'])
                     item_name = re.sub(pattern_items_Name, '', item_name)
                     if run == 0:
@@ -297,7 +292,7 @@ def gen_building():
                                 equipment = 'Lightbulb'
                                 semantic_info = "[\"Light\"]"
                                 item_icon = "light"
-                                if b_homekit:
+                                if B_HOMEKIT:
                                     metadata+=', homekit="Lighting, Lighting.Brightness"'
                             else:
                                 logger.warning("incomplete dimmer: %s / %s",basename,address['Address'])
@@ -354,7 +349,7 @@ def gen_building():
                                 equipment = 'Blinds'
                                 semantic_info = "[\"Blinds\"]"
                                 item_icon = "rollershutter"
-                                if b_homekit:
+                                if B_HOMEKIT:
                                     metadata+=', homekit="Window"'
                             else:
                                 logger.warning("incomplete rollershutter: %s",basename)
@@ -396,7 +391,7 @@ def gen_building():
                     #  erst im zweiten durchlauf prüfen damit integrierte Schaltobjekte (z.B. dimmen) vorher schon erkannt werden.
                     if run > 0:
                         # Schalten or bool
-                        if address['DatapointType'] == 'DPST-1-1' or address['DatapointType'] == 'DPST-1-2':
+                        if address['DatapointType'] in ('DPST-1-1','DPST-1-2'):
                             define=config['defines']['switch']
                             item_type = "Switch"
                             item_label = lovely_name
@@ -448,7 +443,7 @@ def gen_building():
                         # window/door
                         if address['DatapointType'] == 'DPST-1-19':
                             equipment = 'Window'
-                            fensterkontakte.append({'item_name': item_name, 'name': address['Group name']})
+                            FENSTERKONTAKTE.append({'item_name': item_name, 'name': address['Group name']})
 
                         # Szene
                         if address['DatapointType'] in ('DPST-17-1','DPST-18-1'):
@@ -466,7 +461,7 @@ def gen_building():
                                 data_map = mappings.replace("'",'"').replace('"','').replace('=','.0=')
                                 metadata=f', stateDescription=\"\"[options=\"NULL=unbekannt ...,{data_map}\"], commandDescription=\"\"[options=\"{data_map}\"]'
                                 item_label = lovely_name
-                                #TODO: Mappings noch über metadata abbilden
+                                #T ODO: Mappings noch über metadata abbilden
                                 #mapfile = f"gen_{item_name}.map"
                                 #mappings = mappings.replace("'",'"')
 
@@ -582,6 +577,7 @@ def gen_building():
             else:
                 sitemap += "\n "
         sitemap += "}\n "
+    return items,sitemap,things
 
 def check_unused_addresses():
     """Logs all unused addresses for further manual actions"""
@@ -589,14 +585,14 @@ def check_unused_addresses():
     for address in all_addresses:
         logger.info("unused: %s: %s with type %s",address['Address'],address['Group name'],address['DatapointType'])
 
-def export_output():
+def export_output(items,sitemap,things):
     """Exports things / items / sitemap / ...  Files"""
-    global items,sitemap,things
+    #global items,sitemap,things
 
     # export things:
     things_template = open('things.template','r', encoding='utf8').read()
-    if gwip:
-        things_template = things_template.replace('###gwip###', gwip)
+    if GWIP:
+        things_template = things_template.replace('###gwip###', GWIP)
     things = things_template.replace('###things###', things)
     os.makedirs(os.path.dirname(config['things_path']), exist_ok=True)
     open(config['things_path'],'w', encoding='utf8').write(things)
@@ -608,7 +604,6 @@ def export_output():
     # export sitemap:
     sitemap_template = open('sitemap.template','r', encoding='utf8').read()
     sitemap = sitemap_template.replace('###sitemap###', sitemap)
-    #sitemap = sitemap.replace('###selections###', selections)
     os.makedirs(os.path.dirname(config['sitemaps_path']), exist_ok=True)
     open(config['sitemaps_path'],'w', encoding='utf8').write(sitemap)
 
@@ -634,7 +629,7 @@ def export_output():
 
 
     fenster_rule = ''
-    for i in fensterkontakte:
+    for i in FENSTERKONTAKTE:
         fenster_rule += f'var save_fk_count_{i["item_name"]} = 0 \n'
     fenster_rule += '''
     rule "fensterkontakt check"
@@ -642,7 +637,7 @@ def export_output():
         Time cron "0 * * * * ? *"
     then
     '''
-    for i in fensterkontakte:
+    for i in FENSTERKONTAKTE:
         fenster_rule += f'    if({i["item_name"]}.state == OPEN){{ \n'
         fenster_rule += f'         save_fk_count_{i["item_name"]} += 1\n'
         fenster_rule += f'         if(save_fk_count_{i["item_name"]} == 15) {{\n'
@@ -662,9 +657,9 @@ def main():
     """Main function"""
     logging.basicConfig()
     #read_csvexport()
-    gen_building()
+    items,sitemap,things=gen_building()
     check_unused_addresses()
-    export_output()
+    export_output(items,sitemap,things)
 
 if __name__ == "__main__":
     main()

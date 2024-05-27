@@ -416,6 +416,8 @@ def gen_building():
                                 thing_address_info = f"ga=\"{address['Address']}\""
                                 semantic_info = "[\"Control\", \"Switch\"]"
                                 item_icon = "switch"
+                            if B_HOMEKIT:
+                                metadata+=', homekit="Switchable"'
 
 
                     ######## determined only by datapoint
@@ -435,6 +437,8 @@ def gen_building():
                                     thing_address_info = f"{split_info[0]}=\"{split_info[1]}:{address['Address']}\""
                                 item_label = f"{lovely_name}"
                                 metadata=f"{mapping_info['metadata']}"
+                                if B_HOMEKIT:
+                                    metadata+=f"{mapping_info['homekit']}"
                                 semantic_info = f"{mapping_info['semantic_info']}"
                                 item_icon = mapping_info['item_icon']
                                 if 'Soll' in lovely_name:

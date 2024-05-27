@@ -143,60 +143,67 @@ def gen_building():
                                     lowco = sa
                         return lowco
         return None
+    def process_description(descriptions, variable):
+        """
+        Process description parts and update corresponding variables.
+        """
+        for description in descriptions:
+            if description == 'debug':
+                variable['visibility'] = 'visibility=[extended_view==ON]'
+            elif description.startswith('icon='):
+                variable['icon'] = '<' + description.replace('icon=', '') + '>'
+            elif description.startswith('semantic='):
+                variable['semantic'] = '["' + description.replace('semantic=', '').replace(',', '","') + '"] '
+            elif description.startswith('synonyms='):
+                variable['synonyms'] = '{ ' + description.replace('synonyms=', 'synonyms="').replace(',', ', ') + '" } '
+            elif description.startswith('name='):
+                variable['name'] = description.replace('name=', '')
+        return variable
+    def generate_floor_configuration(floor, floor_nr):
+        """
+        Generate configuration entries for a floor.
+        """
+        floor_configuration = ''
+        floor_name = floor['Group name']
+        if config['general']['FloorNameFromDescription'] and floor['Description'] != '':
+            floor_name = floor['Description']
+        description = floor['Description'].split(';')
+        floor_variables = {'visibility': '', 'semantic': '["Location"]', 'synonyms': '', 'icon': '','name':floor_name}
+        floor_variables = process_description(description, floor_variables)
+
+        floor_configuration += f"Group   map{floor_nr}   \"{floor_variables['name']}\" {floor_variables['icon']}  {floor_variables['semantic']} {floor_variables['synonyms']} \n"
+        return floor_configuration, floor_name
+    def generate_room_configuration(room, floor_nr, room_nr):
+        """
+        Generate configuration entries for a room.
+        """
+        room_configuration = ''
+        room_name = room['Group name']
+        if config['general']['RoomNameFromDescription'] and room['Description'] != '':
+            room_name = room['Description']
+        #room_name_original = room_name
+        description = room['Description'].split(';')
+        room_variables = {'visibility': '', 'semantic': f'["Location", "Room", "{room_name}"]', 'icon': '', 'synonyms': '', 'name': room_name}
+        room_variables = process_description(description, room_variables)
+
+        room_configuration += f"Group   map{floor_nr}_{room_nr}   \"{room_variables['name']}\"  {room_variables['icon']}  (map{floor_nr})   {room_variables['semantic']} {room_variables['synonyms']}\n"
+        return room_configuration, room_name, room_variables
     items=''
     sitemap=''
     things=''
     floor_nr=0
     for floor in house:
-        floor_nr+=1
-        floor_name = floor['Group name']
-        if config['general']['FloorNameFromDescription'] and floor['Description'] != '':
-            floor_name = floor['Description']
-        descriptions = floor['Description'].split(';')
-        visibility = ''
-        semantic = '["Location"]'
-        synonyms = ''
-        icon = ''
-        for description in descriptions:
-            if description == 'debug':
-                visibility = 'visibility=[extended_view==ON]'
-            if description.startswith('icon='):
-                icon = '<' + description.replace('icon=','') + '>'
-            if description.startswith('semantic='):
-                semantic = '["Location", "' + description.replace('semantic=','').replace(',','","') + '"] '
-            if description.startswith('synonyms='):
-                synonyms = '{ ' + description.replace('synonyms=','synonyms="').replace(',',', ') + '" } '
-
-        items += f"Group   map{floor_nr}   \"{floor_name}\" {icon}  {semantic} {synonyms} \n" # {location}  \n" # {visibility}
+        floor_nr += 1
+        floor_configuration, floor_name = generate_floor_configuration(floor, floor_nr)
+        items += floor_configuration
         sitemap += f"Frame label=\"{floor_name}\" {{\n"
-        room_nr=0
-        logger.debug("Floor: %s",floor_name)
-        for room in floor['rooms']:
-            room_nr+=1
-            room_name = room['Group name']
-            # Überprüfe, ob der Raumname aus der Beschreibung genommen werden soll
-            if config['general']['RoomNameFromDescription'] and room['Description'] != '':
-                room_name = room['Description']
-            room_nameoriginal = room_name
-            descriptions = room['Description'].split(';')
-            visibility = ''
-            semantic = f"[\"Location\", \"Room\", \"{room_name}\"]"
-            icon = ''
-            synonyms = ''
-            for description in descriptions:
-                if description == 'debug':
-                    visibility = 'visibility=[extended_view==ON]'
-                if description.startswith('icon='):
-                    icon = '<' + description.replace('icon=','') + '>'
-                if description.startswith('semantic='):
-                    semantic = '["Location", "' + description.replace('semantic=','').replace(',','","') + '"] '
-                if description.startswith('synonyms='):
-                    synonyms = '{ ' + description.replace('synonyms=','synonyms="').replace(',',', ') + '" } '
-                if description.startswith('name='):
-                    room_name = description.replace('name=','')
 
-            items += f"Group   map{floor_nr}_{room_nr}   \"{room_name}\"  {icon}  (map{floor_nr})   {semantic} {synonyms}\n"
-            sitemap += f"     Group item=map{floor_nr}_{room_nr} {visibility} label=\"{room_name}\" "
+        room_nr = 0
+        for room in floor['rooms']:
+            room_nr += 1
+            room_configuration, room_name, room_variables = generate_room_configuration(room, floor_nr, room_nr)
+            items += room_configuration
+            sitemap += f"     Group item=map{floor_nr}_{room_nr} {room_variables['visibility']} label=\"{room_name}\" "
             group = ""
 
             addresses = room['Addresses']
@@ -228,7 +235,7 @@ def gen_building():
                     #lovely_name = ' '.join(address['Group name'].replace(house[floor_nr]['rooms'][room_nr]['Group name'],'').replace(house[floor_nr]['Group name'],'').split())
                     lovely_name = address['Group name']
                     item_label = lovely_name
-                    descriptions = address['Description'].split(';')
+                    description = address['Description'].split(';')
                     equipment = ''
                     define=None
 
@@ -456,9 +463,9 @@ def gen_building():
                             if address['DatapointType'] == 'DPST-18-1':
                                 ga="18.001"
 
-                            for description in descriptions:
-                                if '=' in description:
-                                    mappings = description
+                            for idescription in description:
+                                if '=' in idescription:
+                                    mappings = idescription
                                     break
 
                             if mappings!= '':
@@ -509,18 +516,12 @@ def gen_building():
 
                     if auto_add:
                         used_addresses.append(address['Address'])
-                        visibility = ''
-                        for description in descriptions:
-                            if 'debug' in description:
-                                visibility = 'visibility=[extended_view==ON]'
-                            if description.startswith('semantic='):
-                                semantic_info = '["' + description.replace('semantic=','').replace(',','","') + '"] '
-                            if description.startswith('icon='):
-                                item_icon = description.replace('icon=','').replace(',','","')
-                            if description.startswith('synonyms='):
-                                synonyms = '{ ' + description.replace('synonyms=','synonyms="').replace(',',', ') + '" } '
-                            if description.startswith('name='):
-                                item_label = description.replace('name=','')
+                        item_variables = {'visibility': '', 'semantic': semantic_info, 'synonyms': '', 'icon': item_icon,'name':item_label}
+                        item_variables = process_description(description, item_variables)
+                        semantic_info = item_variables['semantic']
+                        item_icon = item_variables['icon']
+                        synonyms = item_variables['synonyms']
+                        item_label = item_variables['name']
                         # remove generic description if unneccessary
                         item_label_short = item_label
                         for drop in config['defines']['drop_words']:
@@ -538,12 +539,12 @@ def gen_building():
                         if item_label_short != '':
                             item_label = item_label_short
 
-                        if item_icon:
-                            item_icon = f"<{item_icon}>"
-                        else:
+                        if not item_icon:
                             item_icon = ""
+                        elif not item_icon.startswith('<'):
+                            item_icon = f"<{item_icon}>"
 
-                        item_label = item_label.replace(room_nameoriginal, room_name)
+                        item_label = item_label.replace(room['Group name'], room_name)
                         item_label = re.sub(r'\[.*\]', '', item_label)
                         item_label = re.sub(r'\|.*\:', '', item_label)
                         item_label = re.sub(r'^\W+|\W+$', '', item_label) # removes special cahrs on start/end
@@ -564,7 +565,7 @@ def gen_building():
                             root = f"equipment_{equipments[item_label]}"
 
                         items += f"{item_type}   {item_name}   \"{item_label}\"   {item_icon}   ({root})   {semantic_info}    {{ channel=\"knx:device:bridge:generic:{item_name}\" {metadata}{synonyms} }}\n"
-                        group += f"        {sitemap_type} item={item_name} label=\"{item_label}\" {visibility}\n"
+                        group += f"        {sitemap_type} item={item_name} label=\"{item_label}\" {item_variables['visibility']}\n"
 
                         if 'influx' in address['Description']:
                             #print('influx @ ')

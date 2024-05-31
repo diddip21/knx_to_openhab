@@ -31,12 +31,13 @@ def data_of_name(data, name, suffix,replace=''):
 #global house,all_addresses,used_addresses
 GWIP=None
 B_HOMEKIT=False
-house = []
+floors = []
 all_addresses = []
 export_to_influx = []
 used_addresses = []
 equipments={}
 FENSTERKONTAKTE = []
+PRJ_NAME = 'Our Home'
 
 def read_csvexport():
     """Reads an ETS csv Export"""
@@ -50,7 +51,7 @@ def read_csvexport():
             if not 'Group name' in row:
                 row['Group name'] = row['Main']
             row['rooms'] = []
-            house.insert(int(row['Address'].split('/')[0]),row)
+            floors.insert(int(row['Address'].split('/')[0]),row)
             #house[int(row['Address'].split('/')[0])] = row
         # check if room
         elif row['Address'].endswith('/-'):
@@ -58,7 +59,7 @@ def read_csvexport():
                 row['Group name'] = row['Middle']
             splitter = row['Address'].split('/')
             row['Addresses'] = []
-            house[int(splitter[0])]['rooms'].insert(int(splitter[1]),row)
+            floors[int(splitter[0])]['rooms'].insert(int(splitter[1]),row)
         # normal group address
         else:
             if not 'Group name' in row:
@@ -67,7 +68,7 @@ def read_csvexport():
             if 'ignore' in row['Description']:
                 logger.debug("ignoreflag in description for: %s", row['Group name'])
                 continue
-            house[int(splitter[0])]['rooms'][int(splitter[1])]['Addresses'].append(row)
+            floors[int(splitter[0])]['rooms'][int(splitter[1])]['Addresses'].append(row)
             all_addresses.append(row)
 
 def gen_building():
@@ -171,7 +172,7 @@ def gen_building():
         floor_variables = {'visibility': '', 'semantic': '["Location"]', 'synonyms': '', 'icon': '','name':floor_name}
         floor_variables = process_description(description, floor_variables)
 
-        floor_configuration += f"Group   map{floor_nr}   \"{floor_variables['name']}\" {floor_variables['icon']}  {floor_variables['semantic']} {floor_variables['synonyms']} \n"
+        floor_configuration += f"Group   map{floor_nr}   \"{floor_variables['name']}\" {floor_variables['icon']} (Base) {floor_variables['semantic']} {floor_variables['synonyms']} \n"
         return floor_configuration, floor_name
     def generate_room_configuration(room, floor_nr, room_nr):
         """
@@ -192,7 +193,7 @@ def gen_building():
     sitemap=''
     things=''
     floor_nr=0
-    for floor in house:
+    for floor in floors:
         floor_nr += 1
         floor_configuration, floor_name = generate_floor_configuration(floor, floor_nr)
         items += floor_configuration
@@ -221,7 +222,7 @@ def gen_building():
                     if not any(item['Address'] == address['Address'] for item in all_addresses):
                     #if address['Address'] not in all_addresses:
                         continue
-                    if address['Address'] == '1/2/37':
+                    if address['Address'] == '3/3/123':
                         logger.debug("Adress found - Breakpoint?")
 
                     used = False
@@ -231,12 +232,15 @@ def gen_building():
                     sitemap_type = 'Default'
                     mappings = ''
                     metadata = ''
+                    meta_homekit=''
                     semantic_info=''
                     #lovely_name = ' '.join(address['Group name'].replace(house[floor_nr]['rooms'][room_nr]['Group name'],'').replace(house[floor_nr]['Group name'],'').split())
                     lovely_name = address['Group name']
                     item_label = lovely_name
                     description = address['Description'].split(';')
                     equipment = ''
+                    equip_metadata = ''
+                    grp_metadata=''
                     define=None
 
                     #print(f"--- processing: {lovely_name}")
@@ -245,8 +249,8 @@ def gen_building():
                     if 'IGNORE' in address.keys():
                         continue
 
-                    shortened_name = ' '.join(address['Group name'].replace(room['Group name'],'').replace(floor['Group name'],'').split())
-                    item_name = f"i_{floor['Group name']}_{room['Group name']}_{shortened_name}"
+                    shortened_name = ' '.join(address['Group name'].replace(room['Group name'],'').replace(room['name_short'],'').replace(floor['Group name'],'').replace(floor['name_short'],'').split())
+                    item_name = f"i_{floor['name_short']}_{room['name_short']}_{shortened_name}"
                     item_name = item_name.translate(config['special_char_map'])
                     item_name = re.sub(pattern_items_Name, '', item_name)
                     if run == 0:
@@ -300,7 +304,7 @@ def gen_building():
                                 semantic_info = "[\"Light\"]"
                                 item_icon = "light"
                                 if B_HOMEKIT:
-                                    metadata+=', homekit="Lighting, Lighting.Brightness"'
+                                    meta_homekit=', homekit="Lighting, Lighting.Brightness"'
                             else:
                                 logger.warning("incomplete dimmer: %s / %s",basename,address['Address'])
 
@@ -357,7 +361,8 @@ def gen_building():
                                 semantic_info = "[\"Blinds\"]"
                                 item_icon = "rollershutter"
                                 if B_HOMEKIT:
-                                    metadata+=', homekit="Window"'
+                                    equip_metadata='homekit = "WindowCovering"'
+                                    meta_homekit=', homekit = "CurrentPosition, TargetPosition, PositionState"'
                             else:
                                 logger.warning("incomplete rollershutter: %s",basename)
 
@@ -388,6 +393,7 @@ def gen_building():
                                 thing_address_info = f"ga=\"{ga}:{address['Address']}{option_status_betriebsmodus}\""
                                 item_label = f"{lovely_name}"
                                 equipment = 'HVAC'
+                                if B_HOMEKIT: equip_metadata='homekit = "Thermostat"'
                                 semantic_info = "[\"HVAC\"]"
                                 item_icon = "heating_mode"
                                 metadata=', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]'
@@ -424,7 +430,7 @@ def gen_building():
                                 semantic_info = "[\"Control\", \"Switch\"]"
                                 item_icon = "switch"
                             if B_HOMEKIT:
-                                metadata+=', homekit="Switchable"'
+                                meta_homekit=', homekit="Switchable"'
 
 
                     ######## determined only by datapoint
@@ -445,11 +451,12 @@ def gen_building():
                                 item_label = f"{lovely_name}"
                                 metadata=f"{mapping_info['metadata']}"
                                 if B_HOMEKIT:
-                                    metadata+=f"{mapping_info['homekit']}"
+                                    meta_homekit=f"{mapping_info['homekit']}"
                                 semantic_info = f"{mapping_info['semantic_info']}"
                                 item_icon = mapping_info['item_icon']
                                 if 'Soll' in lovely_name:
                                     semantic_info = semantic_info.replace("Measurement","Setpoint")
+                                    meta_homekit = meta_homekit.replace("CurrentTemperature","TargetTemperature")
                                 break
                         # window/door
                         if address['DatapointType'] == 'DPST-1-19':
@@ -510,12 +517,15 @@ def gen_building():
                                             semantic_info = define['change_metadata'][item][var]
                                         case 'item_icon':
                                             item_icon = define['change_metadata'][item][var]
+                                        case 'homekit':
+                                            if B_HOMEKIT: meta_homekit=define['change_metadata'][item][var]
 
                     if used:
                         used_addresses.append(address['Address'])
 
                     if auto_add:
                         used_addresses.append(address['Address'])
+                        if B_HOMEKIT: metadata+=meta_homekit
                         item_variables = {'visibility': '', 'semantic': semantic_info, 'synonyms': '', 'icon': item_icon,'name':item_label}
                         item_variables = process_description(description, item_variables)
                         semantic_info = item_variables['semantic']
@@ -557,7 +567,8 @@ def gen_building():
                         if equipment != '':
                             if not item_label in equipments:
                                 equipments[item_label]=item_name
-                                items += f"Group   equipment_{item_name}   \"{item_label}\"  {item_icon}  ({root})   [\"{equipment}\"]\n"
+                                if equip_metadata: grp_metadata = f"{{ {equip_metadata} }}"
+                                items += f"Group   equipment_{item_name}   \"{item_label}\"  {item_icon}  ({root})   [\"{equipment}\"] {grp_metadata}\n"
                                 root = f"equipment_{item_name}"
                             else:
                                 root = f"equipment_{equipments[item_label]}"
@@ -604,6 +615,7 @@ def export_output(items,sitemap,things):
     # export items:
     items_template =  open('items.template','r', encoding='utf8').read()
     items = items_template.replace('###items###', items)
+    items = items.replace('###NAME###', PRJ_NAME)
     os.makedirs(os.path.dirname(config['items_path']), exist_ok=True)
     open(config['items_path'],'w', encoding='utf8').write(items)
     # export sitemap:

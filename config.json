@@ -102,7 +102,7 @@
                 "Lamellenposition": {
                     "semantic_info": "[\"Blinds\"]",
                     "item_icon": "rollershutter",
-                    "homekit": "homekit = \"CurrentHorizontalTiltAngle, TargetHorizontalTiltAngle\""
+                    "homekit": ", homekit = \"CurrentHorizontalTiltAngle, TargetHorizontalTiltAngle\""
                 },
                 "Stellwert": {
                     "semantic_info": "[\"HVAC\"]",
@@ -282,7 +282,7 @@
             "item_type": "Number:Illuminance",
             "ga_prefix": "9.004",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit": "",
+            "homekit": ", homekit=\"LightSensor\"",
             "semantic_info": "[\"Measurement\", \"Light\"]",
             "item_icon": "sun"
         },

@@ -25,6 +25,11 @@ ADD_MISSING_ITEMS = config['general']['addMissingItems']
 
 def create_building(project: KNXProject):
     """Create a building with all floors and rooms."""
+    # get name / description from knxproj object
+    # extract Groupname = "Erdgeschoss"
+    # name short = EG / = EG
+    # name long = =EG or =EG+RM1 ... (floorshort / floorshort+roomshort)
+    #
     locations = project['locations']
     if not locations:
         logger.error("'locations' is empty.")
@@ -45,12 +50,12 @@ def create_building(project: KNXProject):
 
         for floor in loc['spaces'].values():
             if floor['type'] in ('Floor', 'Stairway', 'Corridor', 'BuildingPart'):
-                floor_short_name = get_floor_short_name(floor['name'])
+                floor_short_name, floor_long_name,floor_name_plain = get_floor_name(floor)
                 floor_description = floor['description'] or floor['name']
                 floor_data = {
                     'Description': floor_description,
-                    'Group name': None,
-                    'name_long': floor_description,
+                    'Group name': floor_name_plain,
+                    'name_long': floor_long_name,
                     'name_short': floor_short_name,
                     'rooms': []
                 }
@@ -59,12 +64,12 @@ def create_building(project: KNXProject):
                 
                 for room in floor['spaces'].values():
                     if room['type'] in ('Room', 'Corridor', 'Stairway'):
-                        room_short_name, room_name_long = get_room_short_name(room, floor_data)
-                        room_description = room['description'] or room['usage_text'] or room['name']
+                        room_short_name, room_long_name,room_name_plain = get_room_name(room, floor_data)
+                        room_description = room['description'] or room_name_plain or room['usage_text'] or room['name']
                         room_data = {
                             'Description': room_description,
-                            'Group name': room_short_name,
-                            'name_long': room_name_long,
+                            'Group name': room_name_plain,
+                            'name_long': room_long_name,
                             'name_short': room_short_name,
                             'devices': room['devices'],
                             'Addresses': []
@@ -78,37 +83,47 @@ def create_building(project: KNXProject):
     
     return buildings
 
-def get_floor_short_name(floor_name):
+def get_floor_name(floor):
     """Extract short name for a floor."""
-    match = RE_FLOOR_NAME_SHORT.search(floor_name)
-    if match:
-        short_name = match.group(0)
-        return short_name if short_name.startswith(ITEM_FLOOR_NAME_SHORT_PREFIX) else ITEM_FLOOR_NAME_SHORT_PREFIX + short_name
-    return ITEM_FLOOR_NAME_SHORT_PREFIX + floor_name if len(floor_name) < 6 else ITEM_FLOOR_NAME_SHORT_PREFIX + floor_name
+    floor_name = floor['name']
+    res_floor = RE_FLOOR_NAME_SHORT.search(floor_name)
+    floor_name_plain = floor['name']
+    floor_long_name = ''
+    floor_short_name = ''
+    if res_floor:
+        floor_short_name = res_floor.group(0)
+        floor_name_plain = floor_name_plain.replace(res_floor.group(0), "").strip()
+        if not floor_short_name.startswith(ITEM_FLOOR_NAME_SHORT_PREFIX):
+            floor_short_name=  ITEM_FLOOR_NAME_SHORT_PREFIX + floor_short_name
+    #return ITEM_FLOOR_NAME_SHORT_PREFIX + floor_name if len(floor_name) < 6 else ITEM_FLOOR_NAME_SHORT_PREFIX + floor_name
+    if not floor_long_name:
+        floor_long_name= floor_short_name
+    return floor_short_name, floor_long_name, floor_name_plain
 
-def get_room_short_name(room, floor_data):
+def get_room_name(room, floor_data):
     """Extract short name for a room."""
     res_floor = RE_ITEM_FLOOR.search(room['name'])
     res_room = RE_ITEM_ROOM.search(room['name'])
     room_name_plain = room['name']
-    room_name_long = ''
+    room_long_name = ''
+    room_short_name = ''
     
     if res_floor:
-        room_name_long += res_floor.group(0)
+        room_long_name += res_floor.group(0)
         room_name_plain = room_name_plain.replace(res_floor.group(0), "").strip()
         if floor_data['name_short'] in (room['name'], ITEM_FLOOR_NAME_SHORT_PREFIX + room['name']):
             floor_data['name_short'] = res_floor.group(0)
             floor_data['Description'] = room['name'].replace(res_floor.group(0), "").strip()
     
     if res_room:
-        room_name_long += res_room.group(0)
+        room_long_name += floor_data['name_long'] + res_room.group(0)
         room_name_plain = room_name_plain.replace(res_room.group(0), "").strip()
         room_short_name = res_room.group(0)
     else:
         room_short_name = ITEM_ROOM_NAME_SHORT_PREFIX + 'RMxx'
-        room_name_long += ITEM_ROOM_NAME_SHORT_PREFIX + 'RMxx'
+        room_long_name += ITEM_ROOM_NAME_SHORT_PREFIX + 'RMxx'
     
-    return room_short_name, room_name_long or room_name_plain
+    return room_short_name, room_long_name, room_name_plain
 
 def get_addresses(project: KNXProject):
     """Extract and process information from a KNX project."""
@@ -334,13 +349,15 @@ def main():
     building = create_building(project)
     addresses = get_addresses(project)
     house = put_addresses_in_building(building, addresses, project)
+    prj_name = house[0]['name_long']
     ip = get_gateway_ip(project)
     homekit_enabled = is_homekit_enabled(project)
 
-    ets_to_openhab.house = house[0]["floors"]
+    ets_to_openhab.floors = house[0]["floors"]
     ets_to_openhab.all_addresses = addresses
-    ets_to_openhab.gwip = ip
-    ets_to_openhab.b_homekit = homekit_enabled
+    ets_to_openhab.GWIP = ip
+    ets_to_openhab.B_HOMEKIT = homekit_enabled
+    if prj_name: ets_to_openhab.PRJ_NAME = prj_name
 
     logger.info("Calling ets_to_openhab.main()")
     ets_to_openhab.main()

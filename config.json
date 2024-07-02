@@ -7,8 +7,8 @@
     "fenster_path": "openhab/rules/fenster.rules",
     "transform_dir_path": "openhab/transform",
     "general": {
-        "FloorNameFromDescription": true,
-        "RoomNameFromDescription": true,
+        "FloorNameFromDescription": false,
+        "RoomNameFromDescription": false,
         "addMissingItems": true,
         "unknown_floorname": "unkonwn",
         "unknown_roomname": "unkonwn",
@@ -17,7 +17,7 @@
     },
     "regexpattern": {
         "item_Floor": "^=?[1-9\\.A-Z]{1,5}$",
-        "item_Floor_nameshort": "^[a-zA-Z]{1,5}$",
+        "item_Floor_nameshort": "^=?[a-zA-Z]{1,5}\\b",
         "item_Room": "\\++[A-Z].[0-9]+",
         "items_Name": "[^A-Za-z0-9_]+",
         "items_Label": "^\\[\\w*\\]\\@\\s?(\\+RM(\\d+(\\/|\\\\|-)*)*(\\d+))*\\s|:\\(.*\\)\\s?"
@@ -77,7 +77,8 @@
                 "Dimmen rm",
                 "Status Dimmwert",
                 ":(Status Dimm Wert)",
-                "Status Absolute Lamellenposition"
+                "Status Absolute Lamellenposition",
+                "Status akt. Lamellenposition"
             ],
             "switch_suffix": [
                 "Schalten",
@@ -101,15 +102,18 @@
             "change_metadata": {
                 "Lamellenposition": {
                     "semantic_info": "[\"Blinds\"]",
-                    "item_icon": "rollershutter"
+                    "item_icon": "rollershutter",
+                    "homekit": ", homekit = \"CurrentHorizontalTiltAngle, TargetHorizontalTiltAngle\""
                 },
                 "Stellwert": {
                     "semantic_info": "[\"HVAC\"]",
-                    "item_icon": "heating"
+                    "item_icon": "heating",
+                    "homekit": ""
                 },
                 "Farbtemperatur": {
                     "semantic_info": "[\"Setpoint\"]",
-                    "item_icon": "material:contrast"
+                    "item_icon": "material:contrast",
+                    "homekit": ""
                 }
             }
         },
@@ -175,7 +179,7 @@
             "item_type": "Switch",
             "ga_prefix": "1.024",
             "metadata": "",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "[\"Control\"]",
             "item_icon": "moon"
         },
@@ -183,7 +187,7 @@
             "item_type": "Switch",
             "ga_prefix": "1.005",
             "metadata": "",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "[\"Alarm\"]",
             "item_icon": "siren"
         },
@@ -191,7 +195,7 @@
             "item_type": "Switch",
             "ga_prefix": "1.011",
             "metadata": "",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "[\"Measurement\", \"Status\"]",
             "item_icon": "switch"
         },
@@ -199,7 +203,7 @@
             "item_type": "Switch",
             "ga_prefix": "1.100",
             "metadata": "",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "[\"Measurement\", \"Status\"]",
             "item_icon": "temperature"
         },
@@ -207,7 +211,7 @@
             "item_type": "Number:Temperature",
             "ga_prefix": "9.001",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit":", homekit = \"CurrentTemperature\"",
+            "homekit": ", homekit = \"CurrentTemperature\"",
             "semantic_info": "[\"Measurement\", \"Temperature\"]",
             "item_icon": "temperature"
         },
@@ -215,7 +219,7 @@
             "item_type": "Number:Dimensionless",
             "ga_prefix": "9.001",
             "metadata": ", unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]",
-            "homekit":", homekit=\"HumiditySensor\"",
+            "homekit": ", homekit=\"HumiditySensor\"",
             "semantic_info": "[\"Measurement\", \"Humidity\"]",
             "item_icon": "humidity"
         },
@@ -223,7 +227,7 @@
             "item_type": "Contact",
             "ga_prefix": "1.019",
             "metadata": ", unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]",
-            "homekit":", homekit=\"ContactSensor\"",
+            "homekit": ", homekit=\"ContactSensor\"",
             "semantic_info": "[\"OpenState\", \"Opening\"]",
             "item_icon": "window"
         },
@@ -231,7 +235,7 @@
             "item_type": "Number:Energy",
             "ga_prefix": "13.010",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "[\"Measurement\", \"Energy\"]",
             "item_icon": "batterylevel"
         },
@@ -239,7 +243,7 @@
             "item_type": "Number:Power",
             "ga_prefix": "14.056",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "[\"Measurement\", \"Power\"]",
             "item_icon": "energy"
         },
@@ -247,7 +251,7 @@
             "item_type": "Number:ElectricCurrent",
             "ga_prefix": "7.012",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "[\"Measurement\", \"Current\"]",
             "item_icon": "energy"
         },
@@ -255,7 +259,7 @@
             "item_type": "Number:Volume",
             "ga_prefix": "12.1200",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "[\"Measurement\", \"Volume\"]",
             "item_icon": "water"
         },
@@ -263,7 +267,7 @@
             "item_type": "String",
             "ga_prefix": "16.000",
             "metadata": "",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "",
             "item_icon": "text"
         },
@@ -271,7 +275,7 @@
             "item_type": "String",
             "ga_prefix": "16.000",
             "metadata": "",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "",
             "item_icon": "text"
         },
@@ -279,7 +283,7 @@
             "item_type": "Number:Illuminance",
             "ga_prefix": "9.004",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit":"",
+            "homekit": ", homekit=\"LightSensor\"",
             "semantic_info": "[\"Measurement\", \"Light\"]",
             "item_icon": "sun"
         },
@@ -287,7 +291,7 @@
             "item_type": "Number:Speed",
             "ga_prefix": "9.005",
             "metadata": ", unit=\"m/s\", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "[\"Measurement\", \"Wind\"]",
             "item_icon": "wind"
         },
@@ -295,7 +299,7 @@
             "item_type": "Number:Dimensionless",
             "ga_prefix": "9.005",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f ppm\"]",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "[\"Measurement\"]",
             "item_icon": ""
         },
@@ -303,7 +307,7 @@
             "item_type": "Dimmer",
             "ga_prefix": "position=5.001",
             "metadata": ", unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "[\"Measurement\"]",
             "item_icon": ""
         },
@@ -311,7 +315,7 @@
             "item_type": "Number:Time",
             "ga_prefix": "13.100",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "[\"Measurement\", \"Duration\"]",
             "item_icon": "time"
         },
@@ -319,7 +323,7 @@
             "item_type": "DateTime",
             "ga_prefix": "19.001",
             "metadata": "",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "",
             "item_icon": "time"
         },
@@ -327,7 +331,7 @@
             "item_type": "Number:Dimensionless",
             "ga_prefix": "20.102",
             "metadata": ", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "[\"HVAC\"]",
             "item_icon": "heating_mode"
         },
@@ -335,7 +339,7 @@
             "item_type": "Number:Dimensionless",
             "ga_prefix": "5.010",
             "metadata": ", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]",
-            "homekit":"",
+            "homekit": "",
             "semantic_info": "[\"HVAC\"]",
             "item_icon": "heating_mode"
         }

@@ -45,6 +45,7 @@
                 "Licht": {
                     "semantic_info": "[\"Control\", \"Light\"]",
                     "equipment": "Lightbulb",
+                    "homekit":", homekit = \"Lighting\"",
                     "item_icon": "light"
                 },
                 "Steckdose": {

@@ -45,7 +45,7 @@
                 "Licht": {
                     "semantic_info": "[\"Control\", \"Light\"]",
                     "equipment": "Lightbulb",
-                    "homekit":", homekit = \"Lighting\"",
+                    "homekit": ", homekit = \"Lighting\"",
                     "item_icon": "light"
                 },
                 "Steckdose": {
@@ -331,7 +331,7 @@
             "item_type": "Number:Dimensionless",
             "ga_prefix": "20.102",
             "metadata": ", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]",
-            "homekit": "",
+            "homekit": ",homekit = \"CurrentHeatingCoolingMode, TargetHeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
             "semantic_info": "[\"HVAC\"]",
             "item_icon": "heating_mode"
         },
@@ -339,7 +339,7 @@
             "item_type": "Number:Dimensionless",
             "ga_prefix": "5.010",
             "metadata": ", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]",
-            "homekit": "",
+            "homekit": ",homekit = \"CurrentHeatingCoolingMode, TargetHeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
             "semantic_info": "[\"HVAC\"]",
             "item_icon": "heating_mode"
         }

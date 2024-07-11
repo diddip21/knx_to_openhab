@@ -237,7 +237,7 @@ def gen_building():
                     #lovely_name = ' '.join(address['Group name'].replace(house[floor_nr]['rooms'][room_nr]['Group name'],'').replace(house[floor_nr]['Group name'],'').split())
                     lovely_name = address['Group name']
                     item_label = lovely_name
-                    description = address['Description'].split(';')
+                    description = address['Description'].casefold().split(';')
                     equipment = ''
                     equip_metadata = ''
                     grp_metadata=''
@@ -246,7 +246,7 @@ def gen_building():
                     #print(f"--- processing: {lovely_name}")
                     #print(address)
 
-                    if 'IGNORE' in address.keys():
+                    if 'ignore' in description:
                         continue
 
                     shortened_name = ' '.join(address['Group name'].replace(room['Group name'],'').replace(room['name_short'],'').replace(floor['Group name'],'').replace(floor['name_short'],'').split())
@@ -393,7 +393,9 @@ def gen_building():
                                 thing_address_info = f"ga=\"{ga}:{address['Address']}{option_status_betriebsmodus}\""
                                 item_label = f"{lovely_name}"
                                 equipment = 'HVAC'
-                                if B_HOMEKIT: equip_metadata='homekit = "Thermostat"'
+                                if B_HOMEKIT: 
+                                    equip_metadata='homekit = "Thermostat"'
+                                    meta_homekit=', homekit = \"CurrentHeatingCoolingMode, TargetHeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]'
                                 semantic_info = "[\"HVAC\"]"
                                 item_icon = "heating_mode"
                                 metadata=', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]'

@@ -331,6 +331,7 @@ def main():
     if not args.file_path:
         root = tk.Tk()
         root.withdraw()
+        root.wm_attributes('-topmost', 1)
         file_path = filedialog.askopenfilename()
         if not file_path:
             raise SystemExit

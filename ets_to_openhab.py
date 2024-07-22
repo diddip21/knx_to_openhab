@@ -31,6 +31,7 @@ def data_of_name(data, name, suffix,replace=''):
 #global house,all_addresses,used_addresses
 GWIP=None
 B_HOMEKIT=False
+homekit_max_accessories_per_instance=130
 floors = []
 all_addresses = []
 export_to_influx = []
@@ -193,6 +194,8 @@ def gen_building():
     sitemap=''
     things=''
     floor_nr=0
+    homekit_instance = 1
+    homekit_accessorie = 0
     for floor in floors:
         floor_nr += 1
         floor_configuration, floor_name = generate_floor_configuration(floor, floor_nr)
@@ -239,7 +242,7 @@ def gen_building():
                     item_label = lovely_name
                     description = address['Description'].casefold().split(';')
                     equipment = ''
-                    equip_metadata = ''
+                    equip_homekit = ''
                     grp_metadata=''
                     define=None
 
@@ -361,7 +364,7 @@ def gen_building():
                                 semantic_info = "[\"Blinds\"]"
                                 item_icon = "rollershutter"
                                 if B_HOMEKIT:
-                                    equip_metadata='homekit = "WindowCovering"'
+                                    equip_homekit='homekit = "WindowCovering"'
                                     meta_homekit=', homekit = "CurrentPosition, TargetPosition, PositionState"'
                             else:
                                 logger.warning("incomplete rollershutter: %s",basename)
@@ -394,7 +397,7 @@ def gen_building():
                                 item_label = f"{lovely_name}"
                                 equipment = 'HVAC'
                                 if B_HOMEKIT: 
-                                    equip_metadata='homekit = "Thermostat"'
+                                    equip_homekit='homekit = "Thermostat"'
                                     meta_homekit=', homekit = \"CurrentHeatingCoolingMode, TargetHeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]'
                                 semantic_info = "[\"HVAC\"]"
                                 item_icon = "heating_mode"
@@ -527,7 +530,6 @@ def gen_building():
 
                     if auto_add:
                         used_addresses.append(address['Address'])
-                        if B_HOMEKIT: metadata+=meta_homekit
                         item_variables = {'visibility': '', 'semantic': semantic_info, 'synonyms': '', 'icon': item_icon,'name':item_label}
                         item_variables = process_description(description, item_variables)
                         semantic_info = item_variables['semantic']
@@ -569,17 +571,25 @@ def gen_building():
                         if equipment != '':
                             if not item_label in equipments:
                                 equipments[item_label]=item_name
-                                if equip_metadata: grp_metadata = f"{{ {equip_metadata} }}"
+                                if equip_homekit:
+                                    equip_homekit+=f" [instance={homekit_instance}]"
+                                    grp_metadata = f"{{ {equip_homekit} }}"
                                 items += f"Group   equipment_{item_name}   \"{item_label}\"  {item_icon}  ({root})   [\"{equipment}\"] {grp_metadata}\n"
                                 root = f"equipment_{item_name}"
                             else:
                                 root = f"equipment_{equipments[item_label]}"
                         if item_label in equipments:
                             root = f"equipment_{equipments[item_label]}"
-
+                        if B_HOMEKIT:
+                            meta_homekit+=f" [instance={homekit_instance}]"
+                            metadata+=meta_homekit
+                            homekit_accessorie+=1
+                        
                         items += f"{item_type}   {item_name}   \"{item_label}\"   {item_icon}   ({root})   {semantic_info}    {{ channel=\"knx:device:bridge:generic:{item_name}\" {metadata}{synonyms} }}\n"
                         group += f"        {sitemap_type} item={item_name} label=\"{item_label}\" {item_variables['visibility']}\n"
 
+                        if homekit_accessorie >= homekit_max_accessories_per_instance:
+                            homekit_accessorie=0;homekit_instance+=1
                         if 'influx' in address['Description']:
                             #print('influx @ ')
                             #print(address)

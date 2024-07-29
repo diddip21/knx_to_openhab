@@ -572,7 +572,7 @@ def gen_building():
                             if not item_label in equipments:
                                 equipments[item_label]=item_name
                                 if equip_homekit:
-                                    equip_homekit+=f" [instance={homekit_instance}]"
+                                    equip_homekit+=f" [Instance={homekit_instance}]"
                                     grp_metadata = f"{{ {equip_homekit} }}"
                                 items += f"Group   equipment_{item_name}   \"{item_label}\"  {item_icon}  ({root})   [\"{equipment}\"] {grp_metadata}\n"
                                 root = f"equipment_{item_name}"
@@ -580,8 +580,11 @@ def gen_building():
                                 root = f"equipment_{equipments[item_label]}"
                         if item_label in equipments:
                             root = f"equipment_{equipments[item_label]}"
-                        if B_HOMEKIT:
-                            meta_homekit+=f" [instance={homekit_instance}]"
+                        if B_HOMEKIT and meta_homekit:
+                            if ']' in meta_homekit:
+                                meta_homekit= meta_homekit.replace(']',f" ,Instance={homekit_instance}]")
+                            else:
+                                meta_homekit+=f" [Instance={homekit_instance}]"
                             metadata+=meta_homekit
                             homekit_accessorie+=1
                         

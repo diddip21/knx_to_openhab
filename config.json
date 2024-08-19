@@ -46,7 +46,8 @@
                     "semantic_info": "[\"Control\", \"Light\"]",
                     "equipment": "Lightbulb",
                     "homekit": ", homekit = \"Lighting\"",
-                    "item_icon": "light"
+                    "item_icon": "light",
+                    "floor_group": "Lights"
                 },
                 "Steckdose": {
                     "semantic_info": "[\"Control\", \"Switch\"]",
@@ -103,7 +104,8 @@
                 "Lamellenposition": {
                     "semantic_info": "[\"Blinds\"]",
                     "item_icon": "rollershutter",
-                    "homekit": ", homekit = \"CurrentHorizontalTiltAngle, TargetHorizontalTiltAngle\""
+                    "homekit": ", homekit = \"CurrentHorizontalTiltAngle, TargetHorizontalTiltAngle\"",
+                    "floor_group": null
                 },
                 "Stellwert": {
                     "semantic_info": "[\"HVAC\"]",
@@ -213,7 +215,8 @@
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
             "homekit": ", homekit = \"CurrentTemperature\"",
             "semantic_info": "[\"Measurement\", \"Temperature\"]",
-            "item_icon": "temperature"
+            "item_icon": "temperature",
+            "floor_group": "Temperature"
         },
         "DPST-9-7": {
             "item_type": "Number:Dimensionless",
@@ -226,10 +229,11 @@
         "DPST-1-19": {
             "item_type": "Contact",
             "ga_prefix": "1.019",
-            "metadata": ", unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]",
+            "metadata": "",
             "homekit": ", homekit=\"ContactSensor\"",
             "semantic_info": "[\"OpenState\", \"Opening\"]",
-            "item_icon": "window"
+            "item_icon": "window",
+            "floor_group": "Contacts"
         },
         "DPST-13-10": {
             "item_type": "Number:Energy",

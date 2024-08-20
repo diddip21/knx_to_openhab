@@ -109,7 +109,9 @@ def get_room_name(room, floor_data):
     room_short_name = ''
     
     if res_floor:
-        room_long_name += res_floor.group(0)
+        if not floor_data['name_short']:
+            floor_data['name_short'] = res_floor.group(0)
+            floor_data['name_long'] = floor_data['name_short'] 
         room_name_plain = room_name_plain.replace(res_floor.group(0), "").strip()
         if floor_data['name_short'] in (room['name'], ITEM_FLOOR_NAME_SHORT_PREFIX + room['name']):
             floor_data['name_short'] = res_floor.group(0)

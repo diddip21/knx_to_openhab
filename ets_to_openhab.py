@@ -494,7 +494,7 @@ def gen_building():
                                 data_map = mappings.replace("'",'"').replace('"','').replace('=','.0=')
                                 metadata=f', stateDescription=\"\"[options=\"NULL=unbekannt ...,{data_map}\"], commandDescription=\"\"[options=\"{data_map}\"]'
                                 item_label = lovely_name
-                                #T ODO: Mappings noch über metadata abbilden
+                                #TODO: Mappings noch über metadata abbilden
                                 #mapfile = f"gen_{item_name}.map"
                                 #mappings = mappings.replace("'",'"')
 

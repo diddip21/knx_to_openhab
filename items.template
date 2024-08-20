@@ -4,7 +4,7 @@ Group           Base                  "###NAME###"               <house>        
 Group:Rollershutter:AVG        Base_Blinds         "Gesamt Jalousie/Rollo"                      <rollershutter>    (Base)                  ["Blinds"]
 Group:Switch:OR(ON, OFF)       Base_Lights         "Gesamt Beleuchtung"                         <light>            (Base)                  ["Light"]
 //Group:Switch:OR(ON, OFF)       Base_Presence       "Gesamt Präsenz [MAP(presence.map):%s]"      <presence>         (Base)                  ["Presence"]
-Group:Contact:OR(ON, OFF)      Base_Contacts       "Gesamt Öffnungsmelder"                      <contact>          (Base)                  ["OpenState"]
+Group:Contact:OR(OPEN, CLOSED) Base_Contacts       "Gesamt Öffnungsmelder"                      <contact>          (Base)                  ["OpenState"]
 Group:Number:Temperature:AVG   Base_Temperature    "Gesamt Ø Temperatur"                        <temperature>      (Base)                  ["Measurement", "Temperature"]        {stateDescription=""[pattern="%.1f %unit%"]}
 Group:Switch:AND(ON, OFF)      Base_Panik          "Panik"                               <siren>            (Base)                  ["Alarm"]
 

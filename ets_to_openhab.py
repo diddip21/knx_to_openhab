@@ -174,7 +174,7 @@ def gen_building():
         floor_variables = process_description(description, floor_variables)
 
         floor_configuration += f"Group   map{floor_nr}   \"{floor_variables['name']}\" {floor_variables['icon']} (Base) {floor_variables['semantic']} {floor_variables['synonyms']} \n"
-        floor_configuration += f"Group:Rollershutter:AVG        map{floor_nr}_Blinds         \"{floor_variables['name']} Jalousie/Rollo\"                      <rollershutter>    (map{floor_nr},Base_Blinds)                  [\"Blinds\"] \n"
+        floor_configuration += f"Group:Rollershutter:AVG        map{floor_nr}_Blinds         \"{floor_variables['name']} Jalousie/Rollo\"                      <rollershutter>    (map{floor_nr},Base_Blinds)                  [\"Blinds\"]         {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
         floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Lights         \"{floor_variables['name']} Beleuchtung\"                         <light>            (map{floor_nr},Base_Lights)                  [\"Light\"] \n"
         #floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Presence       \"{floor_variables['name']} Präsenz [MAP(presence.map):%s]\"      <presence>         (map{floor_nr},Base)                  [\"Presence\"] \n"
         floor_configuration += f"Group:Contact:OR(OPEN, CLOSED) map{floor_nr}_Contacts       \"{floor_variables['name']} Öffnungsmelder\"                      <contact>          (map{floor_nr},Base_Contacts)                [\"OpenState\"] \n"
@@ -491,8 +491,14 @@ def gen_building():
                                     break
 
                             if mappings!= '':
-                                data_map = mappings.replace("'",'"').replace('"','').replace('=','.0=')
-                                metadata=f', stateDescription=\"\"[options=\"NULL=unbekannt ...,{data_map}\"], commandDescription=\"\"[options=\"{data_map}\"]'
+                                #data_map = mappings.replace("'",'"').replace('"','') //.replace('=','.0=')
+                                data_map = mappings.replace("'","").split(",")
+                                for index,word in enumerate(data_map):
+                                    number_part, word_part = word.strip().split('=')
+                                    data_map[index] = f"{(int(number_part) - 1)}.0={word_part}"
+
+                                data_str = ','.join(data_map)
+                                metadata=f', stateDescription=\"\"[options=\"NULL=unbekannt ...,{data_str}\"], commandDescription=\"\"[options=\"{data_str}\"]'
                                 item_label = lovely_name
                                 #TODO: Mappings noch über metadata abbilden
                                 #mapfile = f"gen_{item_name}.map"

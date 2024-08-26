@@ -1,7 +1,7 @@
 Group           Base                  "###NAME###"               <house>                      ["Location"]
 
 // Zentrale Steuerung
-Group:Rollershutter:AVG        Base_Blinds         "Gesamt Jalousie/Rollo"                      <rollershutter>    (Base)                  ["Blinds"]
+Group:Rollershutter:AVG        Base_Blinds         "Gesamt Jalousie/Rollo"                      <rollershutter>    (Base)                  ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]}
 Group:Switch:OR(ON, OFF)       Base_Lights         "Gesamt Beleuchtung"                         <light>            (Base)                  ["Light"]
 //Group:Switch:OR(ON, OFF)       Base_Presence       "Gesamt Präsenz [MAP(presence.map):%s]"      <presence>         (Base)                  ["Presence"]
 Group:Contact:OR(OPEN, CLOSED) Base_Contacts       "Gesamt Öffnungsmelder"                      <contact>          (Base)                  ["OpenState"]
@@ -9,9 +9,9 @@ Group:Number:Temperature:AVG   Base_Temperature    "Gesamt Ø Temperatur"       
 Group:Switch:AND(ON, OFF)      Base_Panik          "Panik"                               <siren>            (Base)                  ["Alarm"]
 
 // Beschattung Himmelsrichtung
-Group:Rollershutter            Base_BlindsNorth    "Jalousie/Rollo Nord"                 <rollershutter>    (Base_Blinds)          ["Blinds"]
-Group:Rollershutter            Base_BlindsEast     "Jalousie/Rollo Ost"                  <rollershutter>    (Base_Blinds)          ["Blinds"]
-Group:Rollershutter            Base_BlindsSouth    "Jalousie/Rollo Süd"                  <rollershutter>    (Base_Blinds)          ["Blinds"]
-Group:Rollershutter            Base_BlindsWest     "Jalousie/Rollo West"                 <rollershutter>    (Base_Blinds)          ["Blinds"]
+Group:Rollershutter            Base_BlindsNorth    "Jalousie/Rollo Nord"                 <rollershutter>    (Base_Blinds)          ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]}
+Group:Rollershutter            Base_BlindsEast     "Jalousie/Rollo Ost"                  <rollershutter>    (Base_Blinds)          ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]}
+Group:Rollershutter            Base_BlindsSouth    "Jalousie/Rollo Süd"                  <rollershutter>    (Base_Blinds)          ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]}
+Group:Rollershutter            Base_BlindsWest     "Jalousie/Rollo West"                 <rollershutter>    (Base_Blinds)          ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]}
 
 ###items###

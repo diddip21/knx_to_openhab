@@ -8,7 +8,9 @@
     "transform_dir_path": "openhab/transform",
     "general": {
         "FloorNameFromDescription": false,
+        "FloorNameAsItIs": true,
         "RoomNameFromDescription": false,
+        "RoomNameAsItIs": true,
         "addMissingItems": true,
         "unknown_floorname": "unknown",
         "unknown_roomname": "unknown",
@@ -46,6 +48,7 @@
                     "semantic_info": "[\"Control\", \"Light\"]",
                     "equipment": "Lightbulb",
                     "homekit": ", homekit = \"Lighting\"",
+                    "alexa": ", alexa = \"Light\"",
                     "item_icon": "light",
                     "floor_group": "Lights"
                 },
@@ -105,17 +108,20 @@
                     "semantic_info": "[\"Blinds\"]",
                     "item_icon": "rollershutter",
                     "homekit": ", homekit = \"CurrentHorizontalTiltAngle, TargetHorizontalTiltAngle\"",
+                    "alexa": ", alexa = \"TiltAngle\"",
                     "floor_group": null
                 },
                 "Stellwert": {
                     "semantic_info": "[\"HVAC\"]",
                     "item_icon": "heating",
-                    "homekit": ""
+                    "homekit": "",
+                    "alexa": ""
                 },
                 "Farbtemperatur": {
                     "semantic_info": "[\"Setpoint\"]",
                     "item_icon": "material:contrast",
-                    "homekit": ""
+                    "homekit": "",
+                    "alexa": ""
                 }
             }
         },
@@ -182,6 +188,7 @@
             "ga_prefix": "1.024",
             "metadata": "",
             "homekit": "",
+            "alexa": "",
             "semantic_info": "[\"Control\"]",
             "item_icon": "moon"
         },
@@ -190,6 +197,7 @@
             "ga_prefix": "1.005",
             "metadata": "",
             "homekit": "",
+            "alexa": "",
             "semantic_info": "[\"Alarm\"]",
             "item_icon": "siren"
         },
@@ -198,6 +206,7 @@
             "ga_prefix": "1.011",
             "metadata": "",
             "homekit": "",
+            "alexa": "",
             "semantic_info": "[\"Measurement\", \"Status\"]",
             "item_icon": "switch"
         },
@@ -206,6 +215,7 @@
             "ga_prefix": "1.100",
             "metadata": "",
             "homekit": "",
+            "alexa": "",
             "semantic_info": "[\"Measurement\", \"Status\"]",
             "item_icon": "temperature"
         },
@@ -214,6 +224,7 @@
             "ga_prefix": "9.001",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
             "homekit": ", homekit = \"CurrentTemperature\"",
+            "alexa": ", alexa = \"CurrentTemperature\"",
             "semantic_info": "[\"Measurement\", \"Temperature\"]",
             "item_icon": "temperature",
             "floor_group": "Temperature"
@@ -223,6 +234,7 @@
             "ga_prefix": "9.001",
             "metadata": ", unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]",
             "homekit": ", homekit=\"HumiditySensor\"",
+            "alexa": ", alexa = \"CurrentHumidity\"",
             "semantic_info": "[\"Measurement\", \"Humidity\"]",
             "item_icon": "humidity"
         },
@@ -231,6 +243,7 @@
             "ga_prefix": "1.019",
             "metadata": "",
             "homekit": ", homekit=\"ContactSensor\"",
+            "alexa": ", alexa = \"ContactDetectionState\"",
             "semantic_info": "[\"OpenState\", \"Opening\"]",
             "item_icon": "window",
             "floor_group": "Contacts"
@@ -240,6 +253,7 @@
             "ga_prefix": "13.010",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
             "homekit": "",
+            "alexa": "",
             "semantic_info": "[\"Measurement\", \"Energy\"]",
             "item_icon": "batterylevel"
         },
@@ -248,6 +262,7 @@
             "ga_prefix": "14.056",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
             "homekit": "",
+            "alexa": "",
             "semantic_info": "[\"Measurement\", \"Power\"]",
             "item_icon": "energy"
         },
@@ -256,6 +271,7 @@
             "ga_prefix": "7.012",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
             "homekit": "",
+            "alexa": "",
             "semantic_info": "[\"Measurement\", \"Current\"]",
             "item_icon": "energy"
         },
@@ -264,6 +280,7 @@
             "ga_prefix": "12.1200",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
             "homekit": "",
+            "alexa": "",
             "semantic_info": "[\"Measurement\", \"Volume\"]",
             "item_icon": "water"
         },
@@ -272,6 +289,7 @@
             "ga_prefix": "16.000",
             "metadata": "",
             "homekit": "",
+            "alexa": "",
             "semantic_info": "",
             "item_icon": "text"
         },
@@ -280,6 +298,7 @@
             "ga_prefix": "16.000",
             "metadata": "",
             "homekit": "",
+            "alexa": "",
             "semantic_info": "",
             "item_icon": "text"
         },
@@ -288,6 +307,7 @@
             "ga_prefix": "9.004",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
             "homekit": ", homekit=\"LightSensor\"",
+            "alexa": "",
             "semantic_info": "[\"Measurement\", \"Light\"]",
             "item_icon": "sun"
         },
@@ -296,6 +316,7 @@
             "ga_prefix": "9.005",
             "metadata": ", unit=\"m/s\", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
             "homekit": "",
+            "alexa": "",
             "semantic_info": "[\"Measurement\", \"Wind\"]",
             "item_icon": "wind"
         },
@@ -304,6 +325,7 @@
             "ga_prefix": "9.005",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f ppm\"]",
             "homekit": "",
+            "alexa": "",
             "semantic_info": "[\"Measurement\"]",
             "item_icon": ""
         },
@@ -312,6 +334,7 @@
             "ga_prefix": "position=5.001",
             "metadata": ", unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]",
             "homekit": "",
+            "alexa": "",
             "semantic_info": "[\"Measurement\"]",
             "item_icon": ""
         },
@@ -320,6 +343,7 @@
             "ga_prefix": "13.100",
             "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
             "homekit": "",
+            "alexa": "",
             "semantic_info": "[\"Measurement\", \"Duration\"]",
             "item_icon": "time"
         },
@@ -328,6 +352,7 @@
             "ga_prefix": "19.001",
             "metadata": "",
             "homekit": "",
+            "alexa": "",
             "semantic_info": "",
             "item_icon": "time"
         },
@@ -336,6 +361,7 @@
             "ga_prefix": "20.102",
             "metadata": ", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]",
             "homekit": ",homekit = \"CurrentHeatingCoolingMode, TargetHeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
+            "alexa": ",alexa = \"HeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
             "semantic_info": "[\"HVAC\"]",
             "item_icon": "heating_mode"
         },
@@ -344,6 +370,7 @@
             "ga_prefix": "5.010",
             "metadata": ", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]",
             "homekit": ",homekit = \"CurrentHeatingCoolingMode, TargetHeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
+            "alexa": ",alexa = \"HeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
             "semantic_info": "[\"HVAC\"]",
             "item_icon": "heating_mode"
         }

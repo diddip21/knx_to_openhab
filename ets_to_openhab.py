@@ -31,7 +31,8 @@ def data_of_name(data, name, suffix,replace=''):
 #global house,all_addresses,used_addresses
 GWIP=None
 B_HOMEKIT=False
-homekit_max_accessories_per_instance=130
+B_ALEXA=False
+HOMEKIT_MAX_ACCESSORIES_PER_INSTANCE=130
 floors = []
 all_addresses = []
 export_to_influx = []
@@ -230,7 +231,7 @@ def gen_building():
                     if not any(item['Address'] == address['Address'] for item in all_addresses):
                     #if address['Address'] not in all_addresses:
                         continue
-                    if address['Address'] == '3/3/123':
+                    if address['Address'] == '6/2/95':
                         logger.debug("Adress found - Breakpoint?")
 
                     used = False
@@ -241,6 +242,7 @@ def gen_building():
                     mappings = ''
                     metadata = ''
                     meta_homekit=''
+                    meta_alexa=''
                     semantic_info=''
                     #lovely_name = ' '.join(address['Group name'].replace(house[floor_nr]['rooms'][room_nr]['Group name'],'').replace(house[floor_nr]['Group name'],'').split())
                     lovely_name = address['Group name']
@@ -248,6 +250,7 @@ def gen_building():
                     description = address['Description'].casefold().split(';')
                     equipment = ''
                     equip_homekit = ''
+                    equip_alexa = ''
                     grp_metadata=''
                     floor_grp=None
                     define=None
@@ -315,6 +318,8 @@ def gen_building():
                                 floor_grp = f"map{floor_nr}_Lights"
                                 if B_HOMEKIT:
                                     meta_homekit=', homekit="Lighting, Lighting.Brightness"'
+                                if B_ALEXA:
+                                    meta_alexa=', alexa = "Light"'
                             else:
                                 logger.warning("incomplete dimmer: %s / %s",basename,address['Address'])
 
@@ -374,6 +379,9 @@ def gen_building():
                                 if B_HOMEKIT:
                                     equip_homekit='homekit = "WindowCovering"'
                                     meta_homekit=', homekit = "CurrentPosition, TargetPosition, PositionState"'
+                                if B_ALEXA:
+                                    equip_alexa='alexa = "Blind"'
+                                    meta_alexa=', alexa = "PositionState"'
                             else:
                                 logger.warning("incomplete rollershutter: %s",basename)
 
@@ -404,9 +412,12 @@ def gen_building():
                                 thing_address_info = f"ga=\"{ga}:{address['Address']}{option_status_betriebsmodus}\""
                                 item_label = f"{lovely_name}"
                                 equipment = 'HVAC'
-                                if B_HOMEKIT: 
+                                if B_HOMEKIT:
                                     equip_homekit='homekit = "Thermostat"'
                                     meta_homekit=', homekit = \"CurrentHeatingCoolingMode, TargetHeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]'
+                                if B_ALEXA:
+                                    equip_alexa='alexa = "Thermostat"'
+                                    meta_alexa=', alexa = \"HeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]'
                                 semantic_info = "[\"HVAC\"]"
                                 item_icon = "heating_mode"
                                 metadata=', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]'
@@ -444,6 +455,8 @@ def gen_building():
                                 item_icon = "switch"
                             if B_HOMEKIT:
                                 meta_homekit=', homekit="Switchable"'
+                            if B_ALEXA:
+                                meta_alexa=', alexa = "Switch"'
 
 
                     ######## determined only by datapoint
@@ -465,6 +478,8 @@ def gen_building():
                                 metadata=f"{mapping_info['metadata']}"
                                 if B_HOMEKIT:
                                     meta_homekit=f"{mapping_info['homekit']}"
+                                if B_ALEXA:
+                                    meta_alexa=f"{mapping_info['alexa']}"
                                 semantic_info = f"{mapping_info['semantic_info']}"
                                 item_icon = mapping_info['item_icon']
                                 if 'Soll' in lovely_name:
@@ -546,7 +561,11 @@ def gen_building():
                                             else:
                                                 floor_grp = None
                                         case 'homekit':
-                                            if B_HOMEKIT: meta_homekit=define['change_metadata'][item][var]
+                                            if B_HOMEKIT:
+                                                meta_homekit=define['change_metadata'][item][var]
+                                        case 'alexa':
+                                            if B_ALEXA:
+                                                meta_alexa=define['change_metadata'][item][var]
 
                     if used:
                         used_addresses.append(address['Address'])
@@ -596,7 +615,9 @@ def gen_building():
                                 equipments[item_label]=item_name
                                 if equip_homekit:
                                     equip_homekit+=f" [Instance={homekit_instance}]"
-                                    grp_metadata = f"{{ {equip_homekit} }}"
+                                    grp_metadata += f"{{ {equip_homekit} }}"
+                                if equip_alexa:
+                                    grp_metadata+= f"{{ {equip_alexa} }}"
                                 items += f"Group   equipment_{item_name}   \"{item_label}\"  {item_icon}  ({root})   [\"{equipment}\"] {grp_metadata}\n"
                                 root = f"equipment_{item_name}"
                             else:
@@ -610,14 +631,17 @@ def gen_building():
                                 meta_homekit+=f" [Instance={homekit_instance}]"
                             metadata+=meta_homekit
                             homekit_accessorie+=1
+                        if B_ALEXA and meta_alexa:
+                            metadata+=meta_alexa
                         if floor_grp:
                             root= f"{root},{floor_grp}"
-                        
+
                         items += f"{item_type}   {item_name}   \"{item_label}\"   {item_icon}   ({root})   {semantic_info}    {{ channel=\"knx:device:bridge:generic:{item_name}\" {metadata}{synonyms} }}\n"
                         group += f"        {sitemap_type} item={item_name} label=\"{item_label}\" {item_variables['visibility']}\n"
 
-                        if homekit_accessorie >= homekit_max_accessories_per_instance:
-                            homekit_accessorie=0;homekit_instance+=1
+                        if homekit_accessorie >= HOMEKIT_MAX_ACCESSORIES_PER_INSTANCE:
+                            homekit_accessorie=0
+                            homekit_instance+=1
                         if 'influx' in address['Description']:
                             #print('influx @ ')
                             #print(address)

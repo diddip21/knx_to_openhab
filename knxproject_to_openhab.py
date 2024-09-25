@@ -1,3 +1,4 @@
+"""Module for reading a knx file and generating a house structure for transfer to ets_to_openhab"""
 import logging
 import re
 import json
@@ -22,6 +23,8 @@ ITEM_ROOM_NAME_SHORT_PREFIX = config['general']['item_Room_nameshort_prefix']
 UNKNOWN_FLOOR_NAME = config['general']['unknown_floorname']
 UNKNOWN_ROOM_NAME = config['general']['unknown_roomname']
 ADD_MISSING_ITEMS = config['general']['addMissingItems']
+FloorNameAsItIs = config['general']['FloorNameAsItIs']
+RoomNameAsItIs  = config['general']['RoomNameAsItIs']
 
 def create_building(project: KNXProject):
     """Create a building with all floors and rooms."""
@@ -61,7 +64,7 @@ def create_building(project: KNXProject):
                 }
                 building['floors'].append(floor_data)
                 logger.debug("Added floor: %s %s", floor_description, floor['name'])
-                
+
                 for room in floor['spaces'].values():
                     if room['type'] in ('Room', 'Corridor', 'Stairway'):
                         room_short_name, room_long_name,room_name_plain = get_room_name(room, floor_data)
@@ -76,11 +79,11 @@ def create_building(project: KNXProject):
                         }
                         floor_data['rooms'].append(room_data)
                         logger.debug("Added room: %s %s", room_description, room['name'])
-                
+
                 floor_data['name_long'] = floor_data['name_long'] or floor_data['name_short']
                 floor_data['Group name'] = floor_data['Group name'] or floor_data['name_short']
                 logger.debug("Processed floor: %s", floor_data['Description'])
-    
+
     return buildings
 
 def get_floor_name(floor):
@@ -90,6 +93,8 @@ def get_floor_name(floor):
     floor_name_plain = floor['name']
     floor_long_name = ''
     floor_short_name = ''
+    if FloorNameAsItIs:
+        return floor['name'],floor['name'],floor['name']
     if res_floor:
         floor_short_name = res_floor.group(0)
         floor_name_plain = floor_name_plain.replace(res_floor.group(0), "").strip()
@@ -107,16 +112,18 @@ def get_room_name(room, floor_data):
     room_name_plain = room['name']
     room_long_name = ''
     room_short_name = ''
-    
+
+    if RoomNameAsItIs:
+        return  room['name'], room['name'], room['name']
     if res_floor:
         if not floor_data['name_short']:
             floor_data['name_short'] = res_floor.group(0)
-            floor_data['name_long'] = floor_data['name_short'] 
+            floor_data['name_long'] = floor_data['name_short']
         room_name_plain = room_name_plain.replace(res_floor.group(0), "").strip()
         if floor_data['name_short'] in (room['name'], ITEM_FLOOR_NAME_SHORT_PREFIX + room['name']):
             floor_data['name_short'] = res_floor.group(0)
             floor_data['Description'] = room['name'].replace(res_floor.group(0), "").strip()
-    
+
     if res_room:
         room_long_name += floor_data['name_long'] + res_room.group(0)
         room_name_plain = room_name_plain.replace(res_room.group(0), "").strip()
@@ -124,7 +131,7 @@ def get_room_name(room, floor_data):
     else:
         room_short_name = ITEM_ROOM_NAME_SHORT_PREFIX + 'RMxx'
         room_long_name += ITEM_ROOM_NAME_SHORT_PREFIX + 'RMxx'
-    
+
     return room_short_name, room_long_name, room_name_plain
 
 def get_addresses(project: KNXProject):
@@ -142,10 +149,10 @@ def get_addresses(project: KNXProject):
     for address in group_addresses.values():
         if should_ignore_address(address):
             continue
-        
+
         res_floor = find_floor_in_address(address, group_ranges)
         res_room = RE_ITEM_ROOM.search(address['name'])
-        
+
         addresses.append({
             "Group name": address["name"],
             "Address": address["address"],
@@ -155,7 +162,7 @@ def get_addresses(project: KNXProject):
             "Room": res_room.group(0) if res_room else UNKNOWN_ROOM_NAME,
             "DatapointType": format_datapoint_type(address)
         })
-    
+
     return addresses
 
 def should_ignore_address(address):
@@ -211,20 +218,21 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
     """Place addresses in a building object based on their associated floors and rooms."""
     if not (building and addresses and project):
         raise ValueError("One or more input data structures are empty.")
-    
+
     cabinet_devices = get_distribution_board_devices(project)
     unknown_addresses = []
 
     for address in addresses:
         if not place_address_in_building(building, address, cabinet_devices):
+            logger.warning("No Room found for %s",address['Group name'])
             unknown_addresses.append(address)
-    
+
     if ADD_MISSING_ITEMS:
         add_unknown_addresses(building, unknown_addresses)
     else:
         logger.info("Unknown addresses: %s", unknown_addresses)
         logger.info("Total unknown addresses: %d", len(unknown_addresses))
-    
+
     return building
 
 def place_address_in_building(building, address, cabinet_devices):
@@ -292,7 +300,7 @@ def get_gateway_ip(project: KNXProject):
     if not devices:
         logger.error("'devices' is empty.")
         raise ValueError("'devices' is empty.")
-    
+
     for device in devices.values():
         if device['hardware_name'].strip() in config['devices']['gateway']['hardware_name']:
             description = device['description'].strip()
@@ -320,10 +328,15 @@ def is_homekit_enabled(project: KNXProject):
     """Determine if HomeKit is enabled for the project."""
     # TODO: Read project info or some other method to get Homekit enabled status
     return True
+def is_alexa_enabled(project: KNXProject):
+    """Determine if HomeKit is enabled for the project."""
+    # TODO: Read project info or some other method to get Homekit enabled status
+    return True
+
 
 def main():
     """Main function"""
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description='Reads KNX project file and creates an OpenHAB output for things/items/sitemap')
     parser.add_argument("--file_path", type=Path, help='Path to the input KNX project.')
     parser.add_argument("--knxPW", type=str, help="Password for KNX project file if protected")
@@ -355,12 +368,15 @@ def main():
     prj_name = house[0]['name_long']
     ip = get_gateway_ip(project)
     homekit_enabled = is_homekit_enabled(project)
+    alexa_enabled = is_alexa_enabled(project)
 
     ets_to_openhab.floors = house[0]["floors"]
     ets_to_openhab.all_addresses = addresses
     ets_to_openhab.GWIP = ip
     ets_to_openhab.B_HOMEKIT = homekit_enabled
-    if prj_name: ets_to_openhab.PRJ_NAME = prj_name
+    ets_to_openhab.B_ALEXA = alexa_enabled
+    if prj_name:
+        ets_to_openhab.PRJ_NAME = prj_name
 
     logger.info("Calling ets_to_openhab.main()")
     ets_to_openhab.main()

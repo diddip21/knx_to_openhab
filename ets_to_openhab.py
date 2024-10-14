@@ -111,6 +111,8 @@ def gen_building():
         Returns:
             dict or None: Das gefundene Kommunikationsobjekt oder None, wenn keines gefunden wurde.
         """
+        group_channel = None
+        group_text = None
         # Verwende "channel" für die Gruppierung oder alternativ "text"
         if "channel" in co:
             group_channel = co["channel"]
@@ -615,9 +617,13 @@ def gen_building():
                                 equipments[item_label]=item_name
                                 if equip_homekit:
                                     equip_homekit+=f" [Instance={homekit_instance}]"
-                                    grp_metadata += f"{{ {equip_homekit} }}"
+                                    grp_metadata += equip_homekit
                                 if equip_alexa:
-                                    grp_metadata+= f"{{ {equip_alexa} }}"
+                                    if grp_metadata:
+                                        grp_metadata+=", "
+                                    grp_metadata+= equip_alexa
+                                if grp_metadata:
+                                     grp_metadata=f"{{ {grp_metadata} }}"
                                 items += f"Group   equipment_{item_name}   \"{item_label}\"  {item_icon}  ({root})   [\"{equipment}\"] {grp_metadata}\n"
                                 root = f"equipment_{item_name}"
                             else:

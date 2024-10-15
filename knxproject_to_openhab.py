@@ -191,14 +191,23 @@ def extract_communication_objects(address, communication_objects, devices):
     for co_id in address['communication_object_ids']:
         co = communication_objects[co_id]
         if co['flags'] and (co['flags']['read'] or co['flags']['write']):
+            # TODO hier mal noch prüfen ...
+            #if co['device_communication_objects']:
+            #    return co['device_communication_objects']
             device_id = co['device_address']
             device = devices[device_id]
-            if device['communication_object_ids']:
-                co["device_communication_objects"] = [
-                    communication_objects[device_co_id]
-                    for device_co_id in device['communication_object_ids']
-                    if co['channel'] == communication_objects[device_co_id].get("channel", co['channel'])
-                ]
+            if device and device.get('communication_object_ids'):
+                matching_device_comms = []
+                for device_co_id in device['communication_object_ids']:
+                    device_co = communication_objects.get(device_co_id)
+                    if device_co and co['channel'] == device_co.get("channel", co['channel']):
+                        matching_device_comms.append(device_co)
+                co["device_communication_objects"] = matching_device_comms                
+                #co["device_communication_objects"] = [
+                #    communication_objects[device_co_id]
+                #    for device_co_id in device['communication_object_ids']
+                #    if co['channel'] == communication_objects[device_co_id].get("channel", co['channel'])
+                #]
         comm_objects.append(co)
     return comm_objects
 
@@ -223,9 +232,15 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
     unknown_addresses = []
 
     for address in addresses:
-        if not place_address_in_building(building, address, cabinet_devices):
-            logger.warning("No Room found for %s",address['Group name'])
-            unknown_addresses.append(address)
+        if address['Floor'] and address['Room'] and address['Floor'] != UNKNOWN_FLOOR_NAME and address['Room'] != UNKNOWN_ROOM_NAME:
+            if place_address_in_building(building, address, cabinet_devices):
+                continue
+        read_co = get_sensor_communication_object(address, cabinet_devices)
+        if place_address_by_device(building, address, read_co):
+            continue
+
+        logger.warning("No Room found for %s",address['Group name'])
+        unknown_addresses.append(address)
 
     if ADD_MISSING_ITEMS:
         add_unknown_addresses(building, unknown_addresses)
@@ -237,7 +252,6 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
 
 def place_address_in_building(building, address, cabinet_devices):
     """Place a single address in the appropriate location in the building."""
-    read_co = get_sensor_communication_object(address, cabinet_devices)
     for building_data in building:
         for floor in building_data["floors"]:
             if floor["name_short"] == address["Floor"]:
@@ -246,7 +260,7 @@ def place_address_in_building(building, address, cabinet_devices):
                         room.setdefault("Addresses", []).append(address)
                         logger.info("Address %s placed in Room: %s, Floor: %s", address['Address'], room['name_short'], floor['name_short'])
                         return True
-    return place_address_by_device(building, address, read_co)
+    return False
 
 def place_address_by_device(building, address, read_co):
     """Place address in building based on device association."""

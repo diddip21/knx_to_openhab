@@ -243,11 +243,10 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
         if address['Address'] in ("3/1/43","3/1/40"):
             logger.debug("place specific address")
 
-        if address['Floor'] and address['Room'] and address['Floor'] != UNKNOWN_FLOOR_NAME and address['Room'] != UNKNOWN_ROOM_NAME:
-            if place_address_in_building(building, address, cabinet_devices):
-                continue
+        if place_address_in_building(building, address, cabinet_devices):
+            continue
         read_co = get_sensor_communication_object(address, cabinet_devices)
-        if place_address_by_device(building, address, read_co):
+        if place_address_by_device(building, address, read_co,addresses):
             continue
 
         logger.warning("No Room found for %s",address['Group name'])
@@ -264,27 +263,46 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
 
 def place_address_in_building(building, address, cabinet_devices):
     """Place a single address in the appropriate location in the building."""
-    for building_data in building:
-        for floor in building_data["floors"]:
-            if floor["name_short"] == address["Floor"]:
-                for room in floor["rooms"]:
-                    if room["name_short"] == address["Room"]:
-                        room.setdefault("Addresses", []).append(address)
-                        logger.info("Address %s placed in Room: %s, Floor: %s", address['Address'], room['name_short'], floor['name_short'])
-                        return True
+    if address['Floor'] and address['Room'] and address['Floor'] != UNKNOWN_FLOOR_NAME and address['Room'] != UNKNOWN_ROOM_NAME:
+        for building_data in building:
+            for floor in building_data["floors"]:
+                if floor["name_short"] == address["Floor"]:
+                    for room in floor["rooms"]:
+                        if room["name_short"] == address["Room"]:
+                            room.setdefault("Addresses", []).append(address)
+                            logger.info("Address %s placed in Room: %s, Floor: %s", address['Address'], room['name_short'], floor['name_short'])
+                            return True
     return False
 
-def place_address_by_device(building, address, read_co):
+def place_address_by_device(building, address, read_co,addresses):
     """Place address in building based on device association."""
     if read_co:
         for building_data in building:
             for floor in building_data["floors"]:
                 for room in floor["rooms"]:
                     if 'devices' in room and read_co['device_address'] in room['devices']:
+                        put_addressToRightPlace(address,floor["name_short"],room["name_short"],addresses)
                         room["Addresses"].append(address)
                         logger.info("Address %s placed in Room (via device association): %s, Floor: %s", address['Address'], room['name_short'], floor['name_short'])
                         return True
     return False
+
+def put_addressToRightPlace(address,floor_name,room_name,addresses):
+    address["Floor"]=floor_name
+    address["Room"]=room_name
+    item_subaddress = []
+    for co in address.get("communication_object"):
+        if co.get('device_communication_objects'):
+            for dco in co.get('device_communication_objects'):
+                for sub_address in dco.get('group_address_links'):
+                    item_subaddress += [item for item in addresses if item.get('Address') == sub_address]
+    if item_subaddress:
+        for item in item_subaddress:
+            item["Floor"]=floor_name
+            item["Room"]=room_name
+        logger.debug("here u can put all sub addreses to te right place to")
+
+    return True
 
 def add_unknown_addresses(building, unknown_addresses):
     """Add unknown addresses to a default floor and room in the building."""

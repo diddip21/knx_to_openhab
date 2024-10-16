@@ -623,7 +623,7 @@ def gen_building():
                                         grp_metadata+=", "
                                     grp_metadata+= equip_alexa
                                 if grp_metadata:
-                                     grp_metadata=f"{{ {grp_metadata} }}"
+                                    grp_metadata=f"{{ {grp_metadata} }}"
                                 items += f"Group   equipment_{item_name}   \"{item_label}\"  {item_icon}  ({root})   [\"{equipment}\"] {grp_metadata}\n"
                                 root = f"equipment_{item_name}"
                             else:

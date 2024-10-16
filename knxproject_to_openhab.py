@@ -153,6 +153,10 @@ def get_addresses(project: KNXProject):
         res_floor = find_floor_in_address(address, group_ranges)
         res_room = RE_ITEM_ROOM.search(address['name'])
 
+        # For debugging
+        if address["address"] in ("3/1/4","3/1/43"):
+            logger.debug("create specific address")
+
         addresses.append({
             "Group name": address["name"],
             "Address": address["address"],
@@ -191,18 +195,21 @@ def extract_communication_objects(address, communication_objects, devices):
     for co_id in address['communication_object_ids']:
         co = communication_objects[co_id]
         if co['flags'] and (co['flags']['read'] or co['flags']['write']):
-            # TODO hier mal noch prüfen ...
-            #if co['device_communication_objects']:
-            #    return co['device_communication_objects']
+            if co.get('device_communication_objects'):
+                comm_objects.append(co)
+                continue
             device_id = co['device_address']
             device = devices[device_id]
             if device and device.get('communication_object_ids'):
                 matching_device_comms = []
                 for device_co_id in device['communication_object_ids']:
                     device_co = communication_objects.get(device_co_id)
-                    if device_co and co['channel'] == device_co.get("channel", co['channel']):
-                        matching_device_comms.append(device_co)
-                co["device_communication_objects"] = matching_device_comms                
+                    if device_co:
+                        if device_co.get("channel") and co['channel'] == device_co["channel"]:
+                            matching_device_comms.append(device_co)
+                        elif device_co.get("text") and co['text'] == device_co["text"]:
+                            matching_device_comms.append(device_co)
+                co["device_communication_objects"] = matching_device_comms
                 #co["device_communication_objects"] = [
                 #    communication_objects[device_co_id]
                 #    for device_co_id in device['communication_object_ids']
@@ -232,6 +239,10 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
     unknown_addresses = []
 
     for address in addresses:
+        # For debugging
+        if address['Address'] in ("3/1/43","3/1/40"):
+            logger.debug("place specific address")
+
         if address['Floor'] and address['Room'] and address['Floor'] != UNKNOWN_FLOOR_NAME and address['Room'] != UNKNOWN_ROOM_NAME:
             if place_address_in_building(building, address, cabinet_devices):
                 continue
@@ -241,6 +252,7 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
 
         logger.warning("No Room found for %s",address['Group name'])
         unknown_addresses.append(address)
+    #TODO: Loop over unknown_addresses to identify Groups/Channels in the same "level"
 
     if ADD_MISSING_ITEMS:
         add_unknown_addresses(building, unknown_addresses)

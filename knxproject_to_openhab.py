@@ -240,7 +240,7 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
 
     for address in addresses:
         # For debugging
-        if address['Address'] in ("3/1/43","3/1/40"):
+        if address['Address'] in ("3/1/43","3/1/40","22/0/54"):
             logger.debug("place specific address")
 
         if place_address_in_building(building, address, cabinet_devices):
@@ -371,12 +371,27 @@ def get_recursive_spaces(spaces):
 def is_homekit_enabled(project: KNXProject):
     """Determine if HomeKit is enabled for the project."""
     # TODO: Read project info or some other method to get Homekit enabled status
-    return True
+    if project['info']['comment']:
+        comments=project['info']['comment'].casefold().split(';')
+        for comment in comments:
+            if comment.startswith('homekit='):
+                return str2bool(comment.replace('homekit=', ''))
+            elif 'homekit' in comment:
+                return True
+    return False
 def is_alexa_enabled(project: KNXProject):
-    """Determine if HomeKit is enabled for the project."""
+    """Determine if Alexa is enabled for the project."""
     # TODO: Read project info or some other method to get Homekit enabled status
-    return True
-
+    if project['info']['comment']:
+        comments=project['info']['comment'].casefold().split(';')
+        for comment in comments:
+            if comment.startswith('alexa='):
+                return str2bool(comment.replace('alexa=', ''))
+            elif 'alexa' in comment:
+                return True
+    return False
+def str2bool(v):
+  return v.lower() in ("yes", "true", "t", "1")
 
 def main():
     """Main function"""

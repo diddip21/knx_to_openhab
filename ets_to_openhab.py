@@ -249,6 +249,8 @@ def gen_building():
                     #lovely_name = ' '.join(address['Group name'].replace(house[floor_nr]['rooms'][room_nr]['Group name'],'').replace(house[floor_nr]['Group name'],'').split())
                     lovely_name = address['Group name']
                     item_label = lovely_name
+                    item_type = ''
+                    thing_address_info = ''
                     description = address['Description'].casefold().split(';')
                     equipment = ''
                     equip_homekit = ''

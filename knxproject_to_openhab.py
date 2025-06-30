@@ -40,6 +40,9 @@ def create_building(project: KNXProject):
 
     buildings = []
     for loc in locations.values():
+        building = {
+            'floors': []
+        }
         if loc['type'] in ('Building', 'BuildingPart'):
             building = {
                 'Description': loc['description'],
@@ -281,15 +284,16 @@ def place_address_by_device(building, address, read_co,addresses):
             for floor in building_data["floors"]:
                 for room in floor["rooms"]:
                     if 'devices' in room and read_co['device_address'] in room['devices']:
-                        put_addressToRightPlace(address,floor["name_short"],room["name_short"],addresses)
+                        put_address_to_right_place(address, floor["name_short"], room["name_short"], addresses)
                         room["Addresses"].append(address)
                         logger.info("Address %s placed in Room (via device association): %s, Floor: %s", address['Address'], room['name_short'], floor['name_short'])
                         return True
     return False
 
-def put_addressToRightPlace(address,floor_name,room_name,addresses):
-    address["Floor"]=floor_name
-    address["Room"]=room_name
+def put_address_to_right_place(address, floor_name, room_name, addresses):
+    """Set floor and room for address and all subaddresses."""
+    address["Floor"] = floor_name
+    address["Room"] = room_name
     item_subaddress = []
     for co in address.get("communication_object"):
         if co.get('device_communication_objects'):
@@ -298,8 +302,8 @@ def put_addressToRightPlace(address,floor_name,room_name,addresses):
                     item_subaddress += [item for item in addresses if item.get('Address') == sub_address]
     if item_subaddress:
         for item in item_subaddress:
-            item["Floor"]=floor_name
-            item["Room"]=room_name
+            item["Floor"] = floor_name
+            item["Room"] = room_name
         logger.debug("here u can put all sub addreses to te right place to")
 
     return True
@@ -391,7 +395,11 @@ def is_alexa_enabled(project: KNXProject):
                 return True
     return False
 def str2bool(v):
-  return v.lower() in ("yes", "true", "t", "1")
+    """Convert a string to a boolean value.
+
+    Returns True for 'yes', 'true', 't', '1' (case-insensitive), otherwise False.
+    """
+    return v.lower() in ("yes", "true", "t", "1")
 
 def main():
     """Main function"""

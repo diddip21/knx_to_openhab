@@ -8,9 +8,9 @@
     "transform_dir_path": "openhab/transform",
     "general": {
         "FloorNameFromDescription": false,
-        "FloorNameAsItIs": true,
+        "FloorNameAsItIs": false,
         "RoomNameFromDescription": false,
-        "RoomNameAsItIs": true,
+        "RoomNameAsItIs": false,
         "addMissingItems": true,
         "unknown_floorname": "unknown",
         "unknown_roomname": "unknown",
@@ -73,7 +73,8 @@
             "absolut_suffix": [
                 "Dimmen absolut",
                 ":(Dimm Wert)",
-                "Absolute Lamellenposition"
+                "Absolute Lamellenposition",
+                "Helligkeitswert"
             ],
             "status_suffix": [
                 "Rückmeldung Dimmen",
@@ -82,7 +83,8 @@
                 "Status Dimmwert",
                 ":(Status Dimm Wert)",
                 "Status Absolute Lamellenposition",
-                "Status akt. Lamellenposition"
+                "Status akt. Lamellenposition",
+                "Rückmeldung Helligkeitswert"
             ],
             "switch_suffix": [
                 "Schalten",
@@ -96,11 +98,13 @@
                 "Rückmeldung",
                 "Schalten Rückmeldung",
                 "Schalten rm",
-                ":(Status An/Aus)"
+                ":(Status An/Aus)",
+                "Rückmeldung Schalten"
             ],
             "relativ_suffix": [
                 "Dimmen relativ",
-                ":(Heller/Dunkler)"
+                ":(Heller/Dunkler)",
+                "Dimmen"
             ],
             "drop": [],
             "change_metadata": {

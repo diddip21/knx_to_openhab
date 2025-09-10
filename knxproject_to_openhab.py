@@ -6,8 +6,8 @@ import argparse
 import tkinter as tk
 from tkinter import filedialog
 from pathlib import Path
-from xknxproject.models import KNXProject
-from xknxproject import XKNXProj
+from xknxproject.models.knxproject import KNXProject
+from xknxproject.xknxproj import XKNXProj
 from config import config
 import ets_to_openhab
 
@@ -26,6 +26,16 @@ ADD_MISSING_ITEMS = config['general']['addMissingItems']
 FloorNameAsItIs = config['general']['FloorNameAsItIs']
 RoomNameAsItIs  = config['general']['RoomNameAsItIs']
 
+def find_floors(spaces: dict) -> list:
+    """Suche rekursiv alle Floors/Stairways/Corridors in verschachtelten spaces."""
+    floors = []
+    for space in spaces.values():
+        if space['type'] in ('Floor', 'Stairway', 'Corridor'):
+            floors.append(space)
+        elif space['type'] in ('Building', 'BuildingPart'):
+            # weiter in die nächste Ebene
+            floors.extend(find_floors(space.get('spaces', {})))
+    return floors
 def create_building(project: KNXProject):
     """Create a building with all floors and rooms."""
     # get name / description from knxproj object
@@ -54,8 +64,8 @@ def create_building(project: KNXProject):
             buildings.append(building)
             logger.debug("Added building: %s", loc['name'])
 
-        for floor in loc['spaces'].values():
-            if floor['type'] in ('Floor', 'Stairway', 'Corridor', 'BuildingPart'):
+        for floor in find_floors(loc.get('spaces', {})):
+            if floor['type'] in ('Floor', 'Stairway', 'Corridor'):
                 floor_short_name, floor_long_name,floor_name_plain = get_floor_name(floor)
                 floor_description = floor['description'] or floor['name']
                 floor_data = {
@@ -302,6 +312,8 @@ def put_address_to_right_place(address, floor_name, room_name, addresses):
                     item_subaddress += [item for item in addresses if item.get('Address') == sub_address]
     if item_subaddress:
         for item in item_subaddress:
+            if item["Floor"] != UNKNOWN_FLOOR_NAME and item["Room"] != UNKNOWN_ROOM_NAME:
+                continue    
             item["Floor"] = floor_name
             item["Room"] = room_name
         logger.debug("here u can put all sub addreses to te right place to")
@@ -375,8 +387,9 @@ def get_recursive_spaces(spaces):
 def is_homekit_enabled(project: KNXProject):
     """Determine if HomeKit is enabled for the project."""
     # TODO: Read project info or some other method to get Homekit enabled status
-    if project['info']['comment']:
-        comments=project['info']['comment'].casefold().split(';')
+    comment_value = project['info'].get('comment')
+    if comment_value:
+        comments = comment_value.casefold().split(';')
         for comment in comments:
             if comment.startswith('homekit='):
                 return str2bool(comment.replace('homekit=', ''))
@@ -385,9 +398,9 @@ def is_homekit_enabled(project: KNXProject):
     return False
 def is_alexa_enabled(project: KNXProject):
     """Determine if Alexa is enabled for the project."""
-    # TODO: Read project info or some other method to get Homekit enabled status
-    if project['info']['comment']:
-        comments=project['info']['comment'].casefold().split(';')
+    comment_value = project['info'].get('comment')
+    if comment_value:
+        comments = comment_value.casefold().split(';')
         for comment in comments:
             if comment.startswith('alexa='):
                 return str2bool(comment.replace('alexa=', ''))

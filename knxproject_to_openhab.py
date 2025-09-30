@@ -8,7 +8,7 @@ from tkinter import filedialog
 from pathlib import Path
 from xknxproject.models.knxproject import KNXProject
 from xknxproject.xknxproj import XKNXProj
-from config import config
+from config import config,normalize_string
 import ets_to_openhab
 
 logger = logging.getLogger(__name__)
@@ -412,7 +412,7 @@ def str2bool(v):
 
     Returns True for 'yes', 'true', 't', '1' (case-insensitive), otherwise False.
     """
-    return v.lower() in ("yes", "true", "t", "1")
+    return normalize_string(v) in ("yes", "true", "t", "1")
 
 def main():
     """Main function"""

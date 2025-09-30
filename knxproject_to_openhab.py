@@ -27,14 +27,26 @@ FloorNameAsItIs = config['general']['FloorNameAsItIs']
 RoomNameAsItIs  = config['general']['RoomNameAsItIs']
 
 def find_floors(spaces: dict) -> list:
-    """Suche rekursiv alle Floors/Stairways/Corridors in verschachtelten spaces."""
+    """
+    Suche rekursiv alle Floors/Stairways/Corridors in verschachtelten spaces.
+    Wenn in Building oder BuildingPart direkt Rooms enthalten sind, wird dieses Objekt als Floor behandelt.
+    """
     floors = []
     for space in spaces.values():
         if space['type'] in ('Floor', 'Stairway', 'Corridor'):
             floors.append(space)
         elif space['type'] in ('Building', 'BuildingPart'):
-            # weiter in die nächste Ebene
-            floors.extend(find_floors(space.get('spaces', {})))
+            # Prüfe, ob direkt Räume enthalten sind
+            has_rooms = any(
+                s['type'] in ('Room', 'Corridor', 'Stairway')
+                for s in space.get('spaces', {}).values()
+            )
+            if has_rooms:
+                # Behandle Building/BuildingPart als Floor
+                floors.append(space)
+            else:
+                # weiter in die nächste Ebene
+                floors.extend(find_floors(space.get('spaces', {})))
     return floors
 def create_building(project: KNXProject):
     """Create a building with all floors and rooms."""
@@ -65,37 +77,36 @@ def create_building(project: KNXProject):
             logger.debug("Added building: %s", loc['name'])
 
         for floor in find_floors(loc.get('spaces', {})):
-            if floor['type'] in ('Floor', 'Stairway', 'Corridor'):
-                floor_short_name, floor_long_name,floor_name_plain = get_floor_name(floor)
-                floor_description = floor['description'] or floor['name']
-                floor_data = {
-                    'Description': floor_description,
-                    'Group name': floor_name_plain,
-                    'name_long': floor_long_name,
-                    'name_short': floor_short_name,
-                    'rooms': []
-                }
-                building['floors'].append(floor_data)
-                logger.debug("Added floor: %s %s", floor_description, floor['name'])
+            floor_short_name, floor_long_name,floor_name_plain = get_floor_name(floor)
+            floor_description = floor['description'] or floor['name']
+            floor_data = {
+                'Description': floor_description,
+                'Group name': floor_name_plain,
+                'name_long': floor_long_name,
+                'name_short': floor_short_name,
+                'rooms': []
+            }
+            building['floors'].append(floor_data)
+            logger.debug("Added floor: %s %s", floor_description, floor['name'])
 
-                for room in floor['spaces'].values():
-                    if room['type'] in ('Room', 'Corridor', 'Stairway'):
-                        room_short_name, room_long_name,room_name_plain = get_room_name(room, floor_data)
-                        room_description = room['description'] or room_name_plain or room['usage_text'] or room['name']
-                        room_data = {
-                            'Description': room_description,
-                            'Group name': room_name_plain,
-                            'name_long': room_long_name,
-                            'name_short': room_short_name,
-                            'devices': room['devices'],
-                            'Addresses': []
-                        }
-                        floor_data['rooms'].append(room_data)
-                        logger.debug("Added room: %s %s", room_description, room['name'])
+            for room in floor['spaces'].values():
+                if room['type'] in ('Room', 'Corridor', 'Stairway'):
+                    room_short_name, room_long_name,room_name_plain = get_room_name(room, floor_data)
+                    room_description = room['description'] or room_name_plain or room['usage_text'] or room['name']
+                    room_data = {
+                        'Description': room_description,
+                        'Group name': room_name_plain,
+                        'name_long': room_long_name,
+                        'name_short': room_short_name,
+                        'devices': room['devices'],
+                        'Addresses': []
+                    }
+                    floor_data['rooms'].append(room_data)
+                    logger.debug("Added room: %s %s", room_description, room['name'])
 
-                floor_data['name_long'] = floor_data['name_long'] or floor_data['name_short']
-                floor_data['Group name'] = floor_data['Group name'] or floor_data['name_short']
-                logger.debug("Processed floor: %s", floor_data['Description'])
+            floor_data['name_long'] = floor_data['name_long'] or floor_data['name_short']
+            floor_data['Group name'] = floor_data['Group name'] or floor_data['name_short']
+            logger.debug("Processed floor: %s", floor_data['Description'])
 
     return buildings
 
@@ -253,7 +264,7 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
 
     for address in addresses:
         # For debugging
-        if address['Address'] in ("3/1/43","3/1/40","22/0/54"):
+        if address['Address'] in ("1/2/25"):
             logger.debug("place specific address")
 
         if place_address_in_building(building, address, cabinet_devices):

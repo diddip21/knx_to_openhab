@@ -1,0 +1,11 @@
+{
+  "paths": {
+    "/api/upload": {"post": {"description": "Upload .knxproj/.knxprojarchive file", "consumes": ["multipart/form-data"]}},
+    "/api/jobs": {"get": {"description": "List jobs"}},
+    "/api/job/{id}": {"get": {"description": "Job detail"}},
+    "/api/job/{id}/events": {"get": {"description": "SSE stream of progress/logs"}},
+    "/api/job/{id}/rollback": {"post": {"description": "Rollback to backup, JSON: {backup: name}"}},
+    "/api/service/restart": {"post": {"description": "Restart service, JSON: {service: name}"}},
+    "/api/status": {"get": {"description": "Health/status"}}
+  }
+}

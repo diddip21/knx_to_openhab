@@ -1,0 +1,17 @@
+[Unit]
+Description=KNX to OpenHAB Web UI Service
+After=network.target
+Wants=knxui-backup-cleanup.timer
+
+[Service]
+Type=notify
+User=knxui
+Group=knxui
+WorkingDirectory=/opt/knx_to_openhab
+Environment="PATH=/opt/knx_to_openhab/venv/bin:/usr/bin:/bin"
+ExecStart=/opt/knx_to_openhab/venv/bin/gunicorn -w 2 -b 0.0.0.0:8080 web_ui.backend.app:app
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target

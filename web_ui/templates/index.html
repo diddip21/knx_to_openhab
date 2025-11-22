@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>KNX → OpenHAB Generator</title>
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body>
+    <div class="container">
+      <h1>🏠 KNX → OpenHAB Generator</h1>
+      
+      <section id="upload-section" class="card">
+        <h2>Upload KNX Project</h2>
+        <form id="uploadForm">
+          <input type="file" id="fileInput" name="file" accept=".knxproj,.knxprojarchive,.json" />
+          <button type="submit">Upload & Process</button>
+        </form>
+        <div id="status" class="status-message"></div>
+      </section>
+
+      <section id="jobs-section" class="card">
+        <h2>Jobs</h2>
+        <div id="jobs" class="jobs-list"></div>
+      </section>
+
+      <section id="detail-section" class="card" style="display:none;">
+        <h2>Job Details</h2>
+        <div id="jobDetail"></div>
+      </section>
+
+      <section id="log-section" class="card" style="display:none;">
+        <h2>Live Log</h2>
+        <pre id="log" class="log-viewer"></pre>
+      </section>
+
+      <section id="service-section" class="card">
+        <h2>Services</h2>
+        <button onclick="restartService('openhab.service')">Restart OpenHAB</button>
+        <div id="serviceStatus"></div>
+      </section>
+    </div>
+
+    <dialog id="rollbackDialog">
+      <h2>Rollback to Backup</h2>
+      <p>Select a backup to restore:</p>
+      <select id="backupSelect"></select>
+      <button onclick="doRollback()">Rollback</button>
+      <button onclick="document.getElementById('rollbackDialog').close()">Cancel</button>
+      <div id="rollbackStatus"></div>
+    </dialog>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

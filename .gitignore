@@ -5,5 +5,15 @@ openhab/*
 example.ini
 .vscode/*
 __pycache__/*
+.pytest_cache/
 tests/unit/__pycache__/*
+.venv*/
+venv/
+
+# Web UI runtime data
+var/lib/knx_to_openhab/
+var/backups/knx_to_openhab/
+
+# Test data
+tests/test_project.json
 

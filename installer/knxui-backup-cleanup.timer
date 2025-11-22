@@ -1,0 +1,12 @@
+[Unit]
+Description=KNX to OpenHAB Daily Backup Cleanup Timer
+Documentation=https://github.com/diddip21/knx_to_openhab
+
+[Timer]
+OnCalendar=daily
+OnBootSec=5min
+Persistent=true
+Unit=knxui-backup-cleanup.service
+
+[Install]
+WantedBy=timers.target

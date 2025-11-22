@@ -8,6 +8,7 @@ import threading
 import queue
 import subprocess
 import traceback
+import io
 from concurrent.futures import ThreadPoolExecutor
 from .storage import save_job, load_jobs, save_jobs, ensure_dirs
 
@@ -32,7 +33,7 @@ class JobManager:
     def get_queue(self, job_id):
         return self.queues.get(job_id)
 
-    def create_job(self, input_path, original_name=None):
+    def create_job(self, input_path, original_name=None, password=None):
         job_id = uuid.uuid4().hex
         job = {
             'id': job_id,
@@ -41,7 +42,9 @@ class JobManager:
             'status': 'queued',
             'created': int(__import__('time').time()),
             'backups': [],
-            'log': []
+            'log': [],
+            'stats': {},
+            'password': password
         }
         with self.lock:
             self._jobs[job_id] = job
@@ -68,19 +71,22 @@ class JobManager:
                     tar.add(openhab_path, arcname=os.path.basename(openhab_path))
                 job['backups'].append({'name': backup_name, 'path': backup_path, 'ts': ts})
                 save_jobs(self.jobs_dir, self._jobs)
-                q.put({'type': 'backup', 'message': f'backup created: {backup_name}'})
+                q.put({'type': 'backup', 'level': 'info', 'message': f'backup created: {backup_name}'})
                 # enforce retention immediately after creating backup
                 try:
                     self.enforce_retention()
-                    q.put({'type': 'info', 'message': 'retention enforced'})
+                    q.put({'type': 'info', 'level': 'debug', 'message': 'retention enforced'})
                 except Exception as re:
-                    q.put({'type': 'error', 'message': f'retention error: {re}'})
+                    q.put({'type': 'error', 'level': 'warning', 'message': f'retention error: {re}'})
         except Exception as e:
-            q.put({'type': 'error', 'message': f'backup failed: {e}'})
+            q.put({'type': 'error', 'level': 'error', 'message': f'backup failed: {e}'})
+
+        # Capture file statistics before generation
+        file_stats_before = self._capture_file_stats(openhab_path)
 
         # Call knxproject_to_openhab functions directly (in-process)
         try:
-            q.put({'type': 'info', 'message': 'start in-process generation'})
+            q.put({'type': 'info', 'level': 'info', 'message': 'start in-process generation'})
             import importlib
             knxmod = importlib.import_module('knxproject_to_openhab')
             etsmod = importlib.import_module('ets_to_openhab')
@@ -88,20 +94,21 @@ class JobManager:
             if job['input'].lower().endswith('.json'):
                 with open(job['input'], 'r', encoding='utf8') as f:
                     project = json.load(f)
-                q.put({'type': 'info', 'message': 'read project JSON dump'})
+                q.put({'type': 'info', 'level': 'info', 'message': 'read project JSON dump'})
             else:
                 # try to parse knxproj archive using XKNXProj
                 from xknxproject.xknxproj import XKNXProj
-                q.put({'type': 'info', 'message': 'parsing knxproj archive (this may take a while)'} )
-                knxproj = XKNXProj(path=job['input'], password=None, language='de-DE')
+                q.put({'type': 'info', 'level': 'info', 'message': 'parsing knxproj archive (this may take a while)'})
+                pwd = job.get('password')
+                knxproj = XKNXProj(path=job['input'], password=pwd, language='de-DE')
                 project = knxproj.parse()
-                q.put({'type': 'info', 'message': 'parsed knxproj'})
+                q.put({'type': 'info', 'level': 'info', 'message': 'parsed knxproj'})
 
             # run the same sequence as the CLI main()
             building = knxmod.create_building(project)
-            q.put({'type': 'info', 'message': 'building created'})
+            q.put({'type': 'info', 'level': 'debug', 'message': 'building created'})
             addresses = knxmod.get_addresses(project)
-            q.put({'type': 'info', 'message': f'{len(addresses)} addresses extracted'})
+            q.put({'type': 'info', 'level': 'info', 'message': f'{len(addresses)} addresses extracted'})
             house = knxmod.put_addresses_in_building(building, addresses, project)
             prj_name = house[0].get('name_long') if house else None
             ip = knxmod.get_gateway_ip(project)
@@ -116,24 +123,102 @@ class JobManager:
             if prj_name:
                 etsmod.PRJ_NAME = prj_name
 
-            q.put({'type': 'info', 'message': 'calling ets_to_openhab.main()'})
-            # ets_to_openhab.main() writes output files; capture logging via job['log'] where possible
-            # etsmod may use print/logging; we can't intercept easily without patching, but we signal progress
-            etsmod.main()
+            q.put({'type': 'info', 'level': 'info', 'message': 'calling ets_to_openhab.main()'})
+            
+            # Capture stdout/stderr to get "No Room found..." and other print outputs
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
+            captured_output = io.StringIO()
+            sys.stdout = captured_output
+            sys.stderr = captured_output
+            
+            try:
+                # ets_to_openhab.main() writes output files
+                etsmod.main()
+            finally:
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+                
+                # Send captured output line by line to the queue
+                # Parse log level from message (WARNING:..., ERROR:..., etc.)
+                captured = captured_output.getvalue()
+                if captured:
+                    for line in captured.strip().split('\n'):
+                        if line.strip():
+                            # Detect log level from message content
+                            level = 'info'
+                            message = line.strip()
+                            
+                            # Check for WARNING: prefix
+                            if message.startswith('WARNING:'):
+                                level = 'warning'
+                                # Remove the "WARNING:" prefix
+                                message = message[len('WARNING:'):].strip()
+                            elif message.startswith('ERROR:'):
+                                level = 'error'
+                                # Remove the "ERROR:" prefix
+                                message = message[len('ERROR:'):].strip()
+                            elif 'WARNING:' in message and ':' in message:
+                                # e.g., "WARNING:ets_to_openhab:incomplete dimmer: ..."
+                                level = 'warning'
+                                # Extract message after the last ':'
+                                parts = message.split(':')
+                                if len(parts) > 2:
+                                    message = ':'.join(parts[2:]).strip()
+                            
+                            q.put({'type': 'info', 'level': level, 'message': message})
+
+            
+            
+            # Capture file statistics after generation and compute deltas
+            file_stats_after = self._capture_file_stats(openhab_path)
+            job['stats'] = self._compute_file_deltas(file_stats_before, file_stats_after)
+            for fn, stat in sorted(job['stats'].items()):
+                msg = f"{fn}: {stat['before']} → {stat['after']} lines ({stat['delta']:+d})"
+                q.put({'type': 'stats', 'level': 'info', 'message': msg})
+            
             job['status'] = 'completed'
-            q.put({'type': 'status', 'message': 'completed'})
+            q.put({'type': 'status', 'level': 'info', 'message': 'completed'})
         except Exception as e:
             job['status'] = 'failed'
             err_msg = str(e)
             tb = traceback.format_exc()
-            q.put({'type': 'error', 'message': err_msg})
-            q.put({'type': 'error', 'message': tb})
+            q.put({'type': 'error', 'level': 'error', 'message': err_msg})
+            q.put({'type': 'error', 'level': 'error', 'message': tb})
             job['log'].append(f"ERROR: {err_msg}")
             job['log'].append(tb)
         finally:
             save_jobs(self.jobs_dir, self._jobs)
             # signal end
             q.put(None)
+
+    def _capture_file_stats(self, path):
+        """Capture line counts for all .items, .things, .sitemap, .rules, .persist files."""
+        stats = {}
+        if not os.path.exists(path):
+            return stats
+        for root, dirs, files in os.walk(path):
+            for fname in files:
+                if any(fname.endswith(ext) for ext in ['.items', '.things', '.sitemap', '.rules', '.persist']):
+                    fpath = os.path.join(root, fname)
+                    try:
+                        with open(fpath, 'r', encoding='utf8', errors='ignore') as f:
+                            lines = len(f.readlines())
+                        relpath = os.path.relpath(fpath, path)
+                        stats[relpath] = lines
+                    except Exception:
+                        pass
+        return stats
+
+    def _compute_file_deltas(self, before, after):
+        """Compute line count changes: {filename: {before, after, delta}}."""
+        all_files = set(before.keys()) | set(after.keys())
+        deltas = {}
+        for fname in sorted(all_files):
+            b = before.get(fname, 0)
+            a = after.get(fname, 0)
+            deltas[fname] = {'before': b, 'after': a, 'delta': a - b}
+        return deltas
 
     def rollback(self, job_id, backup_name=None):
         job = self._jobs.get(job_id)
@@ -209,3 +294,25 @@ class JobManager:
     def status(self):
         running = [j for j in self._jobs.values() if j['status'] == 'running']
         return {'jobs_total': len(self._jobs), 'jobs_running': len(running)}
+
+    def update_job(self, job_id, updates):
+        """Update job fields (used for persisting logs from frontend)."""
+        if job_id not in self._jobs:
+            return False
+        job = self._jobs[job_id]
+        if 'log' in updates:
+            job['log'] = updates['log']
+        with self.lock:
+            save_jobs(self.jobs_dir, self._jobs)
+        return True
+
+    def delete_job(self, job_id):
+        """Delete a job from history."""
+        if job_id not in self._jobs:
+            return False
+        with self.lock:
+            del self._jobs[job_id]
+            if job_id in self.queues:
+                del self.queues[job_id]
+            save_jobs(self.jobs_dir, self._jobs)
+        return True

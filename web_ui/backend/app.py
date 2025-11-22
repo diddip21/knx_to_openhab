@@ -19,13 +19,16 @@ except Exception:
     FLASK_AVAILABLE = False
 
 from .jobs import JobManager
-from .service_manager import restart_service
+from .service_manager import restart_service, get_service_status
 from .storage import load_config
 
 cfg = load_config()
 
 if FLASK_AVAILABLE:
-    app = Flask(__name__, template_folder=os.path.join(os.path.dirname(__file__), '..', 'templates'))
+    app = Flask(__name__,
+                template_folder=os.path.join(os.path.dirname(__file__), '..', 'templates'),
+                static_folder=os.path.join(os.path.dirname(__file__), '..', 'static'),
+                static_url_path='/static')
     app.config['UPLOAD_FOLDER'] = cfg.get('jobs_dir', './var/lib/knx_to_openhab')
     job_mgr = JobManager(cfg)
 
@@ -81,7 +84,8 @@ if FLASK_AVAILABLE:
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         saved_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4().hex}-{fn}")
         f.save(saved_path)
-        job = job_mgr.create_job(saved_path, original_name=fn)
+        password = request.form.get('password') or None
+        job = job_mgr.create_job(saved_path, original_name=fn, password=password)
         return jsonify(job), 201
 
     @app.route('/api/jobs', methods=['GET'])
@@ -94,6 +98,18 @@ if FLASK_AVAILABLE:
         if not j:
             return jsonify({'error': 'not found'}), 404
         return jsonify(j)
+
+    @app.route('/api/job/<job_id>', methods=['PATCH'])
+    def update_job(job_id):
+        data = request.get_json() or {}
+        try:
+            ok = job_mgr.update_job(job_id, data)
+            if ok:
+                return jsonify({'ok': True})
+            else:
+                return jsonify({'error': 'not found'}), 404
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
 
     @app.route('/api/job/<job_id>/events')
     def job_events(job_id):
@@ -121,6 +137,14 @@ if FLASK_AVAILABLE:
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @app.route('/api/job/<job_id>', methods=['DELETE'])
+    def delete_job(job_id):
+        try:
+            ok = job_mgr.delete_job(job_id)
+            return jsonify({'ok': ok})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @app.route('/api/service/restart', methods=['POST'])
     def service_restart():
         data = request.get_json() or {}
@@ -129,6 +153,11 @@ if FLASK_AVAILABLE:
             return jsonify({'error': 'service missing'}), 400
         ok, out = restart_service(svc)
         return jsonify({'ok': ok, 'output': out})
+
+    @app.route('/api/service/<service_name>/status', methods=['GET'])
+    def service_status(service_name):
+        status = get_service_status(service_name)
+        return jsonify(status)
 
     @app.route('/api/status')
     def status():

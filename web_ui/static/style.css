@@ -26,6 +26,12 @@ h2 {
   margin-top: 20px;
 }
 
+h3 {
+  color: #34495e;
+  margin-top: 15px;
+  margin-bottom: 10px;
+}
+
 .card {
   background: white;
   border-radius: 8px;
@@ -210,8 +216,145 @@ button:disabled {
   font-family: "Courier New", monospace;
   font-size: 13px;
   line-height: 1.4;
+  word-wrap: break-word;
+  display: flex;
+  flex-direction: column;
+}
+
+.log-entry {
   white-space: pre-wrap;
   word-wrap: break-word;
+  padding: 2px 0;
+}
+
+.log-level-debug {
+  color: #888;
+}
+
+.log-level-info {
+  color: #0f0;
+}
+
+.log-level-warning {
+  color: #ff8800;
+  background-color: rgba(255, 136, 0, 0.15);
+  padding: 2px 5px;
+  border-left: 3px solid #ff8800;
+}
+
+.log-level-error {
+  color: #ff4444;
+  background-color: rgba(255, 68, 68, 0.15);
+  padding: 2px 5px;
+  border-left: 3px solid #ff4444;
+}
+
+/* Log level filter */
+#logLevelFilter {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* Statistics table */
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 15px 0;
+}
+
+.stats-table th,
+.stats-table td {
+  padding: 10px;
+  text-align: right;
+  border-bottom: 1px solid #ecf0f1;
+}
+
+.stats-table th:first-child,
+.stats-table td:first-child {
+  text-align: left;
+  font-weight: 600;
+  color: #34495e;
+  width: 50%;
+}
+
+.stats-table th {
+  background: #f8f9fa;
+  color: #2c3e50;
+  font-weight: 700;
+  border-bottom: 2px solid #3498db;
+}
+
+.stats-table td.positive {
+  color: #27ae60;
+  font-weight: 600;
+}
+
+.stats-table td.negative {
+  color: #c0392b;
+  font-weight: 600;
+}
+
+.stats-table td.neutral {
+  color: #7f8c8d;
+}
+
+#serviceStatus {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 4px;
+  background: #ecf0f1;
+}
+
+.service-item {
+  background: #f8f9fa;
+  border-left: 4px solid #3498db;
+  border-radius: 4px;
+  padding: 15px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.service-header {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.service-name {
+  font-weight: 600;
+  color: #2c3e50;
+  min-width: 180px;
+}
+
+.service-status {
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.service-status.active {
+  background: #d4edda;
+  color: #155724;
+}
+
+.service-status.inactive {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.service-restart-btn {
+  padding: 8px 16px;
+  font-size: 14px;
+  white-space: nowrap;
 }
 
 dialog {
@@ -238,6 +381,13 @@ select {
   border-radius: 4px;
   margin: 10px 0;
   font-size: 14px;
+}
+
+label {
+  display: inline-block;
+  margin-right: 10px;
+  font-weight: 600;
+  color: #34495e;
 }
 
 #rollbackStatus {

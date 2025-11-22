@@ -14,6 +14,7 @@
         <h2>Upload KNX Project</h2>
         <form id="uploadForm">
           <input type="file" id="fileInput" name="file" accept=".knxproj,.knxprojarchive,.json" />
+          <input type="password" id="passwordInput" name="password" placeholder="Password (if protected)" />
           <button type="submit">Upload & Process</button>
         </form>
         <div id="status" class="status-message"></div>
@@ -31,13 +32,27 @@
 
       <section id="log-section" class="card" style="display:none;">
         <h2>Live Log</h2>
-        <pre id="log" class="log-viewer"></pre>
+        <div style="margin-bottom: 1rem;">
+          <label for="logLevelFilter">Log Level Filter:</label>
+          <select id="logLevelFilter">
+            <option value="all">All</option>
+            <option value="debug">Debug</option>
+            <option value="info">Info</option>
+            <option value="warning">Warning</option>
+            <option value="error">Error</option>
+          </select>
+        </div>
+        <div id="log" class="log-viewer"></div>
+      </section>
+
+      <section id="stats-section" class="card" style="display:none;">
+        <h2>Generated Files Statistics</h2>
+        <div id="stats"></div>
       </section>
 
       <section id="service-section" class="card">
         <h2>Services</h2>
-        <button onclick="restartService('openhab.service')">Restart OpenHAB</button>
-        <div id="serviceStatus"></div>
+        <div id="servicesList"></div>
       </section>
     </div>
 
@@ -48,6 +63,12 @@
       <button onclick="doRollback()">Rollback</button>
       <button onclick="document.getElementById('rollbackDialog').close()">Cancel</button>
       <div id="rollbackStatus"></div>
+    </dialog>
+
+    <dialog id="filePreviewDialog">
+      <h2 id="previewFileName"></h2>
+      <pre id="previewContent" style="max-height: 500px; overflow: auto; background: #f5f5f5; padding: 10px; border-radius: 4px; font-size: 12px;"></pre>
+      <button onclick="document.getElementById('filePreviewDialog').close()">Close</button>
     </dialog>
 
     <script src="/static/app.js"></script>

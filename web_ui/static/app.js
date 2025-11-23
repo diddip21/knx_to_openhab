@@ -68,7 +68,7 @@ function showJobDetail(jobId) {
         for (const [fname, stat] of Object.entries(j.stats)) {
           const deltaClass = stat.delta > 0 ? 'positive' : stat.delta < 0 ? 'negative' : 'neutral'
           const deltaStr = stat.delta >= 0 ? `+${stat.delta}` : `${stat.delta}`
-          statsHtml += `<tr><td>${fname}</td><td>${stat.before}</td><td>${stat.after}</td><td class="${deltaClass}">${deltaStr}</td><td><button onclick="previewFile('${fname}')">Preview</button></td></tr>`
+          statsHtml += `<tr><td>${fname}</td><td>${stat.before}</td><td>${stat.after}</td><td class="${deltaClass}">${deltaStr}</td><td><button disabled onclick="previewFile('${fname}')">Preview</button></td></tr>`
         }
         statsHtml += '</table>'
         if (statsEl) statsEl.innerHTML = statsHtml

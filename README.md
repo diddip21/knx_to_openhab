@@ -2,7 +2,33 @@
 Generate an openhab text configuration based on an ETS project File. 
 Despite all things and items, the sitemap for basicui is generated. The semantic model is supported. 
 
-## Run
+## Web UI
+
+This project includes a web interface for easier project management and real-time monitoring.
+
+- **For Development** (local testing): See [DEVELOPMENT.md](DEVELOPMENT.md)
+- **For Production** (Raspberry Pi/DietPi with systemd): See [WEBUI_INSTALLATION.md](WEBUI_INSTALLATION.md)
+
+### Quick Start (Web UI Development)
+
+**Windows:**
+```powershell
+.\scripts\dev-setup.ps1
+.\scripts\dev-run.ps1
+```
+
+**Linux/macOS:**
+```bash
+chmod +x scripts/*.sh
+./scripts/dev-setup.sh
+./scripts/dev-run.sh
+```
+
+Then open `http://localhost:5000` in your browser.
+
+---
+
+## Run (Command Line)
 - edit `config.json`
     - the default locations for the output files match directly, if you create a `openhab` directory and mount the `/etc/openhab` there. (under linux use e.g. `sshfs pi@[myIP]:/etc/openhab openhab`)
 - run `python3 knxproject_to_openhab.py`

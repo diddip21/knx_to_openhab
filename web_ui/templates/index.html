@@ -1,76 +1,98 @@
 <!doctype html>
 <html lang="de">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>KNX → OpenHAB Generator</title>
-    <link rel="stylesheet" href="/static/style.css">
-  </head>
-  <body>
-    <div class="container">
-      <h1>🏠 KNX → OpenHAB Generator</h1>
-      
-      <section id="upload-section" class="card">
-        <h2>Upload KNX Project</h2>
-        <form id="uploadForm">
-          <input type="file" id="fileInput" name="file" accept=".knxproj,.knxprojarchive,.json" />
-          <input type="password" id="passwordInput" name="password" placeholder="Password (if protected)" />
-          <button type="submit">Upload & Process</button>
-        </form>
-        <div id="status" class="status-message"></div>
-      </section>
 
-      <section id="jobs-section" class="card">
-        <h2>Jobs</h2>
-        <div id="jobs" class="jobs-list"></div>
-      </section>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KNX → OpenHAB Generator</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
 
-      <section id="detail-section" class="card" style="display:none;">
-        <h2>Job Details</h2>
-        <div id="jobDetail"></div>
-      </section>
+<body>
+  <div class="container">
+    <h1>🏠 KNX → OpenHAB Generator</h1>
 
-      <section id="log-section" class="card" style="display:none;">
-        <h2>Live Log</h2>
-        <div style="margin-bottom: 1rem;">
-          <label for="logLevelFilter">Log Level Filter:</label>
-          <select id="logLevelFilter">
-            <option value="all">All</option>
-            <option value="debug">Debug</option>
-            <option value="info">Info</option>
-            <option value="warning">Warning</option>
-            <option value="error">Error</option>
-          </select>
-        </div>
-        <div id="log" class="log-viewer"></div>
-      </section>
+    <section id="upload-section" class="card">
+      <h2>Upload KNX Project</h2>
+      <form id="uploadForm">
+        <input type="file" id="fileInput" name="file" accept=".knxproj,.knxprojarchive,.json" />
+        <input type="password" id="passwordInput" name="password" placeholder="Password (if protected)" />
+        <button type="submit">Upload & Process</button>
+      </form>
+      <div id="status" class="status-message"></div>
+    </section>
 
-      <section id="stats-section" class="card" style="display:none;">
-        <h2>Generated Files Statistics</h2>
-        <div id="stats"></div>
-      </section>
+    <section id="jobs-section" class="card">
+      <h2>Jobs</h2>
+      <div id="jobs" class="jobs-list"></div>
+    </section>
 
-      <section id="service-section" class="card">
-        <h2>Services</h2>
-        <div id="servicesList"></div>
-      </section>
-    </div>
+    <section id="detail-section" class="card" style="display:none;">
+      <h2>Job Details</h2>
+      <div id="jobDetail"></div>
+    </section>
 
-    <dialog id="rollbackDialog">
-      <h2>Rollback to Backup</h2>
-      <p>Select a backup to restore:</p>
-      <select id="backupSelect"></select>
-      <button onclick="doRollback()">Rollback</button>
-      <button onclick="document.getElementById('rollbackDialog').close()">Cancel</button>
-      <div id="rollbackStatus"></div>
-    </dialog>
+    <section id="log-section" class="card" style="display:none;">
+      <h2>Live Log</h2>
+      <div style="margin-bottom: 1rem;">
+        <label for="logLevelFilter">Log Level Filter:</label>
+        <select id="logLevelFilter">
+          <option value="all">All</option>
+          <option value="debug">Debug</option>
+          <option value="info">Info</option>
+          <option value="warning">Warning</option>
+          <option value="error">Error</option>
+        </select>
+      </div>
+      <div id="log" class="log-viewer"></div>
+    </section>
 
-    <dialog id="filePreviewDialog">
+    <section id="stats-section" class="card" style="display:none;">
+      <h2>Generated Files Statistics</h2>
+      <div id="stats"></div>
+    </section>
+
+    <section id="service-section" class="card">
+      <h2>Services</h2>
+      <div id="servicesList"></div>
+    </section>
+  </div>
+
+  <dialog id="rollbackDialog">
+    <h2>Rollback to Backup</h2>
+    <p>Select a backup to restore:</p>
+    <select id="backupSelect"></select>
+    <button onclick="doRollback()">Rollback</button>
+    <button onclick="document.getElementById('rollbackDialog').close()">Cancel</button>
+    <div id="rollbackStatus"></div>
+  </dialog>
+
+  <dialog id="filePreviewDialog" class="preview-dialog">
+    <div class="preview-header">
       <h2 id="previewFileName"></h2>
-      <pre id="previewContent" style="max-height: 500px; overflow: auto; background: #f5f5f5; padding: 10px; border-radius: 4px; font-size: 12px;"></pre>
-      <button onclick="document.getElementById('filePreviewDialog').close()">Close</button>
-    </dialog>
+      <button class="close-btn" onclick="document.getElementById('filePreviewDialog').close()">✕</button>
+    </div>
+    <div class="preview-controls">
+      <div class="view-mode-toggle">
+        <button id="viewModeFinal" class="toggle-btn active" onclick="switchViewMode('final')">Final View</button>
+        <button id="viewModeDiff" class="toggle-btn" onclick="switchViewMode('diff')">Diff View</button>
+      </div>
+      <div id="diffLegend" class="diff-legend" style="display: none;">
+        <span class="legend-item"><span class="legend-add">+</span> Hinzugefügt</span>
+        <span class="legend-item"><span class="legend-del">-</span> Gelöscht</span>
+        <span class="legend-item"><span class="legend-mod">~</span> Geändert</span>
+      </div>
+    </div>
+    <div id="previewContentWrapper" class="preview-content-wrapper">
+      <pre id="previewContent" class="preview-content"></pre>
+      <div id="diffContent" class="diff-content" style="display: none;"></div>
+    </div>
+    <div class="preview-footer">
+      <button onclick="document.getElementById('filePreviewDialog').close()">Schließen</button>
+    </div>
+  </dialog>
 
-    <script src="/static/app.js"></script>
-  </body>
+  <script src="/static/app.js"></script>
+</body>
+
 </html>

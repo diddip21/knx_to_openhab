@@ -25,6 +25,8 @@ This will:
 
 See `WEBUI_INSTALLATION.md` for full documentation.
 
+> **Note:** For local development without systemd installation, see [DEVELOPMENT.md](../DEVELOPMENT.md)
+
 ## Manual Service Control
 
 ```bash
@@ -72,23 +74,3 @@ sudo rm /etc/sudoers.d/knxui
 # Remove system user
 sudo userdel knxui
 ```
-
-## Development
-
-To run locally without installing:
-
-```bash
-# Create venv
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install deps
-pip install -r ../requirements.txt
-
-# Run Flask dev server
-cd ..
-PYTHONPATH=. .venv/bin/python -m flask --app web_ui.backend.app:app run
-```
-
-Then open `http://localhost:5000` in your browser.
-

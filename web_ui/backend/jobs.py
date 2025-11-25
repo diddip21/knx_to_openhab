@@ -81,8 +81,7 @@ class JobManager:
         except Exception as e:
             q.put({'type': 'error', 'level': 'error', 'message': f'backup failed: {e}'})
 
-        # Capture file statistics before generation
-        file_stats_before = self._capture_file_stats(openhab_path)
+        # (Stats capture removed - using backup for comparison)
 
         # Call knxproject_to_openhab functions directly (in-process)
         try:
@@ -90,42 +89,8 @@ class JobManager:
             import importlib
             knxmod = importlib.import_module('knxproject_to_openhab')
             etsmod = importlib.import_module('ets_to_openhab')
-            # load project (json dump or parse knxproj)
-            if job['input'].lower().endswith('.json'):
-                with open(job['input'], 'r', encoding='utf8') as f:
-                    project = json.load(f)
-                q.put({'type': 'info', 'level': 'info', 'message': 'read project JSON dump'})
-            else:
-                # try to parse knxproj archive using XKNXProj
-                from xknxproject.xknxproj import XKNXProj
-                q.put({'type': 'info', 'level': 'info', 'message': 'parsing knxproj archive (this may take a while)'})
-                pwd = job.get('password')
-                knxproj = XKNXProj(path=job['input'], password=pwd, language='de-DE')
-                project = knxproj.parse()
-                q.put({'type': 'info', 'level': 'info', 'message': 'parsed knxproj'})
-
-            # run the same sequence as the CLI main()
-            building = knxmod.create_building(project)
-            q.put({'type': 'info', 'level': 'debug', 'message': 'building created'})
-            addresses = knxmod.get_addresses(project)
-            q.put({'type': 'info', 'level': 'info', 'message': f'{len(addresses)} addresses extracted'})
-            house = knxmod.put_addresses_in_building(building, addresses, project)
-            prj_name = house[0].get('name_long') if house else None
-            ip = knxmod.get_gateway_ip(project)
-            homekit_enabled = knxmod.is_homekit_enabled(project)
-            alexa_enabled = knxmod.is_alexa_enabled(project)
-
-            etsmod.floors = house[0]["floors"] if house else []
-            etsmod.all_addresses = addresses
-            etsmod.GWIP = ip
-            etsmod.B_HOMEKIT = homekit_enabled
-            etsmod.B_ALEXA = alexa_enabled
-            if prj_name:
-                etsmod.PRJ_NAME = prj_name
-
-            q.put({'type': 'info', 'level': 'info', 'message': 'calling ets_to_openhab.main()'})
             
-            # Capture stdout/stderr to get "No Room found..." and other print outputs
+            # Capture stdout/stderr for ENTIRE generation process
             old_stdout = sys.stdout
             old_stderr = sys.stderr
             captured_output = io.StringIO()
@@ -133,8 +98,55 @@ class JobManager:
             sys.stderr = captured_output
             
             try:
+                # load project (json dump or parse knxproj)
+                if job['input'].lower().endswith('.json'):
+                    with open(job['input'], 'r', encoding='utf8') as f:
+                        project = json.load(f)
+                    # Temporarily restore stdout to log message
+                    sys.stdout = old_stdout
+                    q.put({'type': 'info', 'level': 'info', 'message': 'read project JSON dump'})
+                    sys.stdout = captured_output
+                else:
+                    # try to parse knxproj archive using XKNXProj
+                    from xknxproject.xknxproj import XKNXProj
+                    sys.stdout = old_stdout
+                    q.put({'type': 'info', 'level': 'info', 'message': 'parsing knxproj archive (this may take a while)'})
+                    sys.stdout = captured_output
+                    pwd = job.get('password')
+                    knxproj = XKNXProj(path=job['input'], password=pwd, language='de-DE')
+                    project = knxproj.parse()
+                    sys.stdout = old_stdout
+                    q.put({'type': 'info', 'level': 'info', 'message': 'parsed knxproj'})
+                    sys.stdout = captured_output
+
+                # run the same sequence as the CLI main()
+                building = knxmod.create_building(project)
+                addresses = knxmod.get_addresses(project)
+                sys.stdout = old_stdout
+                q.put({'type': 'info', 'level': 'info', 'message': f'{len(addresses)} addresses extracted'})
+                sys.stdout = captured_output
+                
+                house = knxmod.put_addresses_in_building(building, addresses, project)
+                prj_name = house[0].get('name_long') if house else None
+                ip = knxmod.get_gateway_ip(project)
+                homekit_enabled = knxmod.is_homekit_enabled(project)
+                alexa_enabled = knxmod.is_alexa_enabled(project)
+
+                etsmod.floors = house[0]["floors"] if house else []
+                etsmod.all_addresses = addresses
+                etsmod.GWIP = ip
+                etsmod.B_HOMEKIT = homekit_enabled
+                etsmod.B_ALEXA = alexa_enabled
+                if prj_name:
+                    etsmod.PRJ_NAME = prj_name
+
+                sys.stdout = old_stdout
+                q.put({'type': 'info', 'level': 'info', 'message': 'calling ets_to_openhab.main()'})
+                sys.stdout = captured_output
+                
                 # ets_to_openhab.main() writes output files
                 etsmod.main()
+                
             finally:
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
@@ -170,11 +182,11 @@ class JobManager:
 
             
             
-            # Capture file statistics after generation and compute deltas
-            file_stats_after = self._capture_file_stats(openhab_path)
-            job['stats'] = self._compute_file_deltas(file_stats_before, file_stats_after)
+            
+            # Compute detailed statistics by comparing with backup
+            job['stats'] = self._compute_detailed_stats(openhab_path, backup_path)
             for fn, stat in sorted(job['stats'].items()):
-                msg = f"{fn}: {stat['before']} → {stat['after']} lines ({stat['delta']:+d})"
+                msg = f"{fn}: {stat['before']} → {stat['after']} lines ({stat['delta']:+d}) [+{stat['added']}/-{stat['removed']}]"
                 q.put({'type': 'stats', 'level': 'info', 'message': msg})
             
             job['status'] = 'completed'
@@ -192,33 +204,136 @@ class JobManager:
             # signal end
             q.put(None)
 
-    def _capture_file_stats(self, path):
-        """Capture line counts for all .items, .things, .sitemap, .rules, .persist files."""
+    def _compute_detailed_stats(self, openhab_path, backup_path):
+        """Compute detailed diff stats (added, removed) by comparing current files with backup."""
+        import difflib
         stats = {}
-        if not os.path.exists(path):
-            return stats
-        for root, dirs, files in os.walk(path):
-            for fname in files:
-                if any(fname.endswith(ext) for ext in ['.items', '.things', '.sitemap', '.rules', '.persist']):
-                    fpath = os.path.join(root, fname)
-                    try:
-                        with open(fpath, 'r', encoding='utf8', errors='ignore') as f:
-                            lines = len(f.readlines())
-                        relpath = os.path.relpath(fpath, path)
-                        stats[relpath] = lines
-                    except Exception:
-                        pass
+        
+        # Get list of current files
+        current_files = {}
+        if os.path.exists(openhab_path):
+            for root, dirs, files in os.walk(openhab_path):
+                for fname in files:
+                    if any(fname.endswith(ext) for ext in ['.items', '.things', '.sitemap', '.rules', '.persist']):
+                        fpath = os.path.join(root, fname)
+                        relpath = os.path.relpath(fpath, openhab_path).replace('\\', '/')
+                        try:
+                            with open(fpath, 'r', encoding='utf8', errors='ignore') as f:
+                                current_files[relpath] = f.readlines()
+                        except Exception:
+                            pass
+
+        # Get list of original files from backup
+        original_files = {}
+        if os.path.exists(backup_path):
+            try:
+                with tarfile.open(backup_path, 'r:gz') as tar:
+                    for member in tar.getmembers():
+                        if member.isfile() and any(member.name.endswith(ext) for ext in ['.items', '.things', '.sitemap', '.rules', '.persist']):
+                            # member.name is like "openhab/items/knx.items"
+                            # we need relative path from openhab root
+                            # assuming backup structure is openhab/...
+                            parts = member.name.replace('\\', '/').split('/', 1)
+                            if len(parts) > 1:
+                                relpath = parts[1]
+                                f = tar.extractfile(member)
+                                if f:
+                                    wrapper = io.TextIOWrapper(f, encoding='utf-8', errors='ignore')
+                                    original_files[relpath] = wrapper.readlines()
+            except Exception as e:
+                # Log error but continue
+                print(f"Error reading backup for stats: {e}")
+
+        # Compute diffs
+        all_files = set(current_files.keys()) | set(original_files.keys())
+        for fname in sorted(all_files):
+            orig_lines = original_files.get(fname, [])
+            curr_lines = current_files.get(fname, [])
+            
+            matcher = difflib.SequenceMatcher(None, orig_lines, curr_lines)
+            added = 0
+            removed = 0
+            for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+                if tag == 'replace':
+                    removed += i2 - i1
+                    added += j2 - j1
+                elif tag == 'delete':
+                    removed += i2 - i1
+                elif tag == 'insert':
+                    added += j2 - j1
+            
+            stats[fname] = {
+                'before': len(orig_lines),
+                'after': len(curr_lines),
+                'delta': len(curr_lines) - len(orig_lines),
+                'added': added,
+                'removed': removed
+            }
+            
         return stats
 
-    def _compute_file_deltas(self, before, after):
-        """Compute line count changes: {filename: {before, after, delta}}."""
-        all_files = set(before.keys()) | set(after.keys())
-        deltas = {}
-        for fname in sorted(all_files):
-            b = before.get(fname, 0)
-            a = after.get(fname, 0)
-            deltas[fname] = {'before': b, 'after': a, 'delta': a - b}
-        return deltas
+    def get_file_diff(self, job_id, rel_path):
+        """Get diff for a specific file in a job."""
+        job = self._jobs.get(job_id)
+        if not job:
+            return None
+        
+        openhab_path = self.cfg.get('openhab_path', 'openhab')
+        # Use the latest backup for comparison
+        if not job.get('backups'):
+            return None
+        backup_path = job['backups'][-1]['path']
+        
+        # Read current file
+        curr_lines = []
+        fpath = os.path.join(openhab_path, rel_path)
+        if os.path.exists(fpath):
+            try:
+                with open(fpath, 'r', encoding='utf8', errors='ignore') as f:
+                    curr_lines = f.readlines()
+            except Exception:
+                pass
+
+        # Read original file from backup
+        orig_lines = []
+        if os.path.exists(backup_path):
+            try:
+                with tarfile.open(backup_path, 'r:gz') as tar:
+                    # backup structure is openhab/...
+                    # rel_path is like "items/knx.items"
+                    # member name should be "openhab/items/knx.items"
+                    member_path = f"openhab/{rel_path}".replace('\\', '/')
+                    try:
+                        member = tar.getmember(member_path)
+                        f = tar.extractfile(member)
+                        if f:
+                            wrapper = io.TextIOWrapper(f, encoding='utf-8', errors='ignore')
+                            orig_lines = wrapper.readlines()
+                    except KeyError:
+                        pass
+            except Exception:
+                pass
+
+        import difflib
+        diff_lines = []
+        matcher = difflib.SequenceMatcher(None, orig_lines, curr_lines)
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == 'equal':
+                for i in range(i1, i2):
+                    diff_lines.append({'type': 'unchanged', 'line': orig_lines[i].rstrip('\n'), 'orig_ln': i+1, 'curr_ln': j1 + (i-i1) + 1})
+            elif tag == 'replace':
+                for i in range(i1, i2):
+                    diff_lines.append({'type': 'removed', 'line': orig_lines[i].rstrip('\n'), 'orig_ln': i+1})
+                for j in range(j1, j2):
+                    diff_lines.append({'type': 'added', 'line': curr_lines[j].rstrip('\n'), 'curr_ln': j+1})
+            elif tag == 'delete':
+                for i in range(i1, i2):
+                    diff_lines.append({'type': 'removed', 'line': orig_lines[i].rstrip('\n'), 'orig_ln': i+1})
+            elif tag == 'insert':
+                for j in range(j1, j2):
+                    diff_lines.append({'type': 'added', 'line': curr_lines[j].rstrip('\n'), 'curr_ln': j+1})
+        
+        return diff_lines
 
     def rollback(self, job_id, backup_name=None):
         job = self._jobs.get(job_id)

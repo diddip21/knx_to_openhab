@@ -111,6 +111,23 @@ if FLASK_AVAILABLE:
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @app.route('/api/job/<job_id>/file/diff', methods=['GET'])
+    def job_file_diff(job_id):
+        path = request.args.get('path')
+        if not path:
+            return jsonify({'error': 'path required'}), 400
+        
+        # path is like "items/knx.items" (relative to openhab root)
+        # normalize path
+        path = path.replace('\\', '/')
+        if path.startswith('openhab/'):
+            path = path[8:]
+            
+        diff = job_mgr.get_file_diff(job_id, path)
+        if diff is None:
+            return jsonify({'error': 'diff not available'}), 404
+        return jsonify(diff)
+
     @app.route('/api/job/<job_id>/events')
     def job_events(job_id):
         q = job_mgr.get_queue(job_id)
@@ -163,6 +180,104 @@ if FLASK_AVAILABLE:
     def status():
         s = job_mgr.status()
         return jsonify(s)
+
+    @app.route('/api/system/update', methods=['POST'])
+    def system_update():
+        try:
+            # Check if running on Windows (dev) or Linux (prod)
+            if sys.platform == 'win32':
+                return jsonify({'status': 'simulated', 'message': 'Update simulation: Script would run on Linux.'})
+            
+            # Run update script in background
+            # We use Popen so we can return immediately. 
+            # The service restart will kill the server, so the frontend needs to handle the disconnect.
+            script_path = os.path.join(os.getcwd(), 'update.sh')
+            if not os.path.exists(script_path):
+                 return jsonify({'error': 'update.sh not found'}), 404
+
+            import subprocess
+            subprocess.Popen(['/bin/bash', script_path], cwd=os.getcwd())
+            return jsonify({'status': 'updating', 'message': 'Update started. Service will restart.'})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/file/preview', methods=['GET'])
+    def file_preview():
+        """Preview a generated OpenHAB configuration file."""
+        file_path = request.args.get('path', '')
+        backup_name = request.args.get('backup', None)  # Optional: fetch from backup
+        
+        if not file_path:
+            return jsonify({'error': 'path parameter required'}), 400
+        
+        # Security: Only allow files within openhab directory
+        openhab_base = os.path.abspath(cfg.get('openhab_path', 'openhab'))
+        requested_path = os.path.abspath(file_path)
+        
+        # Check if requested path is within openhab directory
+        if not requested_path.startswith(openhab_base):
+            return jsonify({'error': 'access denied: path outside openhab directory'}), 403
+        
+        # If backup specified, extract file from backup
+        if backup_name:
+            backups_dir = cfg.get('backups_dir', './var/backups/knx_to_openhab')
+            backup_path = os.path.join(backups_dir, backup_name)
+            
+            if not os.path.isfile(backup_path):
+                return jsonify({'error': 'backup not found'}), 404
+            
+            try:
+                # Get relative path within openhab directory
+                rel_path = os.path.relpath(requested_path, openhab_base)
+                # Normalize to forward slashes for tarfile
+                rel_path = rel_path.replace('\\', '/')
+                
+                # Extract file from backup
+                with tarfile.open(backup_path, 'r:gz') as tar:
+                    # Backup contains directory named 'openhab', so prepend it
+                    member_path = f"openhab/{rel_path}"
+                    try:
+                        member = tar.getmember(member_path)
+                        f = tar.extractfile(member)
+                        if f:
+                            content = f.read().decode('utf-8', errors='replace')
+                            # Limit content size
+                            if len(content) > 1024 * 1024:
+                                content = content[:1024 * 1024] + '\n\n... [Content truncated, file too large]'
+                            return jsonify({
+                                'path': file_path,
+                                'content': content,
+                                'size': member.size,
+                                'from_backup': True
+                            })
+                        else:
+                            return jsonify({'error': 'file not found in backup'}), 404
+                    except KeyError:
+                        return jsonify({'error': 'file not found in backup'}), 404
+            except Exception as e:
+                return jsonify({'error': f'failed to read file from backup: {str(e)}'}), 500
+        
+        # Otherwise, read current file
+        if not os.path.isfile(requested_path):
+            return jsonify({'error': 'file not found'}), 404
+        
+        # Read file content
+        try:
+            with open(requested_path, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+            
+            # Limit content size to prevent memory issues (max 1MB)
+            if len(content) > 1024 * 1024:
+                content = content[:1024 * 1024] + '\n\n... [Content truncated, file too large]'
+            
+            return jsonify({
+                'path': file_path,
+                'content': content,
+                'size': os.path.getsize(requested_path),
+                'from_backup': False
+            })
+        except Exception as e:
+            return jsonify({'error': f'failed to read file: {str(e)}'}), 500
 
     if __name__ == '__main__':
         host = cfg.get('bind_host', '0.0.0.0')

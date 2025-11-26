@@ -563,9 +563,9 @@ async function previewProject() {
     return
   }
 
- const fd = new FormData()
+  const fd = new FormData()
   fd.append('file', f)
- const pwd = passwordInput.value
+  const pwd = passwordInput.value
   if (pwd) {
     fd.append('password', pwd)
   }
@@ -615,12 +615,12 @@ function displayBuildingPreview(preview) {
   metadataHtml += `<div class="metadata-card"><strong>Total Addresses:</strong> ${preview.metadata.total_addresses}</div>`
   metadataHtml += `<div class="metadata-card"><strong>HomeKit:</strong> ${preview.metadata.homekit_enabled ? '✓ Enabled' : '✗ Disabled'}</div>`
   metadataHtml += `<div class="metadata-card"><strong>Alexa:</strong> ${preview.metadata.alexa_enabled ? '✓ Enabled' : '✗ Disabled'}</div>`
-  
+
   // Check for unknown items in metadata
   if (preview.metadata.unknown_items && preview.metadata.unknown_items.length > 0) {
     metadataHtml += `<div class="metadata-card unknown-items"><strong>Unknown Items:</strong> <span class="highlight">${preview.metadata.unknown_items.length} found</span></div>`
   }
-  
+
   metadataHtml += '</div>'
   metadataEl.innerHTML = metadataHtml
 
@@ -826,4 +826,120 @@ function startEvents(jobId) {
 document.addEventListener('DOMContentLoaded', () => {
   refreshJobs()
   refreshServices()
+  loadVersion()
+  // Check for updates every 5 minutes in background
+  setInterval(checkForUpdatesBackground, 5 * 60 * 1000)
 })
+// Version Management Functions
+let currentVersionData = null
+let latestVersionData = null
+async function loadVersion() {
+  try {
+    const response = await fetch('/api/version')
+    const data = await response.json()
+    currentVersionData = data
+    document.getElementById('headerCommit').textContent = data.commit_short || 'unknown'
+
+    // Check for updates in background after loading version
+    setTimeout(checkForUpdatesBackground, 2000)
+  } catch (error) {
+    console.error('Failed to load version:', error)
+    document.getElementById('headerCommit').textContent = 'Unknown'
+  }
+}
+async function checkForUpdatesBackground() {
+  try {
+    const response = await fetch('/api/version/check')
+    const data = await response.json()
+
+    if (!data.error && data.update_available) {
+      // Show update indicator
+      document.getElementById('updateIndicator').style.display = 'inline'
+      document.getElementById('versionBadge').classList.add('has-update')
+      latestVersionData = data
+    } else {
+      document.getElementById('updateIndicator').style.display = 'none'
+      document.getElementById('versionBadge').classList.remove('has-update')
+    }
+  } catch (error) {
+    console.error('Background update check failed:', error)
+  }
+}
+async function checkForUpdates() {
+  try {
+    const response = await fetch('/api/version/check')
+    const data = await response.json()
+
+    if (data.error) {
+      alert('Error checking for updates: ' + data.error)
+      return
+    }
+
+    latestVersionData = data
+
+    if (data.update_available) {
+      // Show update dialog
+      showUpdateDialog(data)
+    } else {
+      alert('✓ You are running the latest version!')
+    }
+  } catch (error) {
+    alert('Failed to check for updates: ' + error.message)
+  }
+}
+function showUpdateDialog(updateData) {
+  // Fill in current version
+  document.getElementById('dialogCurrentCommit').textContent = updateData.current_commit
+  document.getElementById('dialogCurrentMessage').textContent = updateData.current_message
+  const currentDate = new Date(updateData.current_date)
+  document.getElementById('dialogCurrentDate').textContent = currentDate.toLocaleString()
+
+  // Fill in latest version
+  document.getElementById('dialogLatestCommit').textContent = updateData.latest_commit
+  document.getElementById('dialogLatestMessage').textContent = updateData.latest_message
+  document.getElementById('dialogLatestAuthor').textContent = updateData.latest_author
+  const latestDate = new Date(updateData.latest_date)
+  document.getElementById('dialogLatestDate').textContent = latestDate.toLocaleString()
+
+  // Reset status
+  document.getElementById('dialogUpdateStatus').style.display = 'none'
+  document.getElementById('dialogUpdateBtn').disabled = false
+
+  // Show dialog
+  document.getElementById('updateDialog').showModal()
+}
+async function performUpdate() {
+  const btn = document.getElementById('dialogUpdateBtn')
+  const statusDiv = document.getElementById('dialogUpdateStatus')
+
+  btn.disabled = true
+  btn.textContent = 'Installing...'
+  statusDiv.style.display = 'block'
+  statusDiv.className = 'dialog-status'
+  statusDiv.textContent = 'Installing update... The service will restart shortly.'
+
+  try {
+    const response = await fetch('/api/version/update', { method: 'POST' })
+    const data = await response.json()
+
+    if (data.status === 'updating' || data.status === 'simulated') {
+      statusDiv.className = 'dialog-status success'
+      statusDiv.textContent = data.message + ' The page will refresh automatically...'
+
+      // Auto-refresh after 10 seconds
+      setTimeout(() => {
+        window.location.reload()
+      }, 10000)
+    } else {
+      statusDiv.className = 'dialog-status error'
+      statusDiv.textContent = data.error || 'Update failed'
+      btn.disabled = false
+      btn.textContent = 'Install Update'
+    }
+  } catch (error) {
+    statusDiv.className = 'dialog-status error'
+    statusDiv.textContent = `Update failed: ${error.message}`
+    btn.disabled = false
+    btn.textContent = 'Install Update'
+  }
+}

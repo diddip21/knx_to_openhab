@@ -1105,3 +1105,168 @@ dialog:not([open]) {
 .address-item:last-child {
   border-bottom: none;
 }
+
+/* Header Container */
+.header-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+/* Version Badge */
+.version-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+  border: 2px solid var(--primary-blue);
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.3s;
+  font-size: 0.9em;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.version-badge:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  background: linear-gradient(135deg, #bbdefb 0%, #90caf9 100%);
+}
+
+.version-badge.has-update {
+  background: linear-gradient(135deg, #fff3cd 0%, #ffc107 100%);
+  border-color: #ffc107;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.version-label {
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.update-indicator {
+  font-size: 1.2em;
+  animation: rotate 2s linear infinite;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Update Dialog */
+.update-dialog {
+  max-width: 600px;
+  border-radius: 12px;
+  border: none;
+  padding: 0;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.update-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 25px;
+  background: linear-gradient(135deg, var(--primary-blue) 0%, var(--primary-dark-blue) 100%);
+  color: white;
+  border-radius: 12px 12px 0 0;
+}
+
+.dialog-header h2 {
+  margin: 0;
+  font-size: 1.3em;
+}
+
+.dialog-content {
+  padding: 25px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.update-info-section {
+  background: var(--light-bg);
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  border-left: 4px solid var(--primary-blue);
+}
+
+.update-info-section.highlight {
+  background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+  border-left-color: var(--success-green);
+}
+
+.update-info-section h3 {
+  margin: 0 0 10px 0;
+  font-size: 1.1em;
+  color: var(--text-dark);
+}
+
+.version-details div {
+  margin: 8px 0;
+  color: var(--text-dark);
+}
+
+.version-details strong {
+  display: inline-block;
+  min-width: 80px;
+  color: var(--medium-gray);
+}
+
+.update-arrow {
+  text-align: center;
+  font-size: 2em;
+  margin: 10px 0;
+}
+
+.dialog-status {
+  padding: 12px;
+  border-radius: 6px;
+  margin-top: 15px;
+  text-align: center;
+}
+
+.dialog-status.success {
+  background: #d5f4e6;
+  color: var(--success-green);
+}
+
+.dialog-status.error {
+  background: #fadbd8;
+  color: var(--danger-red);
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 20px 25px;
+  background: var(--lighter-gray);
+  border-radius: 0 0 12px 12px;
+}

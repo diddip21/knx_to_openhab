@@ -10,7 +10,14 @@
 
 <body>
   <div class="container">
-    <h1>🏠 KNX → OpenHAB Generator</h1>
+    <div class="header-container">
+      <h1>🏠 KNX → OpenHAB Generator</h1>
+      <div class="version-badge" id="versionBadge" onclick="checkForUpdates()" title="Click to check for updates">
+        <span class="version-label">Version:</span>
+        <span id="headerCommit">Loading...</span>
+        <span class="update-indicator" id="updateIndicator" style="display:none;">🔄</span>
+      </div>
+    </div>
 
     <!-- Settings Panel -->
     <section id="settings-section" class="card collapsible">
@@ -98,6 +105,39 @@
       <div id="servicesList"></div>
     </section>
   </div>
+
+  <!-- Update Dialog -->
+  <dialog id="updateDialog" class="update-dialog">
+    <div class="dialog-header">
+      <h2>🔄 System Update Available</h2>
+      <button class="close-btn" onclick="document.getElementById('updateDialog').close()">✕</button>
+    </div>
+    <div class="dialog-content">
+      <div class="update-info-section">
+        <h3>Current Version</h3>
+        <div class="version-details">
+          <div><strong>Commit:</strong> <span id="dialogCurrentCommit"></span></div>
+          <div><strong>Message:</strong> <span id="dialogCurrentMessage"></span></div>
+          <div><strong>Date:</strong> <span id="dialogCurrentDate"></span></div>
+        </div>
+      </div>
+      <div class="update-arrow">⬇️</div>
+      <div class="update-info-section highlight">
+        <h3>New Version</h3>
+        <div class="version-details">
+          <div><strong>Commit:</strong> <span id="dialogLatestCommit"></span></div>
+          <div><strong>Message:</strong> <span id="dialogLatestMessage"></span></div>
+          <div><strong>Author:</strong> <span id="dialogLatestAuthor"></span></div>
+          <div><strong>Date:</strong> <span id="dialogLatestDate"></span></div>
+        </div>
+      </div>
+      <div id="dialogUpdateStatus" class="dialog-status" style="display:none;"></div>
+    </div>
+    <div class="dialog-footer">
+      <button onclick="document.getElementById('updateDialog').close()" class="btn-secondary">Cancel</button>
+      <button onclick="performUpdate()" class="btn-primary" id="dialogUpdateBtn">Install Update</button>
+    </div>
+  </dialog>
 
   <!-- Rollback Dialog -->
   <dialog id="rollbackDialog">

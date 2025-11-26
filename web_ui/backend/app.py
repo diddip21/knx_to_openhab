@@ -21,6 +21,7 @@ except Exception:
 from .jobs import JobManager
 from .service_manager import restart_service, get_service_status
 from .storage import load_config
+from .updater import Updater
 
 cfg = load_config()
 
@@ -31,6 +32,7 @@ if FLASK_AVAILABLE:
                 static_url_path='/static')
     app.config['UPLOAD_FOLDER'] = cfg.get('jobs_dir', './var/lib/knx_to_openhab')
     job_mgr = JobManager(cfg)
+    updater = Updater(base_path=os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
     # Basic HTTP auth (simple implementation) -------------------------------------------------
     from base64 import b64decode
@@ -181,23 +183,43 @@ if FLASK_AVAILABLE:
         s = job_mgr.status()
         return jsonify(s)
 
-    @app.route('/api/system/update', methods=['POST'])
-    def system_update():
+    @app.route('/api/version', methods=['GET'])
+    def get_version():
+        """Get current version information."""
+        try:
+            version_info = updater.get_current_version()
+            return jsonify(version_info)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/version/check', methods=['GET'])
+    def check_version():
+        """Check for available updates from GitHub."""
+        try:
+            update_info = updater.check_for_updates()
+            return jsonify(update_info)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/version/update', methods=['POST'])
+    def trigger_update():
+        """Trigger the self-update process."""
         try:
             # Check if running on Windows (dev) or Linux (prod)
             if sys.platform == 'win32':
-                return jsonify({'status': 'simulated', 'message': 'Update simulation: Script would run on Linux.'})
+                return jsonify({
+                    'status': 'simulated',
+                    'message': 'Update simulation: Script would run on Linux.'
+                })
             
-            # Run update script in background
-            # We use Popen so we can return immediately. 
-            # The service restart will kill the server, so the frontend needs to handle the disconnect.
-            script_path = os.path.join(os.getcwd(), 'update.sh')
-            if not os.path.exists(script_path):
-                 return jsonify({'error': 'update.sh not found'}), 404
-
-            import subprocess
-            subprocess.Popen(['/bin/bash', script_path], cwd=os.getcwd())
-            return jsonify({'status': 'updating', 'message': 'Update started. Service will restart.'})
+            success, message = updater.trigger_update()
+            if success:
+                return jsonify({
+                    'status': 'updating',
+                    'message': message
+                })
+            else:
+                return jsonify({'error': message}), 500
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 

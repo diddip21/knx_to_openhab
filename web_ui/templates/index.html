@@ -12,28 +12,67 @@
   <div class="container">
     <h1>🏠 KNX → OpenHAB Generator</h1>
 
+    <!-- Settings Panel -->
+    <section id="settings-section" class="card collapsible">
+      <div class="card-header" onclick="toggleSection('settings-content')">
+        <h2>⚙️ Configuration Settings</h2>
+        <span class="toggle-icon">▼</span>
+      </div>
+      <div id="settings-content" class="collapsible-content" style="display: none;">
+        <div class="settings-actions">
+          <button onclick="loadConfig()" class="btn-secondary">Load Config</button>
+          <button onclick="saveConfig()" class="btn-primary">Save Config</button>
+        </div>
+        <div id="configEditor" class="config-editor">
+          <textarea id="configJson" rows="20" placeholder="Configuration will be loaded here..."></textarea>
+        </div>
+        <div id="configStatus" class="status-message"></div>
+      </div>
+    </section>
+
+    <!-- Upload Section -->
     <section id="upload-section" class="card">
-      <h2>Upload KNX Project</h2>
+      <h2>📤 Upload KNX Project</h2>
       <form id="uploadForm">
-        <input type="file" id="fileInput" name="file" accept=".knxproj,.knxprojarchive,.json" />
-        <input type="password" id="passwordInput" name="password" placeholder="Password (if protected)" />
-        <button type="submit">Upload & Process</button>
+        <div class="form-group">
+          <label for="fileInput">KNX Project File:</label>
+          <input type="file" id="fileInput" name="file" accept=".knxproj,.knxprojarchive,.json" required />
+        </div>
+        <div class="form-group">
+          <label for="passwordInput">Password (if protected):</label>
+          <input type="password" id="passwordInput" name="password" placeholder="Optional" />
+        </div>
+        <div class="form-actions">
+          <button type="button" onclick="previewProject()" class="btn-secondary">Preview Structure</button>
+          <button type="submit" class="btn-primary">Upload & Process</button>
+        </div>
       </form>
       <div id="status" class="status-message"></div>
     </section>
 
+    <!-- Project Preview Section -->
+    <section id="preview-section" class="card" style="display:none;">
+      <h2>🏢 Building Structure Preview</h2>
+      <div id="previewMetadata" class="metadata-grid"></div>
+      <div id="buildingTree" class="building-tree"></div>
+    </section>
+
+
+    <!-- Jobs Section -->
     <section id="jobs-section" class="card">
-      <h2>Jobs</h2>
+      <h2>📋 Jobs</h2>
       <div id="jobs" class="jobs-list"></div>
     </section>
 
+    <!-- Job Details Section -->
     <section id="detail-section" class="card" style="display:none;">
-      <h2>Job Details</h2>
+      <h2>📊 Job Details</h2>
       <div id="jobDetail"></div>
     </section>
 
+    <!-- Live Log Section -->
     <section id="log-section" class="card" style="display:none;">
-      <h2>Live Log</h2>
+      <h2>📝 Live Log</h2>
       <div style="margin-bottom: 1rem;">
         <label for="logLevelFilter">Log Level Filter:</label>
         <select id="logLevelFilter">
@@ -47,17 +86,20 @@
       <div id="log" class="log-viewer"></div>
     </section>
 
+    <!-- Stats Section -->
     <section id="stats-section" class="card" style="display:none;">
-      <h2>Generated Files Statistics</h2>
+      <h2>📈 Generated Files Statistics</h2>
       <div id="stats"></div>
     </section>
 
+    <!-- Services Section -->
     <section id="service-section" class="card">
-      <h2>Services</h2>
+      <h2>🔌 Services</h2>
       <div id="servicesList"></div>
     </section>
   </div>
 
+  <!-- Rollback Dialog -->
   <dialog id="rollbackDialog">
     <h2>Rollback to Backup</h2>
     <p>Select a backup to restore:</p>
@@ -67,6 +109,7 @@
     <div id="rollbackStatus"></div>
   </dialog>
 
+  <!-- File Preview Dialog -->
   <dialog id="filePreviewDialog" class="preview-dialog">
     <div class="preview-header">
       <h2 id="previewFileName"></h2>

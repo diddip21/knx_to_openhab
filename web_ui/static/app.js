@@ -507,6 +507,200 @@ function escapeHtml(text) {
   return text.replace(/[&<>"']/g, m => map[m])
 }
 
+// Configuration Management
+async function loadConfig() {
+  const configStatus = document.getElementById('configStatus')
+  const configJson = document.getElementById('configJson')
+
+  try {
+    configStatus.textContent = 'Loading configuration...'
+    const res = await fetch('/api/config')
+    if (!res.ok) throw new Error('Failed to load config')
+    const config = await res.json()
+    configJson.value = JSON.stringify(config, null, 2)
+    configStatus.textContent = '✓ Configuration loaded'
+    configStatus.className = 'status-message success'
+  } catch (e) {
+    configStatus.textContent = '✗ Error: ' + e.message
+    configStatus.className = 'status-message error'
+  }
+}
+
+async function saveConfig() {
+  const configStatus = document.getElementById('configStatus')
+  const configJson = document.getElementById('configJson')
+
+  try {
+    configStatus.textContent = 'Saving configuration...'
+    const config = JSON.parse(configJson.value)
+    const res = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    })
+    if (!res.ok) throw new Error('Failed to save config')
+    const result = await res.json()
+    configStatus.textContent = '✓ ' + result.message
+    configStatus.className = 'status-message success'
+  } catch (e) {
+    configStatus.textContent = '✗ Error: ' + e.message
+    configStatus.className = 'status-message error'
+  }
+}
+
+// Project Preview
+let currentPreviewMetadata = null
+
+async function previewProject() {
+  const fileInput = document.getElementById('fileInput')
+  const passwordInput = document.getElementById('passwordInput')
+  const statusEl = document.getElementById('status')
+  const previewSection = document.getElementById('preview-section')
+
+  const f = fileInput.files[0]
+  if (!f) {
+    alert('Please select a file first')
+    return
+  }
+
+ const fd = new FormData()
+  fd.append('file', f)
+ const pwd = passwordInput.value
+  if (pwd) {
+    fd.append('password', pwd)
+  }
+
+  statusEl.textContent = 'Parsing project structure...'
+  statusEl.className = 'status-message'
+
+  try {
+    const res = await fetch('/api/project/preview', { method: 'POST', body: fd })
+    if (!res.ok) {
+      const error = await res.json()
+      throw new Error(error.error || 'Preview failed')
+    }
+    const preview = await res.json()
+
+    currentPreviewMetadata = preview.metadata
+    displayBuildingPreview(preview)
+
+    // Show preview section
+    previewSection.style.display = 'block'
+
+    statusEl.textContent = '✓ Project structure loaded'
+    statusEl.className = 'status-message success'
+
+    // Scroll to preview
+    previewSection.scrollIntoView({ behavior: 'smooth' })
+  } catch (e) {
+    statusEl.textContent = '✗ Error: ' + e.message
+    statusEl.className = 'status-message error'
+  }
+}
+
+function displayBuildingPreview(preview) {
+  const metadataEl = document.getElementById('previewMetadata')
+  const treeEl = document.getElementById('buildingTree')
+
+  // Display metadata
+  let metadataHtml = '<div class="metadata-cards">'
+  if (preview.metadata.project_name) {
+    metadataHtml += `<div class="metadata-card"><strong>Project:</strong> ${escapeHtml(preview.metadata.project_name)}</div>`
+  }
+  if (preview.metadata.gateway_ip) {
+    metadataHtml += `<div class="metadata-card"><strong>Gateway IP:</strong> ${escapeHtml(preview.metadata.gateway_ip)}</div>`
+  } else {
+    metadataHtml += `<div class="metadata-card gateway-missing"><strong>Gateway IP:</strong> <span class="missing">Not found in project</span></div>`
+  }
+  metadataHtml += `<div class="metadata-card"><strong>Total Addresses:</strong> ${preview.metadata.total_addresses}</div>`
+  metadataHtml += `<div class="metadata-card"><strong>HomeKit:</strong> ${preview.metadata.homekit_enabled ? '✓ Enabled' : '✗ Disabled'}</div>`
+  metadataHtml += `<div class="metadata-card"><strong>Alexa:</strong> ${preview.metadata.alexa_enabled ? '✓ Enabled' : '✗ Disabled'}</div>`
+  
+  // Check for unknown items in metadata
+  if (preview.metadata.unknown_items && preview.metadata.unknown_items.length > 0) {
+    metadataHtml += `<div class="metadata-card unknown-items"><strong>Unknown Items:</strong> <span class="highlight">${preview.metadata.unknown_items.length} found</span></div>`
+  }
+  
+  metadataHtml += '</div>'
+  metadataEl.innerHTML = metadataHtml
+
+  // Display building tree
+  let treeHtml = ''
+  for (const building of preview.buildings) {
+    treeHtml += `<div class="tree-node building-node">
+      <div class="tree-node-header" onclick="toggleTreeNode(this)">
+        <span class="tree-icon">▶</span>
+        <span class="tree-label">🏢 ${escapeHtml(building.name)}</span>
+        <span class="tree-count">${building.floors.length} floor(s)</span>
+      </div>
+      <div class="tree-children" style="display:none;">`
+
+    for (const floor of building.floors) {
+      treeHtml += `<div class="tree-node floor-node">
+        <div class="tree-node-header" onclick="toggleTreeNode(this)">
+          <span class="tree-icon">▶</span>
+          <span class="tree-label">🏠 ${escapeHtml(floor.name)}</span>
+          <span class="tree-count">${floor.rooms.length} room(s)</span>
+        </div>
+        <div class="tree-children" style="display:none;">`
+
+      for (const room of floor.rooms) {
+        const hasAddresses = room.addresses && room.addresses.length > 0;
+        treeHtml += `<div class="tree-node room-node">
+          <div class="tree-node-header" onclick="toggleTreeNode(this)">
+            <span class="tree-icon">${hasAddresses ? '▶' : '•'}</span>
+            <span class="tree-label">🚪 ${escapeHtml(room.name)}</span>
+            <span class="tree-count">${room.address_count} address(es), ${room.device_count} device(s)}</span>
+          </div>
+          ${hasAddresses ? `
+          <div class="tree-children" style="display:none;">
+            <div class="room-addresses">
+              <div class="address-list">
+                ${room.addresses.map(addr => `<div class="address-item">${escapeHtml(addr['Group name'])} (${addr.Address})</div>`).join('')}
+              </div>
+            </div>
+          </div>` : ''}
+        </div>`
+      }
+
+      treeHtml += `</div></div>`
+    }
+
+    treeHtml += `</div></div>`
+  }
+
+  treeEl.innerHTML = treeHtml
+}
+
+function toggleTreeNode(header) {
+  const node = header.parentElement
+  const children = node.querySelector('.tree-children')
+  const icon = header.querySelector('.tree-icon')
+
+  if (children && children.style.display === 'none') {
+    children.style.display = 'block'
+    icon.textContent = '▼'
+  } else if (children) {
+    children.style.display = 'none'
+    icon.textContent = '▶'
+  }
+}
+
+
+function toggleSection(contentId) {
+  const content = document.getElementById(contentId)
+  const header = content.previousElementSibling
+  const icon = header.querySelector('.toggle-icon')
+
+  if (content.style.display === 'none') {
+    content.style.display = 'block'
+    icon.textContent = '▲'
+  } else {
+    content.style.display = 'none'
+    icon.textContent = '▼'
+  }
+}
+
 uploadForm.addEventListener('submit', async (e) => {
   e.preventDefault()
   const f = fileInput.files[0]
@@ -517,6 +711,8 @@ uploadForm.addEventListener('submit', async (e) => {
   if (pwd) {
     fd.append('password', pwd)
   }
+
+
   statusEl.textContent = 'Uploading...'
   try {
     const res = await fetch('/api/upload', { method: 'POST', body: fd })
@@ -531,6 +727,7 @@ uploadForm.addEventListener('submit', async (e) => {
     statusEl.textContent = `Error: ${e.message}`
   }
 })
+
 
 function startEvents(jobId) {
   // Close any existing event source
@@ -594,13 +791,24 @@ function startEvents(jobId) {
 
         // Update statistics table
         if (j.stats && Object.keys(j.stats).length > 0) {
-          let statsHtml = '<h3>Generated Files</h3><table class="stats-table"><tr><th>File</th><th>Before</th><th>After</th><th>Change</th><th>Action</th></tr>'
+          let statsHtml = '<h3>Generated Files</h3><table class="stats-table"><tr><th>File</th><th>Before</th><th>After</th><th>Change</th><th>Diff</th><th>Action</th></tr>'
           for (const [fname, stat] of Object.entries(j.stats)) {
             const deltaClass = stat.delta > 0 ? 'positive' : stat.delta < 0 ? 'negative' : 'neutral'
             const deltaStr = stat.delta >= 0 ? `+${stat.delta}` : `${stat.delta}`
+
+            // Detailed diff info
+            let diffHtml = ''
+            if (stat.added !== undefined) {
+              if (stat.added > 0) diffHtml += `<span class="badge success" style="margin-right:5px">+${stat.added}</span>`
+              if (stat.removed > 0) diffHtml += `<span class="badge error">-${stat.removed}</span>`
+              if (stat.added === 0 && stat.removed === 0) diffHtml = '<span class="neutral">-</span>'
+            } else {
+              diffHtml = '<span class="neutral">-</span>'
+            }
+
             // Escape backslashes for HTML onclick attribute (double escape needed)
             const escapedFname = fname.replace(/\\/g, '\\\\')
-            statsHtml += `<tr><td>${fname}</td><td>${stat.before}</td><td>${stat.after}</td><td class="${deltaClass}">${deltaStr}</td><td><button onclick="previewFile('${escapedFname}')">Preview</button></td></tr>`
+            statsHtml += `<tr><td>${fname}</td><td>${stat.before}</td><td>${stat.after}</td><td class="${deltaClass}">${deltaStr}</td><td>${diffHtml}</td><td><button onclick="previewFile('${escapedFname}')">Preview</button></td></tr>`
           }
           statsHtml += '</table>'
           if (statsEl) statsEl.innerHTML = statsHtml

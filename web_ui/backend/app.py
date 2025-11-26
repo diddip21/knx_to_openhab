@@ -279,6 +279,157 @@ if FLASK_AVAILABLE:
         except Exception as e:
             return jsonify({'error': f'failed to read file: {str(e)}'}), 500
 
+    @app.route('/api/config', methods=['GET'])
+    def get_config():
+        """Get the current configuration."""
+        try:
+            return jsonify(cfg)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/config', methods=['POST'])
+    def set_config():
+        """Update the configuration."""
+        try:
+            new_config = request.get_json()
+            if not new_config:
+                return jsonify({'error': 'No config data provided'}), 400
+            
+            # Validate that it's a dict
+            if not isinstance(new_config, dict):
+                return jsonify({'error': 'Config must be a JSON object'}), 400
+            
+            # Update the in-memory config
+            cfg.update(new_config)
+            
+            # Save to the config file
+            config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+            with open(config_path, 'w') as f:
+                json.dump(cfg, f, indent=2)
+            
+            return jsonify({'message': 'Configuration updated successfully'})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/project/preview', methods=['POST'])
+    def project_preview():
+        """Preview a KNX project structure without processing it."""
+        if 'file' not in request.files:
+            return jsonify({'error': 'no file part'}), 400
+        f = request.files['file']
+        if f.filename == '':
+            return jsonify({'error': 'no selected file'}), 400
+        
+        # Save to temporary location
+        fn = secure_filename(f.filename)
+        temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{uuid.uuid4().hex}_{fn}")
+        f.save(temp_path)
+        
+        try:
+            password = request.form.get('password') or None
+            
+            # Load project (json dump or parse knxproj)
+            if temp_path.lower().endswith('.json'):
+                with open(temp_path, 'r', encoding='utf8') as file:
+                    project = json.load(file)
+            else:
+                # Parse knxproj archive using XKNXProj
+                from xknxproject.xknxproj import XKNXProj
+                knxproj = XKNXProj(path=temp_path, password=password, language='de-DE')
+                project = knxproj.parse()
+            
+            # Extract project metadata
+            import importlib
+            knxmod = importlib.import_module('knxproject_to_openhab')
+            
+            # Get building structure
+            building = knxmod.create_building(project)
+            addresses = knxmod.get_addresses(project)
+            house = knxmod.put_addresses_in_building(building, addresses, project)
+            
+            # Extract metadata
+            project_name = house[0].get('name_long') if house else None
+            gateway_ip = knxmod.get_gateway_ip(project)
+            homekit_enabled = knxmod.is_homekit_enabled(project)
+            alexa_enabled = knxmod.is_alexa_enabled(project)
+            
+            # Detect unknown items (addresses without proper room/floor assignments or with default names)
+            unknown_items = []
+            for addr in addresses:
+                floor_name = addr.get('Floor', '').strip()
+                room_name = addr.get('Room', '').strip()
+                
+                # Check if floor or room is unknown/empty
+                if (not floor_name or floor_name.upper() in ['UNKNOWN', 'UNBEKANNT']) or \
+                   (not room_name or room_name.upper() in ['UNKNOWN', 'UNBEKANNT']) or \
+                   (not floor_name and not room_name):  # Items without both floor and room
+                    unknown_items.append({
+                        'name': addr.get('Group name', 'Unknown Address'),
+                        'address': addr.get('Address', 'N/A'),
+                        'floor': floor_name or 'None',
+                        'room': room_name or 'None'
+                    })
+            
+            # Build preview structure
+            preview_data = {
+                'metadata': {
+                    'project_name': project_name,
+                    'gateway_ip': gateway_ip,
+                    'homekit_enabled': homekit_enabled,
+                    'alexa_enabled': alexa_enabled,
+                    'total_addresses': len(addresses),
+                    'unknown_items': unknown_items
+                },
+                'buildings': []
+            }
+            
+            if house:
+                for building_data in house:
+                    building_info = {
+                        'name': building_data.get('name_long', building_data.get('name', 'Unknown Building')),
+                        'floors': []
+                    }
+                    
+                    for floor_data in building_data.get('floors', []):
+                        floor_info = {
+                            'name': floor_data.get('name_long', floor_data.get('name', 'Unknown Floor')),
+                            'rooms': []
+                        }
+                        
+                        for room_data in floor_data.get('rooms', []):
+                            # Format addresses to ensure they have the required fields
+                            raw_addresses = room_data.get('Addresses', [])
+                            formatted_addresses = []
+                            for addr in raw_addresses:
+                                formatted_addr = {
+                                    'Group name': addr.get('Group name', addr.get('name', 'Unknown Address')),
+                                    'Address': addr.get('Address', addr.get('address', 'N/A'))
+                                }
+                                formatted_addresses.append(formatted_addr)
+                            
+                            room_info = {
+                                'name': room_data.get('name_long', room_data.get('name', 'Unknown Room')),
+                                'address_count': len(formatted_addresses),
+                                'device_count': len(room_data.get('devices', [])),
+                                'addresses': formatted_addresses
+                            }
+                            floor_info['rooms'].append(room_info)
+                        
+                        building_info['floors'].append(floor_info)
+                    
+                    preview_data['buildings'].append(building_info)
+            
+            return jsonify(preview_data)
+            
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        finally:
+            # Clean up temp file
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+
     if __name__ == '__main__':
         host = cfg.get('bind_host', '0.0.0.0')
         port = cfg.get('port', 8080)

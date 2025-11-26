@@ -7,7 +7,7 @@
   /* Primary Blues - Professional and modern */
   --primary-blue: #2874a6;
   --primary-dark-blue: #1e5a8e;
-  --primary-light-blue: #549c7;
+  --primary-light-blue: #5499c7;
   --accent-blue: #3498db;
 
   /* Grays - Sophisticated and clean */
@@ -1065,30 +1065,34 @@ dialog:not([open]) {
 }
 
 .building-node>.tree-node-header {
-  background: linear-gradient(135deg, var(--primary-blue) 0%, var(--primary-light-blue) 100%);
+  background: linear-gradient(135deg, var(--primary-dark-blue) 0%, var(--primary-blue) 100%);
   color: white;
   font-weight: 700;
   border-left-color: var(--primary-dark-blue);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .building-node>.tree-node-header:hover {
-  background: linear-gradient(135deg, var(--primary-dark-blue) 0%, var(--primary-blue) 100%);
+  background: linear-gradient(135deg, var(--primary-blue) 0%, var(--primary-dark-blue) 100%);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
 }
 
 .floor-node>.tree-node-header {
-  background: #e3f2fd;
+  background: linear-gradient(135deg, #e3f2fd, #bbdefb);
   border-left-color: var(--primary-blue);
   font-weight: 600;
   margin-left: 20px;
-  color: var(--text-dark);
+  color: var(--dark-gray);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .room-node>.tree-node-header {
-  background: var(--light-bg);
+  background: linear-gradient(135deg, var(--light-bg), #dae8f0);
   border-left-color: var(--secondary-gray);
   margin-left: 40px;
   cursor: default;
-  color: var(--text-dark);
+  color: var(--text-medium);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .room-node>.tree-node-header:hover {

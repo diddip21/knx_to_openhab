@@ -2,48 +2,52 @@
   box-sizing: border-box;
 }
 
-/* Unified Gray and Blue Theme - LogiHome Inspired */
+/* Modern Clean Theme - LogiHome Inspired */
 :root {
-  /* Primary Blues - Professional and modern */
-  --primary-blue: #2874a6;
-  --primary-dark-blue: #1e5a8e;
-  --primary-light-blue: #5499c7;
-  --accent-blue: #3498db;
+  /* Primary Colors - Clean and modern */
+  --primary-blue: #4285f4;
+  --primary-dark-blue: #1a73e8;
+  --primary-light-blue: #8ab4f8;
+  --accent-blue: #34a853;
 
-  /* Grays - Sophisticated and clean */
-  --dark-gray: #2c3e50;
-  --medium-gray: #34495e;
-  --secondary-gray: #7f8c8d;
-  --light-gray: #bdc3c7;
-  --lighter-gray: #ecf0f1;
+  /* Modern Grays - Clean and fresh */
+  --dark-gray: #202124;
+  --medium-gray: #5f6368;
+  --secondary-gray: #80868b;
+  --light-gray: #dadce0;
+  --lighter-gray: #f8f9fa;
+  --white: #ffffff;
 
   /* Backgrounds */
-  --light-bg: #f4f6f7;
+  --light-bg: #f8f9fa;
   --card-bg: #ffffff;
-  --header-bg: #2c3e50;
+  --header-bg: #ffffff;
 
   /* Text colors */
-  --text-dark: #2c3e50;
-  --text-medium: #34495e;
-  --text-light: #7f8c8d;
-  --header-text: #ffffff;
+  --text-dark: #202124;
+  --text-medium: #5f6368;
+  --text-light: #80868b;
+  --header-text: #202124;
 
   /* Status colors */
-  --success-green: #27ae60;
-  --warning-orange: #f39c12;
-  --danger-red: #e74c3c;
+  --success-green: #34a853;
+  --warning-orange: #f9ab00;
+  --danger-red: #ea4335;
 
   /* UI Elements */
-  --border-color: #d5dbdb;
-  --card-shadow: 0 2px 10px rgba(44, 62, 80, 0.1);
-  --hover-shadow: 0 4px 15px rgba(40, 116, 166, 0.15);
-  --toggle-icon: #7f8c8d;
+  --border-color: #dadce0;
+  --card-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.30), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+  --hover-shadow: 0 3px 6px 0 rgba(60, 64, 67, 0.15), 0 2px 4px 1px rgba(60, 64, 67, 0.08);
+  --toggle-icon: #5f6368;
+  --input-border: #dfe1e5;
+  --input-border-hover: #c6c9ce;
+  --input-border-focus: #4285f4;
 }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   margin: 0;
-  padding: 20px;
+  padding: 24px;
   background: var(--light-bg);
   color: var(--text-dark);
 }
@@ -51,38 +55,47 @@ body {
 .container {
   max-width: 1200px;
   margin: 0 auto;
+  padding: 0 16px;
 }
 
 h1 {
   color: var(--dark-gray);
   border-bottom: 3px solid var(--primary-blue);
-  padding-bottom: 10px;
-  margin-bottom: 30px;
+  padding-bottom: 16px;
+  margin-bottom: 40px;
+  font-weight: 700;
+  font-size: 32px;
+  letter-spacing: -0.5px;
 }
 
 h2 {
   color: var(--dark-gray);
-  margin-top: 20px;
+  margin-top: 24px;
+  font-weight: 600;
 }
 
 h3 {
   color: var(--medium-gray);
-  margin-top: 15px;
-  margin-bottom: 10px;
+  margin-top: 20px;
+  margin-bottom: 12px;
+ font-weight: 500;
 }
 
 .card {
   background: var(--card-bg);
-  border-radius: 8px;
-  padding: 20px;
-  margin-bottom: 20px;
+  border-radius: 16px;
+  padding: 32px;
+  margin-bottom: 32px;
   box-shadow: var(--card-shadow);
   border: 1px solid var(--border-color);
-  transition: box-shadow 0.3s ease;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
 }
 
 .card:hover {
   box-shadow: var(--hover-shadow);
+  transform: translateY(-4px);
 }
 
 form {
@@ -159,50 +172,61 @@ button {
   background: var(--primary-blue);
   color: white;
   border: none;
-  padding: 10px 20px;
-  border-radius: 4px;
+  padding: 14px 28px;
+  border-radius: 12px;
   cursor: pointer;
   font-weight: 600;
   transition: all 0.3s ease;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  font-size: 16px;
 }
 
 button:hover {
   background: var(--primary-dark-blue);
   box-shadow: var(--hover-shadow);
-  transform: translateY(-1px);
+  transform: translateY(-3px);
 }
 
 button:disabled {
   background: var(--secondary-gray);
   cursor: not-allowed;
   transform: none;
+  box-shadow: none;
 }
 
 .status-message {
-  padding: 12px 15px;
-  margin: 10px 0;
-  border-radius: 4px;
-  background: var(--lighter-gray);
+  padding: 20px;
+  margin: 20px 0;
+  border-radius: 12px;
+  background: var(--card-bg);
   color: var(--text-dark);
-  border-left: 4px solid var(--primary-blue);
+  border-left: 5px solid var(--primary-blue);
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  box-shadow: var(--card-shadow);
+  border: 1px solid var(--border-color);
 }
 
 .status-message.error {
-  background: #fadbd8;
+  background: #fce8e6;
   color: var(--danger-red);
   border-left-color: var(--danger-red);
+  border-color: #f8d7da;
 }
 
 .status-message.success {
-  background: #d5f4e6;
+  background: #e6f4ea;
   color: var(--success-green);
   border-left-color: var(--success-green);
+  border-color: #d4edda;
 }
 
 .status-message.warning {
-  background: #fdedd3;
+  background: #fef7e0;
   color: var(--warning-orange);
   border-left-color: var(--warning-orange);
+  border-color: #fff3cd;
 }
 
 .jobs-list {
@@ -214,18 +238,23 @@ button:disabled {
 .job-item {
   display: flex;
   align-items: center;
-  gap: 15px;
-  padding: 12px 15px;
-  background: var(--light-bg);
-  border-left: 4px solid var(--primary-blue);
-  border-radius: 4px;
+  gap: 20px;
+  padding: 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
   flex-wrap: wrap;
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
+  box-shadow: var(--card-shadow);
+  position: relative;
+  overflow: hidden;
 }
 
 .job-item:hover {
-  background: var(--lighter-gray);
-  transform: translateX(3px);
+  background: var(--card-bg);
+  box-shadow: var(--hover-shadow);
+  transform: translateY(-4px);
+  border-color: var(--primary-blue);
 }
 
 .job-item button {
@@ -425,21 +454,24 @@ button:disabled {
 }
 
 .service-item {
-  background: var(--light-bg);
-  border-left: 4px solid var(--primary-blue);
-  border-radius: 4px;
-  padding: 15px;
-  margin-bottom: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  transition: all 0.2s ease;
+  gap: 16px;
+  transition: all 0.3s ease;
+  box-shadow: var(--card-shadow);
 }
 
 .service-item:hover {
-  background: var(--lighter-gray);
-  box-shadow: var(--card-shadow);
+  background: var(--card-bg);
+  box-shadow: var(--hover-shadow);
+  border-color: var(--primary-blue);
+  transform: translateY(-2px);
 }
 
 .service-header {
@@ -801,12 +833,10 @@ dialog:not([open]) {
 }
 
 .card.collapsible .card-header h2 {
-  color: white;
   margin: 0;
 }
 
 .card.collapsible .toggle-icon {
-  color: white;
   font-size: 20px;
   transition: transform 0.3s;
 }
@@ -891,20 +921,21 @@ dialog:not([open]) {
 .form-group input[type="text"],
 .form-group input[type="password"] {
   width: 100%;
-  padding: 10px 15px;
-  border: 2px solid var(--border-color);
-  border-radius: 6px;
-  font-size: 14px;
+  padding: 14px 18px;
+  border: 1px solid var(--input-border);
+  border-radius: 12px;
+  font-size: 16px;
   transition: all 0.3s;
   background: var(--card-bg);
   color: var(--text-dark);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .form-group input[type="text"]:focus,
 .form-group input[type="password"]:focus {
   outline: none;
-  border-color: var(--primary-blue);
-  box-shadow: 0 0 0 3px rgba(40, 116, 166, 0.1);
+  border-color: var(--input-border-focus);
+  box-shadow: 0 0 0 4px rgba(66, 13, 244, 0.25);
 }
 
 .form-group small {
@@ -1175,35 +1206,41 @@ dialog:not([open]) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 30px;
+  margin-bottom: 40px;
   flex-wrap: wrap;
-  gap: 15px;
+  gap: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--card-bg);
+  padding: 24px;
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
 }
 
 /* Version Badge */
 .version-badge {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-  border: 2px solid var(--primary-blue);
-  border-radius: 20px;
+  gap: 10px;
+  padding: 10px 18px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 24px;
   cursor: pointer;
   transition: all 0.3s;
   font-size: 0.9em;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--card-shadow);
 }
 
 .version-badge:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-  background: linear-gradient(135deg, #bbdefb 0%, #90caf9 100%);
+  box-shadow: var(--hover-shadow);
+  border-color: var(--primary-blue);
 }
 
 .version-badge.has-update {
-  background: linear-gradient(135deg, #fff3cd 0%, #ffc107 100%);
-  border-color: #ffc107;
+  background: #fef7e0;
+  border-color: var(--warning-orange);
   animation: pulse 2s infinite;
 }
 

@@ -19,25 +19,6 @@
       </div>
     </div>
 
-    <!-- Settings Panel -->
-    <section id="settings-section" class="card collapsible">
-      <div class="card-header" onclick="toggleSection('settings-content')">
-        <h2>⚙️ Configuration Settings</h2>
-        <span class="toggle-icon">▼</span>
-      </div>
-      <div id="settings-content" class="collapsible-content" style="display: none;">
-        <div class="settings-actions">
-          <button onclick="loadConfig()" class="btn-secondary">Load Config</button>
-          <button onclick="saveConfig()" class="btn-primary">Save Config</button>
-        </div>
-        <div id="configEditor" class="config-editor">
-          <div id="configFormContainer"></div>
-          <textarea id="configJson" rows="20" placeholder="Configuration will be loaded here..." style="display:none;"></textarea>
-        </div>
-        <div id="configStatus" class="status-message"></div>
-      </div>
-    </section>
-
     <!-- Upload Section -->
     <section id="upload-section" class="card">
       <h2>📤 Upload KNX Project</h2>
@@ -98,6 +79,25 @@
     <section id="stats-section" class="card" style="display:none;">
       <h2>📈 Generated Files Statistics</h2>
       <div id="stats"></div>
+    </section>
+    
+    <!-- Settings Panel -->
+    <section id="settings-section" class="card collapsible">
+      <div class="card-header" onclick="toggleSection('settings-content')">
+        <h2>⚙️ Configuration Settings</h2>
+        <span class="toggle-icon">▼</span>
+      </div>
+      <div id="settings-content" class="collapsible-content" style="display: none;">
+        <div class="settings-actions">
+          <button onclick="loadConfig()" class="btn-secondary">Load Config</button>
+          <button onclick="saveConfig()" class="btn-primary">Save Config</button>
+        </div>
+        <div id="configEditor" class="config-editor">
+          <div id="configFormContainer"></div>
+          <textarea id="configJson" rows="20" placeholder="Configuration will be loaded here..." style="display:none;"></textarea>
+        </div>
+        <div id="configStatus" class="status-message"></div>
+      </div>
     </section>
 
     <!-- Services Section -->

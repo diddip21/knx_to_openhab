@@ -162,7 +162,17 @@ knx_to_openhab/
 │   └── verify-setup.ps1/sh         # Setup verification
 │
 ├── tests/                          # Test files
-│   └── unit/                       # Unit tests
+│   ├── unit/                       # Unit tests
+│   │   ├── test_knx_parsing.py     # Tests for parsing logic
+│   │   └── test_knxproject_to_openhab_Mayer.py
+│   ├── integration/                # Integration tests
+│   │   └── test_file_import.py     # End-to-end file processing tests
+│   ├── ui/                         # UI tests (Playwright)
+│   │   ├── conftest.py             # Test fixtures and server setup
+│   │   ├── test_smoke.py           # Basic UI smoke tests
+│   │   └── test_upload_flow.py     # File upload functionality tests
+│   ├── fixtures/                   # Test data and fixtures
+│   └── *.knxproj, *.json           # Sample KNX project files for testing
 │
 └── openhab/                        # OpenHAB output directory
     ├── items/
@@ -259,21 +269,136 @@ After changing config, restart the Flask server.
 
 ## Running Tests
 
+The project includes three types of automated tests: **Unit Tests**, **Integration Tests**, and **UI Tests**.
+
+### Prerequisites
+
+Ensure you have activated your virtual environment and installed all dependencies:
+
+```bash
+# Activate venv (Windows)
+.\.venv\Scripts\Activate.ps1
+
+# Activate venv (Linux/macOS)
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
 ### Unit Tests
 
+Unit tests verify individual functions and logic in isolation.
+
+**Run all unit tests:**
 ```bash
-# Activate venv first
-python -m pytest tests/unit/
+python -m pytest tests/unit/ -v
 ```
 
-Or run a specific test:
+**Run a specific test file:**
 ```bash
-python tests/unit/test_knxproject_to_openhab_Mayer.py
+python -m pytest tests/unit/test_knx_parsing.py -v
 ```
+
+**Coverage:**
+- `test_knx_parsing.py` - Tests for floor/room name extraction and building structure parsing
+
+### Integration Tests
+
+Integration tests verify end-to-end file processing with real KNX project files.
+
+**Run all integration tests:**
+```bash
+python -m pytest tests/integration/ -v
+```
+
+**What they test:**
+- Loading `.json` dumps from `tests/` directory
+- Loading `.knxproj` files (skips password-protected files)
+- Verifying building structure generation
+- Verifying address extraction and placement
+
+**Note:** Integration tests use actual test files from the `tests/` directory and may take longer to run.
+
+### UI Tests
+
+UI tests use Playwright to verify the Web UI functionality in a real browser.
+
+**First-time setup:**
+```bash
+# Install Playwright
+pip install pytest-playwright
+
+# Install browser binaries (Chromium)
+python -m playwright install chromium
+```
+
+**Run all UI tests:**
+```bash
+python -m pytest tests/ui/ -v
+```
+
+**Run specific test files:**
+```bash
+# Smoke tests (homepage, API status)
+python -m pytest tests/ui/test_smoke.py -v
+
+# Upload flow tests
+python -m pytest tests/ui/test_upload_flow.py -v
+```
+
+**What they test:**
+- Homepage loads correctly
+- API endpoints respond
+- File upload functionality
+- Live log streaming (via Server-Sent Events)
+
+**Note:** UI tests automatically start a test Flask server on port 8081 with authentication disabled.
+
+### Generating Golden Files
+
+Golden files are reference outputs used for regression testing. When you have verified that a project's output is correct, you can generate golden files:
+
+```bash
+# Generate golden files from a verified project
+python scripts/generate_golden_files.py --project tests/MyProject.knxproj.json --name MyProject
+
+# Overwrite existing golden files
+python scripts/generate_golden_files.py --project tests/Charne.knxproj.json --name Charne --force
+```
+
+**What it does:**
+1. Processes the KNX project
+2. Generates all OpenHAB files (items, things, sitemap, persistence)
+3. Saves them to `tests/fixtures/expected_output/[ProjectName]/`
+4. Creates a README documenting the golden files
+
+**When to use:**
+- After manually verifying a project's output is correct
+- When adding a new test project to the test suite
+- After intentional changes to generation logic (update existing golden files)
+
+### Running All Tests
+
+```bash
+# Run everything
+python -m pytest tests/ -v
+
+# Run with coverage report
+python -m pytest tests/ --cov=. --cov-report=html
+```
+
+### Test Output
+
+- **Passed tests:** Green checkmarks ✓
+- **Failed tests:** Red X with error details
+- **Skipped tests:** Yellow S (e.g., password-protected files)
 
 ### Manual Testing Checklist
 
-- [ ] Upload a KNX project file
+After automated tests pass, perform these manual checks:
+
+- [ ] Upload a KNX project file via Web UI
 - [ ] Verify live log streaming works
 - [ ] Check generated OpenHAB files in `openhab/`
 - [ ] Test backup creation

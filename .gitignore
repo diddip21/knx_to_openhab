@@ -6,8 +6,7 @@ example.ini
 .vscode/*
 __pycache__/*
 .pytest_cache/
-tests/unit/__pycache__/*
-web_ui/*/__pycache__/*
+*/*/__pycache__/*
 .venv*/
 venv/
 

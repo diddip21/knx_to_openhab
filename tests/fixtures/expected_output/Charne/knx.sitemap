@@ -1,0 +1,198 @@
+sitemap knx label="MiCasa"
+{
+    Frame label="Untergeschoss" {
+     Group item=map1_1  label="Technik" 
+      Group item=map1_2  label="Küche"  {
+        Default item=i_UG_RM2_Betriebsmodus label="RM2 Betriebsmodus" 
+        Default item=i_UG_RM2_H12Schalten label="RM2 H1-2 Schalten" 
+        Default item=i_UG_RM2_IstTemperatur label="RM2 Ist-Temperatur" 
+        Default item=i_UG_RM2_StatusSollwert label="RM2 Status Sollwert" 
+
+    }
+     Group item=map1_3  label="Essen"  {
+        Default item=i_UG_RM3_M1AufAb label="RM3 M1 Auf/Ab" 
+        Default item=i_UG_RM3_H5Schalten label="RM3 H5 Schalten" 
+
+    }
+     Group item=map1_4  label="Wohnen"  {
+        Default item=i_UG_RM4_M1AufAb label="RM4 M1 Auf/Ab" 
+        Default item=i_UG_RM4_H8Schalten label="RM4 H8 Schalten" 
+
+    }
+     Group item=map1_5  label="Schlafen"  {
+        Default item=i_UG_RM5_Betriebsmodus label="RM5 Betriebsmodus" 
+        Default item=i_UG_RM5_H1Schalten label="RM5 H1 Schalten" 
+        Default item=i_UG_RM5_IstTemperatur label="RM5 Ist-Temperatur" 
+        Default item=i_UG_RM5_StatusSollwert label="RM5 Status Sollwert" 
+
+    }
+     Group item=map1_6  label="Bad"  {
+        Default item=i_UG_RM6_Betriebsmodus label="RM6 Betriebsmodus" 
+        Default item=i_UG_RM6_H1Schalten label="RM6 H1 Schalten" 
+        Default item=i_UG_RM6_H1IstTemperatur label="RM6 H1 Ist-Temperatur" 
+        Default item=i_UG_RM6_StatusSollwert label="RM6 Status Sollwert" 
+
+    }
+     Group item=map1_7  label="Werkstatt"  {
+        Default item=i_UG_RM7_H1Schalten label="RM7 H1 Schalten" 
+
+    }
+     Group item=map1_8  label="Abstellen"  {
+        Default item=i_UG_RM8_H1Schalten label="RM8 H1 Schalten" 
+
+    }
+     Group item=map1_9  label="" 
+      Group item=map1_10  label=""  {
+        Default item=i_UG_RM12_H10Schalten label="RM12 H10 Schalten" 
+
+    }
+}
+ Frame label="Erdgeschoss" {
+     Group item=map2_1  label=""  {
+        Default item=i_EG_RM1_H2021Dimmenabsolut label="RM1 H20/21 Dimmen absolut" 
+        Default item=i_EG_RM1_H15Schalten label="RM1 H1-5 Schalten" 
+        Default item=i_EG_RM1_1OG2H3031Schalten label="1.OG +RM12 H30,31 Schalten" 
+
+    }
+     Group item=map2_2  label=""  {
+        Default item=i_EG_RM2_H10Dimmenabsolut label="RM2 H10 Dimmen absolut" 
+        Default item=i_EG_RM2_H20Dimmenabsolut label="RM2 H20 Dimmen absolut" 
+        Default item=i_EG_RM2_M1AufAb label="RM2-M1 Auf/Ab" 
+        Default item=i_EG_RM2_Betriebsmodus label="RM2 Betriebsmodus" 
+        Default item=i_EG_RM2_EGH16Schalten label="RM2 EG H1-6 Schalten" 
+        Default item=i_EG_RM2_H3031Schalten label="RM2 H30/31 Schalten" 
+        Default item=i_EG_RM2_IstTemperatur label="RM2 Ist-Temperatur" 
+        Default item=i_EG_RM2_StatusSollwert label="RM2 Status Sollwert" 
+
+    }
+     Group item=map2_3  label=""  {
+        Default item=i_EG_RM3_M1AusAb label="RM3 M1 Aus/Ab" 
+        Default item=i_EG_RM3_M2AufAb label="RM3 M2 Auf/Ab" 
+        Default item=i_EG_RM3_M1M2AufAb label="RM3 M1/M2 Auf/Ab" 
+        Default item=i_EG_RM3_Betriebsmodus label="RM3 Betriebsmodus" 
+        Default item=i_EG_RM3_Aussentemperatur label="Außentemperatur" 
+        Default item=i_EG_RM3_H12Schalten label="RM3 H1-2 Schalten" 
+        Default item=i_EG_RM3_AUBE2H1010Schalten label="AU+BE2 H10-10 Schalten" 
+        Default item=i_EG_RM3_AUBE2H34Schalten label="AU+BE2 H3-4 Schalten" 
+        Default item=i_EG_RM3_H58Schalten label="RM3 H5-8 Schalten" 
+        Default item=i_EG_RM3_X50WeihnachtsbelEssenWohnenKuecheSchalten label="X50 Weihnachtsbel. Essen Wohnen Küche Schalten" 
+        Default item=i_EG_RM3_X50WeihnachtsbelTreppenhausSchalten label="X50 Weihnachtsbel. Treppenhaus Schalten" 
+        Default item=i_EG_RM3_X50WeihnachtsbelBueroSchalten label="X50 Weihnachtsbel. Büro Schalten" 
+        Default item=i_EG_RM3_IstTemperatur label="RM3 Ist-Temperatur" 
+        Default item=i_EG_RM3_StatusSollwert label="RM3 Status Sollwert" 
+
+    }
+     Group item=map2_4  label=""  {
+        Default item=i_EG_RM4_H10Dimmenabsolut label="RM4 H10 Dimmen absolut" 
+        Default item=i_EG_RM4_M1AufAb label="RM4 M1 Auf/Ab" 
+        Default item=i_EG_RM4_M2AufAb label="RM4 M2 Auf/Ab" 
+        Default item=i_EG_RM4_H14Schalten label="RM4 H1-4 Schalten" 
+
+    }
+     Group item=map2_5  label=""  {
+        Default item=i_EG_RM5_M1AufAb label="RM5 M1 Auf/Ab" 
+        Default item=i_EG_RM5_M2AufAb label="RM5 M2 Auf/Ab" 
+        Default item=i_EG_RM5_ges_auf_ab label="RM5 ges_auf_ab" 
+        Default item=i_EG_RM5_Betriebsmodus label="RM5 Betriebsmodus" 
+        Default item=i_EG_RM5_H14Schalten label="RM5 H1-4 Schalten" 
+        Default item=i_EG_RM5_M1Rueckmeldung label="RM5 M1 Rückmeldung" 
+        Default item=i_EG_RM5_M2Rueckmeldung label="RM5 M2 Rückmeldung" 
+        Default item=i_EG_RM5_IstTemperatur label="RM5 Ist-Temperatur" 
+        Default item=i_EG_RM5_StatusSollwert label="RM5 Status Sollwert" 
+
+    }
+     Group item=map2_6  label=""  {
+        Default item=i_EG_RM6_M1AufAb label="RM6 M1 Auf/Ab" 
+        Default item=i_EG_RM6_Betriebsmodus label="RM6 Betriebsmodus" 
+        Default item=i_EG_RM6_H2021Schalten label="RM6 H20-21 Schalten" 
+        Default item=i_EG_RM6_H10Schalten label="RM6 H10 Schalten" 
+        Default item=i_EG_RM6_M1Rueckmeldung label="RM6 M1 Rückmeldung" 
+        Default item=i_EG_RM6_IstTemperatur label="RM6 Ist-Temperatur" 
+        Default item=i_EG_RM6_StatusSollwert label="RM6 Status Sollwert" 
+
+    }
+     Group item=map2_7  label="" 
+      Group item=map2_8  label=""  {
+        Default item=i_EG_BE2_Alg_Rollo_AufAb label="Alg_Rollo_Auf/Ab" 
+        Default item=i_EG_BE2_Daemmerung label="Dämmerung" 
+        Default item=i_EG_BE2_Windgeschwindigkeit label="Windgeschwindigkeit" 
+        Default item=i_EG_BE2_HelligkeitOst label="Helligkeit Ost" 
+        Default item=i_EG_BE2_HelligkeitSued label="Helligkeit Süd" 
+        Default item=i_EG_BE2_HelligkeitWest label="Helligkeit West" 
+
+    }
+}
+ Frame label="1. Obergeschoss" {
+     Group item=map3_1  label=""  {
+        Default item=i_OG_RM12_UGRM1LEDTreppeDimmenabsolut label="UG +RM1 LED Treppe Dimmen absolut" 
+        Default item=i_OG_RM12_M30AufAb label="RM12-M30 Auf/Ab" 
+        Default item=i_OG_RM12_Hlligkeitdeb label="Hlligkeit deb" 
+        Default item=i_OG_RM12_1OGH36Schalten label="1.OG +RM12 H36 Schalten" 
+
+    }
+     Group item=map3_2  label=""  {
+        Default item=i_OG_RM5_1OGM1AufAb label="1.OG +RM5 M1 Auf/Ab" 
+        Default item=i_OG_RM5_1OGM2AufAb label="1.OG +RM5 M2 Auf/Ab" 
+        Default item=i_OG_RM5_1OGRollos_ges_auf_ab label="1.OG +RM5 Rollos_ges_auf_ab" 
+        Default item=i_OG_RM5_1OGBetriebsmodus label="1.OG +RM5 Betriebsmodus" 
+        Default item=i_OG_RM5_1OGX2022Schalten label="1.OG +RM5 X20/22 Schalten" 
+        Default item=i_OG_RM5_1OGBettlinksSchalten label="1.OG +RM5 Bett links Schalten" 
+        Default item=i_OG_RM5_1OGBettrechtsSchalten label="1.OG +RM5 Bett rechts Schalten" 
+        Default item=i_OG_RM5_1OGH10H13Schalten label="1.OG +RM5 H10 & H1-3 Schalten" 
+        Default item=i_OG_RM5_1OGH10H13DimmenRueckmeldung label="1.OG +RM5 H10 & H1-3 Dimmen Rückmeldung" 
+        Default item=i_OG_RM5_1OGM1Rueckmeldung label="1.OG +RM5 M1 Rückmeldung" 
+        Default item=i_OG_RM5_1OGM2Rueckmeldung label="1.OG +RM5 M2 Rückmeldung" 
+        Default item=i_OG_RM5_1OGIstTemperatur label="1.OG +RM5 Ist-Temperatur" 
+        Default item=i_OG_RM5_1OGStatusSollwert label="1.OG +RM5 Status Sollwert" 
+
+    }
+     Group item=map3_3  label=""  {
+        Default item=i_OG_RM6_1OGRolloM2AufAb label="1.OG +RM6 Rollo M2 Auf/Ab" 
+        Default item=i_OG_RM6_1OGRolloM1AufAb label="1.OG +RM6 Rollo M1 Auf/Ab" 
+        Default item=i_OG_RM6_1OGRollos_ges_auf_ab label="1.OG +RM6 Rollos_ges_auf_ab" 
+        Default item=i_OG_RM6_1OGBetriebsmodus label="1.OG +RM6 Betriebsmodus" 
+        Default item=i_OG_RM6_DatumUhrzeit label="Datum/Uhrzeit" 
+        Default item=i_OG_RM6_1OGH16Schalten label="1.OG +RM6 H1-6 Schalten" 
+        Default item=i_OG_RM6_1OGM1Rueckmeldung label="1.OG +RM6 M1 Rückmeldung" 
+        Default item=i_OG_RM6_1OGM2Rueckmeldung label="1.OG +RM6 M2 Rückmeldung" 
+        Default item=i_OG_RM6_1OGIstTemperatur label="1.OG +RM6 Ist-Temperatur" 
+        Default item=i_OG_RM6_1OGStatusSollwert label="1.OG +RM6 Status Sollwert" 
+
+    }
+     Group item=map3_4  label=""  {
+        Default item=i_OG_RM7_1OGM1AufAb label="1.OG +RM7 M1 Auf/Ab" 
+        Default item=i_OG_RM7_1OGM2AufAb label="1.OG +RM7 M2 Auf/Ab" 
+        Default item=i_OG_RM7_1OGRollos_ges_auf_ab label="1.OG +RM7 Rollos_ges_auf_ab" 
+        Default item=i_OG_RM7_1OGBetriebsmodus label="1.OG +RM7 Betriebsmodus" 
+        Default item=i_OG_RM7_1OGH14SpotsDecke label="1.OG +RM7-H1-4 Spots Decke" 
+        Default item=i_OG_RM7_1OGM1Rueckmeldung label="1.OG +RM7 M1 Rückmeldung" 
+        Default item=i_OG_RM7_1OGM2Rueckmeldung label="1.OG +RM7 M2 Rückmeldung" 
+        Default item=i_OG_RM7_1OGIstTemperatur label="1.OG +RM7 Ist-Temperatur" 
+        Default item=i_OG_RM7_1OGStatusSollwert label="1.OG +RM7 Status Sollwert" 
+
+    }
+     Group item=map3_5  label=""  {
+        Default item=i_OG_RM8_1OGM1AufAb label="1.OG +RM8 M1 Auf/Ab" 
+        Default item=i_OG_RM8_1OGM2AufAb label="1.OG +RM8 M2 Auf/Ab" 
+        Default item=i_OG_RM8_1OGRollos_ges_auf_ab label="1.OG +RM8 Rollos_ges_auf_ab" 
+        Default item=i_OG_RM8_1OGBetriebsmodus label="1.OG +RM8 Betriebsmodus" 
+        Default item=i_OG_RM8_1OGH14Schalten label="1.OG +RM8 H1-4 Schalten" 
+        Default item=i_OG_RM8_1OGM1Rueckmeldung label="1.OG +RM8 M1 Rückmeldung" 
+        Default item=i_OG_RM8_1OGM2Rueckmeldung label="1.OG +RM8 M2 Rückmeldung" 
+        Default item=i_OG_RM8_1OGIstTemperatur label="1.OG +RM8 Ist-Temperatur" 
+        Default item=i_OG_RM8_1OGStausSollwert label="1.OG +RM8 Staus Sollwert" 
+
+    }
+}
+ Frame label="unknown" {
+     Group item=map4_1  label="unknown"  {
+        Default item=i_unknown_unknown_1OGRM6Wanne_abs label="1.OG +RM6 Wanne_abs" 
+        Default item=i_unknown_unknown_1OGRM6Dusche_abs label="1.OG +RM6 Dusche_abs" 
+        Default item=i_unknown_unknown_LogikZentralSchlafenallesausaktor label="Logik Zentral Schlafen alles aus aktor" 
+        Default item=i_unknown_unknown_1OGRM6PatschZentralaktor label="1.OG +RM6 Patsch Zentral aktor" 
+        Default item=i_unknown_unknown_AUBE1H13Schalten label="AU +BE1 H1-3 Schalten" 
+
+    }
+}
+ 
+}

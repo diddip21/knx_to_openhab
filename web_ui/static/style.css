@@ -1329,4 +1329,86 @@ dialog:not([open]) {
   padding: 20px 25px;
   background: var(--lighter-gray);
   border-radius: 0 0 12px 12px;
+/* Configuration form styles */
+.config-field {
+  margin-bottom: 15px;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--light-bg);
+}
+
+.config-field label {
+  display: block;
+ margin-bottom: 5px;
+  font-weight: bold;
+  color: var(--text-dark);
+}
+
+.config-field input[type="text"],
+.config-field input[type="number"],
+.config-field textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--card-bg);
+  color: var(--text-dark);
+  box-sizing: border-box;
+}
+
+.config-field input[type="checkbox"] {
+  margin-right: 8px;
+}
+
+.field-description {
+  font-size: 0.9em;
+  color: var(--text-light);
+  margin-bottom: 5px;
+  font-style: italic;
+}
+
+fieldset {
+  margin: 10px 0;
+  padding: 15px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--light-bg);
+}
+
+legend {
+  font-weight: bold;
+  color: var(--text-dark);
+  padding: 0 10px;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .container {
+    padding: 10px;
+  }
+  
+  .card {
+    padding: 15px;
+  }
+  
+  .form-group {
+    margin-bottom: 15px;
+ }
+  
+  .form-actions {
+    flex-direction: column;
+  }
+  
+  .form-actions button {
+    width: 100%;
+    margin-bottom: 10px;
+  }
+  
+  .config-field input[type="text"],
+  .config-field input[type="number"],
+  .config-field textarea {
+    width: 100%;
+  }
+}
 }

@@ -1,390 +1,390 @@
 {
-    "ets_export": "",
-    "things_path": "openhab/things/knx.things",
-    "items_path": "openhab/items/knx.items",
-    "sitemaps_path": "openhab/sitemaps/knx.sitemap",
-    "influx_path": "openhab/persistence/influxdb.persist",
-    "fenster_path": "openhab/rules/fenster.rules",
-    "transform_dir_path": "openhab/transform",
-    "general": {
-        "FloorNameFromDescription": false,
-        "FloorNameAsItIs": false,
-        "RoomNameFromDescription": false,
-        "RoomNameAsItIs": false,
-        "addMissingItems": true,
-        "unknown_floorname": "unknown",
-        "unknown_roomname": "unknown",
-        "item_Floor_nameshort_prefix": "=",
-        "item_Room_nameshort_prefix": "+"
+  "datapoint_mappings": {
+    "DPST-1-100": {
+      "alexa": "",
+      "ga_prefix": "1.100",
+      "homekit": "",
+      "item_icon": "temperature",
+      "item_type": "Switch",
+      "metadata": "",
+      "semantic_info": "[\"Measurement\", \"Status\"]"
     },
-    "regexpattern": {
-        "item_Floor": "^=?[1-9\\.A-Z]{1,5}",
-        "item_Floor_nameshort": "^=?[a-zA-Z]{1,5}\\b",
-        "item_Room": "\\++[A-Z].[0-9]+",
-        "items_Name": "[^A-Za-z0-9_]+",
-        "items_Label": "^\\[\\w*\\]\\@\\s?(\\+RM(\\d+(\\/|\\\\|-)*)*(\\d+))*\\s|:\\(.*\\)\\s?"
+    "DPST-1-11": {
+      "alexa": "",
+      "ga_prefix": "1.011",
+      "homekit": "",
+      "item_icon": "switch",
+      "item_type": "Switch",
+      "metadata": "",
+      "semantic_info": "[\"Measurement\", \"Status\"]"
     },
-    "defines": {
-        "switch": {
-            "switch_suffix": [
-                "Schalten",
-                ":(An/Aus)",
-                ":(Schalten)",
-                "Ein/Aus",
-                "Schalten EIN/AUS",
-                "HCL starten"
-            ],
-            "status_suffix": [
-                "Status",
-                " RM",
-                "Rückmeldung",
-                ":(RM Schalten)",
-                "Status Ein/Aus",
-                "Status Aktorkanal",
-                "HCL Status"
-            ],
-            "change_metadata": {
-                "Licht": {
-                    "semantic_info": "[\"Control\", \"Light\"]",
-                    "equipment": "Lightbulb",
-                    "homekit": ", homekit = \"Lighting\"",
-                    "alexa": ", alexa = \"Light\"",
-                    "item_icon": "light",
-                    "floor_group": "Lights"
-                },
-                "Steckdose": {
-                    "semantic_info": "[\"Control\", \"Switch\"]",
-                    "equipment": "PowerOutlet",
-                    "item_icon": "poweroutlet"
-                },
-                "Audio": {
-                    "semantic_info": "[\"Control\", \"Switch\"]",
-                    "equipment": "Speaker",
-                    "item_icon": "soundvolume"
-                },
-                "Heizen": {
-                    "semantic_info": "[\"Heating\", \"Switch\"]",
-                    "equipment": "HVAC",
-                    "item_icon": "radiator"
-                }
-            }
-        },
-        "dimmer": {
-            "absolut_suffix": [
-                "Dimmen absolut",
-                ":(Dimm Wert)",
-                "Absolute Lamellenposition",
-                "Helligkeitswert"
-            ],
-            "status_suffix": [
-                "Rückmeldung Dimmen",
-                "Dimmen Rückmeldung",
-                "Dimmen rm",
-                "Status Dimmwert",
-                ":(Status Dimm Wert)",
-                "Status Absolute Lamellenposition",
-                "Status akt. Lamellenposition",
-                "Rückmeldung Helligkeitswert"
-            ],
-            "switch_suffix": [
-                "Schalten",
-                ":(An/Aus)",
-                ":(Schalten)",
-                "Ein/Aus",
-                "Schalten EIN/AUS"
-            ],
-            "switch_status_suffix": [
-                "Status Ein/Aus",
-                "Rückmeldung",
-                "Schalten Rückmeldung",
-                "Schalten rm",
-                ":(Status An/Aus)",
-                "Rückmeldung Schalten"
-            ],
-            "relativ_suffix": [
-                "Dimmen relativ",
-                ":(Heller/Dunkler)",
-                "Dimmen"
-            ],
-            "drop": [],
-            "change_metadata": {
-                "Lamellenposition": {
-                    "semantic_info": "[\"Blinds\"]",
-                    "item_icon": "rollershutter",
-                    "homekit": ", homekit = \"CurrentHorizontalTiltAngle, TargetHorizontalTiltAngle\"",
-                    "alexa": ", alexa = \"TiltAngle\"",
-                    "floor_group": null
-                },
-                "Stellwert": {
-                    "semantic_info": "[\"HVAC\"]",
-                    "item_icon": "heating",
-                    "homekit": "",
-                    "alexa": ""
-                },
-                "Farbtemperatur": {
-                    "semantic_info": "[\"Setpoint\"]",
-                    "item_icon": "material:contrast",
-                    "homekit": "",
-                    "alexa": ""
-                }
-            }
-        },
-        "rollershutter": {
-            "up_down_suffix": [
-                "Auf/Ab",
-                ":(Jalousie Auf/Ab)",
-                ":(Rolladen Auf/Ab)",
-                "Rollladen Auf/Ab",
-                "Jalousie Auf/Ab",
-                "Single Object Control"
-            ],
-            "stop_suffix": [
-                "Stop",
-                "Stop/Lamellen",
-                "Lamellen",
-                ":(Lamellenverstellung/Stop)",
-                ":(Stop)",
-                "Stopp",
-                "Lamellenverstellung / Stopp"
-            ],
-            "absolute_position_suffix": [
-                "absolute Position",
-                ":(Absolute Position)"
-            ],
-            "status_suffix": [
-                "Status",
-                "Rückmeldung",
-                ":(Status Absolute Position)",
-                ":(Status aktuelle Position)",
-                "Status aktuelle Position"
-            ],
-            "drop": [
-                "Status Richtung",
-                ":(Status aktuelle Richtung)",
-                ":(Status obere Position)",
-                ":(Status untere Position)"
-            ]
-        },
-        "heating": {
-            "level_suffix": [
-                "Betriebsmodus",
-                "Betriebsartvorwahl"
-            ],
-            "status_level_suffix": [
-                "Status Betriebsmodus",
-                "DPT_HVAC Mode: Reglerstatus senden"
-            ]
-        },
-        "drop_words": [
-            "Fensterkontakt",
-            "Licht",
-            "Steckdose",
-            "Steckdosen",
-            "Strom",
-            "Leistung",
-            "AUF/ZU",
-            "AUF"
-        ]
+    "DPST-1-19": {
+      "alexa": ", alexa = \"ContactDetectionState\"",
+      "floor_group": "Contacts",
+      "ga_prefix": "1.019",
+      "homekit": ", homekit=\"ContactSensor\"",
+      "item_icon": "window",
+      "item_type": "Contact",
+      "metadata": "",
+      "semantic_info": "[\"OpenState\", \"Opening\"]"
     },
-    "datapoint_mappings": {
-        "DPST-1-24": {
-            "item_type": "Switch",
-            "ga_prefix": "1.024",
-            "metadata": "",
-            "homekit": "",
-            "alexa": "",
-            "semantic_info": "[\"Control\"]",
-            "item_icon": "moon"
-        },
-        "DPST-1-5": {
-            "item_type": "Switch",
-            "ga_prefix": "1.005",
-            "metadata": "",
-            "homekit": "",
-            "alexa": "",
-            "semantic_info": "[\"Alarm\"]",
-            "item_icon": "siren"
-        },
-        "DPST-1-11": {
-            "item_type": "Switch",
-            "ga_prefix": "1.011",
-            "metadata": "",
-            "homekit": "",
-            "alexa": "",
-            "semantic_info": "[\"Measurement\", \"Status\"]",
-            "item_icon": "switch"
-        },
-        "DPST-1-100": {
-            "item_type": "Switch",
-            "ga_prefix": "1.100",
-            "metadata": "",
-            "homekit": "",
-            "alexa": "",
-            "semantic_info": "[\"Measurement\", \"Status\"]",
-            "item_icon": "temperature"
-        },
-        "DPST-9-1": {
-            "item_type": "Number:Temperature",
-            "ga_prefix": "9.001",
-            "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit": ", homekit = \"CurrentTemperature\"",
-            "alexa": ", alexa = \"CurrentTemperature\"",
-            "semantic_info": "[\"Measurement\", \"Temperature\"]",
-            "item_icon": "temperature",
-            "floor_group": "Temperature"
-        },
-        "DPST-9-7": {
-            "item_type": "Number:Dimensionless",
-            "ga_prefix": "9.001",
-            "metadata": ", unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]",
-            "homekit": ", homekit=\"HumiditySensor\"",
-            "alexa": ", alexa = \"CurrentHumidity\"",
-            "semantic_info": "[\"Measurement\", \"Humidity\"]",
-            "item_icon": "humidity"
-        },
-        "DPST-1-19": {
-            "item_type": "Contact",
-            "ga_prefix": "1.019",
-            "metadata": "",
-            "homekit": ", homekit=\"ContactSensor\"",
-            "alexa": ", alexa = \"ContactDetectionState\"",
-            "semantic_info": "[\"OpenState\", \"Opening\"]",
-            "item_icon": "window",
-            "floor_group": "Contacts"
-        },
-        "DPST-13-10": {
-            "item_type": "Number:Energy",
-            "ga_prefix": "13.010",
-            "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit": "",
-            "alexa": "",
-            "semantic_info": "[\"Measurement\", \"Energy\"]",
-            "item_icon": "batterylevel"
-        },
-        "DPST-14-56": {
-            "item_type": "Number:Power",
-            "ga_prefix": "14.056",
-            "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit": "",
-            "alexa": "",
-            "semantic_info": "[\"Measurement\", \"Power\"]",
-            "item_icon": "energy"
-        },
-        "DPST-7-12": {
-            "item_type": "Number:ElectricCurrent",
-            "ga_prefix": "7.012",
-            "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit": "",
-            "alexa": "",
-            "semantic_info": "[\"Measurement\", \"Current\"]",
-            "item_icon": "energy"
-        },
-        "DPST-12-1200": {
-            "item_type": "Number:Volume",
-            "ga_prefix": "12.1200",
-            "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit": "",
-            "alexa": "",
-            "semantic_info": "[\"Measurement\", \"Volume\"]",
-            "item_icon": "water"
-        },
-        "DPST-16-0": {
-            "item_type": "String",
-            "ga_prefix": "16.000",
-            "metadata": "",
-            "homekit": "",
-            "alexa": "",
-            "semantic_info": "",
-            "item_icon": "text"
-        },
-        "DPT-16": {
-            "item_type": "String",
-            "ga_prefix": "16.000",
-            "metadata": "",
-            "homekit": "",
-            "alexa": "",
-            "semantic_info": "",
-            "item_icon": "text"
-        },
-        "DPST-9-4": {
-            "item_type": "Number:Illuminance",
-            "ga_prefix": "9.004",
-            "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit": ", homekit=\"LightSensor\"",
-            "alexa": "",
-            "semantic_info": "[\"Measurement\", \"Light\"]",
-            "item_icon": "sun"
-        },
-        "DPST-9-5": {
-            "item_type": "Number:Speed",
-            "ga_prefix": "9.005",
-            "metadata": ", unit=\"m/s\", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit": "",
-            "alexa": "",
-            "semantic_info": "[\"Measurement\", \"Wind\"]",
-            "item_icon": "wind"
-        },
-        "DPST-9-8": {
-            "item_type": "Number:Dimensionless",
-            "ga_prefix": "9.005",
-            "metadata": ", stateDescription=\"\"[pattern=\"%.1f ppm\"]",
-            "homekit": "",
-            "alexa": "",
-            "semantic_info": "[\"Measurement\"]",
-            "item_icon": ""
-        },
-        "DPST-5-1": {
-            "item_type": "Dimmer",
-            "ga_prefix": "position=5.001",
-            "metadata": ", unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]",
-            "homekit": "",
-            "alexa": "",
-            "semantic_info": "[\"Measurement\"]",
-            "item_icon": ""
-        },
-        "DPST-13-100": {
-            "item_type": "Number:Time",
-            "ga_prefix": "13.100",
-            "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
-            "homekit": "",
-            "alexa": "",
-            "semantic_info": "[\"Measurement\", \"Duration\"]",
-            "item_icon": "time"
-        },
-        "DPST-19-1": {
-            "item_type": "DateTime",
-            "ga_prefix": "19.001",
-            "metadata": "",
-            "homekit": "",
-            "alexa": "",
-            "semantic_info": "",
-            "item_icon": "time"
-        },
-        "DPST-20-102": {
-            "item_type": "Number:Dimensionless",
-            "ga_prefix": "20.102",
-            "metadata": ", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]",
-            "homekit": ",homekit = \"CurrentHeatingCoolingMode, TargetHeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
-            "alexa": ",alexa = \"HeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
-            "semantic_info": "[\"HVAC\"]",
-            "item_icon": "heating_mode"
-        },
-        "DPST-5-010": {
-            "item_type": "Number:Dimensionless",
-            "ga_prefix": "5.010",
-            "metadata": ", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]",
-            "homekit": ",homekit = \"CurrentHeatingCoolingMode, TargetHeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
-            "alexa": ",alexa = \"HeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
-            "semantic_info": "[\"HVAC\"]",
-            "item_icon": "heating_mode"
-        }
+    "DPST-1-24": {
+      "alexa": "",
+      "ga_prefix": "1.024",
+      "homekit": "",
+      "item_icon": "moon",
+      "item_type": "Switch",
+      "metadata": "",
+      "semantic_info": "[\"Control\"]"
     },
-    "devices": {
-        "gateway": {
-            "hardware_name": [
-                "IP Interface Secure",
-                "KNX IP Interface"
-            ]
-        }
+    "DPST-1-5": {
+      "alexa": "",
+      "ga_prefix": "1.005",
+      "homekit": "",
+      "item_icon": "siren",
+      "item_type": "Switch",
+      "metadata": "",
+      "semantic_info": "[\"Alarm\"]"
+    },
+    "DPST-12-1200": {
+      "alexa": "",
+      "ga_prefix": "12.1200",
+      "homekit": "",
+      "item_icon": "water",
+      "item_type": "Number:Volume",
+      "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
+      "semantic_info": "[\"Measurement\", \"Volume\"]"
+    },
+    "DPST-13-10": {
+      "alexa": "",
+      "ga_prefix": "13.010",
+      "homekit": "",
+      "item_icon": "batterylevel",
+      "item_type": "Number:Energy",
+      "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
+      "semantic_info": "[\"Measurement\", \"Energy\"]"
+    },
+    "DPST-13-100": {
+      "alexa": "",
+      "ga_prefix": "13.100",
+      "homekit": "",
+      "item_icon": "time",
+      "item_type": "Number:Time",
+      "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
+      "semantic_info": "[\"Measurement\", \"Duration\"]"
+    },
+    "DPST-14-56": {
+      "alexa": "",
+      "ga_prefix": "14.056",
+      "homekit": "",
+      "item_icon": "energy",
+      "item_type": "Number:Power",
+      "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
+      "semantic_info": "[\"Measurement\", \"Power\"]"
+    },
+    "DPST-16-0": {
+      "alexa": "",
+      "ga_prefix": "16.000",
+      "homekit": "",
+      "item_icon": "text",
+      "item_type": "String",
+      "metadata": "",
+      "semantic_info": ""
+    },
+    "DPST-19-1": {
+      "alexa": "",
+      "ga_prefix": "19.001",
+      "homekit": "",
+      "item_icon": "time",
+      "item_type": "DateTime",
+      "metadata": "",
+      "semantic_info": ""
+    },
+    "DPST-20-102": {
+      "alexa": ",alexa = \"HeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
+      "ga_prefix": "20.102",
+      "homekit": ",homekit = \"CurrentHeatingCoolingMode, TargetHeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
+      "item_icon": "heating_mode",
+      "item_type": "Number:Dimensionless",
+      "metadata": ", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]",
+      "semantic_info": "[\"HVAC\"]"
+    },
+    "DPST-5-010": {
+      "alexa": ",alexa = \"HeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
+      "ga_prefix": "5.010",
+      "homekit": ",homekit = \"CurrentHeatingCoolingMode, TargetHeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
+      "item_icon": "heating_mode",
+      "item_type": "Number:Dimensionless",
+      "metadata": ", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]",
+      "semantic_info": "[\"HVAC\"]"
+    },
+    "DPST-5-1": {
+      "alexa": "",
+      "ga_prefix": "position=5.001",
+      "homekit": "",
+      "item_icon": "",
+      "item_type": "Dimmer",
+      "metadata": ", unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]",
+      "semantic_info": "[\"Measurement\"]"
+    },
+    "DPST-7-12": {
+      "alexa": "",
+      "ga_prefix": "7.012",
+      "homekit": "",
+      "item_icon": "energy",
+      "item_type": "Number:ElectricCurrent",
+      "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
+      "semantic_info": "[\"Measurement\", \"Current\"]"
+    },
+    "DPST-9-1": {
+      "alexa": ", alexa = \"CurrentTemperature\"",
+      "floor_group": "Temperature",
+      "ga_prefix": "9.001",
+      "homekit": ", homekit = \"CurrentTemperature\"",
+      "item_icon": "temperature",
+      "item_type": "Number:Temperature",
+      "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
+      "semantic_info": "[\"Measurement\", \"Temperature\"]"
+    },
+    "DPST-9-4": {
+      "alexa": "",
+      "ga_prefix": "9.004",
+      "homekit": ", homekit=\"LightSensor\"",
+      "item_icon": "sun",
+      "item_type": "Number:Illuminance",
+      "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
+      "semantic_info": "[\"Measurement\", \"Light\"]"
+    },
+    "DPST-9-5": {
+      "alexa": "",
+      "ga_prefix": "9.005",
+      "homekit": "",
+      "item_icon": "wind",
+      "item_type": "Number:Speed",
+      "metadata": ", unit=\"m/s\", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
+      "semantic_info": "[\"Measurement\", \"Wind\"]"
+    },
+    "DPST-9-7": {
+      "alexa": ", alexa = \"CurrentHumidity\"",
+      "ga_prefix": "9.001",
+      "homekit": ", homekit=\"HumiditySensor\"",
+      "item_icon": "humidity",
+      "item_type": "Number:Dimensionless",
+      "metadata": ", unit=\"%\", stateDescription=\"\"[pattern=\"%.1f %%\"]",
+      "semantic_info": "[\"Measurement\", \"Humidity\"]"
+    },
+    "DPST-9-8": {
+      "alexa": "",
+      "ga_prefix": "9.005",
+      "homekit": "",
+      "item_icon": "",
+      "item_type": "Number:Dimensionless",
+      "metadata": ", stateDescription=\"\"[pattern=\"%.1f ppm\"]",
+      "semantic_info": "[\"Measurement\"]"
+    },
+    "DPT-16": {
+      "alexa": "",
+      "ga_prefix": "16.000",
+      "homekit": "",
+      "item_icon": "text",
+      "item_type": "String",
+      "metadata": "",
+      "semantic_info": ""
     }
+  },
+  "defines": {
+    "dimmer": {
+      "absolut_suffix": [
+        "Dimmen absolut",
+        ":(Dimm Wert)",
+        "Absolute Lamellenposition",
+        "Helligkeitswert"
+      ],
+      "change_metadata": {
+        "Farbtemperatur": {
+          "alexa": "",
+          "homekit": "",
+          "item_icon": "material:contrast",
+          "semantic_info": "[\"Setpoint\"]"
+        },
+        "Lamellenposition": {
+          "alexa": ", alexa = \"TiltAngle\"",
+          "floor_group": null,
+          "homekit": ", homekit = \"CurrentHorizontalTiltAngle, TargetHorizontalTiltAngle\"",
+          "item_icon": "rollershutter",
+          "semantic_info": "[\"Blinds\"]"
+        },
+        "Stellwert": {
+          "alexa": "",
+          "homekit": "",
+          "item_icon": "heating",
+          "semantic_info": "[\"HVAC\"]"
+        }
+      },
+      "drop": [],
+      "relativ_suffix": [
+        "Dimmen relativ",
+        ":(Heller/Dunkler)",
+        "Dimmen"
+      ],
+      "status_suffix": [
+        "R\u00fcckmeldung Dimmen",
+        "Dimmen R\u00fcckmeldung",
+        "Dimmen rm",
+        "Status Dimmwert",
+        ":(Status Dimm Wert)",
+        "Status Absolute Lamellenposition",
+        "Status akt. Lamellenposition",
+        "R\u00fcckmeldung Helligkeitswert"
+      ],
+      "switch_status_suffix": [
+        "Status Ein/Aus",
+        "R\u00fcckmeldung",
+        "Schalten R\u00fcckmeldung",
+        "Schalten rm",
+        ":(Status An/Aus)",
+        "R\u00fcckmeldung Schalten"
+      ],
+      "switch_suffix": [
+        "Schalten",
+        ":(An/Aus)",
+        ":(Schalten)",
+        "Ein/Aus",
+        "Schalten EIN/AUS"
+      ]
+    },
+    "drop_words": [
+      "Fensterkontakt",
+      "Licht",
+      "Steckdose",
+      "Steckdosen",
+      "Strom",
+      "Leistung",
+      "AUF/ZU",
+      "AUF"
+    ],
+    "heating": {
+      "level_suffix": [
+        "Betriebsmodus",
+        "Betriebsartvorwahl"
+      ],
+      "status_level_suffix": [
+        "Status Betriebsmodus",
+        "DPT_HVAC Mode: Reglerstatus senden"
+      ]
+    },
+    "rollershutter": {
+      "absolute_position_suffix": [
+        "absolute Position",
+        ":(Absolute Position)"
+      ],
+      "drop": [
+        "Status Richtung",
+        ":(Status aktuelle Richtung)",
+        ":(Status obere Position)",
+        ":(Status untere Position)"
+      ],
+      "status_suffix": [
+        "Status",
+        "R\u00fcckmeldung",
+        ":(Status Absolute Position)",
+        ":(Status aktuelle Position)",
+        "Status aktuelle Position"
+      ],
+      "stop_suffix": [
+        "Stop",
+        "Stop/Lamellen",
+        "Lamellen",
+        ":(Lamellenverstellung/Stop)",
+        ":(Stop)",
+        "Stopp",
+        "Lamellenverstellung / Stopp"
+      ],
+      "up_down_suffix": [
+        "Auf/Ab",
+        ":(Jalousie Auf/Ab)",
+        ":(Rolladen Auf/Ab)",
+        "Rollladen Auf/Ab",
+        "Jalousie Auf/Ab",
+        "Single Object Control"
+      ]
+    },
+    "switch": {
+      "change_metadata": {
+        "Audio": {
+          "equipment": "Speaker",
+          "item_icon": "soundvolume",
+          "semantic_info": "[\"Control\", \"Switch\"]"
+        },
+        "Heizen": {
+          "equipment": "HVAC",
+          "item_icon": "radiator",
+          "semantic_info": "[\"Heating\", \"Switch\"]"
+        },
+        "Licht": {
+          "alexa": ", alexa = \"Light\"",
+          "equipment": "Lightbulb",
+          "floor_group": "Lights",
+          "homekit": ", homekit = \"Lighting\"",
+          "item_icon": "light",
+          "semantic_info": "[\"Control\", \"Light\"]"
+        },
+        "Steckdose": {
+          "equipment": "PowerOutlet",
+          "item_icon": "poweroutlet",
+          "semantic_info": "[\"Control\", \"Switch\"]"
+        }
+      },
+      "status_suffix": [
+        "Status",
+        " RM",
+        "R\u00fcckmeldung",
+        ":(RM Schalten)",
+        "Status Ein/Aus",
+        "Status Aktorkanal",
+        "HCL Status"
+      ],
+      "switch_suffix": [
+        "Schalten",
+        ":(An/Aus)",
+        ":(Schalten)",
+        "Ein/Aus",
+        "Schalten EIN/AUS",
+        "HCL starten"
+      ]
+    }
+  },
+  "devices": {
+    "gateway": {
+      "hardware_name": [
+        "IP Interface Secure",
+        "KNX IP Interface"
+      ]
+    }
+  },
+  "ets_export": "",
+  "fenster_path": "openhab/rules/fenster.rules",
+  "general": {
+    "FloorNameAsItIs": false,
+    "FloorNameFromDescription": false,
+    "RoomNameAsItIs": false,
+    "RoomNameFromDescription": false,
+    "addMissingItems": false,
+    "item_Floor_nameshort_prefix": "=",
+    "item_Room_nameshort_prefix": "+",
+    "unknown_floorname": "unknown",
+    "unknown_roomname": "unknown"
+  },
+  "influx_path": "openhab/persistence/influxdb.persist",
+  "items_path": "openhab/items/knx.items",
+  "regexpattern": {
+    "item_Floor": "^=?[1-9\\.A-Z]{1,5}",
+    "item_Floor_nameshort": "^=?[a-zA-Z]{1,5}\\b",
+    "item_Room": "\\++[A-Z].[0-9]+",
+    "items_Label": "^\\[\\w*\\]\\@\\s?(\\+RM(\\d+(\\/|\\\\|-)*)*(\\d+))*\\s|:\\(.*\\)\\s?",
+    "items_Name": "[^A-Za-z0-9_]+"
+  },
+  "sitemaps_path": "openhab/sitemaps/knx.sitemap",
+  "things_path": "openhab/things/knx.things",
+  "transform_dir_path": "openhab/transform"
 }

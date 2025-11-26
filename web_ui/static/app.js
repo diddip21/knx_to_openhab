@@ -596,13 +596,30 @@ function updateStatisticsDisplay(stats) {
 async function loadConfig() {
   const configStatus = document.getElementById('configStatus')
   const configJson = document.getElementById('configJson')
+  const configFormContainer = document.getElementById('configFormContainer')
 
   try {
     configStatus.textContent = 'Loading configuration...'
-    const res = await fetch('/api/config')
-    if (!res.ok) throw new Error('Failed to load config')
-    const config = await res.json()
-    configJson.value = JSON.stringify(config, null, 2)
+    
+    // Fetch both the config and schema
+    const [configRes, schemaRes] = await Promise.all([
+      fetch('/api/config'),
+      fetch('/api/config/schema')
+    ])
+    
+    if (!configRes.ok) throw new Error('Failed to load config')
+    if (!schemaRes.ok) throw new Error('Failed to load schema')
+    
+    const config = await configRes.json()
+    const schema = await schemaRes.json()
+    
+    // Hide the text area and show the form container
+    configJson.style.display = 'none'
+    configFormContainer.style.display = 'block'
+    
+    // Generate the form from the schema
+    generateConfigForm(config, schema)
+    
     configStatus.textContent = '✓ Configuration loaded'
     configStatus.className = 'status-message success'
   } catch (e) {
@@ -614,10 +631,14 @@ async function loadConfig() {
 async function saveConfig() {
   const configStatus = document.getElementById('configStatus')
   const configJson = document.getElementById('configJson')
+  const configFormContainer = document.getElementById('configFormContainer')
 
   try {
     configStatus.textContent = 'Saving configuration...'
-    const config = JSON.parse(configJson.value)
+    
+    // Extract values from the form
+    const config = extractConfigFromForm()
+    
     const res = await fetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -630,6 +651,155 @@ async function saveConfig() {
   } catch (e) {
     configStatus.textContent = '✗ Error: ' + e.message
     configStatus.className = 'status-message error'
+  }
+}
+
+// Form generation and handling functions
+function generateConfigForm(config, schema) {
+  const container = document.getElementById('configFormContainer')
+  container.innerHTML = ''
+  
+  // Create a form element
+  const form = document.createElement('form')
+  form.id = 'configForm'
+  
+  // Generate form fields based on the schema
+  generateFormFields(config, schema, form, '')
+  
+  container.appendChild(form)
+}
+
+function generateFormFields(config, schema, parentElement, prefix) {
+  if (schema.type === 'object' && schema.properties) {
+    // Create a container for object properties
+    const fieldset = document.createElement('fieldset')
+    if (schema.title) {
+      const legend = document.createElement('legend')
+      legend.textContent = schema.title
+      fieldset.appendChild(legend)
+    }
+    
+    // Add description if available
+    if (schema.description) {
+      const description = document.createElement('div')
+      description.className = 'field-description'
+      description.textContent = schema.description
+      fieldset.appendChild(description)
+    }
+    
+    for (const [key, propertySchema] of Object.entries(schema.properties)) {
+      const fullKey = prefix ? `${prefix}.${key}` : key
+      const value = config[key]
+      
+      if (propertySchema.type === 'object') {
+        // Recursively handle nested objects
+        generateFormFields(value, propertySchema, fieldset, fullKey)
+      } else {
+        // Create form group for this property
+        const formGroup = document.createElement('div')
+        formGroup.className = 'form-group config-field'
+        
+        // Create label
+        const label = document.createElement('label')
+        label.setAttribute('for', fullKey)
+        label.textContent = propertySchema.title || key
+        formGroup.appendChild(label)
+        
+        // Add description if available
+        if (propertySchema.description) {
+          const desc = document.createElement('div')
+          desc.className = 'field-description'
+          desc.textContent = propertySchema.description
+          formGroup.appendChild(desc)
+        }
+        
+        // Create input based on type
+        let input
+        if (propertySchema.type === 'boolean') {
+          input = document.createElement('input')
+          input.type = 'checkbox'
+          input.checked = value || propertySchema.default || false
+        } else if (propertySchema.type === 'array') {
+          // For arrays, create a textarea
+          input = document.createElement('textarea')
+          input.rows = 4
+          const arrayValue = Array.isArray(value) ? value : (propertySchema.default || [])
+          input.value = arrayValue.join('\n')
+        } else if (propertySchema.type === 'number' || propertySchema.type === 'integer') {
+          input = document.createElement('input')
+          input.type = 'number'
+          input.value = value !== undefined ? value : (propertySchema.default || '')
+          if (propertySchema.minimum !== undefined) input.min = propertySchema.minimum
+          if (propertySchema.maximum !== undefined) input.max = propertySchema.maximum
+        } else {
+          // Default to text input
+          input = document.createElement('input')
+          input.type = 'text'
+          input.value = value !== undefined ? value : (propertySchema.default || '')
+        }
+        
+        input.id = fullKey
+        input.name = fullKey
+        formGroup.appendChild(input)
+        
+        fieldset.appendChild(formGroup)
+      }
+    }
+    
+    parentElement.appendChild(fieldset)
+  }
+}
+
+function extractConfigFromForm() {
+  const form = document.getElementById('configForm')
+  const formData = new FormData(form)
+  const config = {}
+  
+  // Process all form elements
+  for (const [key, value] of formData.entries()) {
+    setNestedProperty(config, key, value)
+  }
+  
+  // Process checkboxes separately since they don't appear in FormData if unchecked
+  const checkboxes = form.querySelectorAll('input[type="checkbox"]')
+  checkboxes.forEach(checkbox => {
+    const key = checkbox.name
+    setNestedProperty(config, key, checkbox.checked)
+  })
+  
+  // Process textareas for arrays
+  const textareas = form.querySelectorAll('textarea')
+  textareas.forEach(textarea => {
+    const key = textarea.name
+    if (textarea.value.includes('\n')) {
+      const arrayValue = textarea.value.split('\n').filter(item => item.trim() !== '')
+      setNestedProperty(config, key, arrayValue)
+    }
+ })
+  
+  return config
+}
+
+function setNestedProperty(obj, path, value) {
+  const parts = path.split('.')
+  let current = obj
+  
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (!current[parts[i]]) {
+      current[parts[i]] = {}
+    }
+    current = current[parts[i]]
+  }
+  
+  // Try to parse as JSON if it looks like an array or object
+  if (typeof value === 'string' && (value.startsWith('[') || value.startsWith('{'))) {
+    try {
+      current[parts[parts.length - 1]] = JSON.parse(value)
+    } catch {
+      current[parts[parts.length - 1]] = value
+    }
+  } else {
+    current[parts[parts.length - 1]] = value
   }
 }
 

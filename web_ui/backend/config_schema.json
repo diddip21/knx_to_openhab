@@ -1,0 +1,374 @@
+{
+  "title": "KNX to OpenHAB Configuration",
+  "description": "Configuration settings for the KNX to OpenHAB converter",
+  "type": "object",
+  "properties": {
+    "general": {
+      "type": "object",
+      "title": "General Settings",
+      "properties": {
+        "FloorNameFromDescription": {
+          "type": "boolean",
+          "title": "Floor Name From Description",
+          "description": "Extract floor names from description field",
+          "default": false
+        },
+        "FloorNameAsItIs": {
+          "type": "boolean",
+          "title": "Floor Name As Is",
+          "description": "Use floor names exactly as they appear",
+          "default": false
+        },
+        "RoomNameFromDescription": {
+          "type": "boolean",
+          "title": "Room Name From Description",
+          "description": "Extract room names from description field",
+          "default": false
+        },
+        "RoomNameAsItIs": {
+          "type": "boolean",
+          "title": "Room Name As Is",
+          "description": "Use room names exactly as they appear",
+          "default": false
+        },
+        "addMissingItems": {
+          "type": "boolean",
+          "title": "Add Missing Items",
+          "description": "Add items without floor/room to a default location",
+          "default": true
+        },
+        "unknown_floorname": {
+          "type": "string",
+          "title": "Unknown Floor Name",
+          "description": "Default name for unknown floors",
+          "default": "unknown"
+        },
+        "unknown_roomname": {
+          "type": "string",
+          "title": "Unknown Room Name",
+          "description": "Default name for unknown rooms",
+          "default": "unknown"
+        },
+        "item_Floor_nameshort_prefix": {
+          "type": "string",
+          "title": "Floor Name Short Prefix",
+          "description": "Prefix for short floor names",
+          "default": "="
+        },
+        "item_Room_nameshort_prefix": {
+          "type": "string",
+          "title": "Room Name Short Prefix",
+          "description": "Prefix for short room names",
+          "default": "+"
+        }
+      }
+    },
+    "regexpattern": {
+      "type": "object",
+      "title": "Regular Expression Patterns",
+      "properties": {
+        "item_Floor": {
+          "type": "string",
+          "title": "Floor Pattern",
+          "description": "Regular expression to match floor names",
+          "default": "^=?[1-9\\.A-Z]{1,5}"
+        },
+        "item_Floor_nameshort": {
+          "type": "string",
+          "title": "Floor Short Name Pattern",
+          "description": "Regular expression to match short floor names",
+          "default": "^=?[a-zA-Z]{1,5}\\b"
+        },
+        "item_Room": {
+          "type": "string",
+          "title": "Room Pattern",
+          "description": "Regular expression to match room names",
+          "default": "\\++[A-Z].[0-9]+"
+        },
+        "items_Name": {
+          "type": "string",
+          "title": "Item Name Pattern",
+          "description": "Regular expression to match item names",
+          "default": "[^A-Za-z0-9_]+"
+        },
+        "items_Label": {
+          "type": "string",
+          "title": "Item Label Pattern",
+          "description": "Regular expression to match item labels",
+          "default": "^\\[\\w*\\]\\@\\s?(\\+RM(\\d+(\\/|\\\\|-)*)*(\\d+))*\\s|:\\(.*\\)\\s?"
+        }
+      }
+    },
+    "defines": {
+      "type": "object",
+      "title": "Device Type Definitions",
+      "properties": {
+        "switch": {
+          "type": "object",
+          "title": "Switch Configuration",
+          "properties": {
+            "switch_suffix": {
+              "type": "array",
+              "title": "Switch Suffixes",
+              "description": "Keywords that identify switch-type devices",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "Schalten",
+                ":(An/Aus)",
+                ":(Schalten)",
+                "Ein/Aus",
+                "Schalten EIN/AUS",
+                "HCL starten"
+              ]
+            },
+            "status_suffix": {
+              "type": "array",
+              "title": "Status Suffixes",
+              "description": "Keywords that identify status devices",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "Status",
+                " RM",
+                "Rückmeldung",
+                ":(RM Schalten)",
+                "Status Ein/Aus",
+                "Status Aktorkanal",
+                "HCL Status"
+              ]
+            }
+          }
+        },
+        "dimmer": {
+          "type": "object",
+          "title": "Dimmer Configuration",
+          "properties": {
+            "absolut_suffix": {
+              "type": "array",
+              "title": "Absolute Suffixes",
+              "description": "Keywords that identify absolute dimmer devices",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "Dimmen absolut",
+                ":(Dimm Wert)",
+                "Absolute Lamellenposition",
+                "Helligkeitswert"
+              ]
+            },
+            "status_suffix": {
+              "type": "array",
+              "title": "Dimmer Status Suffixes",
+              "description": "Keywords that identify dimmer status devices",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "Rückmeldung Dimmen",
+                "Dimmen Rückmeldung",
+                "Dimmen rm",
+                "Status Dimmwert",
+                ":(Status Dimm Wert)",
+                "Status Absolute Lamellenposition",
+                "Status akt. Lamellenposition",
+                "Rückmeldung Helligkeitswert"
+              ]
+            },
+            "switch_suffix": {
+              "type": "array",
+              "title": "Dimmer Switch Suffixes",
+              "description": "Keywords that identify dimmer switch devices",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "Schalten",
+                ":(An/Aus)",
+                ":(Schalten)",
+                "Ein/Aus",
+                "Schalten EIN/AUS"
+              ]
+            },
+            "switch_status_suffix": {
+              "type": "array",
+              "title": "Dimmer Switch Status Suffixes",
+              "description": "Keywords that identify dimmer switch status devices",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "Status Ein/Aus",
+                "Rückmeldung",
+                "Schalten Rückmeldung",
+                "Schalten rm",
+                ":(Status An/Aus)",
+                "Rückmeldung Schalten"
+              ]
+            },
+            "relativ_suffix": {
+              "type": "array",
+              "title": "Relative Suffixes",
+              "description": "Keywords that identify relative dimmer devices",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "Dimmen relativ",
+                ":(Heller/Dunkler)",
+                "Dimmen"
+              ]
+            }
+          }
+        },
+        "rollershutter": {
+          "type": "object",
+          "title": "Rollershutter Configuration",
+          "properties": {
+            "up_down_suffix": {
+              "type": "array",
+              "title": "Up/Down Suffixes",
+              "description": "Keywords that identify up/down roller shutter devices",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "Auf/Ab",
+                ":(Jalousie Auf/Ab)",
+                ":(Rolladen Auf/Ab)",
+                "Rollladen Auf/Ab",
+                "Jalousie Auf/Ab",
+                "Single Object Control"
+              ]
+            },
+            "stop_suffix": {
+              "type": "array",
+              "title": "Stop Suffixes",
+              "description": "Keywords that identify stop roller shutter devices",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "Stop",
+                "Stop/Lamellen",
+                "Lamellen",
+                ":(Lamellenverstellung/Stop)",
+                ":(Stop)",
+                "Stopp",
+                "Lamellenverstellung / Stopp"
+              ]
+            },
+            "absolute_position_suffix": {
+              "type": "array",
+              "title": "Absolute Position Suffixes",
+              "description": "Keywords that identify absolute position roller shutter devices",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "absolute Position",
+                ":(Absolute Position)"
+              ]
+            },
+            "status_suffix": {
+              "type": "array",
+              "title": "Rollershutter Status Suffixes",
+              "description": "Keywords that identify roller shutter status devices",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "Status",
+                "Rückmeldung",
+                ":(Status Absolute Position)",
+                ":(Status aktuelle Position)",
+                "Status aktuelle Position"
+              ]
+            }
+          }
+        },
+        "heating": {
+          "type": "object",
+          "title": "Heating Configuration",
+          "properties": {
+            "level_suffix": {
+              "type": "array",
+              "title": "Heating Level Suffixes",
+              "description": "Keywords that identify heating level devices",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "Betriebsmodus",
+                "Betriebsartvorwahl"
+              ]
+            },
+            "status_level_suffix": {
+              "type": "array",
+              "title": "Heating Status Level Suffixes",
+              "description": "Keywords that identify heating status level devices",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "Status Betriebsmodus",
+                "DPT_HVAC Mode: Reglerstatus senden"
+              ]
+            }
+          }
+        },
+        "drop_words": {
+          "type": "array",
+          "title": "Drop Words",
+          "description": "Words to be ignored in device names",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "Fensterkontakt",
+            "Licht",
+            "Steckdose",
+            "Steckdosen",
+            "Strom",
+            "Leistung",
+            "AUF/ZU",
+            "AUF"
+          ]
+        }
+      }
+    },
+    "datapoint_mappings": {
+      "type": "object",
+      "title": "Datapoint Type Mappings",
+      "description": "Mapping of datapoint types to OpenHAB item types and metadata"
+    },
+    "devices": {
+      "type": "object",
+      "title": "Device Configuration",
+      "properties": {
+        "gateway": {
+          "type": "object",
+          "title": "Gateway Configuration",
+          "properties": {
+            "hardware_name": {
+              "type": "array",
+              "title": "Gateway Hardware Names",
+              "description": "List of hardware names for KNX gateways",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "IP Interface Secure",
+                "KNX IP Interface"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "required": ["general", "regexpattern", "defines", "datapoint_mappings", "devices"]
+}

@@ -305,7 +305,11 @@ if FLASK_AVAILABLE:
     def get_config():
         """Get the current configuration."""
         try:
-            return jsonify(cfg)
+            # Load the main config.json file which contains knxproject_to_openhab settings
+            main_config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config.json')
+            with open(main_config_path, 'r', encoding='utf-8') as f:
+                main_config = json.load(f)
+            return jsonify(main_config)
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
@@ -321,15 +325,23 @@ if FLASK_AVAILABLE:
             if not isinstance(new_config, dict):
                 return jsonify({'error': 'Config must be a JSON object'}), 400
             
-            # Update the in-memory config
-            cfg.update(new_config)
-            
-            # Save to the config file
-            config_path = os.path.join(os.path.dirname(__file__), 'config.json')
-            with open(config_path, 'w') as f:
-                json.dump(cfg, f, indent=2)
+            # Save to the main config file (which contains knxproject_to_openhab settings)
+            main_config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config.json')
+            with open(main_config_path, 'w', encoding='utf-8') as f:
+                json.dump(new_config, f, indent=2)
             
             return jsonify({'message': 'Configuration updated successfully'})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/config/schema', methods=['GET'])
+    def get_config_schema():
+        """Get the configuration schema."""
+        try:
+            schema_path = os.path.join(os.path.dirname(__file__), 'config_schema.json')
+            with open(schema_path, 'r', encoding='utf-8') as f:
+                schema = json.load(f)
+            return jsonify(schema)
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 

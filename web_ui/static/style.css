@@ -141,6 +141,61 @@ button:disabled {
 .status-message.success {
   background: #d5f4e6;
   color: var(--success-green);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+input[type="file"] {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--text-dark);
+}
+
+button {
+  background: var(--primary-blue);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+button:hover {
+  background: var(--primary-dark-blue);
+  box-shadow: var(--hover-shadow);
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  background: var(--secondary-gray);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.status-message {
+  padding: 12px 15px;
+  margin: 10px 0;
+  border-radius: 4px;
+  background: var(--lighter-gray);
+  color: var(--text-dark);
+  border-left: 4px solid var(--primary-blue);
+}
+
+.status-message.error {
+  background: #fadbd8;
+  color: var(--danger-red);
+  border-left-color: var(--danger-red);
+}
+
+.status-message.success {
+  background: #d5f4e6;
+  color: var(--success-green);
   border-left-color: var(--success-green);
 }
 

@@ -408,13 +408,15 @@ if FLASK_AVAILABLE:
             if house:
                 for building_data in house:
                     building_info = {
-                        'name': building_data.get('name_long', building_data.get('name', 'Unknown Building')),
+                        'name': building_data.get('Description', building_data.get('Group name', 'Unknown Building')),
+                        'description': building_data.get('name_long', ''),
                         'floors': []
                     }
                     
                     for floor_data in building_data.get('floors', []):
                         floor_info = {
-                            'name': floor_data.get('name_long', floor_data.get('name', 'Unknown Floor')),
+                            'name': floor_data.get('Description', floor_data.get('Group name', 'Unknown Floor')),
+                            'description': floor_data.get('name_long', ''),
                             'rooms': []
                         }
                         
@@ -430,7 +432,8 @@ if FLASK_AVAILABLE:
                                 formatted_addresses.append(formatted_addr)
                             
                             room_info = {
-                                'name': room_data.get('name_long', room_data.get('name', 'Unknown Room')),
+                                'name': room_data.get('Description', room_data.get('Group name', 'Unknown Room')),
+                                'description': room_data.get('name_long', ''),
                                 'address_count': len(formatted_addresses),
                                 'device_count': len(room_data.get('devices', [])),
                                 'addresses': formatted_addresses
@@ -451,6 +454,119 @@ if FLASK_AVAILABLE:
                 os.remove(temp_path)
             except:
                 pass
+
+    @app.route('/api/job/<job_id>/preview', methods=['GET'])
+    def job_preview(job_id):
+        """Generate structure preview for a past job."""
+        job = job_mgr.get_job(job_id)
+        if not job:
+            return jsonify({'error': 'job not found'}), 404
+        
+        input_path = job.get('input')
+        if not input_path or not os.path.exists(input_path):
+            return jsonify({'error': 'job input file not found'}), 404
+            
+        try:
+            password = job.get('password')
+            
+            # Load project (json dump or parse knxproj)
+            if input_path.lower().endswith('.json'):
+                with open(input_path, 'r', encoding='utf8') as file:
+                    project = json.load(file)
+            else:
+                # Parse knxproj archive using XKNXProj
+                from xknxproject.xknxproj import XKNXProj
+                knxproj = XKNXProj(path=input_path, password=password, language='de-DE')
+                project = knxproj.parse()
+            
+            # Extract project metadata
+            import importlib
+            knxmod = importlib.import_module('knxproject_to_openhab')
+            
+            # Get building structure
+            building = knxmod.create_building(project)
+            addresses = knxmod.get_addresses(project)
+            house = knxmod.put_addresses_in_building(building, addresses, project)
+            
+            # Extract metadata
+            project_name = house[0].get('name_long') if house else None
+            gateway_ip = knxmod.get_gateway_ip(project)
+            homekit_enabled = knxmod.is_homekit_enabled(project)
+            alexa_enabled = knxmod.is_alexa_enabled(project)
+            
+            # Detect unknown items (addresses without proper room/floor assignments or with default names)
+            unknown_items = []
+            for addr in addresses:
+                floor_name = addr.get('Floor', '').strip()
+                room_name = addr.get('Room', '').strip()
+                
+                # Check if floor or room is unknown/empty
+                if (not floor_name or floor_name.upper() in ['UNKNOWN', 'UNBEKANNT']) or \
+                   (not room_name or room_name.upper() in ['UNKNOWN', 'UNBEKANNT']) or \
+                   (not floor_name and not room_name):  # Items without both floor and room
+                    unknown_items.append({
+                        'name': addr.get('Group name', 'Unknown Address'),
+                        'address': addr.get('Address', 'N/A'),
+                        'floor': floor_name or 'None',
+                        'room': room_name or 'None'
+                    })
+            
+            # Build preview structure
+            preview_data = {
+                'metadata': {
+                    'project_name': project_name,
+                    'gateway_ip': gateway_ip,
+                    'homekit_enabled': homekit_enabled,
+                    'alexa_enabled': alexa_enabled,
+                    'total_addresses': len(addresses),
+                    'unknown_items': unknown_items
+                },
+                'buildings': []
+            }
+            
+            if house:
+                for building_data in house:
+                    building_info = {
+                        'name': building_data.get('Description', building_data.get('Group name', 'Unknown Building')),
+                        'description': building_data.get('name_long', ''),
+                        'floors': []
+                    }
+                    
+                    for floor_data in building_data.get('floors', []):
+                        floor_info = {
+                            'name': floor_data.get('Description', floor_data.get('Group name', 'Unknown Floor')),
+                            'description': floor_data.get('name_long', ''),
+                            'rooms': []
+                        }
+                        
+                        for room_data in floor_data.get('rooms', []):
+                            # Format addresses to ensure they have the required fields
+                            raw_addresses = room_data.get('Addresses', [])
+                            formatted_addresses = []
+                            for addr in raw_addresses:
+                                formatted_addr = {
+                                    'Group name': addr.get('Group name', addr.get('name', 'Unknown Address')),
+                                    'Address': addr.get('Address', addr.get('address', 'N/A'))
+                                }
+                                formatted_addresses.append(formatted_addr)
+                            
+                            room_info = {
+                                'name': room_data.get('Description', room_data.get('Group name', 'Unknown Room')),
+                                'description': room_data.get('name_long', ''),
+                                'address_count': len(formatted_addresses),
+                                'device_count': len(room_data.get('devices', [])),
+                                'addresses': formatted_addresses
+                            }
+                            floor_info['rooms'].append(room_info)
+                        
+                        building_info['floors'].append(floor_info)
+                    
+                    preview_data['buildings'].append(building_info)
+            
+            return jsonify(preview_data)
+            
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
 
     if __name__ == '__main__':
         host = cfg.get('bind_host', '0.0.0.0')

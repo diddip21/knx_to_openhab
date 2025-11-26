@@ -184,10 +184,34 @@ class JobManager:
             
             
             # Compute detailed statistics by comparing with backup
-            job['stats'] = self._compute_detailed_stats(openhab_path, backup_path)
-            for fn, stat in sorted(job['stats'].items()):
-                msg = f"{fn}: {stat['before']} → {stat['after']} lines ({stat['delta']:+d}) [+{stat['added']}/-{stat['removed']}]"
-                q.put({'type': 'stats', 'level': 'info', 'message': msg})
+            try:
+                job['stats'] = self._compute_detailed_stats(openhab_path, backup_path)
+                
+                # Validate statistics before logging
+                if not isinstance(job['stats'], dict):
+                    q.put({'type': 'error', 'level': 'error', 'message': 'Statistics calculation returned invalid data'})
+                    job['stats'] = {}
+                else:
+                    # Log statistics with validation
+                    for fn, stat in sorted(job['stats'].items()):
+                        # Validate individual file statistics
+                        if not isinstance(stat, dict) or not all(k in stat for k in ['before', 'after', 'delta', 'added', 'removed']):
+                            q.put({'type': 'warning', 'level': 'warning', 'message': f'Invalid statistics for file: {fn}'})
+                            continue
+                        
+                        # Ensure numerical values
+                        before = int(stat.get('before', 0))
+                        after = int(stat.get('after', 0))
+                        delta = int(stat.get('delta', after - before))
+                        added = int(stat.get('added', 0))
+                        removed = int(stat.get('removed', 0))
+                        
+                        msg = f"{fn}: {before} → {after} lines ({delta:+d}) [+{added}/-{removed}]"
+                        q.put({'type': 'stats', 'level': 'info', 'message': msg})
+                        
+            except Exception as stats_error:
+                q.put({'type': 'error', 'level': 'error', 'message': f'Statistics calculation failed: {str(stats_error)}'})
+                job['stats'] = {}
             
             job['status'] = 'completed'
             q.put({'type': 'status', 'level': 'info', 'message': 'completed'})
@@ -207,21 +231,32 @@ class JobManager:
     def _compute_detailed_stats(self, openhab_path, backup_path):
         """Compute detailed diff stats (added, removed) by comparing current files with backup."""
         import difflib
+        import logging
+        logger = logging.getLogger(__name__)
         stats = {}
+        
+        # Comprehensive file type detection for OpenHAB files
+        supported_extensions = {
+            '.items', '.things', '.sitemap', '.rules', '.persist', 
+            '.script', '.transform', '.db', '.cfg', '.properties'
+        }
         
         # Get list of current files
         current_files = {}
         if os.path.exists(openhab_path):
             for root, dirs, files in os.walk(openhab_path):
                 for fname in files:
-                    if any(fname.endswith(ext) for ext in ['.items', '.things', '.sitemap', '.rules', '.persist']):
+                    # Check if file has supported extension or is in known OpenHAB directories
+                    if (any(fname.endswith(ext) for ext in supported_extensions) or
+                        any(root.endswith(dir_name) for dir_name in ['items', 'things', 'sitemaps', 'rules', 'persistence', 'scripts', 'transform'])):                        
                         fpath = os.path.join(root, fname)
-                        relpath = os.path.relpath(fpath, openhab_path).replace('\\', '/')
                         try:
                             with open(fpath, 'r', encoding='utf8', errors='ignore') as f:
-                                current_files[relpath] = f.readlines()
-                        except Exception:
-                            pass
+                                lines = f.readlines()
+                                current_files[fname] = lines  # Store temporarily with just filename
+                        except Exception as e:
+                            logger.warning(f"Could not read current file {fpath}: {e}")
+                            continue
 
         # Get list of original files from backup
         original_files = {}
@@ -229,26 +264,34 @@ class JobManager:
             try:
                 with tarfile.open(backup_path, 'r:gz') as tar:
                     for member in tar.getmembers():
-                        if member.isfile() and any(member.name.endswith(ext) for ext in ['.items', '.things', '.sitemap', '.rules', '.persist']):
-                            # member.name is like "openhab/items/knx.items"
-                            # we need relative path from openhab root
-                            # assuming backup structure is openhab/...
-                            parts = member.name.replace('\\', '/').split('/', 1)
-                            if len(parts) > 1:
-                                relpath = parts[1]
-                                f = tar.extractfile(member)
-                                if f:
-                                    wrapper = io.TextIOWrapper(f, encoding='utf-8', errors='ignore')
-                                    original_files[relpath] = wrapper.readlines()
+                        if member.isfile():
+                            member_name_normalized = member.name.replace('\\', '/')
+                            
+                            # Extract relative path more robustly
+                            relpath = self._extract_relative_path_from_backup(member_name_normalized)
+                            
+                            if relpath and self._is_supported_openhab_file(relpath):
+                                try:
+                                    f = tar.extractfile(member)
+                                    if f:
+                                        wrapper = io.TextIOWrapper(f, encoding='utf-8', errors='ignore')
+                                        lines = wrapper.readlines()
+                                        original_files[relpath] = lines
+                                except Exception as e:
+                                    logger.warning(f"Could not extract file from backup {member.name}: {e}")
+                                    continue
             except Exception as e:
-                # Log error but continue
-                print(f"Error reading backup for stats: {e}")
+                logger.error(f"Error reading backup for stats: {e}")
+                return {}
 
+        # Normalize current file paths to match backup format
+        normalized_current_files = self._normalize_current_files(current_files, openhab_path)
+        
         # Compute diffs
-        all_files = set(current_files.keys()) | set(original_files.keys())
+        all_files = set(normalized_current_files.keys()) | set(original_files.keys())
         for fname in sorted(all_files):
             orig_lines = original_files.get(fname, [])
-            curr_lines = current_files.get(fname, [])
+            curr_lines = normalized_current_files.get(fname, [])
             
             matcher = difflib.SequenceMatcher(None, orig_lines, curr_lines)
             added = 0
@@ -271,6 +314,70 @@ class JobManager:
             }
             
         return stats
+
+    def _extract_relative_path_from_backup(self, member_name):
+        """Extract relative path from backup member name, handling various archive structures."""
+        # Handle different possible archive structures:
+        # 1. "openhab/items/knx.items"
+        # 2. "items/knx.items" 
+        # 3. "knx.items"
+        
+        parts = member_name.split('/')
+        
+        # Find the index of 'openhab' if present
+        openhab_idx = -1
+        for i, part in enumerate(parts):
+            if part == 'openhab':
+                openhab_idx = i
+                break
+        
+        if openhab_idx >= 0 and len(parts) > openhab_idx + 1:
+            # Structure: path/to/openhab/relative/file
+            relpath = '/'.join(parts[openhab_idx + 1:])
+        elif len(parts) >= 2 and parts[0] in ['items', 'things', 'sitemaps', 'rules', 'persistence', 'scripts', 'transform']:
+            # Structure: items/knx.items
+            relpath = '/'.join(parts)
+        else:
+            # Structure: knx.items or unknown
+            relpath = parts[-1] if parts else member_name
+            
+        return relpath
+
+    def _is_supported_openhab_file(self, relpath):
+        """Check if a file path represents a supported OpenHAB configuration file."""
+        supported_extensions = {
+            '.items', '.things', '.sitemap', '.rules', '.persist', 
+            '.script', '.transform', '.db', '.cfg', '.properties'
+        }
+        
+        # Check file extension
+        if any(relpath.endswith(ext) for ext in supported_extensions):
+            return True
+            
+        # Check if it's in a known OpenHAB directory
+        path_parts = relpath.split('/')
+        if len(path_parts) >= 2:
+            dirname = path_parts[0]
+            known_dirs = ['items', 'things', 'sitemaps', 'rules', 'persistence', 'scripts', 'transform']
+            if dirname in known_dirs:
+                return True
+                
+        return False
+
+    def _normalize_current_files(self, current_files, openhab_path):
+        """Normalize current file paths to match backup format."""
+        normalized = {}
+        
+        for filename, lines in current_files.items():
+            # Find the full path of this file
+            for root, dirs, files in os.walk(openhab_path):
+                if filename in files:
+                    fpath = os.path.join(root, filename)
+                    relpath = os.path.relpath(fpath, openhab_path).replace('\\', '/')
+                    normalized[relpath] = lines
+                    break
+                    
+        return normalized
 
     def get_file_diff(self, job_id, rel_path):
         """Get diff for a specific file in a job."""

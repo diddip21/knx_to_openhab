@@ -19,6 +19,8 @@ let currentJobId = null
 let logLevelFilter = 'all'  // all, debug, info, warning, error
 let allLogEntries = []  // store all entries for filtering
 let eventSource = null  // track active event stream
+let currentStatsData = null  // store current statistics for consistent display
+let statsUpdateInProgress = false  // prevent race conditions
 
 async function refreshJobs() {
   const res = await fetch('/api/jobs')
@@ -33,6 +35,7 @@ async function refreshJobs() {
       <span class="job-name">${j.name}</span>
       <span class="job-date">${new Date(j.created * 1000).toLocaleString()}</span>
       <button onclick="showJobDetail('${j.id}')">Details</button>
+      <button onclick="loadStructureFromJob('${j.id}')">Structure</button>
       ${j.backups && j.backups.length > 0 ? `<button onclick="showRollbackDialog('${j.id}')">Rollback</button>` : ''}
       <button onclick="deleteJob('${j.id}')">Delete</button>
     `
@@ -63,31 +66,7 @@ function showJobDetail(jobId) {
       `
 
       // Display file statistics if available
-      if (j.stats && Object.keys(j.stats).length > 0) {
-        let statsHtml = '<h3>Generated Files</h3><table class="stats-table"><tr><th>File</th><th>Before</th><th>After</th><th>Change</th><th>Diff</th><th>Action</th></tr>'
-        for (const [fname, stat] of Object.entries(j.stats)) {
-          const deltaClass = stat.delta > 0 ? 'positive' : stat.delta < 0 ? 'negative' : 'neutral'
-          const deltaStr = stat.delta >= 0 ? `+${stat.delta}` : `${stat.delta}`
-
-          // Detailed diff info
-          let diffHtml = ''
-          if (stat.added !== undefined) {
-            if (stat.added > 0) diffHtml += `<span class="badge success" style="margin-right:5px">+${stat.added}</span>`
-            if (stat.removed > 0) diffHtml += `<span class="badge error">-${stat.removed}</span>`
-            if (stat.added === 0 && stat.removed === 0) diffHtml = '<span class="neutral">-</span>'
-          } else {
-            diffHtml = '<span class="neutral">-</span>'
-          }
-
-          // Escape backslashes for HTML onclick attribute (double escape needed)
-          const escapedFname = fname.replace(/\\/g, '\\\\')
-          statsHtml += `<tr><td>${fname}</td><td>${stat.before}</td><td>${stat.after}</td><td class="${deltaClass}">${deltaStr}</td><td>${diffHtml}</td><td><button onclick="previewFile('${escapedFname}')">Preview</button></td></tr>`
-        }
-        statsHtml += '</table>'
-        if (statsEl) statsEl.innerHTML = statsHtml
-      } else {
-        if (statsEl) statsEl.innerHTML = ''
-      }
+      updateStatisticsDisplay(j.stats)
 
       // Load stored log entries from job.log
       if (j.log && j.log.length > 0) {
@@ -480,6 +459,38 @@ if (logLevelFilterEl) {
   })
 }
 
+async function loadStructureFromJob(jobId) {
+  const statusEl = document.getElementById('status')
+  const previewSection = document.getElementById('preview-section')
+  
+  statusEl.textContent = 'Loading structure from job...'
+  statusEl.className = 'status-message'
+  
+  try {
+    const res = await fetch(`/api/job/${jobId}/preview`)
+    if (!res.ok) {
+      const error = await res.json()
+      throw new Error(error.error || 'Failed to load structure from job')
+    }
+    const preview = await res.json()
+    
+    currentPreviewMetadata = preview.metadata
+    displayBuildingPreview(preview)
+    
+    // Show preview section
+    previewSection.style.display = 'block'
+    
+    statusEl.textContent = '✓ Structure loaded from job history'
+    statusEl.className = 'status-message success'
+    
+    // Scroll to preview
+    previewSection.scrollIntoView({ behavior: 'smooth' })
+  } catch (e) {
+    statusEl.textContent = '✗ Error: ' + e.message
+    statusEl.className = 'status-message error'
+  }
+}
+
 function renderLog() {
   let filtered = allLogEntries
   if (logLevelFilter !== 'all') {
@@ -505,6 +516,80 @@ function escapeHtml(text) {
     "'": '&#039;'
   }
   return text.replace(/[&<>"']/g, m => map[m])
+}
+
+// Centralized statistics display function to prevent race conditions
+function updateStatisticsDisplay(stats) {
+  // Prevent concurrent updates
+  if (statsUpdateInProgress) {
+    console.log('Statistics update in progress, queuing new update')
+    setTimeout(() => updateStatisticsDisplay(stats), 100)
+    return
+  }
+  
+  statsUpdateInProgress = true
+  
+  try {
+    const statsEl = document.getElementById('stats')
+    if (!statsEl) {
+      statsUpdateInProgress = false
+      return
+    }
+    
+    if (stats && Object.keys(stats).length > 0) {
+      let statsHtml = '<h3>Generated Files</h3><table class="stats-table"><tr><th>File</th><th>Before</th><th>After</th><th>Change</th><th>Diff</th><th>Action</th></tr>'
+      
+      // Sort files for consistent display order
+      const sortedStats = Object.entries(stats).sort(([a], [b]) => a.localeCompare(b))
+      
+      for (const [fname, stat] of sortedStats) {
+        // Validate statistics data
+        const before = typeof stat.before === 'number' ? stat.before : 0
+        const after = typeof stat.after === 'number' ? stat.after : 0
+        const delta = typeof stat.delta === 'number' ? stat.delta : (after - before)
+        const added = typeof stat.added === 'number' ? stat.added : 0
+        const removed = typeof stat.removed === 'number' ? stat.removed : 0
+
+        const deltaClass = delta > 0 ? 'positive' : delta < 0 ? 'negative' : 'neutral'
+        const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`
+
+        // Detailed diff info
+        let diffHtml = ''
+        if (added > 0) diffHtml += `<span class="badge success" style="margin-right:5px">+${added}</span>`
+        if (removed > 0) diffHtml += `<span class="badge error">-${removed}</span>`
+        if (added === 0 && removed === 0) diffHtml = '<span class="neutral">-</span>'
+
+        // Escape backslashes for HTML onclick attribute (double escape needed)
+        const escapedFname = fname.replace(/\\/g, '\\\\')
+        statsHtml += `<tr>
+          <td>${escapeHtml(fname)}</td>
+          <td>${before}</td>
+          <td>${after}</td>
+          <td class="${deltaClass}">${deltaStr}</td>
+          <td>${diffHtml}</td>
+          <td><button onclick="previewFile('${escapedFname}')">Preview</button></td>
+        </tr>`
+      }
+      
+      statsHtml += '</table>'
+      statsEl.innerHTML = statsHtml
+      
+      // Store for consistency checks
+      currentStatsData = JSON.parse(JSON.stringify(stats))
+      
+    } else {
+      statsEl.innerHTML = '<p>No statistics available</p>'
+      currentStatsData = null
+    }
+  } catch (error) {
+    console.error('Error updating statistics display:', error)
+    const statsEl = document.getElementById('stats')
+    if (statsEl) {
+      statsEl.innerHTML = '<p class="error">Error displaying statistics</p>'
+    }
+  } finally {
+    statsUpdateInProgress = false
+  }
 }
 
 // Configuration Management
@@ -630,38 +715,38 @@ function displayBuildingPreview(preview) {
     treeHtml += `<div class="tree-node building-node">
       <div class="tree-node-header" onclick="toggleTreeNode(this)">
         <span class="tree-icon">▶</span>
-        <span class="tree-label">🏢 ${escapeHtml(building.name)}</span>
+        <span class="tree-label">🏢 ${escapeHtml(building.name)}${building.description ? ` (${escapeHtml(building.description)})` : ''}</span>
         <span class="tree-count">${building.floors.length} floor(s)</span>
       </div>
       <div class="tree-children" style="display:none;">`
 
-    for (const floor of building.floors) {
-      treeHtml += `<div class="tree-node floor-node">
-        <div class="tree-node-header" onclick="toggleTreeNode(this)">
-          <span class="tree-icon">▶</span>
-          <span class="tree-label">🏠 ${escapeHtml(floor.name)}</span>
-          <span class="tree-count">${floor.rooms.length} room(s)</span>
-        </div>
-        <div class="tree-children" style="display:none;">`
+  for (const floor of building.floors) {
+    treeHtml += `<div class="tree-node floor-node">
+      <div class="tree-node-header" onclick="toggleTreeNode(this)">
+        <span class="tree-icon">▶</span>
+        <span class="tree-label">🏠 ${escapeHtml(floor.name)}${floor.description ? ` (${escapeHtml(floor.description)})` : ''}</span>
+        <span class="tree-count">${floor.rooms.length} room(s)</span>
+      </div>
+      <div class="tree-children" style="display:none;">`
 
-      for (const room of floor.rooms) {
-        const hasAddresses = room.addresses && room.addresses.length > 0;
-        treeHtml += `<div class="tree-node room-node">
-          <div class="tree-node-header" onclick="toggleTreeNode(this)">
-            <span class="tree-icon">${hasAddresses ? '▶' : '•'}</span>
-            <span class="tree-label">🚪 ${escapeHtml(room.name)}</span>
-            <span class="tree-count">${room.address_count} address(es), ${room.device_count} device(s)}</span>
-          </div>
-          ${hasAddresses ? `
-          <div class="tree-children" style="display:none;">
-            <div class="room-addresses">
-              <div class="address-list">
-                ${room.addresses.map(addr => `<div class="address-item">${escapeHtml(addr['Group name'])} (${addr.Address})</div>`).join('')}
-              </div>
+    for (const room of floor.rooms) {
+      const hasAddresses = room.addresses && room.addresses.length > 0;
+      treeHtml += `<div class="tree-node room-node">
+        <div class="tree-node-header" onclick="toggleTreeNode(this)">
+          <span class="tree-icon">${hasAddresses ? '▶' : '•'}</span>
+          <span class="tree-label">🚪 ${escapeHtml(room.name)}${room.description ? ` (${escapeHtml(room.description)})` : ''}</span>
+          <span class="tree-count">${room.address_count} address(es), ${room.device_count} device(s)}</span>
+        </div>
+        ${hasAddresses ? `
+        <div class="tree-children" style="display:none;">
+          <div class="room-addresses">
+            <div class="address-list">
+              ${room.addresses.map(addr => `<div class="address-item">${escapeHtml(addr['Group name'])} (${addr.Address})</div>`).join('')}
             </div>
-          </div>` : ''}
-        </div>`
-      }
+          </div>
+        </div>` : ''}
+      </div>`
+    }
 
       treeHtml += `</div></div>`
     }
@@ -790,29 +875,7 @@ function startEvents(jobId) {
         }
 
         // Update statistics table
-        if (j.stats && Object.keys(j.stats).length > 0) {
-          let statsHtml = '<h3>Generated Files</h3><table class="stats-table"><tr><th>File</th><th>Before</th><th>After</th><th>Change</th><th>Diff</th><th>Action</th></tr>'
-          for (const [fname, stat] of Object.entries(j.stats)) {
-            const deltaClass = stat.delta > 0 ? 'positive' : stat.delta < 0 ? 'negative' : 'neutral'
-            const deltaStr = stat.delta >= 0 ? `+${stat.delta}` : `${stat.delta}`
-
-            // Detailed diff info
-            let diffHtml = ''
-            if (stat.added !== undefined) {
-              if (stat.added > 0) diffHtml += `<span class="badge success" style="margin-right:5px">+${stat.added}</span>`
-              if (stat.removed > 0) diffHtml += `<span class="badge error">-${stat.removed}</span>`
-              if (stat.added === 0 && stat.removed === 0) diffHtml = '<span class="neutral">-</span>'
-            } else {
-              diffHtml = '<span class="neutral">-</span>'
-            }
-
-            // Escape backslashes for HTML onclick attribute (double escape needed)
-            const escapedFname = fname.replace(/\\/g, '\\\\')
-            statsHtml += `<tr><td>${fname}</td><td>${stat.before}</td><td>${stat.after}</td><td class="${deltaClass}">${deltaStr}</td><td>${diffHtml}</td><td><button onclick="previewFile('${escapedFname}')">Preview</button></td></tr>`
-          }
-          statsHtml += '</table>'
-          if (statsEl) statsEl.innerHTML = statsHtml
-        }
+        updateStatisticsDisplay(j.stats)
       })
       .catch(err => {
         console.error('Failed to refresh job details:', err)

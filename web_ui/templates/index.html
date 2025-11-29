@@ -80,7 +80,7 @@
       <h2>📈 Generated Files Statistics</h2>
       <div id="stats"></div>
     </section>
-    
+
     <!-- Settings Panel -->
     <section id="settings-section" class="card collapsible">
       <div class="card-header" onclick="toggleSection('settings-content')">
@@ -88,13 +88,112 @@
         <span class="toggle-icon">▼</span>
       </div>
       <div id="settings-content" class="collapsible-content" style="display: none;">
-        <div class="settings-actions">
-          <button onclick="loadConfig()" class="btn-secondary">Load Config</button>
-          <button onclick="saveConfig()" class="btn-primary">Save Config</button>
+        <div class="tabs">
+          <button class="tab-btn active" onclick="switchTab('general')">General</button>
+          <button class="tab-btn" onclick="switchTab('devices')">Devices</button>
+          <button class="tab-btn" onclick="switchTab('mappings')">Mappings</button>
+          <button class="tab-btn" onclick="switchTab('definitions')">Definitions</button>
+          <button class="tab-btn" onclick="switchTab('advanced')">Advanced</button>
         </div>
-        <div id="configEditor" class="config-editor">
-          <div id="configFormContainer"></div>
-          <textarea id="configJson" rows="20" placeholder="Configuration will be loaded here..." style="display:none;"></textarea>
+
+        <div id="config-forms" class="config-forms">
+          <!-- General Tab -->
+          <div id="tab-general" class="tab-content active">
+            <div class="form-group">
+              <label>ETS Export Path</label>
+              <input type="text" id="conf-ets-export" class="form-control">
+            </div>
+            <div class="form-group">
+              <label>Items Path</label>
+              <input type="text" id="conf-items-path" class="form-control">
+            </div>
+            <div class="form-group">
+              <label>Things Path</label>
+              <input type="text" id="conf-things-path" class="form-control">
+            </div>
+            <div class="form-group">
+              <label>Sitemaps Path</label>
+              <input type="text" id="conf-sitemaps-path" class="form-control">
+            </div>
+            <div class="form-group">
+              <label>InfluxDB Path</label>
+              <input type="text" id="conf-influx-path" class="form-control">
+            </div>
+            <div class="form-group">
+              <label>Fenster Rules Path</label>
+              <input type="text" id="conf-fenster-path" class="form-control">
+            </div>
+
+            <fieldset>
+              <legend>Naming Conventions</legend>
+              <div class="checkbox-group">
+                <label><input type="checkbox" id="conf-floor-asis"> Floor Name As Is</label>
+                <label><input type="checkbox" id="conf-floor-desc"> Floor Name From Description</label>
+                <label><input type="checkbox" id="conf-room-asis"> Room Name As Is</label>
+                <label><input type="checkbox" id="conf-room-desc"> Room Name From Description</label>
+                <label><input type="checkbox" id="conf-add-missing"> Add Missing Items</label>
+              </div>
+            </fieldset>
+            <div class="form-group">
+              <label>Unknown Floor Name</label>
+              <input type="text" id="conf-unknown-floor" class="form-control">
+            </div>
+            <div class="form-group">
+              <label>Unknown Room Name</label>
+              <input type="text" id="conf-unknown-room" class="form-control">
+            </div>
+          </div>
+
+          <!-- Devices Tab -->
+          <div id="tab-devices" class="tab-content">
+            <h3>Gateway</h3>
+            <div class="form-group">
+              <label>Hardware Names (comma separated)</label>
+              <input type="text" id="conf-gateway-names" class="form-control">
+              <small>Names to identify the KNX IP Interface/Router</small>
+            </div>
+          </div>
+
+          <!-- Mappings Tab -->
+          <div id="tab-mappings" class="tab-content">
+            <div class="mappings-toolbar">
+              <input type="text" id="mappingSearch" placeholder="Search mappings..." onkeyup="filterMappings()">
+            </div>
+            <div class="table-container">
+              <table id="mappingsTable" class="data-table">
+                <thead>
+                  <tr>
+                    <th>DPST</th>
+                    <th>GA Prefix</th>
+                    <th>Item Type</th>
+                    <th>Semantic Info</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Definitions Tab -->
+          <div id="tab-definitions" class="tab-content">
+            <div id="definitions-accordion">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+
+          <!-- Advanced Tab -->
+          <div id="tab-advanced" class="tab-content">
+            <h3>Regex Patterns</h3>
+            <div id="regex-container"></div>
+          </div>
+        </div>
+
+        <div class="settings-actions">
+          <button onclick="loadConfig()" class="btn-secondary">Reload Config</button>
+          <div class="spacer"></div>
+          <button onclick="saveConfig(true)" class="btn-secondary btn-outline">Save & Reprocess Last Job</button>
+          <button onclick="saveConfig(false)" class="btn-primary">Save Config</button>
         </div>
         <div id="configStatus" class="status-message"></div>
       </div>
@@ -105,6 +204,7 @@
       <h2>🔌 Services</h2>
       <div id="servicesList"></div>
     </section>
+
     <div style="text-align: center; margin-top: 20px; margin-bottom: 20px; font-size: 12px; color: var(--text-light);">
       <a href="https://github.com/diddip21/knx_to_openhab/blob/main/README.md" target="_blank"
         style="color: inherit; text-decoration: none; border-bottom: 1px dotted var(--text-light);">README</a>

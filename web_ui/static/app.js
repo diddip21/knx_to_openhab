@@ -462,10 +462,10 @@ if (logLevelFilterEl) {
 async function loadStructureFromJob(jobId) {
   const statusEl = document.getElementById('status')
   const previewSection = document.getElementById('preview-section')
-  
+
   statusEl.textContent = 'Loading structure from job...'
   statusEl.className = 'status-message'
-  
+
   try {
     const res = await fetch(`/api/job/${jobId}/preview`)
     if (!res.ok) {
@@ -473,16 +473,16 @@ async function loadStructureFromJob(jobId) {
       throw new Error(error.error || 'Failed to load structure from job')
     }
     const preview = await res.json()
-    
+
     currentPreviewMetadata = preview.metadata
     displayBuildingPreview(preview)
-    
+
     // Show preview section
     previewSection.style.display = 'block'
-    
+
     statusEl.textContent = '✓ Structure loaded from job history'
     statusEl.className = 'status-message success'
-    
+
     // Scroll to preview
     previewSection.scrollIntoView({ behavior: 'smooth' })
   } catch (e) {
@@ -526,22 +526,22 @@ function updateStatisticsDisplay(stats) {
     setTimeout(() => updateStatisticsDisplay(stats), 100)
     return
   }
-  
+
   statsUpdateInProgress = true
-  
+
   try {
     const statsEl = document.getElementById('stats')
     if (!statsEl) {
       statsUpdateInProgress = false
       return
     }
-    
+
     if (stats && Object.keys(stats).length > 0) {
       let statsHtml = '<h3>Generated Files</h3><table class="stats-table"><tr><th>File</th><th>Before</th><th>After</th><th>Change</th><th>Diff</th><th>Action</th></tr>'
-      
+
       // Sort files for consistent display order
       const sortedStats = Object.entries(stats).sort(([a], [b]) => a.localeCompare(b))
-      
+
       for (const [fname, stat] of sortedStats) {
         // Validate statistics data
         const before = typeof stat.before === 'number' ? stat.before : 0
@@ -570,13 +570,13 @@ function updateStatisticsDisplay(stats) {
           <td><button onclick="previewFile('${escapedFname}')">Preview</button></td>
         </tr>`
       }
-      
+
       statsHtml += '</table>'
       statsEl.innerHTML = statsHtml
-      
+
       // Store for consistency checks
       currentStatsData = JSON.parse(JSON.stringify(stats))
-      
+
     } else {
       statsEl.innerHTML = '<p>No statistics available</p>'
       currentStatsData = null
@@ -593,33 +593,65 @@ function updateStatisticsDisplay(stats) {
 }
 
 // Configuration Management
+let currentConfig = {}
+
+function switchTab(tabId) {
+  // Hide all tabs
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'))
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'))
+
+  // Show selected tab
+  document.getElementById(`tab-${tabId}`).classList.add('active')
+  // Activate button
+  const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.onclick.toString().includes(tabId))
+  if (btn) btn.classList.add('active')
+}
+
 async function loadConfig() {
   const configStatus = document.getElementById('configStatus')
-  const configJson = document.getElementById('configJson')
-  const configFormContainer = document.getElementById('configFormContainer')
 
   try {
     configStatus.textContent = 'Loading configuration...'
-    
-    // Fetch both the config and schema
-    const [configRes, schemaRes] = await Promise.all([
-      fetch('/api/config'),
-      fetch('/api/config/schema')
-    ])
-    
-    if (!configRes.ok) throw new Error('Failed to load config')
-    if (!schemaRes.ok) throw new Error('Failed to load schema')
-    
-    const config = await configRes.json()
-    const schema = await schemaRes.json()
-    
-    // Hide the text area and show the form container
-    configJson.style.display = 'none'
-    configFormContainer.style.display = 'block'
-    
-    // Generate the form from the schema
-    generateConfigForm(config, schema)
-    
+
+    const res = await fetch('/api/config')
+    if (!res.ok) throw new Error('Failed to load config')
+
+    currentConfig = await res.json()
+
+    // Populate General Tab
+    document.getElementById('conf-ets-export').value = currentConfig.ets_export || ''
+    document.getElementById('conf-items-path').value = currentConfig.items_path || ''
+    document.getElementById('conf-things-path').value = currentConfig.things_path || ''
+    document.getElementById('conf-sitemaps-path').value = currentConfig.sitemaps_path || ''
+    document.getElementById('conf-influx-path').value = currentConfig.influx_path || ''
+    document.getElementById('conf-fenster-path').value = currentConfig.fenster_path || ''
+
+    const gen = currentConfig.general || {}
+    document.getElementById('conf-floor-asis').checked = gen.FloorNameAsItIs || false
+    document.getElementById('conf-floor-desc').checked = gen.FloorNameFromDescription || false
+    document.getElementById('conf-room-asis').checked = gen.RoomNameAsItIs || false
+    document.getElementById('conf-room-desc').checked = gen.RoomNameFromDescription || false
+    document.getElementById('conf-add-missing').checked = gen.addMissingItems || false
+    document.getElementById('conf-unknown-floor').value = gen.unknown_floorname || 'unknown'
+    document.getElementById('conf-unknown-room').value = gen.unknown_roomname || 'unknown'
+
+    // Populate Devices Tab
+    const dev = currentConfig.devices || {}
+    const gw = dev.gateway || {}
+    document.getElementById('conf-gateway-names').value = (gw.hardware_name || []).join(', ')
+
+    // Populate Mappings Tab
+    renderMappingsTable(currentConfig.datapoint_mappings || {})
+
+    // Populate Definitions Tab
+    renderDefinitions(currentConfig.defines || {})
+
+    // Populate Advanced Tab
+    renderRegexSettings(currentConfig.regexpattern || {})
+
+    // Show settings content
+    document.getElementById('settings-content').style.display = 'block'
+
     configStatus.textContent = '✓ Configuration loaded'
     configStatus.className = 'status-message success'
   } catch (e) {
@@ -628,178 +660,185 @@ async function loadConfig() {
   }
 }
 
-async function saveConfig() {
+function renderMappingsTable(mappings) {
+  const tbody = document.querySelector('#mappingsTable tbody')
+  tbody.innerHTML = ''
+
+  // Sort by key
+  const sortedKeys = Object.keys(mappings).sort()
+
+  sortedKeys.forEach(key => {
+    const m = mappings[key]
+    const tr = document.createElement('tr')
+    tr.dataset.key = key
+
+    tr.innerHTML = `
+      <td>${key}</td>
+      <td><input type="text" class="map-input" data-field="ga_prefix" value="${m.ga_prefix || ''}"></td>
+      <td><input type="text" class="map-input" data-field="item_type" value="${m.item_type || ''}"></td>
+      <td><input type="text" class="map-input" data-field="semantic_info" value="${escapeHtml(m.semantic_info || '')}"></td>
+      <td>
+        <button onclick="deleteMapping('${key}')" class="btn-icon" title="Delete">🗑️</button>
+      </td>
+    `
+    tbody.appendChild(tr)
+  })
+}
+
+function filterMappings() {
+  const term = document.getElementById('mappingSearch').value.toLowerCase()
+  const rows = document.querySelectorAll('#mappingsTable tbody tr')
+
+  rows.forEach(row => {
+    const text = row.innerText.toLowerCase()
+    const inputs = Array.from(row.querySelectorAll('input')).map(i => i.value.toLowerCase()).join(' ')
+    if (text.includes(term) || inputs.includes(term)) {
+      row.style.display = ''
+    } else {
+      row.style.display = 'none'
+    }
+  })
+}
+
+function renderDefinitions(defines) {
+  const container = document.getElementById('definitions-accordion')
+  container.innerHTML = ''
+
+  Object.entries(defines).forEach(([key, value]) => {
+    if (key === 'drop_words') return // Handle separately if needed
+
+    const details = document.createElement('details')
+    const summary = document.createElement('summary')
+    summary.textContent = key
+    details.appendChild(summary)
+
+    const content = document.createElement('div')
+    content.className = 'accordion-content'
+
+    // Simple JSON editor for now for complex objects
+    const textarea = document.createElement('textarea')
+    textarea.className = 'json-editor'
+    textarea.rows = 10
+    textarea.value = JSON.stringify(value, null, 2)
+    textarea.dataset.defineKey = key
+
+    content.appendChild(textarea)
+    details.appendChild(content)
+    container.appendChild(details)
+  })
+}
+
+function renderRegexSettings(patterns) {
+  const container = document.getElementById('regex-container')
+  container.innerHTML = ''
+
+  Object.entries(patterns).forEach(([key, value]) => {
+    const div = document.createElement('div')
+    div.className = 'form-group'
+    div.innerHTML = `
+      <label>${key}</label>
+      <input type="text" class="form-control regex-input" data-key="${key}" value="${escapeHtml(value)}">
+    `
+    container.appendChild(div)
+  })
+}
+
+async function saveConfig(reprocess = false) {
   const configStatus = document.getElementById('configStatus')
-  const configJson = document.getElementById('configJson')
-  const configFormContainer = document.getElementById('configFormContainer')
 
   try {
     configStatus.textContent = 'Saving configuration...'
-    
-    // Extract values from the form
-    const config = extractConfigFromForm()
-    
+
+    // Gather data from UI
+    const newConfig = { ...currentConfig }
+
+    // General
+    newConfig.ets_export = document.getElementById('conf-ets-export').value
+    newConfig.items_path = document.getElementById('conf-items-path').value
+    newConfig.things_path = document.getElementById('conf-things-path').value
+    newConfig.sitemaps_path = document.getElementById('conf-sitemaps-path').value
+    newConfig.influx_path = document.getElementById('conf-influx-path').value
+    newConfig.fenster_path = document.getElementById('conf-fenster-path').value
+
+    newConfig.general = {
+      FloorNameAsItIs: document.getElementById('conf-floor-asis').checked,
+      FloorNameFromDescription: document.getElementById('conf-floor-desc').checked,
+      RoomNameAsItIs: document.getElementById('conf-room-asis').checked,
+      RoomNameFromDescription: document.getElementById('conf-room-desc').checked,
+      addMissingItems: document.getElementById('conf-add-missing').checked,
+      unknown_floorname: document.getElementById('conf-unknown-floor').value,
+      unknown_roomname: document.getElementById('conf-unknown-room').value,
+      item_Floor_nameshort_prefix: currentConfig.general?.item_Floor_nameshort_prefix || "=",
+      item_Room_nameshort_prefix: currentConfig.general?.item_Room_nameshort_prefix || "+"
+    }
+
+    // Devices
+    const gwNames = document.getElementById('conf-gateway-names').value.split(',').map(s => s.trim()).filter(s => s)
+    newConfig.devices = { gateway: { hardware_name: gwNames } }
+
+    // Mappings
+    const rows = document.querySelectorAll('#mappingsTable tbody tr')
+    rows.forEach(row => {
+      const key = row.dataset.key
+      if (newConfig.datapoint_mappings[key]) {
+        newConfig.datapoint_mappings[key].ga_prefix = row.querySelector('[data-field="ga_prefix"]').value
+        newConfig.datapoint_mappings[key].item_type = row.querySelector('[data-field="item_type"]').value
+        newConfig.datapoint_mappings[key].semantic_info = row.querySelector('[data-field="semantic_info"]').value
+      }
+    })
+
+    // Definitions (JSON parsing)
+    document.querySelectorAll('.json-editor').forEach(el => {
+      try {
+        newConfig.defines[el.dataset.defineKey] = JSON.parse(el.value)
+      } catch (e) {
+        console.error(`Invalid JSON for ${el.dataset.defineKey}`)
+      }
+    })
+
+    // Regex
+    document.querySelectorAll('.regex-input').forEach(el => {
+      newConfig.regexpattern[el.dataset.key] = el.value
+    })
+
+    // Save to backend
     const res = await fetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config)
+      body: JSON.stringify(newConfig)
     })
+
     if (!res.ok) throw new Error('Failed to save config')
-    const result = await res.json()
-    configStatus.textContent = '✓ ' + result.message
+
+    configStatus.textContent = '✓ Configuration saved'
     configStatus.className = 'status-message success'
+
+    // Reprocess if requested
+    if (reprocess) {
+      if (!currentJobId) {
+        alert('No job selected to reprocess. Please select a job first.')
+        return
+      }
+
+      configStatus.textContent = 'Triggering reprocessing...'
+      const rerunRes = await fetch(`/api/job/${currentJobId}/rerun`, { method: 'POST' })
+
+      if (!rerunRes.ok) throw new Error('Failed to start reprocessing')
+
+      const newJob = await rerunRes.json()
+      configStatus.textContent = `✓ Reprocessing started (Job ${newJob.id.substring(0, 8)})`
+
+      // Refresh jobs list and show details of new job
+      await refreshJobs()
+      showJobDetail(newJob.id)
+
+      // Scroll to top
+      document.getElementById('detail-section').scrollIntoView({ behavior: 'smooth' })
+    }
+
   } catch (e) {
     configStatus.textContent = '✗ Error: ' + e.message
     configStatus.className = 'status-message error'
-  }
-}
-
-// Form generation and handling functions
-function generateConfigForm(config, schema) {
-  const container = document.getElementById('configFormContainer')
-  container.innerHTML = ''
-  
-  // Create a form element
-  const form = document.createElement('form')
-  form.id = 'configForm'
-  
-  // Generate form fields based on the schema
-  generateFormFields(config, schema, form, '')
-  
-  container.appendChild(form)
-}
-
-function generateFormFields(config, schema, parentElement, prefix) {
-  if (schema.type === 'object' && schema.properties) {
-    // Create a container for object properties
-    const fieldset = document.createElement('fieldset')
-    if (schema.title) {
-      const legend = document.createElement('legend')
-      legend.textContent = schema.title
-      fieldset.appendChild(legend)
-    }
-    
-    // Add description if available
-    if (schema.description) {
-      const description = document.createElement('div')
-      description.className = 'field-description'
-      description.textContent = schema.description
-      fieldset.appendChild(description)
-    }
-    
-    for (const [key, propertySchema] of Object.entries(schema.properties)) {
-      const fullKey = prefix ? `${prefix}.${key}` : key
-      const value = config[key]
-      
-      if (propertySchema.type === 'object') {
-        // Recursively handle nested objects
-        generateFormFields(value, propertySchema, fieldset, fullKey)
-      } else {
-        // Create form group for this property
-        const formGroup = document.createElement('div')
-        formGroup.className = 'form-group config-field'
-        
-        // Create label
-        const label = document.createElement('label')
-        label.setAttribute('for', fullKey)
-        label.textContent = propertySchema.title || key
-        formGroup.appendChild(label)
-        
-        // Add description if available
-        if (propertySchema.description) {
-          const desc = document.createElement('div')
-          desc.className = 'field-description'
-          desc.textContent = propertySchema.description
-          formGroup.appendChild(desc)
-        }
-        
-        // Create input based on type
-        let input
-        if (propertySchema.type === 'boolean') {
-          input = document.createElement('input')
-          input.type = 'checkbox'
-          input.checked = value || propertySchema.default || false
-        } else if (propertySchema.type === 'array') {
-          // For arrays, create a textarea
-          input = document.createElement('textarea')
-          input.rows = 4
-          const arrayValue = Array.isArray(value) ? value : (propertySchema.default || [])
-          input.value = arrayValue.join('\n')
-        } else if (propertySchema.type === 'number' || propertySchema.type === 'integer') {
-          input = document.createElement('input')
-          input.type = 'number'
-          input.value = value !== undefined ? value : (propertySchema.default || '')
-          if (propertySchema.minimum !== undefined) input.min = propertySchema.minimum
-          if (propertySchema.maximum !== undefined) input.max = propertySchema.maximum
-        } else {
-          // Default to text input
-          input = document.createElement('input')
-          input.type = 'text'
-          input.value = value !== undefined ? value : (propertySchema.default || '')
-        }
-        
-        input.id = fullKey
-        input.name = fullKey
-        formGroup.appendChild(input)
-        
-        fieldset.appendChild(formGroup)
-      }
-    }
-    
-    parentElement.appendChild(fieldset)
-  }
-}
-
-function extractConfigFromForm() {
-  const form = document.getElementById('configForm')
-  const formData = new FormData(form)
-  const config = {}
-  
-  // Process all form elements
-  for (const [key, value] of formData.entries()) {
-    setNestedProperty(config, key, value)
-  }
-  
-  // Process checkboxes separately since they don't appear in FormData if unchecked
-  const checkboxes = form.querySelectorAll('input[type="checkbox"]')
-  checkboxes.forEach(checkbox => {
-    const key = checkbox.name
-    setNestedProperty(config, key, checkbox.checked)
-  })
-  
-  // Process textareas for arrays
-  const textareas = form.querySelectorAll('textarea')
-  textareas.forEach(textarea => {
-    const key = textarea.name
-    if (textarea.value.includes('\n')) {
-      const arrayValue = textarea.value.split('\n').filter(item => item.trim() !== '')
-      setNestedProperty(config, key, arrayValue)
-    }
- })
-  
-  return config
-}
-
-function setNestedProperty(obj, path, value) {
-  const parts = path.split('.')
-  let current = obj
-  
-  for (let i = 0; i < parts.length - 1; i++) {
-    if (!current[parts[i]]) {
-      current[parts[i]] = {}
-    }
-    current = current[parts[i]]
-  }
-  
-  // Try to parse as JSON if it looks like an array or object
-  if (typeof value === 'string' && (value.startsWith('[') || value.startsWith('{'))) {
-    try {
-      current[parts[parts.length - 1]] = JSON.parse(value)
-    } catch {
-      current[parts[parts.length - 1]] = value
-    }
-  } else {
-    current[parts[parts.length - 1]] = value
   }
 }
 
@@ -890,8 +929,8 @@ function displayBuildingPreview(preview) {
       </div>
       <div class="tree-children" style="display:none;">`
 
-  for (const floor of building.floors) {
-    treeHtml += `<div class="tree-node floor-node">
+    for (const floor of building.floors) {
+      treeHtml += `<div class="tree-node floor-node">
       <div class="tree-node-header" onclick="toggleTreeNode(this)">
         <span class="tree-icon">▶</span>
         <span class="tree-label">🏠 ${escapeHtml(floor.name)}${floor.description ? ` (${escapeHtml(floor.description)})` : ''}</span>
@@ -899,9 +938,9 @@ function displayBuildingPreview(preview) {
       </div>
       <div class="tree-children" style="display:none;">`
 
-    for (const room of floor.rooms) {
-      const hasAddresses = room.addresses && room.addresses.length > 0;
-      treeHtml += `<div class="tree-node room-node">
+      for (const room of floor.rooms) {
+        const hasAddresses = room.addresses && room.addresses.length > 0;
+        treeHtml += `<div class="tree-node room-node">
         <div class="tree-node-header" onclick="toggleTreeNode(this)">
           <span class="tree-icon">${hasAddresses ? '▶' : '•'}</span>
           <span class="tree-label">🚪 ${escapeHtml(room.name)}${room.description ? ` (${escapeHtml(room.description)})` : ''}</span>
@@ -916,7 +955,7 @@ function displayBuildingPreview(preview) {
           </div>
         </div>` : ''}
       </div>`
-    }
+      }
 
       treeHtml += `</div></div>`
     }

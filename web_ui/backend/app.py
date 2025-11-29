@@ -113,6 +113,24 @@ if FLASK_AVAILABLE:
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @app.route('/api/job/<job_id>/rerun', methods=['POST'])
+    def rerun_job(job_id):
+        """Create a new job based on an existing job's input."""
+        job = job_mgr.get_job(job_id)
+        if not job:
+            return jsonify({'error': 'job not found'}), 404
+        
+        input_path = job.get('input')
+        if not input_path or not os.path.exists(input_path):
+            return jsonify({'error': 'original input file not found'}), 404
+            
+        try:
+            # Create a new job with the same input and password
+            new_job = job_mgr.create_job(input_path, original_name=job.get('name'), password=job.get('password'))
+            return jsonify(new_job), 201
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @app.route('/api/job/<job_id>/file/diff', methods=['GET'])
     def job_file_diff(job_id):
         path = request.args.get('path')

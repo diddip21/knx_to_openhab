@@ -228,22 +228,22 @@
         "Dimmen"
       ],
       "status_suffix": [
-        "R\u00fcckmeldung Dimmen",
-        "Dimmen R\u00fcckmeldung",
+        "Rückmeldung Dimmen",
+        "Dimmen Rückmeldung",
         "Dimmen rm",
         "Status Dimmwert",
         ":(Status Dimm Wert)",
         "Status Absolute Lamellenposition",
         "Status akt. Lamellenposition",
-        "R\u00fcckmeldung Helligkeitswert"
+        "Rückmeldung Helligkeitswert"
       ],
       "switch_status_suffix": [
         "Status Ein/Aus",
-        "R\u00fcckmeldung",
-        "Schalten R\u00fcckmeldung",
+        "Rückmeldung",
+        "Schalten Rückmeldung",
         "Schalten rm",
         ":(Status An/Aus)",
-        "R\u00fcckmeldung Schalten"
+        "Rückmeldung Schalten"
       ],
       "switch_suffix": [
         "Schalten",
@@ -286,7 +286,7 @@
       ],
       "status_suffix": [
         "Status",
-        "R\u00fcckmeldung",
+        "Rückmeldung",
         ":(Status Absolute Position)",
         ":(Status aktuelle Position)",
         "Status aktuelle Position"
@@ -338,7 +338,7 @@
       "status_suffix": [
         "Status",
         " RM",
-        "R\u00fcckmeldung",
+        "Rückmeldung",
         ":(RM Schalten)",
         "Status Ein/Aus",
         "Status Aktorkanal",

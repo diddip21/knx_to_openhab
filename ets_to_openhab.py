@@ -4,10 +4,11 @@ import re
 import os
 import logging
 from config import config, datapoint_mappings,normalize_string
+from utils import get_datapoint_type
 logger = logging.getLogger(__name__)
 
-pattern_items_Name=config['regexpattern']['items_Name']
-pattern_items_Label=config['regexpattern']['items_Label']
+pattern_items_Name: str = config['regexpattern']['items_Name']
+pattern_items_Label: str = config['regexpattern']['items_Label']
 
 def data_of_name(data, name, suffix,replace=''):
     """ Function get data from a Name"""
@@ -100,6 +101,150 @@ def gen_building():
                 if normalize_string(co["function_text"]) in config_functiontexts:
                     return co
         return None
+    
+    def get_co_flags(co):
+        """
+        Extracts flags from a communication object.
+        
+        Args:
+            co: Communication object with flags dictionary
+        
+        Returns:
+            dict: Dictionary with read, write, transmit, update flags or None
+        """
+        if "flags" not in co:
+            return None
+        
+        return {
+            "read": co["flags"].get("read", False),
+            "write": co["flags"].get("write", False),
+            "transmit": co["flags"].get("transmit", False),
+            "update": co["flags"].get("update", False)
+        }
+    
+    def flags_match(co_flags, expected_flags):
+        """
+        Compares CO flags with expected flags from config.
+        
+        Args:
+            co_flags: Dictionary with actual flags
+            expected_flags: Dictionary with expected flags from config.json
+        
+        Returns:
+            bool: True if all expected flags match
+        """
+        if not co_flags or not expected_flags:
+            return True  # No flag filtering requested
+        
+        for key, expected_value in expected_flags.items():
+            if co_flags.get(key, False) != expected_value:
+                return False
+        
+        return True
+    
+    def get_address_from_dco_enhanced(co, config_key, define):
+        """
+        Enhanced search for group addresses with flag and DPT filtering.
+        
+        Args:
+            co: Base communication object
+            config_key: Key in the define config (e.g. 'status_suffix')
+            define: Definition from config.json (e.g. config['defines']['dimmer'])
+        
+        Returns:
+            dict or None: Found group address or None
+        
+        Example:
+            dimmwert_status = get_address_from_dco_enhanced(
+                co,
+                'status_suffix',
+                config['defines']['dimmer']
+            )
+        """
+        # Extract configuration
+        function_texts_key = config_key
+        dpts_key = config_key.replace('_suffix', '_dpts')
+        flags_key = config_key.replace('_suffix', '_flags')
+        
+        # Get config values (with fallback to old method)
+        function_texts = define.get(function_texts_key, [])
+        expected_dpts = define.get(dpts_key, None)
+        expected_flags = define.get(flags_key, None)
+        
+        # Channel/Text grouping
+        group_channel = co.get("channel")
+        group_text = co.get("text")
+        
+        if "device_communication_objects" not in co:
+            return None
+        
+        # Collect candidates
+        candidates = []
+        
+        for dco in co["device_communication_objects"]:
+            # Filter 1: Channel/Text match
+            if group_channel:
+                if group_channel != dco.get("channel"):
+                    continue
+            elif group_text:
+                if group_text != dco.get("text"):
+                    continue
+            
+            # Filter 2: DPT filtering (if defined in config)
+            if expected_dpts:
+                # Convert dpts array to DPST string for comparison
+                dco_dpts = dco.get("dpts", [])
+                if dco_dpts:
+                    dpt = dco_dpts[0]
+                    dco_dpst = f'DPST-{dpt["main"]}-{dpt.get("sub", 0)}'
+                    if dco_dpst not in expected_dpts:
+                        continue
+                else:
+                    continue
+            
+            # Filter 3: Flag filtering (if defined in config)
+            if expected_flags:
+                dco_flags = get_co_flags(dco)
+                if not flags_match(dco_flags, expected_flags):
+                    continue
+            
+            
+            # Filter 4: Function text (only as fallback if neither DPT nor flags are defined)
+            # If DPT or flags are defined, we rely on those instead of function_text
+            if not expected_dpts and not expected_flags:
+                # No DPT/flag filtering - use function_text as primary filter
+                if function_texts:
+                    if normalize_string(dco.get("function_text", "")) not in function_texts:
+                        continue
+            
+            # Search for group address
+            search_address = [x for x in all_addresses 
+                             if x["Address"] in dco.get('group_address_links', [])]
+            
+            if search_address:
+                candidates.append({
+                    'dco': dco,
+                    'addresses': search_address,
+                    'channel_match': group_channel == dco.get("channel") if group_channel else False
+                })
+        
+        if not candidates:
+            return None
+        
+        # Prioritization:
+        # 1. Channel match
+        # 2. Fewest linked addresses
+        candidates.sort(key=lambda x: (
+            not x['channel_match'],
+            len(x['addresses'])
+        ))
+        
+        best_candidate = candidates[0]
+        if len(best_candidate['addresses']) == 1:
+            return best_candidate['addresses'][0]
+        else:
+            return min(best_candidate['addresses'],
+                      key=lambda sa: len(sa.get("communication_object", [])))
     def get_address_from_dco(co,config_functiontexts):
         """
         Diese Funktion sucht in einem Kommunikationsobjekt (co) nach einem Funktions-Text und filtert nach Gruppenzugehörigkeit entweder über die Channels oder über den 'text'.
@@ -233,7 +378,7 @@ def gen_building():
                     if not any(item['Address'] == address['Address'] for item in all_addresses):
                     #if address['Address'] not in all_addresses:
                         continue
-                    if address['Address'] == '6/2/95':
+                    if address['Address'] == '1/1/44':
                         logger.debug("Adress found - Breakpoint?")
 
                     used = False
@@ -271,7 +416,7 @@ def gen_building():
                     item_name = re.sub(pattern_items_Name, '', item_name)
                     if run == 0:
                         # dimmer
-                        if address['DatapointType'] == 'DPST-5-1':
+                        if address['DatapointType'] == get_datapoint_type('dimmer'):
                             define=config['defines']['dimmer']
                             #bol = [x for x in define['absolut_suffix'] if x in address['Group name']]
                             co = get_co_by_functiontext(address,define['absolut_suffix'])
@@ -281,7 +426,7 @@ def gen_building():
                             basename = address['Group name']
                             #dimmwert_status =data_of_name(all_addresses, basename, define['status_suffix'],define['absolut_suffix'])
                             #if not dimmwert_status and co:
-                            dimmwert_status=get_address_from_dco(co,define['status_suffix'])
+                            dimmwert_status=get_address_from_dco_enhanced(co,'status_suffix',define)
                             for drop_name in define['drop']:
                                 drop_addr = data_of_name(all_addresses, basename, drop_name,define['absolut_suffix'])
                                 if drop_addr:
@@ -294,18 +439,18 @@ def gen_building():
                                 used_addresses.append(dimmwert_status['Address'])
                                 #relative_command = data_of_name(all_addresses, basename, define['relativ_suffix'],define['absolut_suffix'])
                                 #if not relative_command and co:
-                                relative_command=get_address_from_dco(co,define['relativ_suffix'])
+                                relative_command=get_address_from_dco_enhanced(co,'relativ_suffix',define)
                                 #switch_command = data_of_name(all_addresses, basename, define['switch_suffix'],define['absolut_suffix'])
                                 #if not switch_command and co:
                                 if relative_command:
                                     used_addresses.append(relative_command['Address'])
                                     relative_option = f", increaseDecrease=\"{relative_command['Address']}\""
-                                switch_command=get_address_from_dco(co,define['switch_suffix'])
+                                switch_command=get_address_from_dco_enhanced(co,'switch_suffix',define)
                                 if switch_command:
                                     used_addresses.append(switch_command['Address'])
                                     #switch_status_command = data_of_name(all_addresses, basename, define['switch_status_suffix'],define['absolut_suffix'])
                                     #if not switch_status_command and co:
-                                    switch_status_command=get_address_from_dco(co,define['switch_status_suffix'])
+                                    switch_status_command=get_address_from_dco_enhanced(co,'switch_status_suffix',define)
                                     if switch_status_command:
                                         used_addresses.append(switch_status_command['Address'])
                                         switch_option_status = f"+<{switch_status_command['Address']}"
@@ -328,7 +473,7 @@ def gen_building():
                                 logger.warning("incomplete dimmer: %s / %s",basename,address['Address'])
 
                         # rollos / jalousien
-                        elif address['DatapointType'] == 'DPST-1-8':
+                        elif address['DatapointType'] == get_datapoint_type('rollershutter'):
                             define=config['defines']['rollershutter']
                             #bol = [x for x in define['up_down_suffix'] if x in address['Group name']]
                             co = get_co_by_functiontext(address,define['up_down_suffix'])
@@ -350,16 +495,16 @@ def gen_building():
                                 used_addresses.append(fahren_auf_ab['Address'])
                                 #fahren_stop = data_of_name(all_addresses, basename, define['stop_suffix'],define['up_down_suffix'])
                                 #if not fahren_stop and co:
-                                fahren_stop=get_address_from_dco(co,define['stop_suffix'])
+                                fahren_stop=get_address_from_dco_enhanced(co,'stop_suffix',define)
                                 if fahren_stop:
                                     used_addresses.append(fahren_stop['Address'])
                                     option_stop = f", stopMove=\"{fahren_stop['Address']}\""
                                 #absolute_position = data_of_name(all_addresses, basename, define['absolute_position_suffix'],define['up_down_suffix'])
                                 #if not absolute_position and co:
-                                absolute_position=get_address_from_dco(co,define['absolute_position_suffix'])
+                                absolute_position=get_address_from_dco_enhanced(co,'absolute_position_suffix',define)
                                 #absolute_position_status = data_of_name(all_addresses, basename, define['status_suffix'],define['up_down_suffix'])
                                 #if not absolute_position_status and co:
-                                absolute_position_status=get_address_from_dco(co,define['status_suffix'])
+                                absolute_position_status=get_address_from_dco_enhanced(co,'status_suffix',define)
                                 if absolute_position or absolute_position_status:
                                     if absolute_position:
                                         used_addresses.append(absolute_position['Address'])
@@ -390,7 +535,7 @@ def gen_building():
                                 logger.warning("incomplete rollershutter: %s",basename)
 
                         # Heizung
-                        elif address['DatapointType'] in ('DPST-5-010','DPST-20-102'):
+                        elif address['DatapointType'] in (get_datapoint_type('heating'), get_datapoint_type('heating_mode')):
                             define=config['defines']['heating']
                             #bol = [x for x in define['level_suffix'] if x in address['Group name']]
                             co = get_co_by_functiontext(address,define['level_suffix'])
@@ -403,7 +548,7 @@ def gen_building():
                                 used_addresses.append(betriebsmodus['Address'])
                                 #betriebsmodus_status = data_of_name(all_addresses, basename, define['status_level_suffix'],define['level_suffix'])
                                 #if not betriebsmodus_status and co:
-                                betriebsmodus_status=get_address_from_dco(co,define['status_level_suffix'])
+                                betriebsmodus_status=get_address_from_dco_enhanced(co,'status_level_suffix',define)
                                 if betriebsmodus_status:
                                     used_addresses.append(betriebsmodus_status['Address'])
                                     option_status_betriebsmodus = f"+<{betriebsmodus_status['Address']}"
@@ -432,7 +577,7 @@ def gen_building():
                     #  erst im zweiten durchlauf prüfen damit integrierte Schaltobjekte (z.B. dimmen) vorher schon erkannt werden.
                     if run > 0:
                         # Schalten or bool
-                        if address['DatapointType'] in ('DPST-1-1','DPST-1-2'):
+                        if address['DatapointType'] == get_datapoint_type('switch'):
                             define=config['defines']['switch']
                             item_type = "Switch"
                             item_label = lovely_name
@@ -446,7 +591,7 @@ def gen_building():
                             basename = address['Group name']
                             #status =data_of_name(all_addresses, basename, define['status_suffix'],define['switch_suffix'])
                             #if not status and co:
-                            status=get_address_from_dco(co,define['status_suffix'])
+                            status=get_address_from_dco_enhanced(co,'status_suffix',define)
                             if status:
                                 #if status['DatapointType'] == 'DPST-1-11':
                                 auto_add = True
@@ -493,12 +638,12 @@ def gen_building():
                                     floor_grp = f"map{floor_nr}_{mapping_info['floor_group']}"
                                 break
                         # window/door
-                        if address['DatapointType'] == 'DPST-1-19':
+                        if address['DatapointType'] == get_datapoint_type('window_contact'):
                             equipment = 'Window'
                             FENSTERKONTAKTE.append({'item_name': item_name, 'name': address['Group name']})
 
                         # Szene
-                        if address['DatapointType'] in ('DPST-17-1','DPST-18-1'):
+                        if address['DatapointType'] == get_datapoint_type('scene'):
                             used = True
                             ga = "17.001"
                             if address['DatapointType'] == 'DPST-18-1':

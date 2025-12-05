@@ -192,6 +192,15 @@
       "semantic_info": ""
     }
   },
+  "datapoint_types": {
+    "switch": "DPST-1-1",
+    "dimmer": "DPST-5-1",
+    "rollershutter": "DPST-1-8",
+    "heating": "DPST-5-010",
+    "heating_mode": "DPST-20-102",
+    "window_contact": "DPST-1-19",
+    "scene": "DPST-17-1"
+  },
   "defines": {
     "dimmer": {
       "absolut_suffix": [
@@ -200,6 +209,13 @@
         "Absolute Lamellenposition",
         "Helligkeitswert"
       ],
+      "absolut_dpts": [
+        "DPST-5-1"
+      ],
+      "absolut_flags": {
+        "read": false,
+        "write": true
+      },
       "change_metadata": {
         "Farbtemperatur": {
           "alexa": "",
@@ -227,6 +243,14 @@
         ":(Heller/Dunkler)",
         "Dimmen"
       ],
+      "relativ_dpts": [
+        "DPST-3-7",
+        "DPST-3-3"
+      ],
+      "relativ_flags": {
+        "read": false,
+        "write": true
+      },
       "status_suffix": [
         "Rückmeldung Dimmen",
         "Dimmen Rückmeldung",
@@ -237,6 +261,14 @@
         "Status akt. Lamellenposition",
         "Rückmeldung Helligkeitswert"
       ],
+      "status_dpts": [
+        "DPST-5-1"
+      ],
+      "status_flags": {
+        "read": true,
+        "write": false,
+        "transmit": true
+      },
       "switch_status_suffix": [
         "Status Ein/Aus",
         "Rückmeldung",
@@ -251,7 +283,22 @@
         ":(Schalten)",
         "Ein/Aus",
         "Schalten EIN/AUS"
-      ]
+      ],
+      "switch_dpts": [
+        "DPST-1-1"
+      ],
+      "switch_flags": {
+        "read": false,
+        "write": true
+      },
+      "switch_status_dpts": [
+        "DPST-1-1"
+      ],
+      "switch_status_flags": {
+        "read": true,
+        "write": false,
+        "transmit": true
+      }
     },
     "drop_words": [
       "Fensterkontakt",
@@ -268,16 +315,40 @@
         "Betriebsmodus",
         "Betriebsartvorwahl"
       ],
+      "level_dpts": [
+        "DPST-5-010",
+        "DPST-20-102"
+      ],
+      "level_flags": {
+        "read": false,
+        "write": true
+      },
       "status_level_suffix": [
         "Status Betriebsmodus",
         "DPT_HVAC Mode: Reglerstatus senden"
-      ]
+      ],
+      "status_level_dpts": [
+        "DPST-5-010",
+        "DPST-20-102"
+      ],
+      "status_level_flags": {
+        "read": true,
+        "write": false,
+        "transmit": true
+      }
     },
     "rollershutter": {
       "absolute_position_suffix": [
         "absolute Position",
         ":(Absolute Position)"
       ],
+      "absolute_position_dpts": [
+        "DPST-5-1"
+      ],
+      "absolute_position_flags": {
+        "read": false,
+        "write": true
+      },
       "drop": [
         "Status Richtung",
         ":(Status aktuelle Richtung)",
@@ -291,6 +362,14 @@
         ":(Status aktuelle Position)",
         "Status aktuelle Position"
       ],
+      "status_dpts": [
+        "DPST-5-1"
+      ],
+      "status_flags": {
+        "read": true,
+        "write": false,
+        "transmit": true
+      },
       "stop_suffix": [
         "Stop",
         "Stop/Lamellen",
@@ -300,6 +379,14 @@
         "Stopp",
         "Lamellenverstellung / Stopp"
       ],
+      "stop_dpts": [
+        "DPST-1-10",
+        "DPST-1-9"
+      ],
+      "stop_flags": {
+        "read": false,
+        "write": true
+      },
       "up_down_suffix": [
         "Auf/Ab",
         ":(Jalousie Auf/Ab)",
@@ -307,7 +394,14 @@
         "Rollladen Auf/Ab",
         "Jalousie Auf/Ab",
         "Single Object Control"
-      ]
+      ],
+      "up_down_dpts": [
+        "DPST-1-8"
+      ],
+      "up_down_flags": {
+        "read": false,
+        "write": true
+      }
     },
     "switch": {
       "change_metadata": {
@@ -344,6 +438,15 @@
         "Status Aktorkanal",
         "HCL Status"
       ],
+      "status_dpts": [
+        "DPST-1-1",
+        "DPST-1-11"
+      ],
+      "status_flags": {
+        "read": true,
+        "write": false,
+        "transmit": true
+      },
       "switch_suffix": [
         "Schalten",
         ":(An/Aus)",

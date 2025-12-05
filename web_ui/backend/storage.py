@@ -38,8 +38,8 @@ def load_jobs(jobs_dir):
 
 def save_jobs(jobs_dir, jobs):
     jf = jobs_file(jobs_dir)
-    with open(jf + '.tmp', 'w') as f:
-        json.dump(jobs, f, indent=2)
+    with open(jf + '.tmp', 'w', encoding='utf-8') as f:
+        json.dump(jobs, f, indent=2, ensure_ascii=False)
     os.replace(jf + '.tmp', jf)
 
 

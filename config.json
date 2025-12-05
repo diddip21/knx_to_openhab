@@ -193,22 +193,16 @@
     }
   },
   "datapoint_types": {
-    "switch": "DPST-1-1",
     "dimmer": "DPST-5-1",
-    "rollershutter": "DPST-1-8",
     "heating": "DPST-5-010",
     "heating_mode": "DPST-20-102",
-    "window_contact": "DPST-1-19",
-    "scene": "DPST-17-1"
+    "rollershutter": "DPST-1-8",
+    "scene": "DPST-17-1",
+    "switch": "DPST-1-1",
+    "window_contact": "DPST-1-19"
   },
   "defines": {
     "dimmer": {
-      "absolut_suffix": [
-        "Dimmen absolut",
-        ":(Dimm Wert)",
-        "Absolute Lamellenposition",
-        "Helligkeitswert"
-      ],
       "absolut_dpts": [
         "DPST-5-1"
       ],
@@ -216,6 +210,12 @@
         "read": false,
         "write": true
       },
+      "absolut_suffix": [
+        "Dimmen absolut",
+        ":(Dimm Wert)",
+        "Absolute Lamellenposition",
+        "Helligkeitswert"
+      ],
       "change_metadata": {
         "Farbtemperatur": {
           "alexa": "",
@@ -238,11 +238,6 @@
         }
       },
       "drop": [],
-      "relativ_suffix": [
-        "Dimmen relativ",
-        ":(Heller/Dunkler)",
-        "Dimmen"
-      ],
       "relativ_dpts": [
         "DPST-3-7",
         "DPST-3-3"
@@ -250,6 +245,19 @@
       "relativ_flags": {
         "read": false,
         "write": true
+      },
+      "relativ_suffix": [
+        "Dimmen relativ",
+        ":(Heller/Dunkler)",
+        "Dimmen"
+      ],
+      "status_dpts": [
+        "DPST-5-1"
+      ],
+      "status_flags": {
+        "read": true,
+        "transmit": true,
+        "write": false
       },
       "status_suffix": [
         "Rückmeldung Dimmen",
@@ -261,13 +269,20 @@
         "Status akt. Lamellenposition",
         "Rückmeldung Helligkeitswert"
       ],
-      "status_dpts": [
-        "DPST-5-1"
+      "switch_dpts": [
+        "DPST-1-1"
       ],
-      "status_flags": {
+      "switch_flags": {
+        "read": false,
+        "write": true
+      },
+      "switch_status_dpts": [
+        "DPST-1-1"
+      ],
+      "switch_status_flags": {
         "read": true,
-        "write": false,
-        "transmit": true
+        "transmit": true,
+        "write": false
       },
       "switch_status_suffix": [
         "Status Ein/Aus",
@@ -283,22 +298,7 @@
         ":(Schalten)",
         "Ein/Aus",
         "Schalten EIN/AUS"
-      ],
-      "switch_dpts": [
-        "DPST-1-1"
-      ],
-      "switch_flags": {
-        "read": false,
-        "write": true
-      },
-      "switch_status_dpts": [
-        "DPST-1-1"
-      ],
-      "switch_status_flags": {
-        "read": true,
-        "write": false,
-        "transmit": true
-      }
+      ]
     },
     "drop_words": [
       "Fensterkontakt",
@@ -311,10 +311,6 @@
       "AUF"
     ],
     "heating": {
-      "level_suffix": [
-        "Betriebsmodus",
-        "Betriebsartvorwahl"
-      ],
       "level_dpts": [
         "DPST-5-010",
         "DPST-20-102"
@@ -323,9 +319,9 @@
         "read": false,
         "write": true
       },
-      "status_level_suffix": [
-        "Status Betriebsmodus",
-        "DPT_HVAC Mode: Reglerstatus senden"
+      "level_suffix": [
+        "Betriebsmodus",
+        "Betriebsartvorwahl"
       ],
       "status_level_dpts": [
         "DPST-5-010",
@@ -333,15 +329,15 @@
       ],
       "status_level_flags": {
         "read": true,
-        "write": false,
-        "transmit": true
-      }
+        "transmit": true,
+        "write": false
+      },
+      "status_level_suffix": [
+        "Status Betriebsmodus",
+        "DPT_HVAC Mode: Reglerstatus senden"
+      ]
     },
     "rollershutter": {
-      "absolute_position_suffix": [
-        "absolute Position",
-        ":(Absolute Position)"
-      ],
       "absolute_position_dpts": [
         "DPST-5-1"
       ],
@@ -349,12 +345,24 @@
         "read": false,
         "write": true
       },
+      "absolute_position_suffix": [
+        "absolute Position",
+        ":(Absolute Position)"
+      ],
       "drop": [
         "Status Richtung",
         ":(Status aktuelle Richtung)",
         ":(Status obere Position)",
         ":(Status untere Position)"
       ],
+      "status_dpts": [
+        "DPST-5-1"
+      ],
+      "status_flags": {
+        "read": true,
+        "transmit": true,
+        "write": false
+      },
       "status_suffix": [
         "Status",
         "Rückmeldung",
@@ -362,13 +370,14 @@
         ":(Status aktuelle Position)",
         "Status aktuelle Position"
       ],
-      "status_dpts": [
-        "DPST-5-1"
+      "stop_dpts": [
+        "DPST-1-10",
+        "DPST-1-9",
+        "DPST-1-7"
       ],
-      "status_flags": {
-        "read": true,
-        "write": false,
-        "transmit": true
+      "stop_flags": {
+        "read": false,
+        "write": true
       },
       "stop_suffix": [
         "Stop",
@@ -379,11 +388,10 @@
         "Stopp",
         "Lamellenverstellung / Stopp"
       ],
-      "stop_dpts": [
-        "DPST-1-10",
-        "DPST-1-9"
+      "up_down_dpts": [
+        "DPST-1-8"
       ],
-      "stop_flags": {
+      "up_down_flags": {
         "read": false,
         "write": true
       },
@@ -394,14 +402,7 @@
         "Rollladen Auf/Ab",
         "Jalousie Auf/Ab",
         "Single Object Control"
-      ],
-      "up_down_dpts": [
-        "DPST-1-8"
-      ],
-      "up_down_flags": {
-        "read": false,
-        "write": true
-      }
+      ]
     },
     "switch": {
       "change_metadata": {
@@ -429,6 +430,15 @@
           "semantic_info": "[\"Control\", \"Switch\"]"
         }
       },
+      "status_dpts": [
+        "DPST-1-1",
+        "DPST-1-11"
+      ],
+      "status_flags": {
+        "read": true,
+        "transmit": true,
+        "write": false
+      },
       "status_suffix": [
         "Status",
         " RM",
@@ -438,15 +448,6 @@
         "Status Aktorkanal",
         "HCL Status"
       ],
-      "status_dpts": [
-        "DPST-1-1",
-        "DPST-1-11"
-      ],
-      "status_flags": {
-        "read": true,
-        "write": false,
-        "transmit": true
-      },
       "switch_suffix": [
         "Schalten",
         ":(An/Aus)",
@@ -472,11 +473,11 @@
     "FloorNameFromDescription": false,
     "RoomNameAsItIs": false,
     "RoomNameFromDescription": false,
-    "addMissingItems": false,
-    "item_Floor_nameshort_prefix": "=",
-    "item_Room_nameshort_prefix": "+",
+    "addMissingItems": true,
     "unknown_floorname": "unknown",
-    "unknown_roomname": "unknown"
+    "unknown_roomname": "unknown",
+    "item_Floor_nameshort_prefix": "=",
+    "item_Room_nameshort_prefix": "+"
   },
   "influx_path": "openhab/persistence/influxdb.persist",
   "items_path": "openhab/items/knx.items",

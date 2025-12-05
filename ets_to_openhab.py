@@ -181,7 +181,10 @@ def gen_building():
         # Collect candidates
         candidates = []
         
-        for dco in co["device_communication_objects"]:
+        # Sort candidates by number (ascending) to behave deterministically
+        sorted_dcos = sorted(co["device_communication_objects"], key=lambda x: int(x.get("number", 999999)))
+        
+        for dco in sorted_dcos:
             # Filter 1: Channel/Text match
             if group_channel:
                 if group_channel != dco.get("channel"):
@@ -369,7 +372,7 @@ def gen_building():
             # - during the first run, all GAs are processed which can have a reference to another GA (e.g. a switch with status feedback)
             #   and also all GAs which can not have a reference to another GA. (e.g. temperatures)
             # - during the second run, all not marked componentes are processed directly with no reference check
-            for run in range(2):
+            for run in range(3):
                 for i in range(len(addresses)):
 
                     address = room['Addresses'][i]
@@ -378,7 +381,7 @@ def gen_building():
                     if not any(item['Address'] == address['Address'] for item in all_addresses):
                     #if address['Address'] not in all_addresses:
                         continue
-                    if address['Address'] == '1/1/44':
+                    if address['Address'] == '3/1/11':
                         logger.debug("Adress found - Breakpoint?")
 
                     used = False
@@ -611,7 +614,7 @@ def gen_building():
                     ######## determined only by datapoint
                     # do this only after items with multiple addresses are processed:
                     # e.g. the state datapoint could be an own thing or the feedback from a switch or so
-                    if run > 0:
+                    if run > 1:
                         # Iterate über die Mappings
                         for datapoint_type, mapping_info in datapoint_mappings.items():
                             if address['DatapointType'] == datapoint_type:
@@ -826,6 +829,13 @@ def export_output(items,sitemap,things):
     things_template = open('things.template','r', encoding='utf8').read()
     if GWIP:
         things_template = things_template.replace('###gwip###', GWIP)
+    else:
+        logger.info("No Gateway IP found. Using KNX Router mode (multicast).")
+        things_template = things_template.replace('type="TUNNEL"', 'type="ROUTER"')
+        things_template = re.sub(r'.*ipAddress="###gwip###",.*\n', '', things_template)
+        things_template = re.sub(r'.*portNumber=3671,.*\n', '', things_template)
+        things_template = things_template.replace('autoReconnectPeriod=30', 'autoReconnectPeriod=60')
+
     things = things_template.replace('###things###', things)
     os.makedirs(os.path.dirname(config['things_path']), exist_ok=True)
     open(config['things_path'],'w', encoding='utf8').write(things)

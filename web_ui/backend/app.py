@@ -346,7 +346,7 @@ if FLASK_AVAILABLE:
             # Save to the main config file (which contains knxproject_to_openhab settings)
             main_config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config.json')
             with open(main_config_path, 'w', encoding='utf-8') as f:
-                json.dump(new_config, f, indent=2)
+                json.dump(new_config, f, indent=2, ensure_ascii=False)
             
             return jsonify({'message': 'Configuration updated successfully'})
         except Exception as e:

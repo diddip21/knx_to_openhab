@@ -1,84 +1,53 @@
-# KNX to openhab generator
-Generate an openhab text configuration based on an ETS project File. 
-Despite all things and items, the sitemap for basicui is generated. The semantic model is supported. 
+# KNX to OpenHAB Generator
 
-## Web UI
+A powerful tool to generate complete [OpenHAB](https://www.openhab.org/) configurations (Items, Things, Sitemaps) directly from your ETS project export (`.knxproj`) or JSON dump.
 
-This project includes a web interface for easier project management and real-time monitoring.
+It includes a **Web UI** for easy management, file uploads, and monitoring, as well as a **CLI** for automated workflows.
 
-- **For Development** (local testing): See [DEVELOPMENT.md](DEVELOPMENT.md)
-- **For Production** (Raspberry Pi/DietPi with systemd): See [WEBUI_INSTALLATION.md](WEBUI_INSTALLATION.md)
+## Features
 
-### Quick Start (Web UI Development)
+- **Automated Generation**: Creates Things, Items, and Sitemaps automatically.
+- **Smart Detection**: Identifies Dimmers, Rollershutters, and Thermostats based on DPT and naming.
+- **ETS Integration**: Reads `.knxproj` files directly.
+- **Web Interface**: Browser-based UI to upload projects and monitor generation (great for Raspberry Pi).
+- **Semantic Model**: Automatically tags items for OpenHAB's model.
+- **InfluxDB Support**: Auto-configure persistence via ETS description tags.
 
-**Windows:**
-```powershell
-.\scripts\dev-setup.ps1
-.\scripts\dev-run.ps1
-```
+## Documentation
 
-**Linux/macOS:**
-```bash
-chmod +x scripts/*.sh
-./scripts/dev-setup.sh
-./scripts/dev-run.sh
-```
-
-Then open `http://localhost:5000` in your browser.
+- **[User Guide](docs/USER_GUIDE.md)**: Configuration, ETS preparation, Logic, and Troubleshooting.
+- **[Production Guide](docs/PRODUCTION_GUIDE.md)**: Installation on Raspberry Pi/DietPi (Service, Systemd).
+- **[Developer Guide](docs/DEVELOPER_GUIDE.md)**: Architecture, Testing, and Local Development.
 
 ---
 
-## Run (Command Line)
-- edit `config.json`
-    - the default locations for the output files match directly, if you create a `openhab` directory and mount the `/etc/openhab` there. (under linux use e.g. `sshfs pi@[myIP]:/etc/openhab openhab`)
-- run `python3 knxproject_to_openhab.py`
+## Quick Start (Installation)
 
-## drop words
-Within the configuration, there is a field `drop_words`. There you can define words which should not be used in labels. E.g. lights have already a bulb symbol. So the word light is not needed in the description. However, if the description would be empty after cleanup, the words are not dropped! (e.g. you have a `light right` and a `light left` -> bulb symbols with the words `right` and `left`. If you have only one light, the name will not be shortend as it is already short ;) )
+### One-Command Installer (Linux / Raspberry Pi)
+Ideally use a fresh install of Raspberry Pi OS (Lite) or DietPi.
 
-## ETS devices
+```bash
+curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install.sh | bash
+```
 
-IP Gateway: will match by `config` - devices - gateway - hardware_name and gets IPv4 Address from description field
+This will:
+1.  Install system dependencies (Python, git, etc.)
+2.  Clone the repository to `/opt/knx_to_openhab`
+3.  Set up the **knxui** service (Web UI)
+4.  Configure permissions for self-updates
 
-## ETS description field
+### How to Use
 
-there are some addons based on the description field of the GA in ETS. Multiple options are seperated by a semicolon. 
-- add `influx` to automatically save the values to influxDB.
-- add `debug` to add a visibility tag to a element. Use item `extended_view` to change visibility.
-- scene mappings: see below
-- add `location` to add the [location](https://github.com/openhab/openhab-core/blob/main/bundles/org.openhab.core.semantics/model/SemanticTags.csv) to the first two layers of group addresses. Divide multiple by `,` 
-- add `semantic` to overwrite the default entries. (e.g. if a switch is controlling a projector: semantic=Projector). [Possible options](https://github.com/openhab/openhab-core/blob/main/bundles/org.openhab.core.semantics/model/SemanticTags.csv). Divide multiple by `,`  
-- add `icon` to set the icon. e.g. `icon=projector`
-- add `ignore` to competely disable the import for that GA
+1.  **Open the Web UI**: Browser to `http://<your-ip>:8080`.
+    - **User**: `admin`
+    - **Password**: `changeme` (Change this in Settings!)
+2.  **Upload Project**: Upload your `.knxproj` export or JSON dump.
+3.  **Configure**: Go to **Settings** to map DPTs or adjust naming rules.
+4.  **Generate**: The system automatically generates Items, Things, and Sitemaps.
+5.  **Update**: Click the Version badge in the header to check for and apply updates.
 
-(e.g. `semantic=Pump;icon=pump;debug;influx`)
+---
 
-## Processed types:
-### Components determined only by GA
+## License
 
-DPT Types [DPTTypes](https://github.com/openhab/openhab-addons/blob/main/bundles/org.openhab.binding.knx/doc/dpt.txt)
-Numbers are now member of [UoM](https://www.openhab.org/docs/concepts/units-of-measurement.html#implementing-uom)
-- Temperature based on Datatype
-- Humidity  based on Datatype
-- Window Contact based on Datatype 1.019
-- Electrical work (wh) based on Datatype    
-- Power (W) based on Datatype
-- Curent based on Datatype
-- Lux based on Datatype
-- Day/Night based on Datatype 1.024
-- Alarm based on Datatype 1.005
-- Speed m/s based on Datatype
-- Timedifference based on Datatype 13.100
-- Scene based on Datatype. Add for example `63='Aus', 62='Automatik', 1='Kochen', 2='Beamer', 3='Allgemein'` to description in ETS to generate automatic mapping.
-- ppm based on Datatype
-- Percent based on Datatype
-- Volume based on Datatype
-- String based on Datatype
-
-### Components which need a naming scheme
-- Rollershutter based on Name
-- Switch - based on Datatype. Looking for a status GA with the same name and suffix configured in config.json/"switch"/"status_suffix". Default: "Status" 
-    - Example: GAs "Light right" + "Light right Status"
-    - Lights, powerplugs and audio devices can be detected by names configured at config.json -> defines -> switch - change_metadata -> "poweroutlet_name" / "speaker_name" / "light_name". The configured name has to be part of the GA Name.
-- Dimmer - based on suffix in config.json/"dimmer"/"suffix_absolut" (default: "Dimmen absolut"). Also searching for: "status_suffix" (default "Status Dimmwert") Dropping all GA suffixes within config.json/"dimmer"/"drop".
-    -  Example: GAs "Light Dimmen absolut" + "Light Status Dimmwert"
+This project is open-source.

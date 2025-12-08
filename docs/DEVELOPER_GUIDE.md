@@ -2,7 +2,7 @@
 
 This guide helps you set up a local development environment to work on the KNX to OpenHAB Web UI.
 
-> **Note:** For production installation on Raspberry Pi/DietPi, see [WEBUI_INSTALLATION.md](WEBUI_INSTALLATION.md)
+> **Note:** For production installation on Raspberry Pi/DietPi, see [Production Guide](PRODUCTION_GUIDE.md)
 
 ---
 
@@ -540,8 +540,8 @@ Flask's debug mode watches Python files, but not templates/static by default. Fo
 
 ## Support
 
-- **Main Docs**: [README.md](README.md)
-- **Production Install**: [WEBUI_INSTALLATION.md](WEBUI_INSTALLATION.md)
+- **Main Docs**: [README.md](../README.md)
+- **Production Install**: [Production Guide](PRODUCTION_GUIDE.md)
 - **Issues**: Open an issue on GitHub with logs and error messages
 
 ---

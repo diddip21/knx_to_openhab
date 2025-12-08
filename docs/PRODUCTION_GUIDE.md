@@ -1,4 +1,4 @@
-# KNX to OpenHAB Web UI — Complete Documentation
+# Production Installation Guide — KNX to OpenHAB
 
 ## Overview
 
@@ -333,7 +333,7 @@ Health check (no auth required).
 │   ├── static/
 │   │   ├── app.js                      # Frontend logic & SSE
 │   │   └── style.css                   # Styling
-│   └── README.md                       # This file
+│   └── README.md                       # Web UI readme
 ├── installer/
 │   ├── setup.sh                        # Installation script
 │   ├── backup_cleanup.sh               # Cleanup script

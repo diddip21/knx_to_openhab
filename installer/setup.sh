@@ -6,9 +6,14 @@ BASE="/opt/knx_to_openhab"
 SERVICE_USER="knxui"
 PYVER=$(python3 -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))')
 
+echo "Creating service user"
+if ! id -u $SERVICE_USER >/dev/null 2>&1; then
+  sudo useradd -r -s /bin/bash -m $SERVICE_USER || true
+fi
+
 echo "Creating base dir $BASE"
 sudo mkdir -p "$BASE"
-sudo chown "$USER":"$USER" "$BASE"
+sudo chown "$SERVICE_USER":"$SERVICE_USER" "$BASE"
 
 echo "Creating python venv"
 python3 -m venv "$BASE/venv"
@@ -21,16 +26,21 @@ rsync -a --exclude .git . "$BASE/"
 echo "Creating runtime dirs"
 sudo mkdir -p /var/lib/knx_to_openhab
 sudo mkdir -p /var/backups/knx_to_openhab
-sudo chown -R "$USER":"$USER" /var/lib/knx_to_openhab /var/backups/knx_to_openhab
+# Change ownership to service user for all directories
+sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$BASE"
+sudo chown -R "$SERVICE_USER":"$SERVICE_USER" /var/lib/knx_to_openhab /var/backups/knx_to_openhab
+
+# Mark directory as safe for git (required since we change ownership)
+sudo -u "$SERVICE_USER" git config --global --add safe.directory "$BASE"
 
 echo "Creating service user"
 if ! id -u $SERVICE_USER >/dev/null 2>&1; then
-  sudo useradd -r -s /usr/sbin/nologin $SERVICE_USER || true
+  sudo useradd -r -s /bin/bash -m $SERVICE_USER || true
 fi
 
-echo "Create sudoers entry for restarting openhab"
+echo "Create sudoers entry for restarting services"
 SUDOERS_FILE="/etc/sudoers.d/knxui"
-echo "$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart openhab.service" | sudo tee $SUDOERS_FILE
+echo "$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart openhab.service, /bin/systemctl restart knxui.service" | sudo tee $SUDOERS_FILE
 sudo chmod 440 $SUDOERS_FILE
 
 echo "Installing systemd units and timers"

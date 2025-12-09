@@ -196,7 +196,7 @@ def get_addresses(project: KNXProject):
 def should_ignore_address(address):
     """Determine if an address should be ignored based on various criteria."""
     if 'ignore' in address['comment'] or not address['communication_object_ids'] or not address["dpt"]:
-        logger.info("Ignore: %s", address['name'])
+        logger.debug("Ignore: %s", address['name'])
         return True
     return False
 
@@ -294,7 +294,7 @@ def place_address_in_building(building, address, cabinet_devices):
                     for room in floor["rooms"]:
                         if room["name_short"] == address["Room"]:
                             room.setdefault("Addresses", []).append(address)
-                            logger.info("Address %s placed in Room: %s, Floor: %s", address['Address'], room['name_short'], floor['name_short'])
+                            logger.debug("Address %s placed in Room: %s, Floor: %s", address['Address'], room['name_short'], floor['name_short'])
                             return True
     return False
 
@@ -307,7 +307,7 @@ def place_address_by_device(building, address, read_co,addresses):
                     if 'devices' in room and read_co['device_address'] in room['devices']:
                         put_address_to_right_place(address, floor["name_short"], room["name_short"], addresses)
                         room["Addresses"].append(address)
-                        logger.info("Address %s placed in Room (via device association): %s, Floor: %s", address['Address'], room['name_short'], floor['name_short'])
+                        logger.debug("Address %s placed in Room (via device association): %s, Floor: %s", address['Address'], room['name_short'], floor['name_short'])
                         return True
     return False
 

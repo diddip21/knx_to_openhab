@@ -473,7 +473,7 @@ def gen_building():
                                 if B_ALEXA:
                                     meta_alexa=', alexa = "Light"'
                             else:
-                                logger.warning("incomplete dimmer: %s / %s",basename,address['Address'])
+                                logger.error("incomplete dimmer: %s / %s",basename,address['Address'])
 
                         # rollos / jalousien
                         elif address['DatapointType'] == get_datapoint_type('rollershutter'):
@@ -535,7 +535,7 @@ def gen_building():
                                     equip_alexa='alexa = "Blind"'
                                     meta_alexa=', alexa = "PositionState"'
                             else:
-                                logger.warning("incomplete rollershutter: %s",basename)
+                                logger.error("incomplete rollershutter: %s",basename)
 
                         # Heizung
                         elif address['DatapointType'] in (get_datapoint_type('heating'), get_datapoint_type('heating_mode')):
@@ -575,7 +575,7 @@ def gen_building():
                                 metadata=', stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]'
 
                             else:
-                                logger.warning("incomplete heating: %s",basename)
+                                logger.error("incomplete heating: %s",basename)
 
                     #  erst im zweiten durchlauf prüfen damit integrierte Schaltobjekte (z.B. dimmen) vorher schon erkannt werden.
                     if run > 0:
@@ -819,7 +819,7 @@ def check_unused_addresses():
     """Logs all unused addresses for further manual actions"""
     # process all addresses which were not used
     for address in all_addresses:
-        logger.info("unused: %s: %s with type %s",address['Address'],address['Group name'],address['DatapointType'])
+        logger.debug("unused: %s: %s with type %s",address['Address'],address['Group name'],address['DatapointType'])
 
 def export_output(items,sitemap,things):
     """Exports things / items / sitemap / ...  Files"""

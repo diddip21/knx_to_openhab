@@ -409,7 +409,7 @@
         "Audio": {
           "equipment": "Speaker",
           "item_icon": "soundvolume",
-          "semantic_info": "[\"Control\", \"Switch\"]"
+          "semantic_info": "[\"Switch\"]"
         },
         "Heizen": {
           "equipment": "HVAC",
@@ -427,7 +427,7 @@
         "Steckdose": {
           "equipment": "PowerOutlet",
           "item_icon": "poweroutlet",
-          "semantic_info": "[\"Control\", \"Switch\"]"
+          "semantic_info": "[\"Switch\"]"
         }
       },
       "status_dpts": [

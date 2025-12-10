@@ -325,11 +325,11 @@ def gen_building():
         floor_variables = process_description(description, floor_variables)
 
         floor_configuration += f"Group   map{floor_nr}   \"{floor_variables['name']}\" {floor_variables['icon']} (Base) {floor_variables['semantic']} {floor_variables['synonyms']} \n"
-        floor_configuration += f"Group:Rollershutter:AVG        map{floor_nr}_Blinds         \"{floor_variables['name']} Jalousie/Rollo\"                      <rollershutter>    (map{floor_nr},Base_Blinds)                  [\"Blinds\"]         {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
-        floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Lights         \"{floor_variables['name']} Beleuchtung\"                         <light>            (map{floor_nr},Base_Lights)                  [\"Light\"] \n"
+        floor_configuration += f"Group:Rollershutter:AVG        map{floor_nr}_Blinds         \"{floor_variables['name']} Jalousie/Rollo\"                      <rollershutter>    (map{floor_nr})                  [\"Blinds\"]         {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
+        floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Lights         \"{floor_variables['name']} Beleuchtung\"                         <light>            (map{floor_nr})                  [\"Light\"] \n"
         #floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Presence       \"{floor_variables['name']} Präsenz [MAP(presence.map):%s]\"      <presence>         (map{floor_nr},Base)                  [\"Presence\"] \n"
-        floor_configuration += f"Group:Contact:OR(OPEN, CLOSED) map{floor_nr}_Contacts       \"{floor_variables['name']} Öffnungsmelder\"                      <contact>          (map{floor_nr},Base_Contacts)                [\"OpenState\"] \n"
-        floor_configuration += f"Group:Number:Temperature:AVG   map{floor_nr}_Temperature    \"{floor_variables['name']} Ø Temperatur\"                        <temperature>      (map{floor_nr},Base_Temperature)             [\"Measurement\", \"Temperature\"]        {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
+        floor_configuration += f"Group:Contact:OR(OPEN, CLOSED) map{floor_nr}_Contacts       \"{floor_variables['name']} Öffnungsmelder\"                      <contact>          (map{floor_nr})                [\"OpenState\"] \n"
+        floor_configuration += f"Group:Number:Temperature:AVG   map{floor_nr}_Temperature    \"{floor_variables['name']} Ø Temperatur\"                        <temperature>      (map{floor_nr})             [\"Measurement\", \"Temperature\"]        {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
         return floor_configuration, floor_name
     def generate_room_configuration(room, floor_nr, room_nr):
         """
@@ -341,7 +341,7 @@ def gen_building():
             room_name = room['Description']
         #room_name_original = room_name
         description = room['Description'].split(';')
-        room_variables = {'visibility': '', 'semantic': f'["Location", "Room", "{room_name}"]', 'icon': '', 'synonyms': '', 'name': room_name}
+        room_variables = {'visibility': '', 'semantic': f'["Room", "{room_name}"]', 'icon': '', 'synonyms': '', 'name': room_name}
         room_variables = process_description(description, room_variables)
 
         room_configuration += f"Group   map{floor_nr}_{room_nr}   \"{room_variables['name']}\"  {room_variables['icon']}  (map{floor_nr})   {room_variables['semantic']} {room_variables['synonyms']}\n"
@@ -467,7 +467,7 @@ def gen_building():
                                 equipment = 'Lightbulb'
                                 semantic_info = "[\"Light\"]"
                                 item_icon = "light"
-                                floor_grp = f"map{floor_nr}_Lights"
+                                #floor_grp = f"map{floor_nr}_Lights"
                                 if B_HOMEKIT:
                                     meta_homekit=', homekit="Lighting, Lighting.Brightness"'
                                 if B_ALEXA:
@@ -527,7 +527,7 @@ def gen_building():
                                 equipment = 'Blinds'
                                 semantic_info = "[\"Blinds\"]"
                                 item_icon = "rollershutter"
-                                floor_grp = f"map{floor_nr}_Blinds"
+                                #floor_grp = f"map{floor_nr}_Blinds"
                                 if B_HOMEKIT:
                                     equip_homekit='homekit = "WindowCovering"'
                                     meta_homekit=', homekit = "CurrentPosition, TargetPosition, PositionState"'
@@ -603,7 +603,7 @@ def gen_building():
                             else:
                                 auto_add = True
                                 thing_address_info = f"ga=\"{address['Address']}\""
-                                semantic_info = "[\"Control\", \"Switch\"]"
+                                semantic_info = "[\"Switch\"]"
                                 item_icon = "switch"
                             if B_HOMEKIT:
                                 meta_homekit=', homekit="Switchable"'
@@ -637,8 +637,8 @@ def gen_building():
                                 if 'Soll' in lovely_name:
                                     semantic_info = semantic_info.replace("Measurement","Setpoint")
                                     meta_homekit = meta_homekit.replace("CurrentTemperature","TargetTemperature")
-                                if 'floor_group' in mapping_info:
-                                    floor_grp = f"map{floor_nr}_{mapping_info['floor_group']}"
+                                #if 'floor_group' in mapping_info:
+                                #    floor_grp = f"map{floor_nr}_{mapping_info['floor_group']}"
                                 break
                         # window/door
                         if address['DatapointType'] == get_datapoint_type('window_contact'):
@@ -707,11 +707,11 @@ def gen_building():
                                             item_icon = define['change_metadata'][item][var]
                                         case 'equipment':
                                             equipment = define['change_metadata'][item][var]
-                                        case 'floor_group':
-                                            if define['change_metadata'][item][var]:
-                                                floor_grp = f"map{floor_nr}_{define['change_metadata'][item][var]}"
-                                            else:
-                                                floor_grp = None
+                                        #case 'floor_group':
+                                        #    if define['change_metadata'][item][var]:
+                                        #        floor_grp = f"map{floor_nr}_{define['change_metadata'][item][var]}"
+                                        #    else:
+                                        #        floor_grp = None
                                         case 'homekit':
                                             if B_HOMEKIT:
                                                 meta_homekit=define['change_metadata'][item][var]

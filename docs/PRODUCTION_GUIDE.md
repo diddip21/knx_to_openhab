@@ -369,6 +369,30 @@ sudo journalctl -u knxohui.service -n 50 -f
 sudo systemctl restart knxohui.service
 ```
 
+### Permission Denied Errors
+If you encounter "Permission denied" errors when trying to write to OpenHAB directories:
+
+1. Verify the knxohui user is in the openhab group:
+   ```bash
+   groups knxohui
+   ```
+
+2. Check that the openhab group has proper permissions:
+   ```bash
+   ls -la /etc/openhab
+   ```
+
+3. The installer and updater scripts automatically handle these permissions, but if needed, you can verify with:
+   ```bash
+   sudo usermod -a -G openhab knxohui
+   sudo chmod -R 775 /etc/openhab
+   ```
+
+4. Restart the service to apply changes:
+   ```bash
+   sudo systemctl restart knxohui.service
+   ```
+
 ### Update Fails with "Permission denied"
 If the update log shows "Permission denied" or "error: cannot open .git/FETCH_HEAD":
 

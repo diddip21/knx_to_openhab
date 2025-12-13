@@ -25,6 +25,19 @@ if ! cd "$INSTALL_DIR"; then
     exit 1
 fi
 
+# Ensure proper group permissions for OpenHAB access
+log "Ensuring OpenHAB group permissions..."
+# Check if openhab group exists, create if needed
+if ! getent group openhab > /dev/null 2>&1; then
+    sudo groupadd openhab
+fi
+# Add knxohui user to openhab group
+sudo usermod -a -G openhab knxohui 2>/dev/null || true
+# Set proper permissions on OpenHAB directory if it exists
+if [ -d "/etc/openhab" ]; then
+    sudo chmod -R 775 /etc/openhab 2>/dev/null || true
+fi
+
 # Check permissions
 if [[ ! -w ".git" ]]; then
     log "ERROR: Permission denied. Cannot write to .git directory."

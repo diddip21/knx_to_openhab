@@ -45,6 +45,18 @@ sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$JOBS_DIR" "$BACKUPS_DIR"
 # Mark directory as safe for git (required since we change ownership)
 sudo -u "$SERVICE_USER" git config --global --add safe.directory "$BASE"
 
+echo "Setting up group permissions for OpenHAB access"
+# Check if openhab group exists, create if needed
+if ! getent group openhab > /dev/null 2>&1; then
+    sudo groupadd openhab
+fi
+# Add knxohui user to openhab group
+sudo usermod -a -G openhab $SERVICE_USER
+# Set proper permissions on OpenHAB directory if it exists
+if [ -d "/etc/openhab" ]; then
+    sudo chmod -R 775 /etc/openhab 2>/dev/null || true
+fi
+
 echo "Creating service user"
 if ! id -u $SERVICE_USER >/dev/null 2>&1; then
   sudo useradd -r -s /bin/bash -m $SERVICE_USER || true

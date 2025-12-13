@@ -52,7 +52,16 @@ fi
 
 echo "Create sudoers entry for restarting services"
 SUDOERS_FILE="/etc/sudoers.d/knxohui"
-echo "$SERVICE_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart openhab.service, /bin/systemctl restart knxohui.service, /bin/systemctl is-active openhab.service, /bin/systemctl is-active knxohui.service" | sudo tee $SUDOERS_FILE
+# Allow both /bin/systemctl and /usr/bin/systemctl to cover different OS layouts
+# Allow restart, is-active, and show (for uptime info)
+CMDS="/bin/systemctl restart openhab.service, /usr/bin/systemctl restart openhab.service"
+CMDS="$CMDS, /bin/systemctl restart knxohui.service, /usr/bin/systemctl restart knxohui.service"
+CMDS="$CMDS, /bin/systemctl is-active openhab.service, /usr/bin/systemctl is-active openhab.service"
+CMDS="$CMDS, /bin/systemctl is-active knxohui.service, /usr/bin/systemctl is-active knxohui.service"
+CMDS="$CMDS, /bin/systemctl show openhab.service *, /usr/bin/systemctl show openhab.service *"
+CMDS="$CMDS, /bin/systemctl show knxohui.service *, /usr/bin/systemctl show knxohui.service *"
+
+echo "$SERVICE_USER ALL=(ALL) NOPASSWD: $CMDS" | sudo tee $SUDOERS_FILE
 sudo chmod 440 $SUDOERS_FILE
 
 echo "Installing systemd units and timers"

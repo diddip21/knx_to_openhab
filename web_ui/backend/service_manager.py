@@ -11,8 +11,17 @@ def get_service_status(service_name: str):
         
         # If output is empty or unknown, try with sudo (in case user needs privs to see status)
         if not status or status == 'unknown':
-             proc = subprocess.run(['sudo', 'systemctl', 'is-active', service_name], capture_output=True, text=True, timeout=10)
-             status = proc.stdout.strip()
+             proc_sudo = subprocess.run(['sudo', 'systemctl', 'is-active', service_name], capture_output=True, text=True, timeout=10)
+             status_sudo = proc_sudo.stdout.strip()
+             if status_sudo and status_sudo != 'unknown':
+                 status = status_sudo
+                 proc = proc_sudo
+             else:
+                 # If sudo also failed to find it, keep track of errors for debugging
+                 if proc_sudo.stderr:
+                      print(f"Service check failed (sudo): {proc_sudo.stderr}")
+                 if proc.stderr:
+                      print(f"Service check failed (non-sudo): {proc.stderr}")
         
         if not status:
             status = 'unknown'
@@ -25,6 +34,13 @@ def get_service_status(service_name: str):
             ['systemctl', 'show', service_name, '-p', 'ActiveEnterTimestamp,StateChangeTimestamp,InactiveEnterTimestamp'], 
             capture_output=True, text=True, timeout=10
         )
+        
+        # If output is empty or failed, try with sudo (in case user needs privs to see properties)
+        if proc_show.returncode != 0 or not proc_show.stdout.strip():
+             proc_show = subprocess.run(
+                ['sudo', 'systemctl', 'show', service_name, '-p', 'ActiveEnterTimestamp,StateChangeTimestamp,InactiveEnterTimestamp'], 
+                capture_output=True, text=True, timeout=10
+            )
         # Output is like:
         # ActiveEnterTimestamp=Mon 2023-10-23 10:00:00 CEST
         # InactiveEnterTimestamp=...

@@ -6,9 +6,9 @@ This directory contains installation and maintenance scripts for the web UI.
 
 - **`setup.sh`** — Main installer script (run once as sudo)
 - **`backup_cleanup.sh`** — Backup retention enforcement script
-- **`knxui.service`** — systemd unit for Flask web server
-- **`knxui-backup-cleanup.service`** — systemd unit for cleanup oneshot
-- **`knxui-backup-cleanup.timer`** — systemd timer (runs cleanup daily)
+- **`knxohui.service`** — systemd unit for Flask web server
+- **`knxohui-backup-cleanup.service`** — systemd unit for cleanup oneshot
+- **`knxohui-backup-cleanup.timer`** — systemd timer (runs cleanup daily)
 
 ## Quick Install
 
@@ -31,36 +31,36 @@ See `WEBUI_INSTALLATION.md` for full documentation.
 
 ```bash
 # Start/stop web UI
-sudo systemctl start knxui.service
-sudo systemctl stop knxui.service
-sudo systemctl restart knxui.service
+sudo systemctl start knxohui.service
+sudo systemctl stop knxohui.service
+sudo systemctl restart knxohui.service
 
 # Check status
-sudo systemctl status knxui.service
+sudo systemctl status knxohui.service
 
 # View logs
-sudo journalctl -u knxui.service -f
+sudo journalctl -u knxohui.service -f
 
 # Run backup cleanup manually
-sudo systemctl start knxui-backup-cleanup.service
+sudo systemctl start knxohui-backup-cleanup.service
 
 # Check timer status
-sudo systemctl status knxui-backup-cleanup.timer
+sudo systemctl status knxohui-backup-cleanup.timer
 ```
 
 ## Uninstall
 
 ```bash
 # Stop and disable services
-sudo systemctl stop knxui.service
-sudo systemctl disable knxui.service
-sudo systemctl stop knxui-backup-cleanup.timer
-sudo systemctl disable knxui-backup-cleanup.timer
+sudo systemctl stop knxohui.service
+sudo systemctl disable knxohui.service
+sudo systemctl stop knxohui-backup-cleanup.timer
+sudo systemctl disable knxohui-backup-cleanup.timer
 
 # Remove service files
-sudo rm /etc/systemd/system/knxui.service
-sudo rm /etc/systemd/system/knxui-backup-cleanup.service
-sudo rm /etc/systemd/system/knxui-backup-cleanup.timer
+sudo rm /etc/systemd/system/knxohui.service
+sudo rm /etc/systemd/system/knxohui-backup-cleanup.service
+sudo rm /etc/systemd/system/knxohui-backup-cleanup.timer
 sudo systemctl daemon-reload
 
 # Remove installation
@@ -69,8 +69,8 @@ sudo rm -rf /var/lib/knx_to_openhab
 sudo rm -rf /var/backups/knx_to_openhab
 
 # Remove sudoers entry
-sudo rm /etc/sudoers.d/knxui
+sudo rm /etc/sudoers.d/knxohui
 
 # Remove system user
-sudo userdel knxui
+sudo userdel knxohui
 ```

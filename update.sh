@@ -8,7 +8,7 @@ set -euo pipefail
 INSTALL_DIR="/opt/knx_to_openhab"
 LOG_FILE="/var/log/knx_to_openhab_update.log"
 BACKUP_DIR="/var/backups/knx_to_openhab"
-SERVICE_NAME="knxui.service"
+SERVICE_NAME="knxohui.service"
 
 # Logging function
 log() {

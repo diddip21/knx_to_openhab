@@ -357,16 +357,16 @@ Health check (no auth required).
 ### Web UI Not Accessible
 ```bash
 # Check service is running
-sudo systemctl status knxui.service
+sudo systemctl status knxohui.service
 
 # Check port 8080 is open
 netstat -tulpn | grep 8080
 
 # View service logs
-sudo journalctl -u knxui.service -n 50 -f
+sudo journalctl -u knxohui.service -n 50 -f
 
 # Manually restart
-sudo systemctl restart knxui.service
+sudo systemctl restart knxohui.service
 ```
 
 ### Backup/Rollback Issues
@@ -375,10 +375,10 @@ sudo systemctl restart knxui.service
 ls -lh /var/backups/knx_to_openhab/
 
 # Manual cleanup (if timer not working)
-sudo systemctl start knxui-backup-cleanup.service
+sudo systemctl start knxohui-backup-cleanup.service
 
 # View cleanup logs
-sudo journalctl -u knxui-backup-cleanup.service
+sudo journalctl -u knxohui-backup-cleanup.service
 ```
 
 ### Authentication Problems
@@ -387,7 +387,7 @@ sudo journalctl -u knxui-backup-cleanup.service
 sudo nano /opt/knx_to_openhab/web_ui/backend/config.json
 
 # Restart to apply
-sudo systemctl restart knxui.service
+sudo systemctl restart knxohui.service
 ```
 
 ### Job Processing Stuck
@@ -416,8 +416,7 @@ Edit `/opt/knx_to_openhab/web_ui/backend/config.json`:
 ```json
 "port": 9000
 ```
-Then restart: `sudo systemctl restart knx-ui.service`
-Then restart: `sudo systemctl restart knxui.service`
+Then restart: `sudo systemctl restart knxohui.service`
 
 ### Adjust Retention
 Edit `/opt/knx_to_openhab/web_ui/backend/config.json`:
@@ -480,9 +479,8 @@ cat /var/lib/knx_to_openhab/jobs.json | python3 -m json.tool
 For issues or feature requests:
 1. Check the API reference above
 2. Review troubleshooting section
-3. Check systemd logs: `sudo journalctl -u knx-ui.service`
-3. Check systemd logs: `sudo journalctl -u knxui.service`
-  sudo systemctl start knxui-backup-cleanup.service
+3. Check systemd logs: `sudo journalctl -u knxohui.service`
+  sudo systemctl start knxohui-backup-cleanup.service
 4. Open an issue on GitHub with logs and error messages
 
 ---

@@ -195,7 +195,7 @@ class Updater:
             
             # Execute update script in background
             # The script will handle git pull, dependency updates, and service restart
-            # Ensure we are using the correct user if possible, though the service should already be running as knxui
+            # Ensure we are using the correct user if possible, though the service should already be running as knxohui
             subprocess.Popen(
                 ['/bin/bash', update_script],
                 cwd=self.base_path,

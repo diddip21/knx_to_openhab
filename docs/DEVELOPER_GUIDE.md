@@ -151,7 +151,7 @@ knx_to_openhab/
 ├── installer/                      # Production installation
 │   ├── setup.sh                    # systemd installer (Linux)
 │   ├── backup_cleanup.sh           # Cleanup script
-│   ├── knxui.service               # systemd unit
+│   ├── knxohui.service               # systemd unit
 │   └── ...
 │
 ├── scripts/                        # Development helper scripts

@@ -20,26 +20,26 @@ log "Starting KNX to OpenHAB Generator update"
 log "========================================="
 
 # Change to installation directory
-23: cd "$INSTALL_DIR" || {
-24:     log "ERROR: Failed to change to $INSTALL_DIR"
-25:     exit 1
-26: }
-27: 
-28: # Check permissions
-29: if [[ ! -w ".git" ]]; then
-30:     log "ERROR: Permission denied. Cannot write to .git directory."
-31:     log "The likely cause is incorrect file ownership."
-32:     log "Please fix it by running:"
-33:     log "  sudo chown -R knxohui:knxohui $INSTALL_DIR $BACKUP_DIR"
-34:     exit 1
-35: fi
-36: 
-37: if [[ -d "$BACKUP_DIR" ]] && [[ ! -w "$BACKUP_DIR" ]]; then
-38:     log "ERROR: Permission denied. Cannot write to backup directory: $BACKUP_DIR"
-39:     log "Please fix it by running:"
-40:     log "  sudo chown -R knxohui:knxohui $BACKUP_DIR"
-41:     exit 1
-42: fi
+if ! cd "$INSTALL_DIR"; then
+    log "ERROR: Failed to change to $INSTALL_DIR"
+    exit 1
+fi
+
+# Check permissions
+if [[ ! -w ".git" ]]; then
+    log "ERROR: Permission denied. Cannot write to .git directory."
+    log "The likely cause is incorrect file ownership."
+    log "Please fix it by running:"
+    log "  sudo chown -R knxohui:knxohui $INSTALL_DIR $BACKUP_DIR"
+    exit 1
+fi
+
+if [[ -d "$BACKUP_DIR" ]] && [[ ! -w "$BACKUP_DIR" ]]; then
+    log "ERROR: Permission denied. Cannot write to backup directory: $BACKUP_DIR"
+    log "Please fix it by running:"
+    log "  sudo chown -R knxohui:knxohui $BACKUP_DIR"
+    exit 1
+fi
 
 # Create backup of current installation
 log "Creating backup of current installation..."
@@ -69,10 +69,10 @@ git -c safe.directory='*' stash || log "WARNING: Git stash failed"
 
 # Fetch latest changes from GitHub
 log "Fetching latest changes from GitHub..."
-git -c safe.directory='*' fetch origin || {
+if ! git -c safe.directory='*' fetch origin; then
     log "ERROR: Failed to fetch from GitHub"
     exit 1
-}
+fi
 
 # Get current and remote commit hashes
 CURRENT_COMMIT=$(git -c safe.directory='*' rev-parse HEAD)
@@ -88,23 +88,23 @@ fi
 
 # Pull latest changes
 log "Pulling latest changes..."
-git -c safe.directory='*' pull origin main || {
+if ! git -c safe.directory='*' pull origin main; then
     log "ERROR: Git pull failed"
     log "Attempting to restore from backup..."
     git -c safe.directory='*' reset --hard "$CURRENT_COMMIT"
     exit 1
-}
+fi
 
 # Update Python dependencies
 log "Updating Python dependencies..."
 if [[ -f "$INSTALL_DIR/venv/bin/pip" ]]; then
     "$INSTALL_DIR/venv/bin/pip" install --upgrade pip -q || log "WARNING: pip upgrade failed"
-    "$INSTALL_DIR/venv/bin/pip" install -r requirements.txt -q || {
+    if ! "$INSTALL_DIR/venv/bin/pip" install -r requirements.txt -q; then
         log "ERROR: Failed to install dependencies"
         log "Attempting to restore from backup..."
         git -c safe.directory='*' reset --hard "$CURRENT_COMMIT"
         exit 1
-    }
+    fi
 else
     log "WARNING: Virtual environment not found, skipping dependency update"
 fi
@@ -127,11 +127,11 @@ fi
 
 # Restart the service
 log "Restarting $SERVICE_NAME..."
-sudo systemctl restart "$SERVICE_NAME" || {
+if ! sudo systemctl restart "$SERVICE_NAME"; then
     log "ERROR: Failed to restart service"
     log "Service may need manual restart: sudo systemctl restart $SERVICE_NAME"
     exit 1
-}
+fi
 
 # Wait a moment for service to start
 sleep 2

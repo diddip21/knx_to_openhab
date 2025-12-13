@@ -12,7 +12,7 @@
 <body>
   <div class="container">
     <div class="header-container">
-      <h1>🏠 KNX → OpenHAB Generator</h1>
+      <h1><img src="/static/favicon.png" class="header-icon" alt="Logo"> KNX → OpenHAB Generator</h1>
       <div class="version-badge" id="versionBadge" onclick="checkForUpdates()" title="Click to check for updates">
         <span class="version-label">Version:</span>
         <span id="headerCommit">Loading...</span>
@@ -258,6 +258,19 @@
     </div>
     <div class="dialog-footer">
       <button onclick="document.getElementById('updateLogModal').close()" class="btn-primary">Close</button>
+    </div>
+  </dialog>
+
+  <!-- Update Success Dialog -->
+  <dialog id="updateSuccessDialog" class="success-dialog">
+    <div class="dialog-content text-center">
+      <div class="success-icon">✅</div>
+      <h2>Update Initiated!</h2>
+      <p>The system is restarting to apply changes.</p>
+      <div class="countdown-container">
+        <span id="reloadCountdown">15</span>
+        <span class="countdown-label">seconds until reload</span>
+      </div>
     </div>
   </dialog>
 

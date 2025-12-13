@@ -66,6 +66,15 @@ h1 {
   font-weight: 700;
   font-size: 32px;
   letter-spacing: -0.5px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-icon {
+  width: 1em;
+  height: 1em;
+  object-fit: contain;
 }
 
 h2 {
@@ -539,6 +548,32 @@ dialog::backdrop {
 dialog button {
   margin-top: 15px;
   margin-right: 10px;
+}
+
+.success-dialog {
+  text-align: center;
+  border-top: 5px solid var(--success-green);
+}
+
+.success-icon {
+  font-size: 48px;
+  margin-bottom: 20px;
+}
+
+.countdown-container {
+  margin-top: 30px;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--primary-blue);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.countdown-label {
+  font-size: 14px;
+  color: var(--text-light);
+  font-weight: 400;
 }
 
 select {

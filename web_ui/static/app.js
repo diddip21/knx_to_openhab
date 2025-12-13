@@ -1226,6 +1226,8 @@ async function performUpdate() {
 
 function startUpdateLogPolling() {
   const logContent = document.getElementById('updateLogContent')
+  const successDialog = document.getElementById('updateSuccessDialog')
+  const countdownEl = document.getElementById('reloadCountdown')
 
   if (updatePollInterval) clearInterval(updatePollInterval)
 
@@ -1235,25 +1237,42 @@ function startUpdateLogPolling() {
       if (res.ok) {
         const data = await res.json()
         if (data.log) {
-          // If content changed or just to be sure, update it
+          // Update log display
           if (logContent.textContent.length !== data.log.length || !logContent.textContent.startsWith(data.log.substring(0, 20))) {
             logContent.textContent = data.log
             logContent.scrollTop = logContent.scrollHeight
           }
 
-          // Check for completion
-          if (data.log.includes('Update completed successfully!') || data.log.includes('Service restarted successfully')) {
-            if (!logContent.textContent.includes('--- REFRESHING PAGE ---')) {
-              logContent.textContent += '\n\n--- REFRESHING PAGE IN 5 SECONDS ---'
-              logContent.scrollTop = logContent.scrollHeight
-              setTimeout(() => window.location.reload(), 5000)
+          // Trigger reload sequence when restart is imminent
+          if (data.log.includes('Restarting knxohui.service') || data.log.includes('Update completed successfully')) {
+            if (!successDialog.open) {
+              // Stop polling
               clearInterval(updatePollInterval)
+
+              // Show success dialog
+              document.getElementById('updateLogModal').close()
+              successDialog.showModal()
+
+              // Start countdown
+              let secondsLeft = 15
+              countdownEl.textContent = secondsLeft
+
+              const countdownInterval = setInterval(() => {
+                secondsLeft--
+                countdownEl.textContent = secondsLeft
+
+                if (secondsLeft <= 0) {
+                  clearInterval(countdownInterval)
+                  window.location.reload()
+                }
+              }, 1000)
             }
           }
         }
       }
     } catch (e) {
-      // Ignore network errors (server restarting)
+      // Ignore network errors as service might be restarting
+      console.log('Poll error (expected during restart):', e)
     }
   }, 1000)
 }

@@ -241,6 +241,12 @@ if FLASK_AVAILABLE:
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @app.route('/api/version/log', methods=['GET'])
+    def get_update_log():
+        """Get the log of the last update attempt."""
+        return jsonify({'log': updater.get_update_log()})
+
+
     @app.route('/api/file/preview', methods=['GET'])
     def file_preview():
         """Preview a generated OpenHAB configuration file."""

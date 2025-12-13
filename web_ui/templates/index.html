@@ -244,6 +244,22 @@
     </div>
   </dialog>
 
+  <!-- Update Log Modal -->
+  <dialog id="updateLogModal" class="log-dialog">
+    <div class="dialog-header">
+      <h2>📜 Update Log</h2>
+      <button class="close-btn" onclick="document.getElementById('updateLogModal').close()">✕</button>
+    </div>
+    <div class="dialog-content">
+      <div class="log-container">
+        <pre id="updateLogContent" class="log-content">Waiting for logs...</pre>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button onclick="document.getElementById('updateLogModal').close()" class="btn-primary">Close</button>
+    </div>
+  </dialog>
+
   <!-- Rollback Dialog -->
   <dialog id="rollbackDialog">
     <h2>Rollback to Backup</h2>

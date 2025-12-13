@@ -436,15 +436,15 @@ async function refreshServices() {
 
       const statusClass = status.active ? 'active' : 'inactive'
       const statusText = status.status.charAt(0).toUpperCase() + status.status.slice(1)
-      
+
       let extraInfo = ''
       if (status.active && status.uptime_str) {
-         // Simplify timestamp display if it's very long
-         let ts = status.uptime_str.split('=', 1)[1] || status.uptime_str
-         extraInfo = `<div class="service-uptime" title="${status.uptime_str}">Since: ${ts}</div>`
+        // Simplify timestamp display if it's very long
+        let ts = status.uptime_str.split('=', 1)[1] || status.uptime_str
+        extraInfo = `<div class="service-uptime" title="${status.uptime_str}">Since: ${ts}</div>`
       } else if (!status.active && status.last_run_str) {
-         let ts = status.last_run_str.split('=', 1)[1] || status.last_run_str
-         extraInfo = `<div class="service-uptime" title="${status.last_run_str}">Last active: ${ts}</div>`
+        let ts = status.last_run_str.split('=', 1)[1] || status.last_run_str
+        extraInfo = `<div class="service-uptime" title="${status.last_run_str}">Last active: ${ts}</div>`
       }
 
       div.innerHTML = `
@@ -1193,38 +1193,67 @@ function showUpdateDialog(updateData) {
   // Show dialog
   document.getElementById('updateDialog').showModal()
 }
-async function performUpdate() {
-  const btn = document.getElementById('dialogUpdateBtn')
-  const statusDiv = document.getElementById('dialogUpdateStatus')
+let updatePollInterval = null
 
-  btn.disabled = true
-  btn.textContent = 'Installing...'
-  statusDiv.style.display = 'block'
-  statusDiv.className = 'dialog-status'
-  statusDiv.textContent = 'Installing update... The service will restart shortly.'
+async function performUpdate() {
+  const updateDialog = document.getElementById('updateDialog')
+  const logModal = document.getElementById('updateLogModal')
+  const logContent = document.getElementById('updateLogContent')
+
+  // Close the update info dialog and open log modal
+  updateDialog.close()
+  logModal.showModal()
+  logContent.textContent = 'Starting update process...\n'
 
   try {
     const response = await fetch('/api/version/update', { method: 'POST' })
     const data = await response.json()
 
     if (data.status === 'updating' || data.status === 'simulated') {
-      statusDiv.className = 'dialog-status success'
-      statusDiv.textContent = data.message + ' The page will refresh automatically...'
-
-      // Auto-refresh after 10 seconds
-      setTimeout(() => {
-        window.location.reload()
-      }, 10000)
+      // Start polling for logs
+      startUpdateLogPolling()
     } else {
-      statusDiv.className = 'dialog-status error'
-      statusDiv.textContent = data.error || 'Update failed'
-      btn.disabled = false
-      btn.textContent = 'Install Update'
+      logContent.textContent += 'Error interacting with update API: ' + (data.error || 'Unknown error') + '\n'
+      // Try polling anyway in case it partially started
+      startUpdateLogPolling()
     }
   } catch (error) {
-    statusDiv.className = 'dialog-status error'
-    statusDiv.textContent = `Update failed: ${error.message}`
-    btn.disabled = false
-    btn.textContent = 'Install Update'
+    logContent.textContent += 'Request failed: ' + error.message + '\n'
+    // Try polling anyway
+    startUpdateLogPolling()
   }
+}
+
+function startUpdateLogPolling() {
+  const logContent = document.getElementById('updateLogContent')
+
+  if (updatePollInterval) clearInterval(updatePollInterval)
+
+  updatePollInterval = setInterval(async () => {
+    try {
+      const res = await fetch('/api/version/log')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.log) {
+          // If content changed or just to be sure, update it
+          if (logContent.textContent.length !== data.log.length || !logContent.textContent.startsWith(data.log.substring(0, 20))) {
+            logContent.textContent = data.log
+            logContent.scrollTop = logContent.scrollHeight
+          }
+
+          // Check for completion
+          if (data.log.includes('Update completed successfully!') || data.log.includes('Service restarted successfully')) {
+            if (!logContent.textContent.includes('--- REFRESHING PAGE ---')) {
+              logContent.textContent += '\n\n--- REFRESHING PAGE IN 5 SECONDS ---'
+              logContent.scrollTop = logContent.scrollHeight
+              setTimeout(() => window.location.reload(), 5000)
+              clearInterval(updatePollInterval)
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore network errors (server restarting)
+    }
+  }, 1000)
 }

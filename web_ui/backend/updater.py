@@ -199,18 +199,60 @@ class Updater:
                 pass
 
             
+            # Prepare log file
+            log_file = os.path.join(self.base_path, 'update.log')
+            
+            # Prepare environment with LOG_FILE override to avoid writing to system logs
+            env = os.environ.copy()
+            env['LOG_FILE'] = os.devnull
+            
+            # Write header to log
+            try:
+                with open(log_file, 'w') as f:
+                    f.write(f"--- Update triggered at {datetime.now()} ---\n")
+            except Exception:
+                pass # If we can't write, we can't write. Popen might fail too then.
+
             # Execute update script in background
             # The script will handle git pull, dependency updates, and service restart
-            # Ensure we are using the correct user if possible, though the service should already be running as knxohui
-            subprocess.Popen(
-                ['/bin/bash', update_script],
-                cwd=self.base_path,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                start_new_session=True
-            )
+            # We redirect output to the log file
             
+            # We need to keep the file handle open just long enough to pass it to Popen
+            # Popen will duplicate it for the child process
+            try:
+                log_fd = open(log_file, 'a')
+                subprocess.Popen(
+                    ['/bin/bash', update_script],
+                    cwd=self.base_path,
+                    stdout=log_fd,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    start_new_session=True
+                )
+                # We can close the fd in the parent process now
+                # The child process has its own handle
+                # context manager wouldn't work easily here with Popen specific needs
+                log_fd.close() 
+            except Exception as e:
+                # If opening log file fails, try running without logging to it (fallback)
+                subprocess.Popen(
+                    ['/bin/bash', update_script],
+                    cwd=self.base_path,
+                    start_new_session=True
+                )
+
             return True, "Update process started. The service will restart automatically."
             
         except Exception as e:
             return False, f"Failed to start update: {str(e)}"
+
+    def get_update_log(self) -> str:
+        """Get content of the update log file."""
+        log_file = os.path.join(self.base_path, 'update.log')
+        if not os.path.exists(log_file):
+            return "No update log found."
+        try:
+            with open(log_file, 'r') as f:
+                return f.read()
+        except Exception as e:
+            return f"Error reading log: {str(e)}"

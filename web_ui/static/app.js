@@ -1103,7 +1103,22 @@ function startEvents(jobId) {
         console.error('Failed to refresh job details:', err)
       })
 
+    // Force refresh jobs list to ensure status is updated
     refreshJobs()
+    
+    // Also update the specific job item in the list if we're viewing it
+    if (currentJobId === jobId) {
+      const jobItems = document.querySelectorAll('.job-item');
+      jobItems.forEach(item => {
+        const statusSpan = item.querySelector('.job-status');
+        if (statusSpan) {
+          // Update the status span class and text
+          const statusClass = j.status === 'completed' ? 'success' : j.status === 'failed' ? 'error' : 'running';
+          statusSpan.className = `job-status ${statusClass}`;
+          statusSpan.textContent = j.status;
+        }
+      });
+    }
   })
 }
 

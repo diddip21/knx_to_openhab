@@ -49,18 +49,18 @@ fi
 
 # Stash any local changes
 log "Stashing local changes..."
-git stash || log "WARNING: Git stash failed"
+git -c safe.directory='*' stash || log "WARNING: Git stash failed"
 
 # Fetch latest changes from GitHub
 log "Fetching latest changes from GitHub..."
-git fetch origin || {
+git -c safe.directory='*' fetch origin || {
     log "ERROR: Failed to fetch from GitHub"
     exit 1
 }
 
 # Get current and remote commit hashes
-CURRENT_COMMIT=$(git rev-parse HEAD)
-REMOTE_COMMIT=$(git rev-parse origin/main)
+CURRENT_COMMIT=$(git -c safe.directory='*' rev-parse HEAD)
+REMOTE_COMMIT=$(git -c safe.directory='*' rev-parse origin/main)
 
 log "Current commit: $CURRENT_COMMIT"
 log "Remote commit: $REMOTE_COMMIT"
@@ -72,10 +72,10 @@ fi
 
 # Pull latest changes
 log "Pulling latest changes..."
-git pull origin main || {
+git -c safe.directory='*' pull origin main || {
     log "ERROR: Git pull failed"
     log "Attempting to restore from backup..."
-    git reset --hard "$CURRENT_COMMIT"
+    git -c safe.directory='*' reset --hard "$CURRENT_COMMIT"
     exit 1
 }
 
@@ -86,7 +86,7 @@ if [[ -f "$INSTALL_DIR/venv/bin/pip" ]]; then
     "$INSTALL_DIR/venv/bin/pip" install -r requirements.txt -q || {
         log "ERROR: Failed to install dependencies"
         log "Attempting to restore from backup..."
-        git reset --hard "$CURRENT_COMMIT"
+        git -c safe.directory='*' reset --hard "$CURRENT_COMMIT"
         exit 1
     }
 else
@@ -95,7 +95,7 @@ fi
 
 # Update version.json with new commit hash
 log "Updating version.json..."
-NEW_COMMIT=$(git rev-parse HEAD)
+NEW_COMMIT=$(git -c safe.directory='*' rev-parse HEAD)
 if [[ -f "version.json" ]]; then
     # Use Python to update the JSON file
     python3 -c "

@@ -476,10 +476,53 @@ async function loadStructureFromJob(jobId) {
   const statusEl = document.getElementById('status')
   const previewSection = document.getElementById('preview-section')
 
+  // Show loading status
   statusEl.textContent = 'Loading structure from job...'
   statusEl.className = 'status-message'
+  
+  // First check if the job is completed before attempting to load structure
+ try {
+    const jobRes = await fetch(`/api/job/${jobId}`)
+    if (!jobRes.ok) {
+      throw new Error(`Failed to get job status: ${jobRes.status}`)
+    }
+    const job = await jobRes.json();
+    
+    if (job.status !== 'completed') {
+      // Wait for job to complete with timeout
+      const timeout = 30000; // 30 seconds
+      const startTime = Date.now();
+      
+      while (job.status !== 'completed' && Date.now() - startTime < timeout) {
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+        
+        const updatedJobRes = await fetch(`/api/job/${jobId}`)
+        if (updatedJobRes.ok) {
+          const updatedJob = await updatedJobRes.json();
+          job.status = updatedJob.status;
+          
+          if (updatedJob.status === 'completed') {
+            statusEl.textContent = `Job completed, loading structure...`;
+            break;
+          } else if (updatedJob.status === 'failed') {
+            throw new Error(`Job failed: ${updatedJob.error || 'Unknown error'}`);
+          }
+        }
+      }
+      
+      if (job.status !== 'completed') {
+        throw new Error(`Job did not complete within ${timeout/1000} seconds. Current status: ${job.status}`);
+      }
+    }
+  } catch (e) {
+    statusEl.textContent = '✗ Error checking job status: ' + e.message;
+    statusEl.className = 'status-message error';
+    return;
+  }
 
   try {
+    statusEl.textContent = 'Retrieving structure data...';
+    
     const res = await fetch(`/api/job/${jobId}/preview`)
     if (!res.ok) {
       const error = await res.json()
@@ -1019,26 +1062,48 @@ uploadForm.addEventListener('submit', async (e) => {
     fd.append('password', pwd)
   }
 
-
-  statusEl.textContent = 'Uploading...'
+  // Show initial status
+ statusEl.textContent = 'Uploading file...'
+  statusEl.className = 'status-message'
+  
   try {
     const res = await fetch('/api/upload', { method: 'POST', body: fd })
-    if (!res.ok) throw new Error('Upload failed: ' + res.status)
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({ error: 'Upload failed' }))
+      throw new Error(errorData.error || `Upload failed: ${res.status}`)
+    }
     const job = await res.json()
-    statusEl.textContent = `Job started: ${job.id}`
-    refreshJobs()
+    
+    statusEl.textContent = `File uploaded, job started: ${job.id.substring(0, 8)}...`
+    statusEl.className = 'status-message'
+    
+    // Refresh jobs list to show the new job
+    await refreshJobs()
+    
+    // Show job detail view
     showJobDetail(job.id)
-    allLogEntries = []  // Start with empty logs for new upload
+    
+    // Initialize log entries
+    allLogEntries = []
+    
+    // Start listening for events
     startEvents(job.id)
+    
+    // Update status to indicate processing has started
+    statusEl.textContent = `Processing started: ${job.id.substring(0, 8)}... Check job details below.`
+    statusEl.className = 'status-message'
+    
   } catch (e) {
     statusEl.textContent = `Error: ${e.message}`
+    statusEl.className = 'status-message error'
+    console.error('Upload error:', e)
   }
 })
 
 
 function startEvents(jobId) {
   // Close any existing event source
-  if (eventSource) {
+ if (eventSource) {
     eventSource.close()
     eventSource = null
   }
@@ -1047,79 +1112,106 @@ function startEvents(jobId) {
   if (allLogEntries.length === 0) {
     logEl.textContent = 'Waiting for events...\n'
   }
-  const es = new EventSource(`/api/job/${jobId}/events`)
-  eventSource = es
-  es.onmessage = (e) => {
-    const d = JSON.parse(e.data)
-    const level = d.level || 'info'
-    const timestamp = new Date().toLocaleTimeString()
-    let text = ''
-
-    if (d.type === 'stats') {
-      text = `[${timestamp}] [STATS] ${d.message}`
-    } else if (d.type === 'backup') {
-      text = `[${timestamp}] [BACKUP] ${d.message}`
-    } else if (d.type === 'status') {
-      text = `[${timestamp}] [STATUS] ${d.message}`
-    } else if (d.type === 'error') {
-      text = `[${timestamp}] [ERROR] ${d.message}`
-    } else {
-      const levelStr = level.toUpperCase()
-      text = `[${timestamp}] [${levelStr}] ${d.message}`
+  
+  // Add retry mechanism for event source
+  let reconnectAttempts = 0;
+  const maxReconnectAttempts = 5;
+  
+  function connectEventSource() {
+    if (reconnectAttempts >= maxReconnectAttempts) {
+      console.error('Max reconnection attempts reached for job events');
+      return;
     }
-
-    allLogEntries.push({ level, text })
-
-    // Persist logs to job.log in the backend
-    fetch(`/api/job/${jobId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ log: allLogEntries }) }).catch(() => { })
-
-    renderLog()
-  }
-  es.addEventListener('done', () => {
-    allLogEntries.push({ level: 'info', text: '[DONE] Job finished' })
-
-    // Final log persistence
-    fetch(`/api/job/${jobId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ log: allLogEntries }) }).catch(() => { })
-
-    renderLog()
-    eventSource = null
-    es.close()
-
-    // Refresh job details to get final status and stats
-    fetch(`/api/job/${jobId}`)
-      .then(r => r.json())
-      .then(j => {
-        // Update status badge in detail view
-        const statusBadge = document.querySelector('#jobDetail .badge')
-        if (statusBadge) {
-          statusBadge.className = `badge ${j.status}`
-          statusBadge.textContent = j.status
-        }
-
-        // Update statistics table
-        updateStatisticsDisplay(j.stats)
-      })
-      .catch(err => {
-        console.error('Failed to refresh job details:', err)
-      })
-
-    // Force refresh jobs list to ensure status is updated
-    refreshJobs()
     
-    // Also update the specific job item in the list if we're viewing it
-    if (currentJobId === jobId) {
-      const jobItems = document.querySelectorAll('.job-item');
-      jobItems.forEach(item => {
-        const statusSpan = item.querySelector('.job-status');
-        if (statusSpan) {
-          // Update the status span class and text
-          const statusClass = j.status === 'completed' ? 'success' : j.status === 'failed' ? 'error' : 'running';
-          statusSpan.className = `job-status ${statusClass}`;
-          statusSpan.textContent = j.status;
-        }
-      });
+    const es = new EventSource(`/api/job/${jobId}/events`)
+    eventSource = es
+    
+    es.onmessage = (e) => {
+      const d = JSON.parse(e.data)
+      const level = d.level || 'info'
+      const timestamp = new Date().toLocaleTimeString()
+      let text = ''
+
+      if (d.type === 'stats') {
+        text = `[${timestamp}] [STATS] ${d.message}`
+      } else if (d.type === 'backup') {
+        text = `[${timestamp}] [BACKUP] ${d.message}`
+      } else if (d.type === 'status') {
+        text = `[${timestamp}] [STATUS] ${d.message}`
+      } else if (d.type === 'error') {
+        text = `[${timestamp}] [ERROR] ${d.message}`
+      } else {
+        const levelStr = level.toUpperCase()
+        text = `[${timestamp}] [${levelStr}] ${d.message}`
+      }
+
+      allLogEntries.push({ level, text })
+
+      // Persist logs to job.log in the backend
+      fetch(`/api/job/${jobId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ log: allLogEntries }) }).catch(() => { })
+
+      renderLog()
     }
-  })
+    
+    es.onerror = (error) => {
+      console.error('EventSource error for job', jobId, ':', error);
+      es.close();
+      
+      // Attempt to reconnect after delay
+      reconnectAttempts++;
+      setTimeout(() => {
+        connectEventSource();
+      }, 2000 * reconnectAttempts); // Exponential backoff
+    }
+    
+    es.addEventListener('done', () => {
+      allLogEntries.push({ level: 'info', text: '[DONE] Job finished' })
+
+      // Final log persistence
+      fetch(`/api/job/${jobId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ log: allLogEntries }) }).catch(() => { })
+
+      renderLog()
+      eventSource = null
+      es.close()
+
+      // Refresh job details to get final status and stats
+      fetch(`/api/job/${jobId}`)
+        .then(r => r.json())
+        .then(j => {
+          // Update status badge in detail view
+          const statusBadge = document.querySelector('#jobDetail .badge')
+          if (statusBadge) {
+            statusBadge.className = `badge ${j.status}`
+            statusBadge.textContent = j.status
+          }
+
+          // Update statistics table
+          updateStatisticsDisplay(j.stats)
+        })
+        .catch(err => {
+          console.error('Failed to refresh job details:', err)
+        })
+
+      // Force refresh jobs list to ensure status is updated
+      refreshJobs()
+      
+      // Also update the specific job item in the list if we're viewing it
+      if (currentJobId === jobId) {
+        const jobItems = document.querySelectorAll('.job-item');
+        jobItems.forEach(item => {
+          const statusSpan = item.querySelector('.job-status');
+          if (statusSpan) {
+            // Update the status span class and text
+            const statusClass = j.status === 'completed' ? 'success' : j.status === 'failed' ? 'error' : 'running';
+            statusSpan.className = `job-status ${statusClass}`;
+            statusSpan.textContent = j.status;
+          }
+        });
+      }
+    })
+  }
+  
+  connectEventSource();
 }
 
 // Initialize on page load

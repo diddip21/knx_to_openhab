@@ -31,6 +31,9 @@ class JobManager:
         return self._jobs.get(job_id)
 
     def get_queue(self, job_id):
+        # Ensure job exists before returning queue
+        if job_id not in self._jobs:
+            return None
         return self.queues.get(job_id)
 
     def create_job(self, input_path, original_name=None, password=None):
@@ -46,11 +49,11 @@ class JobManager:
             'stats': {},
             'password': password
         }
+        q = queue.Queue()
         with self.lock:
             self._jobs[job_id] = job
+            self.queues[job_id] = q  # Register queue before saving jobs
             save_jobs(self.jobs_dir, self._jobs)
-        q = queue.Queue()
-        self.queues[job_id] = q
         self.executor.submit(self._run_job, job_id)
         return job
 

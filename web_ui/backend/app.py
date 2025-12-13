@@ -150,9 +150,21 @@ if FLASK_AVAILABLE:
 
     @app.route('/api/job/<job_id>/events')
     def job_events(job_id):
-        q = job_mgr.get_queue(job_id)
-        if q is None:
-            return jsonify({'error': 'not found'}), 404
+        # Wait briefly for the queue to be available (handles race condition)
+        timeout = 5  # seconds
+        import time
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            q = job_mgr.get_queue(job_id)
+            if q is not None:
+                break
+            time.sleep(0.1)  # Brief pause before checking again
+        else:
+            # After timeout, check one final time
+            q = job_mgr.get_queue(job_id)
+            if q is None:
+                return jsonify({'error': 'job not found or not ready'}), 404
 
         def event_stream():
             while True:

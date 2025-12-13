@@ -436,11 +436,24 @@ async function refreshServices() {
 
       const statusClass = status.active ? 'active' : 'inactive'
       const statusText = status.status.charAt(0).toUpperCase() + status.status.slice(1)
+      
+      let extraInfo = ''
+      if (status.active && status.uptime_str) {
+         // Simplify timestamp display if it's very long
+         let ts = status.uptime_str.split('=', 1)[1] || status.uptime_str
+         extraInfo = `<div class="service-uptime" title="${status.uptime_str}">Since: ${ts}</div>`
+      } else if (!status.active && status.last_run_str) {
+         let ts = status.last_run_str.split('=', 1)[1] || status.last_run_str
+         extraInfo = `<div class="service-uptime" title="${status.last_run_str}">Last active: ${ts}</div>`
+      }
 
       div.innerHTML = `
         <div class="service-header">
           <span class="service-name">${service}</span>
-          <span class="service-status ${statusClass}">${statusText}</span>
+          <div class="service-status-wrapper">
+             <span class="service-status ${statusClass}">${statusText}</span>
+             ${extraInfo}
+          </div>
         </div>
         <button onclick="restartService('${service}')" class="service-restart-btn">Restart</button>
       `

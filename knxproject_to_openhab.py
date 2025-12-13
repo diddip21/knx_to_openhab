@@ -3,8 +3,6 @@ import logging
 import re
 import json
 import argparse
-import tkinter as tk
-from tkinter import filedialog
 from pathlib import Path
 from xknxproject.models.knxproject import KNXProject
 from xknxproject.xknxproj import XKNXProj
@@ -435,6 +433,8 @@ def main():
     args = parser.parse_args()
 
     if not args.file_path:
+        import tkinter as tk
+        from tkinter import filedialog
         root = tk.Tk()
         root.withdraw()
         root.wm_attributes('-topmost', 1)

@@ -2,3 +2,4 @@ flask>=2.0
 werkzeug
 xknxproject
 requests
+gunicorn

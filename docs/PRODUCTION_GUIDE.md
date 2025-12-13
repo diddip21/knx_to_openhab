@@ -369,6 +369,16 @@ sudo journalctl -u knxohui.service -n 50 -f
 sudo systemctl restart knxohui.service
 ```
 
+### Update Fails with "Permission denied"
+If the update log shows "Permission denied" or "error: cannot open .git/FETCH_HEAD":
+
+```bash
+# Fix ownership permissions
+sudo chown -R knxohui:knxohui /opt/knx_to_openhab /var/backups/knx_to_openhab
+```
+
+This usually happens if you manually ran git commands as root or your personal user instead of the service user.
+
 ### Backup/Rollback Issues
 ```bash
 # Check backup folder

@@ -20,10 +20,26 @@ log "Starting KNX to OpenHAB Generator update"
 log "========================================="
 
 # Change to installation directory
-cd "$INSTALL_DIR" || {
-    log "ERROR: Failed to change to $INSTALL_DIR"
-    exit 1
-}
+23: cd "$INSTALL_DIR" || {
+24:     log "ERROR: Failed to change to $INSTALL_DIR"
+25:     exit 1
+26: }
+27: 
+28: # Check permissions
+29: if [[ ! -w ".git" ]]; then
+30:     log "ERROR: Permission denied. Cannot write to .git directory."
+31:     log "The likely cause is incorrect file ownership."
+32:     log "Please fix it by running:"
+33:     log "  sudo chown -R knxohui:knxohui $INSTALL_DIR $BACKUP_DIR"
+34:     exit 1
+35: fi
+36: 
+37: if [[ -d "$BACKUP_DIR" ]] && [[ ! -w "$BACKUP_DIR" ]]; then
+38:     log "ERROR: Permission denied. Cannot write to backup directory: $BACKUP_DIR"
+39:     log "Please fix it by running:"
+40:     log "  sudo chown -R knxohui:knxohui $BACKUP_DIR"
+41:     exit 1
+42: fi
 
 # Create backup of current installation
 log "Creating backup of current installation..."

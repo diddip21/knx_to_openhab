@@ -51,7 +51,7 @@ check_os() {
     if [[ "$ID" != "debian" ]] && [[ "$ID_LIKE" != *"debian"* ]]; then
         log_warning "This installer is designed for Debian-based systems (DietPi, Raspbian, Ubuntu)."
         log_warning "Detected OS: $PRETTY_NAME"
-        read -p "Continue anyway? (y/N) " -n 1 -r
+        read -p "Continue anyway? (y/N) " -n 1 -r < /dev/tty
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             exit 1
@@ -106,7 +106,7 @@ clone_repository() {
     
     if [[ -d "$INSTALL_DIR" ]]; then
         log_warning "Installation directory $INSTALL_DIR already exists"
-        read -p "Remove and reinstall? (y/N) " -n 1 -r
+        read -p "Remove and reinstall? (y/N) " -n 1 -r < /dev/tty
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             log_info "Removing existing installation..."

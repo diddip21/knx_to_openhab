@@ -3,6 +3,7 @@ import csv
 import re
 import os
 import logging
+import shutil
 from config import config, datapoint_mappings,normalize_string
 from utils import get_datapoint_type
 logger = logging.getLogger(__name__)
@@ -821,6 +822,22 @@ def check_unused_addresses():
     for address in all_addresses:
         logger.debug("unused: %s: %s with type %s",address['Address'],address['Group name'],address['DatapointType'])
 
+def set_permissions(file_path):
+    """
+    Sets ownership of the file to the configured user:group.
+    """
+    target_user = config.get('target_user')
+    target_group = config.get('target_group')
+    
+    if not target_user and not target_group:
+        return
+
+    try:
+        shutil.chown(file_path, user=target_user, group=target_group)
+        logger.info("Set permissions for %s to %s:%s", file_path, target_user, target_group)
+    except Exception as e:
+        logger.warning("Failed to set permissions for %s: %s", file_path, e)
+
 def export_output(items,sitemap,things):
     """Exports things / items / sitemap / ...  Files"""
     #global items,sitemap,things
@@ -839,17 +856,20 @@ def export_output(items,sitemap,things):
     things = things_template.replace('###things###', things)
     os.makedirs(os.path.dirname(config['things_path']), exist_ok=True)
     open(config['things_path'],'w', encoding='utf8').write(things)
+    set_permissions(config['things_path'])
     # export items:
     items_template =  open('items.template','r', encoding='utf8').read()
     items = items_template.replace('###items###', items)
     items = items.replace('###NAME###', PRJ_NAME)
     os.makedirs(os.path.dirname(config['items_path']), exist_ok=True)
     open(config['items_path'],'w', encoding='utf8').write(items)
+    set_permissions(config['items_path'])
     # export sitemap:
     sitemap_template = open('sitemap.template','r', encoding='utf8').read()
     sitemap = sitemap_template.replace('###sitemap###', sitemap)
     os.makedirs(os.path.dirname(config['sitemaps_path']), exist_ok=True)
     open(config['sitemaps_path'],'w', encoding='utf8').write(sitemap)
+    set_permissions(config['sitemaps_path'])
 
     #export persistent
     private_persistence = ''
@@ -870,6 +890,7 @@ def export_output(items,sitemap,things):
 
     os.makedirs(os.path.dirname(config['influx_path']), exist_ok=True)
     open(config['influx_path'],'w', encoding='utf8').write(persist)
+    set_permissions(config['influx_path'])
 
 
     fenster_rule = ''
@@ -896,6 +917,7 @@ def export_output(items,sitemap,things):
     '''
     os.makedirs(os.path.dirname(config['fenster_path']), exist_ok=True)
     open(config['fenster_path'],'w', encoding='utf8').write(fenster_rule)
+    set_permissions(config['fenster_path'])
 
 def main():
     """Main function"""

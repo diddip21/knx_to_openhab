@@ -12,7 +12,7 @@ def load_config():
             'jobs_dir': os.path.join(base, 'var', 'lib', 'knx_to_openhab'),
             'backups_dir': os.path.join(base, 'var', 'backups', 'knx_to_openhab'),
             'bind_host': '0.0.0.0',
-            'port': 8080
+            'port': 8085
         }
     with open(cfg_file, 'r') as f:
         return json.load(f)

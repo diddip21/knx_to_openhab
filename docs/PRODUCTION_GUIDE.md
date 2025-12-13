@@ -43,47 +43,33 @@ A lightweight, browser-based web interface to execute the KNX-to-OpenHAB generat
 - SSH access to the Pi
 - `git` and `python3` available
 
-### Step 1: Clone Repo and Run Installer
+### Step 1: One-Command Installer
+
+Run the following command to install or update the application:
 
 ```bash
-# On the Pi
-git clone https://github.com/diddip21/knx_to_openhab.git
-cd knx_to_openhab
-
-# Make installer executable
-chmod +x installer/setup.sh installer/backup_cleanup.sh
-
-# Run installer (requires sudo)
-sudo ./installer/setup.sh
+curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install.sh | bash
 ```
 
-**What the installer does:**
-1. Creates `/opt/knx_to_openhab` (base directory)
-2. Creates Python venv and installs Flask, werkzeug, xknxproject, lark-parser
-3. Copies all files to `/opt/knx_to_openhab`
-4. Creates system user `knxui` (non-login)
-5. Creates runtime directories:
-   - `/var/lib/knx_to_openhab/` (jobs.json, uploaded files)
-   - `/var/backups/knx_to_openhab/` (backup tar.gz files)
-6. Sets up sudoers rule (allows knxui to `systemctl restart openhab.service` without password)
-7. Installs systemd units:
-   - `knxui.service` (Flask web server)
-   - `knxui-backup-cleanup.service` (oneshot cleanup script)
-   - `knxui-backup-cleanup.timer` (daily trigger)
-8. Enables and starts both services
+The installer will automatically:
+1.  Check for system dependencies
+2.  Create/Update `/opt/knx_to_openhab`
+3.  Setup the service user and permissions
+4.  Install/Update systemd services
+5.  Print the access URL and credentials
 
 ### Step 2: Verify Installation
 
 ```bash
 # Check services
-sudo systemctl status knxui.service
-sudo systemctl status knxui-backup-cleanup.timer
+sudo systemctl status knxohui.service
+sudo systemctl status knxohui-backup-cleanup.timer
 
 # View service logs
-sudo journalctl -u knxui.service -f
+sudo journalctl -u knxohui.service -f
 
 # Verify web server is running
-curl http://localhost:8080/api/status
+curl http://localhost:8085/api/status
 ```
 
 ### Step 3: Change Default Credentials
@@ -105,8 +91,15 @@ Change:
 
 Then restart the service:
 ```bash
-sudo systemctl restart knxui.service
+sudo systemctl restart knxohui.service
 ```
+
+### Uninstallation
+To completely remove the application, use the uninstaller script:
+```bash
+curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/uninstall.sh | bash
+```
+This will stop services, remove the installation directory, remove the service user, and clean up logs/backups.
 
 ---
 
@@ -116,10 +109,10 @@ sudo systemctl restart knxui.service
 
 Open in your browser:
 ```
-http://<pi-ip-address>:8080
+http://<pi-ip-address>:8085
 ```
 
-You will be prompted for username/password (default: `admin` / `changeme`).
+You will be prompted for username/password (default: `admin` / `logihome`).
 
 ### Upload and Process a KNX Project
 
@@ -160,11 +153,11 @@ Location: `/opt/knx_to_openhab/web_ui/backend/config.json`
   "jobs_dir": "var/lib/knx_to_openhab",         // Job history + uploads
   "backups_dir": "var/backups/knx_to_openhab",  // Backup tar.gz files
   "bind_host": "0.0.0.0",                        // Listen address (0.0.0.0 = all interfaces)
-  "port": 8080,                                  // Web server port
+  "port": 8085,                                  // Web server port
   "auth": {
     "enabled": true,                             // Set to false to disable auth
     "user": "admin",                             // Basic HTTP username
-    "password": "changeme"                       // Basic HTTP password
+    "password": "logihome"                       // Basic HTTP password
   },
   "retention": {
     "days": 14,                                  // Delete backups older than N days
@@ -184,9 +177,9 @@ Backups are cleaned up in this order:
 Cleanup happens:
 - **Immediately after** each new backup is created
 - **Daily** via systemd timer (`backup-cleanup.timer`)
-- **Daily** via systemd timer (`knxui-backup-cleanup.timer`)
+- **Daily** via systemd timer (`knxohui-backup-cleanup.timer`)
 - **Manually** by running:
-    sudo systemctl start knxui-backup-cleanup.service
+    sudo systemctl start knxohui-backup-cleanup.service
   ```bash
   sudo systemctl start backup-cleanup.service
   ```
@@ -333,13 +326,13 @@ Health check (no auth required).
 │   ├── static/
 │   │   ├── app.js                      # Frontend logic & SSE
 │   │   └── style.css                   # Styling
-│   └── README.md                       # Web UI readme
+│   └── README.md                       # Web UI
 ├── installer/
 │   ├── setup.sh                        # Installation script
 │   ├── backup_cleanup.sh               # Cleanup script
-│   ├── knxui.service                   # systemd unit (Flask)
-│   ├── knxui-backup-cleanup.service    # systemd unit (cleanup)
-│   └── knxui-backup-cleanup.timer      # systemd timer (daily)
+│   ├── knxohui.service                 # systemd unit (Flask)
+│   ├── knxohui-backup-cleanup.service  # systemd unit (cleanup)
+│   └── knxohui-backup-cleanup.timer    # systemd timer (daily)
 ├── openhab/                            # OpenHAB output folder (backed up before each job)
 │   ├── items/
 │   ├── things/
@@ -446,13 +439,13 @@ For production, add a reverse proxy (nginx) or use Let's Encrypt. Currently HTTP
 ### Application Logs
 ```bash
 # Flask server logs
-sudo journalctl -u knxui.service -f
+sudo journalctl -u knxohui.service -f
 
 # Backup cleanup logs
-sudo journalctl -u knxui-backup-cleanup.service -f
+sudo journalctl -u knxohui-backup-cleanup.service -f
 
 # All KNX UI related
-sudo journalctl -u knxui.service -u knxui-backup-cleanup.service -f
+sudo journalctl -u knxohui.service -u knxohui-backup-cleanup.service -f
 ```
 
 ### Job Logs

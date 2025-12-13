@@ -6,7 +6,7 @@ Documentation=https://github.com/diddip21/knx_to_openhab
 OnCalendar=daily
 OnBootSec=5min
 Persistent=true
-Unit=knxui-backup-cleanup.service
+Unit=knxohui-backup-cleanup.service
 
 [Install]
 WantedBy=timers.target

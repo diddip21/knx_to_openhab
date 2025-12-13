@@ -33,14 +33,20 @@ curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install
 This will:
 1.  Install system dependencies (Python, git, etc.)
 2.  Clone the repository to `/opt/knx_to_openhab`
-3.  Set up the **knxui** service (Web UI)
+3.  Set up the **knxohui** service (Web UI)
 4.  Configure permissions for self-updates
+
+### Uninstallation
+
+```bash
+curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/uninstall.sh | bash
+```
 
 ### How to Use
 
-1.  **Open the Web UI**: Browser to `http://<your-ip>:8080`.
+1.  **Open the Web UI**: Browser to `http://<your-ip>:8085`.
     - **User**: `admin`
-    - **Password**: `changeme` (Change this in Settings!)
+    - **Password**: `logihome` (Change this in Settings!)
 2.  **Upload Project**: Upload your `.knxproj` export or JSON dump.
 3.  **Configure**: Go to **Settings** to map DPTs or adjust naming rules.
 4.  **Generate**: The system automatically generates Items, Things, and Sitemaps.

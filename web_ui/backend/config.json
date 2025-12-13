@@ -3,11 +3,11 @@
   "jobs_dir": "var/lib/knx_to_openhab",
   "backups_dir": "var/backups/knx_to_openhab",
   "bind_host": "0.0.0.0",
-  "port": 8080,
+  "port": 8085,
   "auth": {
     "enabled": true,
     "user": "admin",
-    "password": "changeme"
+    "password": "logihome"
   },
   "retention": {
     "days": 14,
@@ -15,4 +15,3 @@
     "max_backups_size_mb": 500
   }
 }
-

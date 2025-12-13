@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=oneshot
-User=knxui
-Group=knxui
+User=knxohui
+Group=knxohui
 ExecStart=/opt/knx_to_openhab/installer/backup_cleanup.sh
 
 [Install]

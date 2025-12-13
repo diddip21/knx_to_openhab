@@ -190,8 +190,14 @@ class Updater:
             if not os.path.exists(update_script):
                 return False, f"Update script not found at {update_script}"
             
-            # Make script executable
-            os.chmod(update_script, 0o755)
+            # Make script executable (optional, since we run with bash explicitly)
+            try:
+                os.chmod(update_script, 0o755)
+            except OSError:
+                # Ignore permission errors (e.g. if file is owned by root but we are knxohui)
+                # We can still execute it via bash if we have read permissions
+                pass
+
             
             # Execute update script in background
             # The script will handle git pull, dependency updates, and service restart

@@ -23,7 +23,7 @@ let currentStatsData = null  // store current statistics for consistent display
 let statsUpdateInProgress = false  // prevent race conditions
 
 async function refreshJobs() {
-  const res = await fetch('/api/jobs')
+  const res = await fetch('/api/jobs', { credentials: 'include' })
   const jobs = await res.json()
   jobsList.innerHTML = ''
   jobs.forEach(j => {
@@ -65,7 +65,9 @@ function showJobDetail(jobId) {
   allLogEntries = []
   logEl.textContent = 'Loading logs...'
 
-  fetch(`/api/job/${jobId}`)
+  fetch(`/api/job/${jobId}`, {
+    credentials: 'include'
+  })
     .then(async r => {
       if (!r.ok) {
         throw new Error(`HTTP error! status: ${r.status}`)
@@ -139,7 +141,10 @@ function showRollbackDialog(jobId) {
 async function deleteJob(jobId) {
   if (!confirm('Delete this job from history?')) return
   try {
-    const res = await fetch(`/api/job/${jobId}`, { method: 'DELETE' })
+    const res = await fetch(`/api/job/${jobId}`, {
+      method: 'DELETE',
+      credentials: 'include'
+    })
     if (res.ok) {
       refreshJobs()
       detailSectionEl.style.display = 'none'
@@ -613,16 +618,22 @@ function updateStatisticsDisplay(stats) {
     const statsEl = document.getElementById('stats')
     if (!statsEl) {
       statsUpdateInProgress = false
+      console.error('Statistics element not found');
       return
     }
 
-    if (stats && Object.keys(stats).length > 0) {
+    console.log('Updating statistics display with data:', stats); // Debug log
+
+    if (stats && typeof stats === 'object' && Object.keys(stats).length > 0) {
+      console.log('Statistics data is valid, creating HTML'); // Debug log
       let statsHtml = '<h3>Generated Files</h3><table class="stats-table"><tr><th>File</th><th>Before</th><th>After</th><th>Change</th><th>Diff</th><th>Action</th></tr>'
 
       // Sort files for consistent display order
       const sortedStats = Object.entries(stats).sort(([a], [b]) => a.localeCompare(b))
 
       for (const [fname, stat] of sortedStats) {
+        console.log(`Processing stat for file: ${fname}`, stat); // Debug log
+
         // Validate statistics data
         const before = typeof stat.before === 'number' ? stat.before : 0
         const after = typeof stat.after === 'number' ? stat.after : 0
@@ -656,16 +667,22 @@ function updateStatisticsDisplay(stats) {
 
       // Store for consistency checks
       currentStatsData = JSON.parse(JSON.stringify(stats))
+      console.log('Statistics display updated successfully'); // Debug log
 
     } else {
-      statsEl.innerHTML = '<p>No statistics available</p>'
+      console.log('No statistics available to display'); // Debug log
+      if (!stats || Object.keys(stats).length === 0) {
+        statsEl.innerHTML = '<p>No statistics available (stats object is empty or null)</p>'
+      } else {
+        statsEl.innerHTML = '<p>No statistics available</p>'
+      }
       currentStatsData = null
     }
   } catch (error) {
     console.error('Error updating statistics display:', error)
     const statsEl = document.getElementById('stats')
     if (statsEl) {
-      statsEl.innerHTML = '<p class="error">Error displaying statistics</p>'
+      statsEl.innerHTML = '<p class="error">Error displaying statistics: ' + error.message + '</p>'
     }
   } finally {
     statsUpdateInProgress = false
@@ -1171,16 +1188,19 @@ function startEvents(jobId) {
           allLogEntries.push({ level: 'info', text: '[DONE] Job finished' });
           
           // Final log persistence
-          fetch(`/api/job/${jobId}`, { 
-            method: 'PATCH', 
-            headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ log: allLogEntries }) 
+          fetch(`/api/job/${jobId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ log: allLogEntries }),
+            credentials: 'include'
           }).catch(() => { });
 
           renderLog();
           
           // Refresh job details to get final status and stats
-          fetch(`/api/job/${jobId}`)
+          fetch(`/api/job/${jobId}`, {
+            credentials: 'include'
+          })
             .then(r => r.json())
             .then(j => {
               // Update status badge in detail view
@@ -1234,10 +1254,11 @@ function startEvents(jobId) {
               allLogEntries.push({ level, text });
 
               // Persist logs to job.log in the backend
-              fetch(`/api/job/${jobId}`, { 
-                method: 'PATCH', 
-                headers: { 'Content-Type': 'application/json' }, 
-                body: JSON.stringify({ log: allLogEntries }) 
+              fetch(`/api/job/${jobId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ log: allLogEntries }),
+                credentials: 'include'
               }).catch(() => { });
 
               renderLog();
@@ -1281,7 +1302,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Set up automatic refresh for jobs - only refresh running jobs periodically
   setInterval(async () => {
     try {
-      const res = await fetch('/api/jobs')
+      const res = await fetch('/api/jobs', { credentials: 'include' })
       if (res.ok) {
         const jobs = await res.json()
         const runningJobs = jobs.filter(job => job.status === 'running')

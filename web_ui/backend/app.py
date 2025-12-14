@@ -296,6 +296,38 @@ if FLASK_AVAILABLE:
             'job_stats': latest_job.get('stats', {})
         })
 
+    @app.route('/api/debug/config', methods=['GET'])
+    def debug_config():
+        """Debug endpoint to check the current configuration."""
+        import os
+        # Get the main config (from the main config.json)
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        main_config_path = os.path.join(project_root, 'config.json')
+
+        main_config = {}
+        if os.path.exists(main_config_path):
+            with open(main_config_path, 'r', encoding='utf-8') as f:
+                main_config = json.load(f)
+
+        # Return both main config and backend config
+        return jsonify({
+            'backend_config': {
+                'openhab_path': job_mgr.cfg.get('openhab_path', 'openhab'),
+                'jobs_dir': job_mgr.cfg.get('jobs_dir', './var/lib/knx_to_openhab'),
+                'backups_dir': job_mgr.cfg.get('backups_dir', './var/backups/knx_to_openhab'),
+                'retention': job_mgr.cfg.get('retention', {}),
+            },
+            'main_config_paths': {
+                'items_path': main_config.get('items_path', 'openhab/items/knx.items'),
+                'things_path': main_config.get('things_path', 'openhab/things/knx.things'),
+                'sitemaps_path': main_config.get('sitemaps_path', 'openhab/sitemaps/knx.sitemap'),
+                'influx_path': main_config.get('influx_path', 'openhab/persistence/influxdb.persist'),
+                'fenster_path': main_config.get('fenster_path', 'openhab/rules/fenster.rules')
+            },
+            'project_root': project_root,
+            'main_config_exists': os.path.exists(main_config_path)
+        })
+
     @app.route('/api/version', methods=['GET'])
     def get_version():
         """Get current version information."""

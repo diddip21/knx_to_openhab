@@ -1127,7 +1127,7 @@ uploadForm.addEventListener('submit', async (e) => {
 
 function startEvents(jobId) {
   // Close any existing event source
- if (eventSource) {
+  if (eventSource) {
     eventSource.close()
     eventSource = null
   }
@@ -1136,92 +1136,140 @@ function startEvents(jobId) {
   if (allLogEntries.length === 0) {
     logEl.textContent = 'Waiting for events...\n'
   }
-  
-  // Add retry mechanism for event source
-  let reconnectAttempts = 0;
-  const maxReconnectAttempts = 5;
-  
-  function connectEventSource() {
-    if (reconnectAttempts >= maxReconnectAttempts) {
-      console.error('Max reconnection attempts reached for job events');
-      return;
-    }
-    
-    const es = new EventSource(`/api/job/${jobId}/events`)
-    eventSource = es
-    
-    es.onmessage = (e) => {
-      const d = JSON.parse(e.data)
-      const level = d.level || 'info'
-      const timestamp = new Date().toLocaleTimeString()
-      let text = ''
 
-      if (d.type === 'stats') {
-        text = `[${timestamp}] [STATS] ${d.message}`
-      } else if (d.type === 'backup') {
-        text = `[${timestamp}] [BACKUP] ${d.message}`
-      } else if (d.type === 'status') {
-        text = `[${timestamp}] [STATUS] ${d.message}`
-      } else if (d.type === 'error') {
-        text = `[${timestamp}] [ERROR] ${d.message}`
-      } else {
-        const levelStr = level.toUpperCase()
-        text = `[${timestamp}] [${levelStr}] ${d.message}`
-      }
+  // For authenticated servers, use fetch with streaming since EventSource
+  // cannot send Authorization headers
+  const controller = new AbortController();
+  const signal = controller.signal;
 
-      allLogEntries.push({ level, text })
-
-      // Persist logs to job.log in the backend
-      fetch(`/api/job/${jobId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ log: allLogEntries }) }).catch(() => { })
-
-      renderLog()
-    }
-    
-    es.onerror = (error) => {
-      console.error('EventSource error for job', jobId, ':', error);
-      es.close();
-      
-      // Attempt to reconnect after delay
-      reconnectAttempts++;
-      setTimeout(() => {
-        connectEventSource();
-      }, 2000 * reconnectAttempts); // Exponential backoff
-    }
-    
-    es.addEventListener('done', () => {
-      allLogEntries.push({ level: 'info', text: '[DONE] Job finished' })
-
-      // Final log persistence
-      fetch(`/api/job/${jobId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ log: allLogEntries }) }).catch(() => { })
-
-      renderLog()
-      eventSource = null
-      es.close()
-
-      // Refresh job details to get final status and stats
-      fetch(`/api/job/${jobId}`)
-        .then(r => r.json())
-        .then(j => {
-          // Update status badge in detail view
-          const statusBadge = document.querySelector('#jobDetail .badge')
-          if (statusBadge) {
-            statusBadge.className = `badge ${j.status}`
-            statusBadge.textContent = j.status
-          }
-
-          // Update statistics table
-          updateStatisticsDisplay(j.stats)
-        })
-        .catch(err => {
-          console.error('Failed to refresh job details:', err)
-        })
-
-      // Force refresh jobs list to ensure status is updated
-      refreshJobs()
-    })
+  // Store the controller to allow cancellation later
+  if (window.eventStreamController) {
+    window.eventStreamController.abort(); // Cancel any existing stream
   }
-  
-  connectEventSource();
+  window.eventStreamController = controller;
+
+  fetch(`/api/job/${jobId}/events`, {
+    signal: signal,
+    headers: {
+      'Accept': 'text/event-stream',
+      'Cache-Control': 'no-cache'
+    }
+  })
+  .then(response => {
+    if (!response.ok || !response.body) {
+      throw new Error(`Failed to connect to event stream: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    function readStream() {
+      reader.read().then(({ done, value }) => {
+        if (done) {
+          // Stream is done - job finished
+          allLogEntries.push({ level: 'info', text: '[DONE] Job finished' });
+          
+          // Final log persistence
+          fetch(`/api/job/${jobId}`, { 
+            method: 'PATCH', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ log: allLogEntries }) 
+          }).catch(() => { });
+
+          renderLog();
+          
+          // Refresh job details to get final status and stats
+          fetch(`/api/job/${jobId}`)
+            .then(r => r.json())
+            .then(j => {
+              // Update status badge in detail view
+              const statusBadge = document.querySelector('#jobDetail .badge');
+              if (statusBadge) {
+                statusBadge.className = `badge ${j.status}`;
+                statusBadge.textContent = j.status;
+              }
+
+              // Update statistics table
+              updateStatisticsDisplay(j.stats);
+            })
+            .catch(err => {
+              console.error('Failed to refresh job details:', err);
+            });
+
+          // Force refresh jobs list to ensure status is updated
+          refreshJobs();
+          return;
+        }
+
+        // Decode the received chunk
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+
+        // Process complete lines (SSE events are separated by \n\n)
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // Keep incomplete line in buffer
+
+        lines.forEach(line => {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.substring(6)); // Remove 'data: ' prefix
+              const level = data.level || 'info';
+              const timestamp = new Date().toLocaleTimeString();
+              let text = '';
+
+              if (data.type === 'stats') {
+                text = `[${timestamp}] [STATS] ${data.message}`;
+              } else if (data.type === 'backup') {
+                text = `[${timestamp}] [BACKUP] ${data.message}`;
+              } else if (data.type === 'status') {
+                text = `[${timestamp}] [STATUS] ${data.message}`;
+              } else if (data.type === 'error') {
+                text = `[${timestamp}] [ERROR] ${data.message}`;
+              } else {
+                const levelStr = level.toUpperCase();
+                text = `[${timestamp}] [${levelStr}] ${data.message}`;
+              }
+
+              allLogEntries.push({ level, text });
+
+              // Persist logs to job.log in the backend
+              fetch(`/api/job/${jobId}`, { 
+                method: 'PATCH', 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify({ log: allLogEntries }) 
+              }).catch(() => { });
+
+              renderLog();
+            } catch (e) {
+              console.error('Error parsing event data:', e);
+            }
+          }
+        });
+
+        // Continue reading
+        readStream();
+      }).catch(error => {
+        console.error('Error reading event stream:', error);
+        
+        // Retry connection after delay
+        setTimeout(() => {
+          startEvents(jobId); // Restart the event stream
+        }, 2000);
+      });
+    }
+
+    // Start reading the stream
+    readStream();
+  })
+  .catch(error => {
+    console.error('Failed to establish event stream connection:', error);
+    
+    // Retry connection after delay
+    setTimeout(() => {
+      startEvents(jobId);
+    }, 2000);
+  });
 }
 
 // Initialize on page load

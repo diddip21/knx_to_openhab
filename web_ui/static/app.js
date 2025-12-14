@@ -40,6 +40,15 @@ async function refreshJobs() {
       <button onclick="deleteJob('${j.id}')">Delete</button>
     `
     jobsList.appendChild(li)
+
+    // Update the status in the job details view if this job is currently being viewed
+    if (currentJobId === j.id) {
+      const statusBadge = document.querySelector('#jobDetail .badge');
+      if (statusBadge) {
+        statusBadge.className = `badge ${j.status}`;
+        statusBadge.textContent = j.status;
+      }
+    }
   })
 }
 
@@ -51,8 +60,18 @@ function showJobDetail(jobId) {
   logLevelFilter = 'all'
   if (logLevelFilterEl) logLevelFilterEl.value = 'all'
 
+  // Show loading state initially
+  jobDetailEl.innerHTML = '<div class="loading">Loading job details...</div>'
+  allLogEntries = []
+  logEl.textContent = 'Loading logs...'
+
   fetch(`/api/job/${jobId}`)
-    .then(r => r.json())
+    .then(async r => {
+      if (!r.ok) {
+        throw new Error(`HTTP error! status: ${r.status}`)
+      }
+      return r.json()
+    })
     .then(j => {
       jobDetailEl.innerHTML = `
         <table class="detail-table">
@@ -93,6 +112,11 @@ function showJobDetail(jobId) {
       if (j.status === 'running') {
         startEvents(jobId)
       }
+    })
+    .catch(error => {
+      console.error('Error loading job details:', error)
+      jobDetailEl.innerHTML = `<div class="error">Error loading job details: ${error.message}</div>`
+      logEl.textContent = 'Failed to load logs'
     })
 }
 
@@ -1194,20 +1218,6 @@ function startEvents(jobId) {
 
       // Force refresh jobs list to ensure status is updated
       refreshJobs()
-      
-      // Also update the specific job item in the list if we're viewing it
-      if (currentJobId === jobId) {
-        const jobItems = document.querySelectorAll('.job-item');
-        jobItems.forEach(item => {
-          const statusSpan = item.querySelector('.job-status');
-          if (statusSpan) {
-            // Update the status span class and text
-            const statusClass = j.status === 'completed' ? 'success' : j.status === 'failed' ? 'error' : 'running';
-            statusSpan.className = `job-status ${statusClass}`;
-            statusSpan.textContent = j.status;
-          }
-        });
-      }
     })
   }
   
@@ -1219,6 +1229,25 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshJobs()
   refreshServices()
   loadVersion()
+
+  // Set up automatic refresh for jobs - only refresh running jobs periodically
+  setInterval(async () => {
+    try {
+      const res = await fetch('/api/jobs')
+      if (res.ok) {
+        const jobs = await res.json()
+        const runningJobs = jobs.filter(job => job.status === 'running')
+
+        // Only refresh if there are running jobs
+        if (runningJobs.length > 0) {
+          await refreshJobs()
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing jobs:', error)
+    }
+  }, 5000) // Refresh every 5 seconds if there are running jobs
+
   // Check for updates every 5 minutes in background
   setInterval(checkForUpdatesBackground, 5 * 60 * 1000)
 })

@@ -856,20 +856,20 @@ def export_output(items,sitemap,things):
     things = things_template.replace('###things###', things)
     os.makedirs(os.path.dirname(config['things_path']), exist_ok=True)
     open(config['things_path'],'w', encoding='utf8').write(things)
-    set_permissions(config['things_path'])
+    #set_permissions(config['things_path'])
     # export items:
     items_template =  open('items.template','r', encoding='utf8').read()
     items = items_template.replace('###items###', items)
     items = items.replace('###NAME###', PRJ_NAME)
     os.makedirs(os.path.dirname(config['items_path']), exist_ok=True)
     open(config['items_path'],'w', encoding='utf8').write(items)
-    set_permissions(config['items_path'])
+    #set_permissions(config['items_path'])
     # export sitemap:
     sitemap_template = open('sitemap.template','r', encoding='utf8').read()
     sitemap = sitemap_template.replace('###sitemap###', sitemap)
     os.makedirs(os.path.dirname(config['sitemaps_path']), exist_ok=True)
     open(config['sitemaps_path'],'w', encoding='utf8').write(sitemap)
-    set_permissions(config['sitemaps_path'])
+    #set_permissions(config['sitemaps_path'])
 
     #export persistent
     private_persistence = ''
@@ -890,7 +890,7 @@ def export_output(items,sitemap,things):
 
     os.makedirs(os.path.dirname(config['influx_path']), exist_ok=True)
     open(config['influx_path'],'w', encoding='utf8').write(persist)
-    set_permissions(config['influx_path'])
+    #set_permissions(config['influx_path'])
 
 
     fenster_rule = ''
@@ -917,7 +917,7 @@ def export_output(items,sitemap,things):
     '''
     os.makedirs(os.path.dirname(config['fenster_path']), exist_ok=True)
     open(config['fenster_path'],'w', encoding='utf8').write(fenster_rule)
-    set_permissions(config['fenster_path'])
+    #set_permissions(config['fenster_path'])
 
 def main():
     """Main function"""

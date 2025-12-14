@@ -215,6 +215,87 @@ if FLASK_AVAILABLE:
         s = job_mgr.status()
         return jsonify(s)
 
+    @app.route('/api/debug/stats', methods=['GET'])
+    def debug_stats():
+        """Debug endpoint to check stats generation for the latest job."""
+        import os
+        import json
+        from pathlib import Path
+
+        # Get the latest completed job
+        all_jobs = job_mgr._jobs
+        completed_jobs = [job for job in all_jobs.values() if job.get('status') == 'completed']
+        if not completed_jobs:
+            return jsonify({'error': 'No completed jobs found'})
+
+        latest_job = max(completed_jobs, key=lambda j: j.get('created', 0))
+        job_id = latest_job['id']
+
+        # Check configured paths
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        main_config_path = os.path.join(project_root, 'config.json')
+
+        if os.path.exists(main_config_path):
+            with open(main_config_path, 'r', encoding='utf-8') as f:
+                main_config = json.load(f)
+        else:
+            # Fallback to defaults
+            main_config = {
+                'items_path': 'openhab/items/knx.items',
+                'things_path': 'openhab/things/knx.things',
+                'sitemaps_path': 'openhab/sitemaps/knx.sitemap',
+                'influx_path': 'openhab/persistence/influxdb.persist',
+                'fenster_path': 'openhab/rules/fenster.rules'
+            }
+
+        # Check actual file locations
+        openhab_path = job_mgr.cfg.get('openhab_path', 'openhab')
+        expected_paths = [
+            main_config.get('items_path', 'openhab/items/knx.items'),
+            main_config.get('things_path', 'openhab/things/knx.things'),
+            main_config.get('sitemaps_path', 'openhab/sitemaps/knx.sitemap'),
+            main_config.get('influx_path', 'openhab/persistence/influxdb.persist'),
+            main_config.get('fenster_path', 'openhab/rules/fenster.rules')
+        ]
+
+        # Build full paths
+        actual_paths = []
+        for config_path in expected_paths:
+            if os.path.isabs(config_path):
+                full_path = config_path
+            else:
+                full_path = os.path.join(openhab_path, config_path)
+                if not os.path.exists(full_path):
+                    full_path = config_path  # Try as-is
+            actual_paths.append({
+                'config_path': config_path,
+                'full_path': full_path,
+                'exists': os.path.exists(full_path),
+                'size': os.path.getsize(full_path) if os.path.exists(full_path) else 0
+            })
+
+        # Also scan the entire openhab directory for generated files
+        generated_files = []
+        if os.path.exists(openhab_path):
+            for root, dirs, files in os.walk(openhab_path):
+                for file in files:
+                    if file.endswith(('.items', '.things', '.sitemap', '.rules', '.persist', '.script', '.transform')):
+                        full_path = os.path.join(root, file)
+                        rel_path = os.path.relpath(full_path, openhab_path)
+                        generated_files.append({
+                            'path': rel_path,
+                            'full_path': full_path,
+                            'size': os.path.getsize(full_path)
+                        })
+
+        return jsonify({
+            'job_id': job_id,
+            'openhab_path': openhab_path,
+            'configured_paths': actual_paths,
+            'generated_files': generated_files,
+            'job_stats': latest_job.get('stats', {})
+        })
+
     @app.route('/api/version', methods=['GET'])
     def get_version():
         """Get current version information."""

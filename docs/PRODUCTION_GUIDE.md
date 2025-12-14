@@ -346,7 +346,8 @@ Health check (no auth required).
 ├── jobs.json                           # Job history
 └── <job-uploads>/                      # Uploaded KNX files (by job ID)
 
-/var/backups/knx_to_openhab/            # Backup archives
+# Backup archives location depends on configuration, defaulting to:
+/var/backups/knx_to_openhab/            # Default backup archives
 └── <job-id>-<timestamp>.tar.gz         # Backup tarballs
 ```
 
@@ -397,16 +398,18 @@ If you encounter "Permission denied" errors when trying to write to OpenHAB dire
 If the update log shows "Permission denied" or "error: cannot open .git/FETCH_HEAD":
 
 ```bash
-# Fix ownership permissions
-sudo chown -R knxohui:knxohui /opt/knx_to_openhab /var/backups/knx_to_openhab
+# Fix ownership permissions - adjust backup path as needed based on your configuration
+BACKUP_PATH=$(python3 -c "import json; cfg=json.load(open('/opt/knx_to_openhab/web_ui/backend/config.json')); print(cfg.get('backups_dir','/var/backups/knx_to_openhab'))" 2>/dev/null || echo "/var/backups/knx_to_openhab")
+sudo chown -R knxohui:knxohui /opt/knx_to_openhab "$BACKUP_PATH"
 ```
 
 This usually happens if you manually ran git commands as root or your personal user instead of the service user.
 
 ### Backup/Rollback Issues
 ```bash
-# Check backup folder
-ls -lh /var/backups/knx_to_openhab/
+# Check backup folder - adjust path based on your configuration
+BACKUP_PATH=$(python3 -c "import json; cfg=json.load(open('/opt/knx_to_openhab/web_ui/backend/config.json')); print(cfg.get('backups_dir','/var/backups/knx_to_openhab'))" 2>/dev/null || echo "/var/backups/knx_to_openhab")
+ls -lh "$BACKUP_PATH"
 
 # Manual cleanup (if timer not working)
 sudo systemctl start knxohui-backup-cleanup.service

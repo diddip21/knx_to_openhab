@@ -19,7 +19,7 @@ class Updater:
         Args:
             base_path: Base directory of the installation (defaults to current working directory)
         """
-        self.base_path = base_path or os.getcwd()
+        self.base_path = base_path or os.path.dirname(os.path.dirname(os.path.dirname(__file__)))  # Project root
         self.repo_url = 'https://github.com/diddip21/knx_to_openhab'
         self.branch = 'main'
         

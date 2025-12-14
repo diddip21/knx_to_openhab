@@ -24,15 +24,24 @@ echo "Copying files"
 rsync -a --exclude .git . "$BASE/"
 
 # Read config values
-CONF="web_ui/backend/config.json"
+CONF="$BASE/web_ui/backend/config.json"
 if [ -f "$CONF" ]; then
-    JOBS_DIR=$(python3 -c "import json; print(json.load(open('$CONF')).get('jobs_dir', '/var/lib/knx_to_openhab'))" 2>/dev/null || echo "/var/lib/knx_to_openhab")
-    BACKUPS_DIR=$(python3 -c "import json; print(json.load(open('$CONF')).get('backups_dir', '/var/backups/knx_to_openhab'))" 2>/dev/null || echo "/var/backups/knx_to_openhab")
+    JOBS_DIR=$(python3 -c "import json; print(json.load(open('$CONF')).get('jobs_dir', 'var/lib/knx_to_openhab'))" 2>/dev/null || echo "var/lib/knx_to_openhab")
+    BACKUPS_DIR=$(python3 -c "import json; print(json.load(open('$CONF')).get('backups_dir', 'var/backups/knx_to_openhab'))" 2>/dev/null || echo "var/backups/knx_to_openhab")
     PORT=$(python3 -c "import json; print(json.load(open('$CONF')).get('port', 8085))" 2>/dev/null || echo "8085")
 else
-    JOBS_DIR="/var/lib/knx_to_openhab"
-    BACKUPS_DIR="/var/backups/knx_to_openhab"
+    JOBS_DIR="var/lib/knx_to_openhab"
+    BACKUPS_DIR="var/backups/knx_to_openhab"
     PORT="8085"
+fi
+
+# If paths are relative, make them absolute with respect to BASE
+if [[ "$JOBS_DIR" != /* ]]; then
+    JOBS_DIR="$BASE/$JOBS_DIR"
+fi
+
+if [[ "$BACKUPS_DIR" != /* ]]; then
+    BACKUPS_DIR="$BASE/$BACKUPS_DIR"
 fi
 
 echo "Creating runtime dirs"

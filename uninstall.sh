@@ -42,9 +42,38 @@ sudo rm -f /etc/sudoers.d/knxohui
 
 # 4. Remove directories
 log_info "Removing directories..."
+
+# Read config to get the actual backup directory path
+if [ -f "/opt/knx_to_openhab/web_ui/backend/config.json" ]; then
+    BACKUPS_DIR=$(python3 - <<PY
+import json
+cfg=json.load(open('/opt/knx_to_openhab/web_ui/backend/config.json'))
+print(cfg.get('backups_dir','/var/backups/knx_to_openhab'))
+PY
+)
+    JOBS_DIR=$(python3 - <<PY
+import json
+cfg=json.load(open('/opt/knx_to_openhab/web_ui/backend/config.json'))
+print(cfg.get('jobs_dir','/var/lib/knx_to_openhab'))
+PY
+)
+else
+    BACKUPS_DIR="/var/backups/knx_to_openhab"
+    JOBS_DIR="/var/lib/knx_to_openhab"
+fi
+
+# If paths are relative, make them absolute for /opt/knx_to_openhab installation
+if [[ "$BACKUPS_DIR" != /* ]]; then
+    BACKUPS_DIR="/opt/knx_to_openhab/$BACKUPS_DIR"
+fi
+
+if [[ "$JOBS_DIR" != /* ]]; then
+    JOBS_DIR="/opt/knx_to_openhab/$JOBS_DIR"
+fi
+
 sudo rm -rf /opt/knx_to_openhab
-sudo rm -rf /var/lib/knx_to_openhab
-sudo rm -rf /var/backups/knx_to_openhab
+sudo rm -rf "$JOBS_DIR"
+sudo rm -rf "$BACKUPS_DIR"
 
 # 5. Remove user
 log_info "Removing service user..."

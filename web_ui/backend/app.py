@@ -32,7 +32,9 @@ if FLASK_AVAILABLE:
                 static_url_path='/static')
     app.config['UPLOAD_FOLDER'] = cfg.get('jobs_dir', './var/lib/knx_to_openhab')
     job_mgr = JobManager(cfg)
-    updater = Updater(base_path=os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    # Use project root directory as base path for updater
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    updater = Updater(base_path=project_root)
 
     # Basic HTTP auth (simple implementation) -------------------------------------------------
     from base64 import b64decode
@@ -278,7 +280,13 @@ if FLASK_AVAILABLE:
         
         # If backup specified, extract file from backup
         if backup_name:
-            backups_dir = cfg.get('backups_dir', './var/backups/knx_to_openhab')
+            # Use the configured backup directory from config, with a sensible default
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            backups_dir_config = cfg.get('backups_dir', 'var/backups/knx_to_openhab')
+            if not os.path.isabs(backups_dir_config):
+                backups_dir = os.path.join(project_root, backups_dir_config)
+            else:
+                backups_dir = backups_dir_config
             backup_path = os.path.join(backups_dir, backup_name)
             
             if not os.path.isfile(backup_path):

@@ -4,7 +4,11 @@ set -euo pipefail
 # Backup cleanup script for knx_to_openhab
 # Reads retention settings from web_ui/backend/config.json
 
-CONF="/opt/knx_to_openhab/web_ui/backend/config.json"
+# Determine installation directory based on script location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
+CONF="$INSTALL_DIR/web_ui/backend/config.json"
+
 if [ ! -f "$CONF" ]; then
   echo "Config not found at $CONF, using defaults"
   BACKUPS_DIR="/var/backups/knx_to_openhab"
@@ -14,8 +18,13 @@ if [ ! -f "$CONF" ]; then
 else
   BACKUPS_DIR=$(python3 - <<PY
 import json
+import os
 cfg=json.load(open('$CONF'))
-print(cfg.get('backups_dir','/var/backups/knx_to_openhab'))
+backups_dir = cfg.get('backups_dir','/var/backups/knx_to_openhab')
+# If it's a relative path, make it relative to the installation directory
+if not backups_dir.startswith('/'):
+    backups_dir = os.path.join('$INSTALL_DIR', backups_dir)
+print(backups_dir)
 PY
 )
   DAYS=$(python3 - <<PY

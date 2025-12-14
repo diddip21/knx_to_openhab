@@ -7,8 +7,25 @@ set -euo pipefail
 # Configuration
 INSTALL_DIR="/opt/knx_to_openhab"
 LOG_FILE="${LOG_FILE:-/var/log/knx_to_openhab_update.log}"
-BACKUP_DIR="/var/backups/knx_to_openhab"
 SERVICE_NAME="knxohui.service"
+
+# Read backup directory from config (default to /var/backups/knx_to_openhab)
+CONF="$INSTALL_DIR/web_ui/backend/config.json"
+if [ -f "$CONF" ]; then
+    BACKUP_DIR=$(python3 - <<PY
+import json
+import os
+cfg=json.load(open('$CONF'))
+backups_dir = cfg.get('backups_dir','/var/backups/knx_to_openhab')
+# If it's a relative path, make it relative to the installation directory
+if not backups_dir.startswith('/'):
+    backups_dir = os.path.join('$INSTALL_DIR', backups_dir)
+print(backups_dir)
+PY
+)
+else
+    BACKUP_DIR="/var/backups/knx_to_openhab"
+fi
 
 # Logging function
 log() {
@@ -54,12 +71,35 @@ if [[ -d "$BACKUP_DIR" ]] && [[ ! -w "$BACKUP_DIR" ]]; then
     exit 1
 fi
 
+# If backup directory doesn't exist, create it with proper permissions
+if [[ ! -d "$BACKUP_DIR" ]]; then
+    log "Creating backup directory: $BACKUP_DIR"
+    mkdir -p "$BACKUP_DIR" || {
+        log "ERROR: Failed to create backup directory: $BACKUP_DIR"
+        log "Please ensure you have proper permissions or create the directory manually:"
+        log "  sudo mkdir -p $BACKUP_DIR"
+        log "  sudo chown -R knxohui:knxohui $BACKUP_DIR"
+        exit 1
+    }
+fi
+
 # Create backup of current installation
 log "Creating backup of current installation..."
 BACKUP_NAME="pre-update-$(date +%Y%m%d-%H%M%S).tar.gz"
 BACKUP_PATH="$BACKUP_DIR/$BACKUP_NAME"
 
-mkdir -p "$BACKUP_DIR"
+# Ensure backup directory exists with proper permissions
+if [[ ! -d "$BACKUP_DIR" ]]; then
+    log "Creating backup directory: $BACKUP_DIR"
+    mkdir -p "$BACKUP_DIR" || {
+        log "ERROR: Failed to create backup directory: $BACKUP_DIR"
+        log "Please ensure you have proper permissions or create the directory manually:"
+        log "  sudo mkdir -p $BACKUP_DIR"
+        log "  sudo chown -R knxohui:knxohui $BACKUP_DIR"
+        exit 1
+    }
+fi
+
 tar -czf "$BACKUP_PATH" \
     --exclude='.git' \
     --exclude='venv' \
@@ -67,7 +107,7 @@ tar -czf "$BACKUP_PATH" \
     --exclude='*.pyc' \
     --exclude='var' \
     . || {
-    log "WARNING: Backup creation failed, but continuing..."
+log "WARNING: Backup creation failed, but continuing..."
 }
 
 if [[ -f "$BACKUP_PATH" ]]; then

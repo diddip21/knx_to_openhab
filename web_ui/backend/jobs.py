@@ -16,8 +16,22 @@ from .storage import save_job, load_jobs, save_jobs, ensure_dirs
 class JobManager:
     def __init__(self, cfg):
         self.cfg = cfg
-        self.jobs_dir = cfg.get('jobs_dir', './var/lib/knx_to_openhab')
-        self.backups_dir = cfg.get('backups_dir', './var/backups/knx_to_openhab')
+        # Use the configured backup directory from config, with a sensible default
+        jobs_dir_config = cfg.get('jobs_dir', 'var/lib/knx_to_openhab')
+        backups_dir_config = cfg.get('backups_dir', 'var/backups/knx_to_openhab')
+        
+        # If paths are relative, make them relative to project root
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        if not os.path.isabs(jobs_dir_config):
+            self.jobs_dir = os.path.join(project_root, jobs_dir_config)
+        else:
+            self.jobs_dir = jobs_dir_config
+            
+        if not os.path.isabs(backups_dir_config):
+            self.backups_dir = os.path.join(project_root, backups_dir_config)
+        else:
+            self.backups_dir = backups_dir_config
+
         ensure_dirs([self.jobs_dir, self.backups_dir])
         self._jobs = load_jobs(self.jobs_dir)
         self.queues = {}

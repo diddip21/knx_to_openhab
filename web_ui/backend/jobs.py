@@ -232,24 +232,54 @@ class JobManager:
                 q.put({'type': 'error', 'level': 'error', 'message': f'Traceback: {traceback.format_exc()}'})
 
                 # Check if files were generated and create basic stats
-                openhab_path = self.cfg.get('openhab_path', 'openhab')
+                # Use the actual configured paths instead of hardcoded paths
+                import importlib.util
+                # Load the main config to get the actual paths
+                main_config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config.json')
+                if os.path.exists(main_config_path):
+                    with open(main_config_path, 'r', encoding='utf-8') as f:
+                        main_config = json.load(f)
+                else:
+                    # Fallback to default paths if config can't be loaded
+                    main_config = {
+                        'items_path': 'openhab/items/knx.items',
+                        'things_path': 'openhab/things/knx.things',
+                        'sitemaps_path': 'openhab/sitemaps/knx.sitemap',
+                        'influx_path': 'openhab/persistence/influxdb.persist',
+                        'fenster_path': 'openhab/rules/fenster.rules'
+                    }
+
                 basic_stats = {}
 
-                # Check for expected generated files
-                expected_files = [
-                    os.path.join(openhab_path, 'items', 'knx.items'),
-                    os.path.join(openhab_path, 'things', 'knx.things'),
-                    os.path.join(openhab_path, 'sitemaps', 'knx.sitemap'),
-                    os.path.join(openhab_path, 'persistence', 'influxdb.persist'),
-                    os.path.join(openhab_path, 'rules', 'fenster.rules')
+                # Check for expected generated files using actual configured paths
+                expected_paths = [
+                    main_config.get('items_path', 'openhab/items/knx.items'),
+                    main_config.get('things_path', 'openhab/things/knx.things'),
+                    main_config.get('sitemaps_path', 'openhab/sitemaps/knx.sitemap'),
+                    main_config.get('influx_path', 'openhab/persistence/influxdb.persist'),
+                    main_config.get('fenster_path', 'openhab/rules/fenster.rules')
                 ]
 
-                for expected_file in expected_files:
-                    if os.path.exists(expected_file):
+                for config_path in expected_paths:
+                    # Convert relative path to absolute path based on openhab_path
+                    if os.path.isabs(config_path):
+                        full_path = config_path
+                    else:
+                        full_path = os.path.join(self.cfg.get('openhab_path', 'openhab'), config_path)
+                        # If the config path already includes the openhab directory, use it as is
+                        if not os.path.exists(full_path):
+                            full_path = config_path
+
+                    # If still doesn't exist, try with openhab_path as base
+                    if not os.path.exists(full_path):
+                        openhab_base = self.cfg.get('openhab_path', 'openhab')
+                        full_path = os.path.join(openhab_base, config_path)
+
+                    if os.path.exists(full_path):
                         try:
-                            with open(expected_file, 'r', encoding='utf-8', errors='ignore') as f:
+                            with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
                                 lines = len(f.readlines())
-                            filename = os.path.basename(expected_file)
+                            filename = os.path.basename(full_path)
                             basic_stats[filename] = {
                                 'before': 0,  # No backup existed before
                                 'after': lines,
@@ -258,7 +288,30 @@ class JobManager:
                                 'removed': 0
                             }
                         except Exception as e:
-                            q.put({'type': 'error', 'level': 'warning', 'message': f'Could not read {expected_file}: {str(e)}'})
+                            q.put({'type': 'error', 'level': 'warning', 'message': f'Could not read {full_path}: {str(e)}'})
+
+                # If still no files found, scan the entire openhab directory for any generated files
+                if not basic_stats:
+                    openhab_path = self.cfg.get('openhab_path', 'openhab')
+                    if os.path.exists(openhab_path):
+                        for root, dirs, files in os.walk(openhab_path):
+                            for file in files:
+                                if file.endswith(('.items', '.things', '.sitemap', '.rules', '.persist', '.script', '.transform')):
+                                    full_path = os.path.join(root, file)
+                                    try:
+                                        with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                            lines = len(f.readlines())
+                                        # Create relative path for display
+                                        rel_path = os.path.relpath(full_path, openhab_path)
+                                        basic_stats[rel_path] = {
+                                            'before': 0,  # No backup existed before
+                                            'after': lines,
+                                            'delta': lines,
+                                            'added': lines,
+                                            'removed': 0
+                                        }
+                                    except Exception as e:
+                                        q.put({'type': 'error', 'level': 'warning', 'message': f'Could not read generated file {full_path}: {str(e)}'})
 
                 job['stats'] = basic_stats
             job['status'] = 'completed'
@@ -282,13 +335,13 @@ class JobManager:
         import logging
         logger = logging.getLogger(__name__)
         stats = {}
-        
+
         # Comprehensive file type detection for OpenHAB files
         supported_extensions = {
-            '.items', '.things', '.sitemap', '.rules', '.persist', 
+            '.items', '.things', '.sitemap', '.rules', '.persist',
             '.script', '.transform', '.db', '.cfg', '.properties'
         }
-        
+
         # Get list of current files
         current_files = {}
         if os.path.exists(openhab_path):
@@ -296,12 +349,14 @@ class JobManager:
                 for fname in files:
                     # Check if file has supported extension or is in known OpenHAB directories
                     if (any(fname.endswith(ext) for ext in supported_extensions) or
-                        any(root.endswith(dir_name) for dir_name in ['items', 'things', 'sitemaps', 'rules', 'persistence', 'scripts', 'transform'])):                        
+                        any(root.endswith(dir_name) for dir_name in ['items', 'things', 'sitemaps', 'rules', 'persistence', 'scripts', 'transform'])):
                         fpath = os.path.join(root, fname)
                         try:
                             with open(fpath, 'r', encoding='utf8', errors='ignore') as f:
                                 lines = f.readlines()
-                                current_files[fname] = lines  # Store temporarily with just filename
+                                # Store with relative path for proper comparison
+                                rel_path = os.path.relpath(fpath, openhab_path).replace('\\', '/')
+                                current_files[rel_path] = lines
                         except Exception as e:
                             logger.warning(f"Could not read current file {fpath}: {e}")
                             continue
@@ -314,10 +369,10 @@ class JobManager:
                     for member in tar.getmembers():
                         if member.isfile():
                             member_name_normalized = member.name.replace('\\', '/')
-                            
+
                             # Extract relative path more robustly
                             relpath = self._extract_relative_path_from_backup(member_name_normalized)
-                            
+
                             if relpath and self._is_supported_openhab_file(relpath):
                                 try:
                                     f = tar.extractfile(member)
@@ -330,17 +385,19 @@ class JobManager:
                                     continue
             except Exception as e:
                 logger.error(f"Error reading backup for stats: {e}")
-                return {}
+                # Even if backup reading fails, try to generate stats for current files
+                # This handles the case where backup is corrupted or doesn't exist
+                pass
 
-        # Normalize current file paths to match backup format
-        normalized_current_files = self._normalize_current_files(current_files, openhab_path)
-        
-        # Compute diffs
+        # No need to normalize current files since we already stored them with relative paths
+        normalized_current_files = current_files
+
+        # If no backup exists, stats will show all current files as "added"
         all_files = set(normalized_current_files.keys()) | set(original_files.keys())
         for fname in sorted(all_files):
             orig_lines = original_files.get(fname, [])
             curr_lines = normalized_current_files.get(fname, [])
-            
+
             matcher = difflib.SequenceMatcher(None, orig_lines, curr_lines)
             added = 0
             removed = 0
@@ -352,7 +409,7 @@ class JobManager:
                     removed += i2 - i1
                 elif tag == 'insert':
                     added += j2 - j1
-            
+
             stats[fname] = {
                 'before': len(orig_lines),
                 'after': len(curr_lines),
@@ -360,7 +417,28 @@ class JobManager:
                 'added': added,
                 'removed': removed
             }
-            
+
+        # If no files were found, make sure to generate stats for the main expected files
+        if not stats:
+            # Look for common OpenHAB files in the openhab directory
+            expected_files = ['items/knx.items', 'things/knx.things', 'sitemaps/knx.sitemap',
+                             'persistence/influxdb.persist', 'rules/fenster.rules']
+            for expected_file in expected_files:
+                full_path = os.path.join(openhab_path, expected_file)
+                if os.path.exists(full_path):
+                    try:
+                        with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+                            lines = len(f.readlines())
+                        stats[expected_file] = {
+                            'before': 0,  # No backup existed before
+                            'after': lines,
+                            'delta': lines,
+                            'added': lines,
+                            'removed': 0
+                        }
+                    except Exception as e:
+                        logger.warning(f"Could not read expected file {full_path}: {e}")
+
         return stats
 
     def _extract_relative_path_from_backup(self, member_name):

@@ -203,7 +203,7 @@ class JobManager:
             # Compute detailed statistics by comparing with backup
             try:
                 job['stats'] = self._compute_detailed_stats(openhab_path, backup_path)
-                
+
                 # Validate statistics before logging
                 if not isinstance(job['stats'], dict):
                     q.put({'type': 'error', 'level': 'error', 'message': 'Statistics calculation returned invalid data'})
@@ -215,21 +215,52 @@ class JobManager:
                         if not isinstance(stat, dict) or not all(k in stat for k in ['before', 'after', 'delta', 'added', 'removed']):
                             q.put({'type': 'warning', 'level': 'warning', 'message': f'Invalid statistics for file: {fn}'})
                             continue
-                        
+
                         # Ensure numerical values
                         before = int(stat.get('before', 0))
                         after = int(stat.get('after', 0))
                         delta = int(stat.get('delta', after - before))
                         added = int(stat.get('added', 0))
                         removed = int(stat.get('removed', 0))
-                        
+
                         msg = f"{fn}: {before} → {after} lines ({delta:+d}) [+{added}/-{removed}]"
                         q.put({'type': 'stats', 'level': 'info', 'message': msg})
-                        
+
             except Exception as stats_error:
+                # Log the detailed error for debugging
                 q.put({'type': 'error', 'level': 'error', 'message': f'Statistics calculation failed: {str(stats_error)}'})
-                job['stats'] = {}
-            
+                q.put({'type': 'error', 'level': 'error', 'message': f'Traceback: {traceback.format_exc()}'})
+
+                # Check if files were generated and create basic stats
+                openhab_path = self.cfg.get('openhab_path', 'openhab')
+                basic_stats = {}
+
+                # Check for expected generated files
+                expected_files = [
+                    os.path.join(openhab_path, 'items', 'knx.items'),
+                    os.path.join(openhab_path, 'things', 'knx.things'),
+                    os.path.join(openhab_path, 'sitemaps', 'knx.sitemap'),
+                    os.path.join(openhab_path, 'persistence', 'influxdb.persist'),
+                    os.path.join(openhab_path, 'rules', 'fenster.rules')
+                ]
+
+                for expected_file in expected_files:
+                    if os.path.exists(expected_file):
+                        try:
+                            with open(expected_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                lines = len(f.readlines())
+                            filename = os.path.basename(expected_file)
+                            basic_stats[filename] = {
+                                'before': 0,  # No backup existed before
+                                'after': lines,
+                                'delta': lines,
+                                'added': lines,
+                                'removed': 0
+                            }
+                        except Exception as e:
+                            q.put({'type': 'error', 'level': 'warning', 'message': f'Could not read {expected_file}: {str(e)}'})
+
+                job['stats'] = basic_stats
             job['status'] = 'completed'
             q.put({'type': 'status', 'level': 'info', 'message': 'completed'})
         except Exception as e:

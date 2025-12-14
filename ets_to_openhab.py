@@ -843,32 +843,50 @@ def export_output(items,sitemap,things):
     #global items,sitemap,things
 
     # export things:
-    things_template = open('things.template','r', encoding='utf8').read()
-    if GWIP:
-        things_template = things_template.replace('###gwip###', GWIP)
-    else:
-        logger.info("No Gateway IP found. Using KNX Router mode (multicast).")
-        things_template = things_template.replace('type="TUNNEL"', 'type="ROUTER"')
-        things_template = re.sub(r'.*ipAddress="###gwip###",.*\n', '', things_template)
-        things_template = re.sub(r'.*portNumber=3671,.*\n', '', things_template)
-        things_template = things_template.replace('autoReconnectPeriod=30', 'autoReconnectPeriod=60')
+    try:
+        things_template = open('things.template','r', encoding='utf8').read()
+        if GWIP:
+            things_template = things_template.replace('###gwip###', GWIP)
+        else:
+            logger.info("No Gateway IP found. Using KNX Router mode (multicast).")
+            things_template = things_template.replace('type="TUNNEL"', 'type="ROUTER"')
+            things_template = re.sub(r'.*ipAddress="###gwip###",.*\n', '', things_template)
+            things_template = re.sub(r'.*portNumber=3671,.*\n', '', things_template)
+            things_template = things_template.replace('autoReconnectPeriod=30', 'autoReconnectPeriod=60')
 
-    things = things_template.replace('###things###', things)
-    os.makedirs(os.path.dirname(config['things_path']), exist_ok=True)
-    open(config['things_path'],'w', encoding='utf8').write(things)
+        things = things_template.replace('###things###', things)
+        os.makedirs(os.path.dirname(config['things_path']), exist_ok=True)
+        with open(config['things_path'],'w', encoding='utf8') as f:
+            f.write(things)
+        logger.info(f"Successfully wrote things file to {config['things_path']} with {things.count(chr(10)) + 1} lines")
+    except Exception as e:
+        logger.error(f"Failed to write things file to {config['things_path']}: {e}")
+        raise
     #set_permissions(config['things_path'])
     # export items:
-    items_template =  open('items.template','r', encoding='utf8').read()
-    items = items_template.replace('###items###', items)
-    items = items.replace('###NAME###', PRJ_NAME)
-    os.makedirs(os.path.dirname(config['items_path']), exist_ok=True)
-    open(config['items_path'],'w', encoding='utf8').write(items)
+    try:
+        items_template =  open('items.template','r', encoding='utf8').read()
+        items = items_template.replace('###items###', items)
+        items = items.replace('###NAME###', PRJ_NAME)
+        os.makedirs(os.path.dirname(config['items_path']), exist_ok=True)
+        with open(config['items_path'],'w', encoding='utf8') as f:
+            f.write(items)
+        logger.info(f"Successfully wrote items file to {config['items_path']} with {items.count(chr(10)) + 1} lines")
+    except Exception as e:
+        logger.error(f"Failed to write items file to {config['items_path']}: {e}")
+        raise
     #set_permissions(config['items_path'])
     # export sitemap:
-    sitemap_template = open('sitemap.template','r', encoding='utf8').read()
-    sitemap = sitemap_template.replace('###sitemap###', sitemap)
-    os.makedirs(os.path.dirname(config['sitemaps_path']), exist_ok=True)
-    open(config['sitemaps_path'],'w', encoding='utf8').write(sitemap)
+    try:
+        sitemap_template = open('sitemap.template','r', encoding='utf8').read()
+        sitemap = sitemap_template.replace('###sitemap###', sitemap)
+        os.makedirs(os.path.dirname(config['sitemaps_path']), exist_ok=True)
+        with open(config['sitemaps_path'],'w', encoding='utf8') as f:
+            f.write(sitemap)
+        logger.info(f"Successfully wrote sitemap file to {config['sitemaps_path']} with {sitemap.count(chr(10)) + 1} lines")
+    except Exception as e:
+        logger.error(f"Failed to write sitemap file to {config['sitemaps_path']}: {e}")
+        raise
     #set_permissions(config['sitemaps_path'])
 
     #export persistent
@@ -881,15 +899,21 @@ def export_output(items,sitemap,things):
     everyDay : "0 0 0 * * ?"
     every2Minutes : "0 */2 * ? * *"
     }
-    
+
     Items {
     '''
     for i in export_to_influx:
         persist += f"{i}: strategy = everyUpdate\n"
     persist += private_persistence + '\n}'
 
-    os.makedirs(os.path.dirname(config['influx_path']), exist_ok=True)
-    open(config['influx_path'],'w', encoding='utf8').write(persist)
+    try:
+        os.makedirs(os.path.dirname(config['influx_path']), exist_ok=True)
+        with open(config['influx_path'],'w', encoding='utf8') as f:
+            f.write(persist)
+        logger.info(f"Successfully wrote persistence file to {config['influx_path']} with {persist.count(chr(10)) + 1} lines")
+    except Exception as e:
+        logger.error(f"Failed to write persistence file to {config['influx_path']}: {e}")
+        raise
     #set_permissions(config['influx_path'])
 
 
@@ -915,9 +939,14 @@ def export_output(items,sitemap,things):
     fenster_rule += '''
     end
     '''
-    os.makedirs(os.path.dirname(config['fenster_path']), exist_ok=True)
-    open(config['fenster_path'],'w', encoding='utf8').write(fenster_rule)
-    #set_permissions(config['fenster_path'])
+    try:
+        os.makedirs(os.path.dirname(config['fenster_path']), exist_ok=True)
+        with open(config['fenster_path'],'w', encoding='utf8') as f:
+            f.write(fenster_rule)
+        logger.info(f"Successfully wrote window rule file to {config['fenster_path']} with {fenster_rule.count(chr(10)) + 1} lines")
+    except Exception as e:
+        logger.error(f"Failed to write window rule file to {config['fenster_path']}: {e}")
+        # This is not critical, so we don't raise an exception
 
 def main():
     """Main function"""

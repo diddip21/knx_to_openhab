@@ -31,9 +31,19 @@ if FLASK_AVAILABLE:
                 static_folder=os.path.join(os.path.dirname(__file__), '..', 'static'),
                 static_url_path='/static')
     app.config['UPLOAD_FOLDER'] = cfg.get('jobs_dir', './var/lib/knx_to_openhab')
+
+    # Fix openhab_path to be absolute if it's relative and based on project root
+    import os
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    if 'openhab_path' in cfg:
+        openhab_path = cfg['openhab_path']
+        # If openhab_path is relative (doesn't start with / on Unix or a drive letter on Windows),
+        # make it relative to project root
+        if not os.path.isabs(openhab_path):
+            cfg['openhab_path'] = os.path.join(project_root, openhab_path)
+
     job_mgr = JobManager(cfg)
     # Use project root directory as base path for updater
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     updater = Updater(base_path=project_root)
 
     # Basic HTTP auth (simple implementation) -------------------------------------------------

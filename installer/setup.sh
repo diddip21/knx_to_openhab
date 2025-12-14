@@ -54,6 +54,9 @@ sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$JOBS_DIR" "$BACKUPS_DIR"
 # Mark directory as safe for git (required since we change ownership)
 sudo -u "$SERVICE_USER" git config --global --add safe.directory "$BASE"
 
+# Also mark the specific directory as safe (for newer git versions)
+sudo -u "$SERVICE_USER" git -C "$BASE" config --add safe.directory "$BASE" 2>/dev/null || true
+
 echo "Setting up group permissions for OpenHAB access"
 # Check if openhab group exists, create if needed
 if ! getent group openhab > /dev/null 2>&1; then
@@ -71,7 +74,7 @@ if ! id -u $SERVICE_USER >/dev/null 2>&1; then
   sudo useradd -r -s /bin/bash -m $SERVICE_USER || true
 fi
 
-echo "Create sudoers entry for restarting services"
+echo "Create sudoers entry for restarting services and git operations"
 SUDOERS_FILE="/etc/sudoers.d/knxohui"
 # Allow both /bin/systemctl and /usr/bin/systemctl to cover different OS layouts
 # Allow restart, is-active, and show (for uptime info)
@@ -81,6 +84,8 @@ CMDS="$CMDS, /bin/systemctl is-active openhab.service, /usr/bin/systemctl is-act
 CMDS="$CMDS, /bin/systemctl is-active knxohui.service, /usr/bin/systemctl is-active knxohui.service"
 CMDS="$CMDS, /bin/systemctl show openhab.service *, /usr/bin/systemctl show openhab.service *"
 CMDS="$CMDS, /bin/systemctl show knxohui.service *, /usr/bin/systemctl show knxohui.service *"
+# Add git commands needed for updates
+CMDS="$CMDS, /usr/bin/git *"
 
 echo "$SERVICE_USER ALL=(ALL) NOPASSWD: $CMDS" | sudo tee $SUDOERS_FILE
 sudo chmod 440 $SUDOERS_FILE

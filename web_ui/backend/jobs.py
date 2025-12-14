@@ -202,13 +202,15 @@ class JobManager:
             
             # Compute detailed statistics by comparing with backup
             try:
-                job['stats'] = self._compute_detailed_stats(openhab_path, backup_path)
+                detailed_stats = self._compute_detailed_stats(openhab_path, backup_path)
 
                 # Validate statistics before logging
-                if not isinstance(job['stats'], dict):
-                    q.put({'type': 'error', 'level': 'error', 'message': 'Statistics calculation returned invalid data'})
-                    job['stats'] = {}
+                if not isinstance(detailed_stats, dict) or not detailed_stats:  # Check if stats dict is empty
+                    q.put({'type': 'warning', 'level': 'warning', 'message': 'Statistics calculation returned empty or invalid data, using basic stats'})
+                    # Generate basic stats as fallback
+                    job['stats'] = self._generate_basic_stats(openhab_path)
                 else:
+                    job['stats'] = detailed_stats
                     # Log statistics with validation
                     for fn, stat in sorted(job['stats'].items()):
                         # Validate individual file statistics
@@ -230,90 +232,9 @@ class JobManager:
                 # Log the detailed error for debugging
                 q.put({'type': 'error', 'level': 'error', 'message': f'Statistics calculation failed: {str(stats_error)}'})
                 q.put({'type': 'error', 'level': 'error', 'message': f'Traceback: {traceback.format_exc()}'})
-
-                # Check if files were generated and create basic stats
-                # Use the actual configured paths instead of hardcoded paths
-                import importlib.util
-                # Load the main config to get the actual paths
-                main_config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config.json')
-                if os.path.exists(main_config_path):
-                    with open(main_config_path, 'r', encoding='utf-8') as f:
-                        main_config = json.load(f)
-                else:
-                    # Fallback to default paths if config can't be loaded
-                    main_config = {
-                        'items_path': 'openhab/items/knx.items',
-                        'things_path': 'openhab/things/knx.things',
-                        'sitemaps_path': 'openhab/sitemaps/knx.sitemap',
-                        'influx_path': 'openhab/persistence/influxdb.persist',
-                        'fenster_path': 'openhab/rules/fenster.rules'
-                    }
-
-                basic_stats = {}
-
-                # Check for expected generated files using actual configured paths
-                expected_paths = [
-                    main_config.get('items_path', 'openhab/items/knx.items'),
-                    main_config.get('things_path', 'openhab/things/knx.things'),
-                    main_config.get('sitemaps_path', 'openhab/sitemaps/knx.sitemap'),
-                    main_config.get('influx_path', 'openhab/persistence/influxdb.persist'),
-                    main_config.get('fenster_path', 'openhab/rules/fenster.rules')
-                ]
-
-                for config_path in expected_paths:
-                    # Convert relative path to absolute path based on openhab_path
-                    if os.path.isabs(config_path):
-                        full_path = config_path
-                    else:
-                        full_path = os.path.join(self.cfg.get('openhab_path', 'openhab'), config_path)
-                        # If the config path already includes the openhab directory, use it as is
-                        if not os.path.exists(full_path):
-                            full_path = config_path
-
-                    # If still doesn't exist, try with openhab_path as base
-                    if not os.path.exists(full_path):
-                        openhab_base = self.cfg.get('openhab_path', 'openhab')
-                        full_path = os.path.join(openhab_base, config_path)
-
-                    if os.path.exists(full_path):
-                        try:
-                            with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
-                                lines = len(f.readlines())
-                            filename = os.path.basename(full_path)
-                            basic_stats[filename] = {
-                                'before': 0,  # No backup existed before
-                                'after': lines,
-                                'delta': lines,
-                                'added': lines,
-                                'removed': 0
-                            }
-                        except Exception as e:
-                            q.put({'type': 'error', 'level': 'warning', 'message': f'Could not read {full_path}: {str(e)}'})
-
-                # If still no files found, scan the entire openhab directory for any generated files
-                if not basic_stats:
-                    openhab_path = self.cfg.get('openhab_path', 'openhab')
-                    if os.path.exists(openhab_path):
-                        for root, dirs, files in os.walk(openhab_path):
-                            for file in files:
-                                if file.endswith(('.items', '.things', '.sitemap', '.rules', '.persist', '.script', '.transform')):
-                                    full_path = os.path.join(root, file)
-                                    try:
-                                        with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
-                                            lines = len(f.readlines())
-                                        # Create relative path for display
-                                        rel_path = os.path.relpath(full_path, openhab_path)
-                                        basic_stats[rel_path] = {
-                                            'before': 0,  # No backup existed before
-                                            'after': lines,
-                                            'delta': lines,
-                                            'added': lines,
-                                            'removed': 0
-                                        }
-                                    except Exception as e:
-                                        q.put({'type': 'error', 'level': 'warning', 'message': f'Could not read generated file {full_path}: {str(e)}'})
-
-                job['stats'] = basic_stats
+                
+                # Generate basic stats as fallback when detailed stats fail
+                job['stats'] = self._generate_basic_stats(openhab_path)
             job['status'] = 'completed'
             q.put({'type': 'status', 'level': 'info', 'message': 'completed'})
         except Exception as e:
@@ -504,6 +425,90 @@ class JobManager:
                     break
                     
         return normalized
+
+    def _generate_basic_stats(self, openhab_path):
+        """Generate basic statistics for generated files when detailed stats fail."""
+        import importlib.util
+        # Load the main config to get the actual paths
+        main_config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config.json')
+        if os.path.exists(main_config_path):
+            with open(main_config_path, 'r', encoding='utf-8') as f:
+                main_config = json.load(f)
+        else:
+            # Fallback to default paths if config can't be loaded
+            main_config = {
+                'items_path': 'openhab/items/knx.items',
+                'things_path': 'openhab/things/knx.things',
+                'sitemaps_path': 'openhab/sitemaps/knx.sitemap',
+                'influx_path': 'openhab/persistence/influxdb.persist',
+                'fenster_path': 'openhab/rules/fenster.rules'
+            }
+
+        basic_stats = {}
+
+        # Check for expected generated files using actual configured paths
+        expected_paths = [
+            main_config.get('items_path', 'openhab/items/knx.items'),
+            main_config.get('things_path', 'openhab/things/knx.things'),
+            main_config.get('sitemaps_path', 'openhab/sitemaps/knx.sitemap'),
+            main_config.get('influx_path', 'openhab/persistence/influxdb.persist'),
+            main_config.get('fenster_path', 'openhab/rules/fenster.rules')
+        ]
+
+        for config_path in expected_paths:
+            # Convert relative path to absolute path based on openhab_path
+            if os.path.isabs(config_path):
+                full_path = config_path
+            else:
+                full_path = os.path.join(self.cfg.get('openhab_path', 'openhab'), config_path)
+                # If the config path already includes the openhab directory, use it as is
+                if not os.path.exists(full_path):
+                    full_path = config_path
+
+            # If still doesn't exist, try with openhab_path as base
+            if not os.path.exists(full_path):
+                openhab_base = self.cfg.get('openhab_path', 'openhab')
+                full_path = os.path.join(openhab_base, config_path)
+
+            if os.path.exists(full_path):
+                try:
+                    with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        lines = len(f.readlines())
+                    filename = os.path.basename(full_path)
+                    basic_stats[filename] = {
+                        'before': 0,  # No backup existed before
+                        'after': lines,
+                        'delta': lines,
+                        'added': lines,
+                        'removed': 0
+                    }
+                except Exception as e:
+                    print(f'Could not read {full_path}: {str(e)}')  # Use print instead of q.put since this is outside job context
+
+        # If still no files found, scan the entire openhab directory for any generated files
+        if not basic_stats:
+            openhab_path = self.cfg.get('openhab_path', 'openhab')
+            if os.path.exists(openhab_path):
+                for root, dirs, files in os.walk(openhab_path):
+                    for file in files:
+                        if file.endswith(('.items', '.things', '.sitemap', '.rules', '.persist', '.script', '.transform')):
+                            full_path = os.path.join(root, file)
+                            try:
+                                with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                    lines = len(f.readlines())
+                                # Create relative path for display
+                                rel_path = os.path.relpath(full_path, openhab_path)
+                                basic_stats[rel_path] = {
+                                    'before': 0,  # No backup existed before
+                                    'after': lines,
+                                    'delta': lines,
+                                    'added': lines,
+                                    'removed': 0
+                                }
+                            except Exception as e:
+                                print(f'Could not read generated file {full_path}: {str(e)}')  # Use print instead of q.put since this is outside job context
+
+        return basic_stats
 
     def get_file_diff(self, job_id, rel_path):
         """Get diff for a specific file in a job."""

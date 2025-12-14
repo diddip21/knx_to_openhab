@@ -671,7 +671,7 @@ function updateStatisticsDisplay(stats) {
 
     } else {
       console.log('No statistics available to display'); // Debug log
-      if (!stats || Object.keys(stats).length === 0) {
+      if (!stats || (typeof stats === 'object' && Object.keys(stats).length === 0)) {
         statsEl.innerHTML = '<p>No statistics available (stats object is empty or null)</p>'
       } else {
         statsEl.innerHTML = '<p>No statistics available</p>'

@@ -1,5 +1,8 @@
 import os
 import json
+import io
+import time
+from typing import Optional
 
 
 def load_config():
@@ -47,3 +50,68 @@ def save_job(jobs_dir, job):
     jobs = load_jobs(jobs_dir)
     jobs[job['id']] = job
     save_jobs(jobs_dir, jobs)
+
+
+# New helpers for per-job persistent logs and metadata
+
+def job_dir(jobs_dir: str, job_id: str) -> str:
+    d = os.path.join(jobs_dir, job_id)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def job_log_path(jobs_dir: str, job_id: str) -> str:
+    return os.path.join(job_dir(jobs_dir, job_id), 'log.txt')
+
+
+def job_meta_path(jobs_dir: str, job_id: str) -> str:
+    return os.path.join(job_dir(jobs_dir, job_id), 'metadata.json')
+
+
+def open_job_log(jobs_dir: str, job_id: str, mode: str = 'ab'):
+    """Open the job log file. Default is append binary. Caller must close file."""
+    path = job_log_path(jobs_dir, job_id)
+    return open(path, mode)
+
+
+def append_job_log(jobs_dir: str, job_id: str, data: bytes):
+    path = job_log_path(jobs_dir, job_id)
+    with open(path, 'ab') as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+
+
+def read_job_log(jobs_dir: str, job_id: str, offset: Optional[int] = None) -> bytes:
+    path = job_log_path(jobs_dir, job_id)
+    if not os.path.exists(path):
+        return b''
+    with open(path, 'rb') as f:
+        if offset:
+            f.seek(offset)
+        return f.read()
+
+
+def read_job_metadata(jobs_dir: str, job_id: str) -> Optional[dict]:
+    path = job_meta_path(jobs_dir, job_id)
+    if not os.path.exists(path):
+        return None
+    with open(path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def write_job_metadata(jobs_dir: str, job_id: str, meta: dict):
+    path = job_meta_path(jobs_dir, job_id)
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(meta, f, indent=2, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def update_job_metadata(jobs_dir: str, job_id: str, **kwargs):
+    meta = read_job_metadata(jobs_dir, job_id) or {}
+    meta.update(kwargs)
+    meta['updated_at'] = int(time.time())
+    write_job_metadata(jobs_dir, job_id, meta)

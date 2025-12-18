@@ -180,30 +180,34 @@ async function doRollback() {
 }
 
 async function restartService(service) {
-  const btn = event.target
-  btn.disabled = true
-  btn.textContent = 'Restarting...'
-  try {
-    const res = await fetch('/api/service/restart', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ service })
-    })
-    const data = await res.json()
-    if (data.ok) {
-      btn.textContent = 'Restart'
-      // Refresh service status after restart
-      refreshServices()
-    } else {
-      btn.textContent = 'Restart'
-      alert('Error: ' + data.output)
-    }
-  } catch (e) {
-    btn.textContent = 'Restart'
-    alert('Error: ' + e.message)
-  }
-  btn.disabled = false
-}
+   const btn = event.target || document.querySelector(`button[onclick*="restartService('${service}')"]`)
+   if (btn) {
+     btn.disabled = true
+     btn.textContent = 'Restarting...'
+   }
+   try {
+     const res = await fetch('/api/service/restart', {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify({ service })
+     })
+     const data = await res.json()
+     if (data.ok) {
+       btn.textContent = 'Restart'
+       // Refresh service status after restart
+       refreshServices()
+     } else {
+       btn.textContent = 'Restart'
+       alert('Error: ' + data.output)
+     }
+   } catch (e) {
+     btn.textContent = 'Restart'
+     alert('Error: ' + e.message)
+   }
+   if (btn) {
+     btn.disabled = false
+   }
+ }
 
 let currentPreviewData = null  // Store current preview data for view switching
 
@@ -327,7 +331,6 @@ function switchViewMode(mode) {
     diffBtn.classList.add('active')
 
     // Generate diff
-    // Generate diff
     let html = ''
     if (currentPreviewData.diff) {
       html = renderBackendDiff(currentPreviewData.diff)
@@ -337,7 +340,7 @@ function switchViewMode(mode) {
       html = generateDiff(original, current)
     }
     diffContent.innerHTML = html
-  }
+ }
 }
 
 function renderBackendDiff(diffEntries) {
@@ -509,8 +512,8 @@ async function loadStructureFromJob(jobId) {
   statusEl.textContent = 'Loading structure from job...'
   statusEl.className = 'status-message'
   
-  // First check if the job is completed before attempting to load structure
- try {
+  try {
+    // First check if the job is completed before attempting to load structure
     const jobRes = await fetch(`/api/job/${jobId}`)
     if (!jobRes.ok) {
       throw new Error(`Failed to get job status: ${jobRes.status}`)
@@ -543,13 +546,7 @@ async function loadStructureFromJob(jobId) {
         throw new Error(`Job did not complete within ${timeout/1000} seconds. Current status: ${job.status}`);
       }
     }
-  } catch (e) {
-    statusEl.textContent = '✗ Error checking job status: ' + e.message;
-    statusEl.className = 'status-message error';
-    return;
-  }
 
-  try {
     statusEl.textContent = 'Retrieving structure data...';
     
     const res = await fetch(`/api/job/${jobId}/preview`)
@@ -573,6 +570,7 @@ async function loadStructureFromJob(jobId) {
   } catch (e) {
     statusEl.textContent = '✗ Error: ' + e.message
     statusEl.className = 'status-message error'
+    console.error('Error loading structure from job:', e);
   }
 }
 
@@ -607,8 +605,7 @@ function escapeHtml(text) {
 function updateStatisticsDisplay(stats) {
   // Prevent concurrent updates
   if (statsUpdateInProgress) {
-    console.log('Statistics update in progress, queuing new update')
-    setTimeout(() => updateStatisticsDisplay(stats), 100)
+    // Skip update if already in progress, instead of queuing
     return
   }
 
@@ -622,18 +619,13 @@ function updateStatisticsDisplay(stats) {
       return
     }
 
-    console.log('Updating statistics display with data:', stats); // Debug log
-
     if (stats && typeof stats === 'object' && Object.keys(stats).length > 0) {
-      console.log('Statistics data is valid, creating HTML'); // Debug log
       let statsHtml = '<h3>Generated Files</h3><table class="stats-table"><tr><th>File</th><th>Before</th><th>After</th><th>Change</th><th>Diff</th><th>Action</th></tr>'
 
       // Sort files for consistent display order
       const sortedStats = Object.entries(stats).sort(([a], [b]) => a.localeCompare(b))
 
       for (const [fname, stat] of sortedStats) {
-        console.log(`Processing stat for file: ${fname}`, stat); // Debug log
-
         // Validate statistics data
         const before = typeof stat.before === 'number' ? stat.before : 0
         const after = typeof stat.after === 'number' ? stat.after : 0
@@ -667,10 +659,8 @@ function updateStatisticsDisplay(stats) {
 
       // Store for consistency checks
       currentStatsData = JSON.parse(JSON.stringify(stats))
-      console.log('Statistics display updated successfully'); // Debug log
 
     } else {
-      console.log('No statistics available to display'); // Debug log
       if (!stats || (typeof stats === 'object' && Object.keys(stats).length === 0)) {
         statsEl.innerHTML = '<p>No statistics available (stats object is empty or null)</p>'
       } else {
@@ -685,8 +675,11 @@ function updateStatisticsDisplay(stats) {
       statsEl.innerHTML = '<p class="error">Error displaying statistics: ' + error.message + '</p>'
     }
   } finally {
-    statsUpdateInProgress = false
-  }
+    // Use setTimeout to ensure the flag is reset after rendering completes
+    setTimeout(() => {
+      statsUpdateInProgress = false
+    }, 0)
+ }
 }
 
 // Configuration Management
@@ -711,9 +704,19 @@ async function loadConfig() {
     configStatus.textContent = 'Loading configuration...'
 
     const res = await fetch('/api/config')
-    if (!res.ok) throw new Error('Failed to load config')
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP ${res.status}`)
+    }
 
     currentConfig = await res.json()
+    
+    // Ensure required config sections exist
+    if (!currentConfig.general) currentConfig.general = {}
+    if (!currentConfig.devices) currentConfig.devices = {}
+    if (!currentConfig.datapoint_mappings) currentConfig.datapoint_mappings = {}
+    if (!currentConfig.defines) currentConfig.defines = {}
+    if (!currentConfig.regexpattern) currentConfig.regexpattern = {}
 
     // Populate General Tab
     document.getElementById('conf-ets-export').value = currentConfig.ets_export || ''
@@ -748,13 +751,14 @@ async function loadConfig() {
 
     // Show settings content
     document.getElementById('settings-content').style.display = 'block'
+configStatus.textContent = '✓ Configuration loaded'
+configStatus.className = 'status-message success'
+} catch (e) {
+console.error('Error loading configuration:', e)
+configStatus.textContent = '✗ Error: ' + (e.message || 'Failed to load configuration')
+configStatus.className = 'status-message error'
+}
 
-    configStatus.textContent = '✓ Configuration loaded'
-    configStatus.className = 'status-message success'
-  } catch (e) {
-    configStatus.textContent = '✗ Error: ' + e.message
-    configStatus.className = 'status-message error'
-  }
 }
 
 function renderMappingsTable(mappings) {
@@ -780,6 +784,18 @@ function renderMappingsTable(mappings) {
     `
     tbody.appendChild(tr)
   })
+  
+  // Add debounced search for mappings to improve performance
+  let searchTimeout = null;
+  const searchInput = document.getElementById('mappingSearch');
+  if (searchInput) {
+    searchInput.addEventListener('input', function() {
+      if (searchTimeout) {
+        clearTimeout(searchTimeout);
+      }
+      searchTimeout = setTimeout(filterMappings, 300); // 300ms delay
+    });
+  }
 }
 
 function filterMappings() {
@@ -909,34 +925,44 @@ async function saveConfig(reprocess = false) {
 
     configStatus.textContent = '✓ Configuration saved'
     configStatus.className = 'status-message success'
+// Reprocess if requested
+if (reprocess) {
+  if (!currentJobId) {
+    alert('No job selected to reprocess. Please select a job first.')
+    return
+  }
 
-    // Reprocess if requested
-    if (reprocess) {
-      if (!currentJobId) {
-        alert('No job selected to reprocess. Please select a job first.')
-        return
-      }
-
-      configStatus.textContent = 'Triggering reprocessing...'
-      const rerunRes = await fetch(`/api/job/${currentJobId}/rerun`, { method: 'POST' })
-
-      if (!rerunRes.ok) throw new Error('Failed to start reprocessing')
-
-      const newJob = await rerunRes.json()
-      configStatus.textContent = `✓ Reprocessing started (Job ${newJob.id.substring(0, 8)})`
-
-      // Refresh jobs list and show details of new job
-      await refreshJobs()
-      showJobDetail(newJob.id)
-
-      // Scroll to top
-      document.getElementById('detail-section').scrollIntoView({ behavior: 'smooth' })
+  configStatus.textContent = 'Triggering reprocessing...'
+  try {
+    const rerunRes = await fetch(`/api/job/${currentJobId}/rerun`, { method: 'POST' })
+    
+    if (!rerunRes.ok) {
+      const errorData = await rerunRes.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(errorData.error || `HTTP ${rerunRes.status}`)
     }
 
-  } catch (e) {
-    configStatus.textContent = '✗ Error: ' + e.message
+    const newJob = await rerunRes.json()
+    configStatus.textContent = `✓ Reprocessing started (Job ${newJob.id.substring(0, 8)})`
+
+    // Refresh jobs list and show details of new job
+    await refreshJobs()
+    showJobDetail(newJob.id)
+
+    // Scroll to top
+    document.getElementById('detail-section').scrollIntoView({ behavior: 'smooth' })
+  } catch (reprocessError) {
+    console.error('Reprocessing error:', reprocessError);
+    configStatus.textContent = `✗ Reprocessing failed: ${reprocessError.message}`
     configStatus.className = 'status-message error'
   }
+}
+
+} catch (e) {
+console.error('Error saving configuration:', e);
+configStatus.textContent = '✗ Error: ' + (e.message || 'Failed to save configuration')
+configStatus.className = 'status-message error'
+}
+
 }
 
 // Project Preview
@@ -1095,7 +1121,11 @@ function toggleSection(contentId) {
 uploadForm.addEventListener('submit', async (e) => {
   e.preventDefault()
   const f = fileInput.files[0]
-  if (!f) return alert('select a file')
+  if (!f) {
+    statusEl.textContent = 'Please select a file first';
+    statusEl.className = 'status-message error';
+    return;
+  }
   const fd = new FormData()
   fd.append('file', f)
   const pwd = passwordInput.value
@@ -1104,7 +1134,7 @@ uploadForm.addEventListener('submit', async (e) => {
   }
 
   // Show initial status
- statusEl.textContent = 'Uploading file...'
+  statusEl.textContent = 'Uploading file...'
   statusEl.className = 'status-message'
   
   try {
@@ -1135,7 +1165,7 @@ uploadForm.addEventListener('submit', async (e) => {
     statusEl.className = 'status-message'
     
   } catch (e) {
-    statusEl.textContent = `Error: ${e.message}`
+    statusEl.textContent = `Upload Error: ${e.message}`
     statusEl.className = 'status-message error'
     console.error('Upload error:', e)
   }
@@ -1143,10 +1173,9 @@ uploadForm.addEventListener('submit', async (e) => {
 
 
 function startEvents(jobId) {
-  // Close any existing event source
-  if (eventSource) {
-    eventSource.close()
-    eventSource = null
+  // Close any existing event stream
+  if (window.eventStreamController) {
+    window.eventStreamController.abort(); // Cancel any existing stream
   }
 
   // Only clear text if no logs loaded yet
@@ -1160,9 +1189,6 @@ function startEvents(jobId) {
   const signal = controller.signal;
 
   // Store the controller to allow cancellation later
-  if (window.eventStreamController) {
-    window.eventStreamController.abort(); // Cancel any existing stream
-  }
   window.eventStreamController = controller;
 
   fetch(`/api/job/${jobId}/events`, {
@@ -1182,6 +1208,12 @@ function startEvents(jobId) {
     let buffer = '';
 
     function readStream() {
+      // Check if the stream has been aborted
+      if (controller.signal.aborted) {
+        console.log('Stream was aborted');
+        return;
+      }
+      
       reader.read().then(({ done, value }) => {
         if (done) {
           // Stream is done - job finished
@@ -1268,9 +1300,15 @@ function startEvents(jobId) {
           }
         });
 
-        // Continue reading
-        readStream();
+        // Continue reading if stream is not aborted
+        if (!controller.signal.aborted) {
+          readStream();
+        }
       }).catch(error => {
+        if (controller.signal.aborted) {
+          console.log('Stream reading was aborted');
+          return;
+        }
         console.error('Error reading event stream:', error);
         
         // Retry connection after delay
@@ -1284,6 +1322,10 @@ function startEvents(jobId) {
     readStream();
   })
   .catch(error => {
+    if (controller.signal.aborted) {
+      console.log('Stream connection was aborted');
+      return;
+    }
     console.error('Failed to establish event stream connection:', error);
     
     // Retry connection after delay
@@ -1316,10 +1358,13 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Error refreshing jobs:', error)
     }
   }, 5000) // Refresh every 5 seconds if there are running jobs
+// Check for updates every 5 minutes in background
+setInterval(checkForUpdatesBackground, 5 * 60 * 1000)
 
-  // Check for updates every 5 minutes in background
-  setInterval(checkForUpdatesBackground, 5 * 60 * 1000)
+// Load initial configuration
+setTimeout(loadConfig, 1000) // Load config after page is initialized
 })
+
 // Version Management Functions
 let currentVersionData = null
 let latestVersionData = null
@@ -1364,18 +1409,19 @@ async function checkForUpdates() {
       alert('Error checking for updates: ' + data.error)
       return
     }
+latestVersionData = data
 
-    latestVersionData = data
+if (data.update_available) {
+  // Show update dialog
+  showUpdateDialog(data)
+} else {
+  alert('✓ You are running the latest version!')
+}
+} catch (error) {
+console.error('Update check error:', error);
+alert('Failed to check for updates: ' + (error.message || 'Unknown error'))
+}
 
-    if (data.update_available) {
-      // Show update dialog
-      showUpdateDialog(data)
-    } else {
-      alert('✓ You are running the latest version!')
-    }
-  } catch (error) {
-    alert('Failed to check for updates: ' + error.message)
-  }
 }
 function showUpdateDialog(updateData) {
   // Fill in current version

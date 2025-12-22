@@ -634,6 +634,18 @@ if FLASK_AVAILABLE:
             except:
                 pass
 
+            job_mgr.delete_job(job_id)
+            return jsonify({'success': True})
+
+
+    @app.route('/api/job/<job_id>/deploy', methods=['POST'])
+    def job_deploy(job_id):
+        try:
+            success, msg = job_mgr.deploy(job_id)
+            return jsonify({'success': success, 'message': msg})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @app.route('/api/job/<job_id>/preview', methods=['GET'])
     def job_preview(job_id):
         """Generate structure preview for a past job."""

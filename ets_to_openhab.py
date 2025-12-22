@@ -822,12 +822,14 @@ def check_unused_addresses():
     for address in all_addresses:
         logger.debug("unused: %s: %s with type %s",address['Address'],address['Group name'],address['DatapointType'])
 
-def set_permissions(file_path):
+def set_permissions(file_path, configuration=None):
     """
     Sets ownership of the file to the configured user:group.
     """
-    target_user = config.get('target_user')
-    target_group = config.get('target_group')
+    cfg = configuration if configuration is not None else config
+    
+    target_user = cfg.get('target_user')
+    target_group = cfg.get('target_group')
     
     if not target_user and not target_group:
         return
@@ -838,9 +840,10 @@ def set_permissions(file_path):
     except Exception as e:
         logger.warning("Failed to set permissions for %s: %s", file_path, e)
 
-def export_output(items,sitemap,things):
+def export_output(items,sitemap,things, configuration=None):
     """Exports things / items / sitemap / ...  Files"""
-    #global items,sitemap,things
+    # Use provided configuration or fallback to global config
+    cfg = configuration if configuration is not None else config
 
     # export things:
     try:
@@ -855,39 +858,39 @@ def export_output(items,sitemap,things):
             things_template = things_template.replace('autoReconnectPeriod=30', 'autoReconnectPeriod=60')
 
         things = things_template.replace('###things###', things)
-        os.makedirs(os.path.dirname(config['things_path']), exist_ok=True)
-        with open(config['things_path'],'w', encoding='utf8') as f:
+        os.makedirs(os.path.dirname(cfg['things_path']), exist_ok=True)
+        with open(cfg['things_path'],'w', encoding='utf8') as f:
             f.write(things)
-        logger.info(f"Successfully wrote things file to {config['things_path']} with {things.count(chr(10)) + 1} lines")
+        logger.info(f"Successfully wrote things file to {cfg['things_path']} with {things.count(chr(10)) + 1} lines")
     except Exception as e:
-        logger.error(f"Failed to write things file to {config['things_path']}: {e}")
+        logger.error(f"Failed to write things file to {cfg['things_path']}: {e}")
         raise
-    #set_permissions(config['things_path'])
+    #set_permissions(cfg['things_path'], cfg)
     # export items:
     try:
         items_template =  open('items.template','r', encoding='utf8').read()
         items = items_template.replace('###items###', items)
         items = items.replace('###NAME###', PRJ_NAME)
-        os.makedirs(os.path.dirname(config['items_path']), exist_ok=True)
-        with open(config['items_path'],'w', encoding='utf8') as f:
+        os.makedirs(os.path.dirname(cfg['items_path']), exist_ok=True)
+        with open(cfg['items_path'],'w', encoding='utf8') as f:
             f.write(items)
-        logger.info(f"Successfully wrote items file to {config['items_path']} with {items.count(chr(10)) + 1} lines")
+        logger.info(f"Successfully wrote items file to {cfg['items_path']} with {items.count(chr(10)) + 1} lines")
     except Exception as e:
-        logger.error(f"Failed to write items file to {config['items_path']}: {e}")
+        logger.error(f"Failed to write items file to {cfg['items_path']}: {e}")
         raise
-    #set_permissions(config['items_path'])
+    #set_permissions(cfg['items_path'], cfg)
     # export sitemap:
     try:
         sitemap_template = open('sitemap.template','r', encoding='utf8').read()
         sitemap = sitemap_template.replace('###sitemap###', sitemap)
-        os.makedirs(os.path.dirname(config['sitemaps_path']), exist_ok=True)
-        with open(config['sitemaps_path'],'w', encoding='utf8') as f:
+        os.makedirs(os.path.dirname(cfg['sitemaps_path']), exist_ok=True)
+        with open(cfg['sitemaps_path'],'w', encoding='utf8') as f:
             f.write(sitemap)
-        logger.info(f"Successfully wrote sitemap file to {config['sitemaps_path']} with {sitemap.count(chr(10)) + 1} lines")
+        logger.info(f"Successfully wrote sitemap file to {cfg['sitemaps_path']} with {sitemap.count(chr(10)) + 1} lines")
     except Exception as e:
-        logger.error(f"Failed to write sitemap file to {config['sitemaps_path']}: {e}")
+        logger.error(f"Failed to write sitemap file to {cfg['sitemaps_path']}: {e}")
         raise
-    #set_permissions(config['sitemaps_path'])
+    #set_permissions(cfg['sitemaps_path'], cfg)
 
     #export persistent
     private_persistence = ''
@@ -907,14 +910,14 @@ def export_output(items,sitemap,things):
     persist += private_persistence + '\n}'
 
     try:
-        os.makedirs(os.path.dirname(config['influx_path']), exist_ok=True)
-        with open(config['influx_path'],'w', encoding='utf8') as f:
+        os.makedirs(os.path.dirname(cfg['influx_path']), exist_ok=True)
+        with open(cfg['influx_path'],'w', encoding='utf8') as f:
             f.write(persist)
-        logger.info(f"Successfully wrote persistence file to {config['influx_path']} with {persist.count(chr(10)) + 1} lines")
+        logger.info(f"Successfully wrote persistence file to {cfg['influx_path']} with {persist.count(chr(10)) + 1} lines")
     except Exception as e:
-        logger.error(f"Failed to write persistence file to {config['influx_path']}: {e}")
+        logger.error(f"Failed to write persistence file to {cfg['influx_path']}: {e}")
         raise
-    #set_permissions(config['influx_path'])
+    #set_permissions(cfg['influx_path'], cfg)
 
 
     fenster_rule = ''
@@ -940,21 +943,21 @@ def export_output(items,sitemap,things):
     end
     '''
     try:
-        os.makedirs(os.path.dirname(config['fenster_path']), exist_ok=True)
-        with open(config['fenster_path'],'w', encoding='utf8') as f:
+        os.makedirs(os.path.dirname(cfg['fenster_path']), exist_ok=True)
+        with open(cfg['fenster_path'],'w', encoding='utf8') as f:
             f.write(fenster_rule)
-        logger.info(f"Successfully wrote window rule file to {config['fenster_path']} with {fenster_rule.count(chr(10)) + 1} lines")
+        logger.info(f"Successfully wrote window rule file to {cfg['fenster_path']} with {fenster_rule.count(chr(10)) + 1} lines")
     except Exception as e:
-        logger.error(f"Failed to write window rule file to {config['fenster_path']}: {e}")
+        logger.error(f"Failed to write window rule file to {cfg['fenster_path']}: {e}")
         # This is not critical, so we don't raise an exception
 
-def main():
+def main(configuration=None):
     """Main function"""
     logging.basicConfig()
     #read_csvexport()
     items,sitemap,things=gen_building()
     check_unused_addresses()
-    export_output(items,sitemap,things)
+    export_output(items,sitemap,things, configuration=configuration)
 
 if __name__ == "__main__":
     main()

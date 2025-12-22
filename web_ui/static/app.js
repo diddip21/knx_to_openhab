@@ -16,6 +16,7 @@ const logLevelFilterEl = document.getElementById('logLevelFilter')
 const servicesListEl = document.getElementById('servicesList')
 
 let currentJobId = null
+let lastRunningCount = -1
 let logLevelFilter = 'all'  // all, debug, info, warning, error
 let allLogEntries = []  // store all entries for filtering
 let eventSource = null  // track active event stream
@@ -36,6 +37,7 @@ async function refreshJobs() {
       <span class="job-date">${new Date(j.created * 1000).toLocaleString()}</span>
       <button onclick="showJobDetail('${j.id}')">Details</button>
       <button onclick="loadStructureFromJob('${j.id}')">Structure</button>
+      ${j.status === 'completed' && j.staged && !j.deployed ? `<button style="background-color: #28a745; color: white;" onclick="deployJob('${j.id}')">Live schalten</button>` : ''}
       ${j.backups && j.backups.length > 0 ? `<button onclick="showRollbackDialog('${j.id}')">Rollback</button>` : ''}
       <button onclick="deleteJob('${j.id}')">Delete</button>
     `
@@ -158,6 +160,41 @@ async function deleteJob(jobId) {
   }
 }
 
+async function deployJob(jobId) {
+  if (!confirm('Daten wirklich Live schalten? Die bestehende Konfiguration wird überschrieben!')) return
+
+  const btn = event.target || document.querySelector(`button[onclick="deployJob('${jobId}')"]`)
+  const originalText = btn ? btn.textContent : 'Live schalten'
+  if (btn) {
+    btn.disabled = true
+    btn.textContent = 'Verarbeite...'
+  }
+
+  try {
+    const res = await fetch(`/api/job/${jobId}/deploy`, {
+      method: 'POST',
+      credentials: 'include'
+    })
+    const data = await res.json()
+    if (res.ok && data.success) {
+      alert('Erfolgreich Live geschaltet: ' + data.message)
+      refreshJobs()
+    } else {
+      alert('Fehler beim Live schalten: ' + (data.error || 'Unbekannter Fehler'))
+      if (btn) {
+        btn.textContent = originalText
+        btn.disabled = false
+      }
+    }
+  } catch (e) {
+    alert('Fehler: ' + e.message)
+    if (btn) {
+      btn.textContent = originalText
+      btn.disabled = false
+    }
+  }
+}
+
 async function doRollback() {
   const backup = backupSelect.value
   rollbackStatusEl.textContent = 'Rolling back...'
@@ -180,34 +217,34 @@ async function doRollback() {
 }
 
 async function restartService(service) {
-   const btn = event.target || document.querySelector(`button[onclick*="restartService('${service}')"]`)
-   if (btn) {
-     btn.disabled = true
-     btn.textContent = 'Restarting...'
-   }
-   try {
-     const res = await fetch('/api/service/restart', {
-       method: 'POST',
-       headers: { 'Content-Type': 'application/json' },
-       body: JSON.stringify({ service })
-     })
-     const data = await res.json()
-     if (data.ok) {
-       btn.textContent = 'Restart'
-       // Refresh service status after restart
-       refreshServices()
-     } else {
-       btn.textContent = 'Restart'
-       alert('Error: ' + data.output)
-     }
-   } catch (e) {
-     btn.textContent = 'Restart'
-     alert('Error: ' + e.message)
-   }
-   if (btn) {
-     btn.disabled = false
-   }
- }
+  const btn = event.target || document.querySelector(`button[onclick*="restartService('${service}')"]`)
+  if (btn) {
+    btn.disabled = true
+    btn.textContent = 'Restarting...'
+  }
+  try {
+    const res = await fetch('/api/service/restart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service })
+    })
+    const data = await res.json()
+    if (data.ok) {
+      btn.textContent = 'Restart'
+      // Refresh service status after restart
+      refreshServices()
+    } else {
+      btn.textContent = 'Restart'
+      alert('Error: ' + data.output)
+    }
+  } catch (e) {
+    btn.textContent = 'Restart'
+    alert('Error: ' + e.message)
+  }
+  if (btn) {
+    btn.disabled = false
+  }
+}
 
 let currentPreviewData = null  // Store current preview data for view switching
 
@@ -340,7 +377,7 @@ function switchViewMode(mode) {
       html = generateDiff(original, current)
     }
     diffContent.innerHTML = html
- }
+  }
 }
 
 function renderBackendDiff(diffEntries) {
@@ -511,7 +548,7 @@ async function loadStructureFromJob(jobId) {
   // Show loading status
   statusEl.textContent = 'Loading structure from job...'
   statusEl.className = 'status-message'
-  
+
   try {
     // First check if the job is completed before attempting to load structure
     const jobRes = await fetch(`/api/job/${jobId}`)
@@ -519,20 +556,20 @@ async function loadStructureFromJob(jobId) {
       throw new Error(`Failed to get job status: ${jobRes.status}`)
     }
     const job = await jobRes.json();
-    
+
     if (job.status !== 'completed') {
       // Wait for job to complete with timeout
       const timeout = 30000; // 30 seconds
       const startTime = Date.now();
-      
+
       while (job.status !== 'completed' && Date.now() - startTime < timeout) {
         await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
-        
+
         const updatedJobRes = await fetch(`/api/job/${jobId}`)
         if (updatedJobRes.ok) {
           const updatedJob = await updatedJobRes.json();
           job.status = updatedJob.status;
-          
+
           if (updatedJob.status === 'completed') {
             statusEl.textContent = `Job completed, loading structure...`;
             break;
@@ -541,14 +578,14 @@ async function loadStructureFromJob(jobId) {
           }
         }
       }
-      
+
       if (job.status !== 'completed') {
-        throw new Error(`Job did not complete within ${timeout/1000} seconds. Current status: ${job.status}`);
+        throw new Error(`Job did not complete within ${timeout / 1000} seconds. Current status: ${job.status}`);
       }
     }
 
     statusEl.textContent = 'Retrieving structure data...';
-    
+
     const res = await fetch(`/api/job/${jobId}/preview`)
     if (!res.ok) {
       const error = await res.json()
@@ -679,7 +716,7 @@ function updateStatisticsDisplay(stats) {
     setTimeout(() => {
       statsUpdateInProgress = false
     }, 0)
- }
+  }
 }
 
 // Configuration Management
@@ -710,7 +747,7 @@ async function loadConfig() {
     }
 
     currentConfig = await res.json()
-    
+
     // Ensure required config sections exist
     if (!currentConfig.general) currentConfig.general = {}
     if (!currentConfig.devices) currentConfig.devices = {}
@@ -751,13 +788,13 @@ async function loadConfig() {
 
     // Show settings content
     document.getElementById('settings-content').style.display = 'block'
-configStatus.textContent = '✓ Configuration loaded'
-configStatus.className = 'status-message success'
-} catch (e) {
-console.error('Error loading configuration:', e)
-configStatus.textContent = '✗ Error: ' + (e.message || 'Failed to load configuration')
-configStatus.className = 'status-message error'
-}
+    configStatus.textContent = '✓ Configuration loaded'
+    configStatus.className = 'status-message success'
+  } catch (e) {
+    console.error('Error loading configuration:', e)
+    configStatus.textContent = '✗ Error: ' + (e.message || 'Failed to load configuration')
+    configStatus.className = 'status-message error'
+  }
 
 }
 
@@ -784,12 +821,12 @@ function renderMappingsTable(mappings) {
     `
     tbody.appendChild(tr)
   })
-  
+
   // Add debounced search for mappings to improve performance
   let searchTimeout = null;
   const searchInput = document.getElementById('mappingSearch');
   if (searchInput) {
-    searchInput.addEventListener('input', function() {
+    searchInput.addEventListener('input', function () {
       if (searchTimeout) {
         clearTimeout(searchTimeout);
       }
@@ -925,43 +962,43 @@ async function saveConfig(reprocess = false) {
 
     configStatus.textContent = '✓ Configuration saved'
     configStatus.className = 'status-message success'
-// Reprocess if requested
-if (reprocess) {
-  if (!currentJobId) {
-    alert('No job selected to reprocess. Please select a job first.')
-    return
-  }
+    // Reprocess if requested
+    if (reprocess) {
+      if (!currentJobId) {
+        alert('No job selected to reprocess. Please select a job first.')
+        return
+      }
 
-  configStatus.textContent = 'Triggering reprocessing...'
-  try {
-    const rerunRes = await fetch(`/api/job/${currentJobId}/rerun`, { method: 'POST' })
-    
-    if (!rerunRes.ok) {
-      const errorData = await rerunRes.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(errorData.error || `HTTP ${rerunRes.status}`)
+      configStatus.textContent = 'Triggering reprocessing...'
+      try {
+        const rerunRes = await fetch(`/api/job/${currentJobId}/rerun`, { method: 'POST' })
+
+        if (!rerunRes.ok) {
+          const errorData = await rerunRes.json().catch(() => ({ error: 'Unknown error' }));
+          throw new Error(errorData.error || `HTTP ${rerunRes.status}`)
+        }
+
+        const newJob = await rerunRes.json()
+        configStatus.textContent = `✓ Reprocessing started (Job ${newJob.id.substring(0, 8)})`
+
+        // Refresh jobs list and show details of new job
+        await refreshJobs()
+        showJobDetail(newJob.id)
+
+        // Scroll to top
+        document.getElementById('detail-section').scrollIntoView({ behavior: 'smooth' })
+      } catch (reprocessError) {
+        console.error('Reprocessing error:', reprocessError);
+        configStatus.textContent = `✗ Reprocessing failed: ${reprocessError.message}`
+        configStatus.className = 'status-message error'
+      }
     }
 
-    const newJob = await rerunRes.json()
-    configStatus.textContent = `✓ Reprocessing started (Job ${newJob.id.substring(0, 8)})`
-
-    // Refresh jobs list and show details of new job
-    await refreshJobs()
-    showJobDetail(newJob.id)
-
-    // Scroll to top
-    document.getElementById('detail-section').scrollIntoView({ behavior: 'smooth' })
-  } catch (reprocessError) {
-    console.error('Reprocessing error:', reprocessError);
-    configStatus.textContent = `✗ Reprocessing failed: ${reprocessError.message}`
+  } catch (e) {
+    console.error('Error saving configuration:', e);
+    configStatus.textContent = '✗ Error: ' + (e.message || 'Failed to save configuration')
     configStatus.className = 'status-message error'
   }
-}
-
-} catch (e) {
-console.error('Error saving configuration:', e);
-configStatus.textContent = '✗ Error: ' + (e.message || 'Failed to save configuration')
-configStatus.className = 'status-message error'
-}
 
 }
 
@@ -1136,7 +1173,7 @@ uploadForm.addEventListener('submit', async (e) => {
   // Show initial status
   statusEl.textContent = 'Uploading file...'
   statusEl.className = 'status-message'
-  
+
   try {
     const res = await fetch('/api/upload', { method: 'POST', body: fd })
     if (!res.ok) {
@@ -1144,26 +1181,26 @@ uploadForm.addEventListener('submit', async (e) => {
       throw new Error(errorData.error || `Upload failed: ${res.status}`)
     }
     const job = await res.json()
-    
+
     statusEl.textContent = `File uploaded, job started: ${job.id.substring(0, 8)}...`
     statusEl.className = 'status-message'
-    
+
     // Refresh jobs list to show the new job
     await refreshJobs()
-    
+
     // Show job detail view
     showJobDetail(job.id)
-    
+
     // Initialize log entries
     allLogEntries = []
-    
+
     // Start listening for events
     startEvents(job.id)
-    
+
     // Update status to indicate processing has started
     statusEl.textContent = `Processing started: ${job.id.substring(0, 8)}... Check job details below.`
     statusEl.className = 'status-message'
-    
+
   } catch (e) {
     statusEl.textContent = `Upload Error: ${e.message}`
     statusEl.className = 'status-message error'
@@ -1198,141 +1235,141 @@ function startEvents(jobId) {
       'Cache-Control': 'no-cache'
     }
   })
-  .then(response => {
-    if (!response.ok || !response.body) {
-      throw new Error(`Failed to connect to event stream: ${response.status}`);
-    }
+    .then(response => {
+      if (!response.ok || !response.body) {
+        throw new Error(`Failed to connect to event stream: ${response.status}`);
+      }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-    function readStream() {
-      // Check if the stream has been aborted
+      function readStream() {
+        // Check if the stream has been aborted
+        if (controller.signal.aborted) {
+          console.log('Stream was aborted');
+          return;
+        }
+
+        reader.read().then(({ done, value }) => {
+          if (done) {
+            // Stream is done - job finished
+            allLogEntries.push({ level: 'info', text: '[DONE] Job finished' });
+
+            // Final log persistence
+            fetch(`/api/job/${jobId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ log: allLogEntries }),
+              credentials: 'include'
+            }).catch(() => { });
+
+            renderLog();
+
+            // Refresh job details to get final status and stats
+            fetch(`/api/job/${jobId}`, {
+              credentials: 'include'
+            })
+              .then(r => r.json())
+              .then(j => {
+                // Update status badge in detail view
+                const statusBadge = document.querySelector('#jobDetail .badge');
+                if (statusBadge) {
+                  statusBadge.className = `badge ${j.status}`;
+                  statusBadge.textContent = j.status;
+                }
+
+                // Update statistics table
+                updateStatisticsDisplay(j.stats);
+              })
+              .catch(err => {
+                console.error('Failed to refresh job details:', err);
+              });
+
+            // Force refresh jobs list to ensure status is updated
+            refreshJobs();
+            return;
+          }
+
+          // Decode the received chunk
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+
+          // Process complete lines (SSE events are separated by \n\n)
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // Keep incomplete line in buffer
+
+          lines.forEach(line => {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.substring(6)); // Remove 'data: ' prefix
+                const level = data.level || 'info';
+                const timestamp = new Date().toLocaleTimeString();
+                let text = '';
+
+                if (data.type === 'stats') {
+                  text = `[${timestamp}] [STATS] ${data.message}`;
+                } else if (data.type === 'backup') {
+                  text = `[${timestamp}] [BACKUP] ${data.message}`;
+                } else if (data.type === 'status') {
+                  text = `[${timestamp}] [STATUS] ${data.message}`;
+                } else if (data.type === 'error') {
+                  text = `[${timestamp}] [ERROR] ${data.message}`;
+                } else {
+                  const levelStr = level.toUpperCase();
+                  text = `[${timestamp}] [${levelStr}] ${data.message}`;
+                }
+
+                allLogEntries.push({ level, text });
+
+                // Persist logs to job.log in the backend
+                fetch(`/api/job/${jobId}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ log: allLogEntries }),
+                  credentials: 'include'
+                }).catch(() => { });
+
+                renderLog();
+              } catch (e) {
+                console.error('Error parsing event data:', e);
+              }
+            }
+          });
+
+          // Continue reading if stream is not aborted
+          if (!controller.signal.aborted) {
+            readStream();
+          }
+        }).catch(error => {
+          if (controller.signal.aborted) {
+            console.log('Stream reading was aborted');
+            return;
+          }
+          console.error('Error reading event stream:', error);
+
+          // Retry connection after delay
+          setTimeout(() => {
+            startEvents(jobId); // Restart the event stream
+          }, 2000);
+        });
+      }
+
+      // Start reading the stream
+      readStream();
+    })
+    .catch(error => {
       if (controller.signal.aborted) {
-        console.log('Stream was aborted');
+        console.log('Stream connection was aborted');
         return;
       }
-      
-      reader.read().then(({ done, value }) => {
-        if (done) {
-          // Stream is done - job finished
-          allLogEntries.push({ level: 'info', text: '[DONE] Job finished' });
-          
-          // Final log persistence
-          fetch(`/api/job/${jobId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ log: allLogEntries }),
-            credentials: 'include'
-          }).catch(() => { });
+      console.error('Failed to establish event stream connection:', error);
 
-          renderLog();
-          
-          // Refresh job details to get final status and stats
-          fetch(`/api/job/${jobId}`, {
-            credentials: 'include'
-          })
-            .then(r => r.json())
-            .then(j => {
-              // Update status badge in detail view
-              const statusBadge = document.querySelector('#jobDetail .badge');
-              if (statusBadge) {
-                statusBadge.className = `badge ${j.status}`;
-                statusBadge.textContent = j.status;
-              }
-
-              // Update statistics table
-              updateStatisticsDisplay(j.stats);
-            })
-            .catch(err => {
-              console.error('Failed to refresh job details:', err);
-            });
-
-          // Force refresh jobs list to ensure status is updated
-          refreshJobs();
-          return;
-        }
-
-        // Decode the received chunk
-        const chunk = decoder.decode(value, { stream: true });
-        buffer += chunk;
-
-        // Process complete lines (SSE events are separated by \n\n)
-        const lines = buffer.split('\n');
-        buffer = lines.pop(); // Keep incomplete line in buffer
-
-        lines.forEach(line => {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.substring(6)); // Remove 'data: ' prefix
-              const level = data.level || 'info';
-              const timestamp = new Date().toLocaleTimeString();
-              let text = '';
-
-              if (data.type === 'stats') {
-                text = `[${timestamp}] [STATS] ${data.message}`;
-              } else if (data.type === 'backup') {
-                text = `[${timestamp}] [BACKUP] ${data.message}`;
-              } else if (data.type === 'status') {
-                text = `[${timestamp}] [STATUS] ${data.message}`;
-              } else if (data.type === 'error') {
-                text = `[${timestamp}] [ERROR] ${data.message}`;
-              } else {
-                const levelStr = level.toUpperCase();
-                text = `[${timestamp}] [${levelStr}] ${data.message}`;
-              }
-
-              allLogEntries.push({ level, text });
-
-              // Persist logs to job.log in the backend
-              fetch(`/api/job/${jobId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ log: allLogEntries }),
-                credentials: 'include'
-              }).catch(() => { });
-
-              renderLog();
-            } catch (e) {
-              console.error('Error parsing event data:', e);
-            }
-          }
-        });
-
-        // Continue reading if stream is not aborted
-        if (!controller.signal.aborted) {
-          readStream();
-        }
-      }).catch(error => {
-        if (controller.signal.aborted) {
-          console.log('Stream reading was aborted');
-          return;
-        }
-        console.error('Error reading event stream:', error);
-        
-        // Retry connection after delay
-        setTimeout(() => {
-          startEvents(jobId); // Restart the event stream
-        }, 2000);
-      });
-    }
-
-    // Start reading the stream
-    readStream();
-  })
-  .catch(error => {
-    if (controller.signal.aborted) {
-      console.log('Stream connection was aborted');
-      return;
-    }
-    console.error('Failed to establish event stream connection:', error);
-    
-    // Retry connection after delay
-    setTimeout(() => {
-      startEvents(jobId);
-    }, 2000);
-  });
+      // Retry connection after delay
+      setTimeout(() => {
+        startEvents(jobId);
+      }, 2000);
+    });
 }
 
 // Initialize on page load
@@ -1348,21 +1385,23 @@ document.addEventListener('DOMContentLoaded', () => {
       if (res.ok) {
         const jobs = await res.json()
         const runningJobs = jobs.filter(job => job.status === 'running')
+        const currentRunningCount = runningJobs.length
 
-        // Only refresh if there are running jobs
-        if (runningJobs.length > 0) {
+        // Refresh if there are running jobs OR if the count just changed (e.g. from 1 to 0)
+        if (currentRunningCount > 0 || currentRunningCount !== lastRunningCount) {
           await refreshJobs()
+          lastRunningCount = currentRunningCount
         }
       }
     } catch (error) {
       console.error('Error refreshing jobs:', error)
     }
-  }, 5000) // Refresh every 5 seconds if there are running jobs
-// Check for updates every 5 minutes in background
-setInterval(checkForUpdatesBackground, 5 * 60 * 1000)
+  }, 5000)
+  // Check for updates every 5 minutes in background
+  setInterval(checkForUpdatesBackground, 5 * 60 * 1000)
 
-// Load initial configuration
-setTimeout(loadConfig, 1000) // Load config after page is initialized
+  // Load initial configuration
+  setTimeout(loadConfig, 1000) // Load config after page is initialized
 })
 
 // Version Management Functions
@@ -1409,18 +1448,18 @@ async function checkForUpdates() {
       alert('Error checking for updates: ' + data.error)
       return
     }
-latestVersionData = data
+    latestVersionData = data
 
-if (data.update_available) {
-  // Show update dialog
-  showUpdateDialog(data)
-} else {
-  alert('✓ You are running the latest version!')
-}
-} catch (error) {
-console.error('Update check error:', error);
-alert('Failed to check for updates: ' + (error.message || 'Unknown error'))
-}
+    if (data.update_available) {
+      // Show update dialog
+      showUpdateDialog(data)
+    } else {
+      alert('✓ You are running the latest version!')
+    }
+  } catch (error) {
+    console.error('Update check error:', error);
+    alert('Failed to check for updates: ' + (error.message || 'Unknown error'))
+  }
 
 }
 function showUpdateDialog(updateData) {

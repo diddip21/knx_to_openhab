@@ -98,15 +98,57 @@ class JobManager:
         except Exception as e:
             q.put({'type': 'error', 'level': 'error', 'message': f'backup failed: {e}'})
 
-        # (Stats capture removed - using backup for comparison)
-
-        # Call knxproject_to_openhab functions directly (in-process)
+        # Process logic
         try:
             q.put({'type': 'info', 'level': 'info', 'message': 'start in-process generation'})
             import importlib
+            import copy
             knxmod = importlib.import_module('knxproject_to_openhab')
             etsmod = importlib.import_module('ets_to_openhab')
+            importlib.reload(etsmod) # Ensure we use the latest code
             
+            # Setup Staging
+            staging_dir = os.path.join(self.jobs_dir, job_id, 'staging')
+            ensure_dirs([staging_dir])
+            
+            # Load main config to base our staged config on
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
+            import config as global_config_module
+            importlib.reload(global_config_module) # Reload to get fresh config
+            
+            # Create a copy of the config dict to modify
+            staged_config = copy.copy(global_config_module.config)
+            
+            # Define output keys to override
+            output_keys = ['items_path', 'things_path', 'sitemaps_path', 'influx_path', 'fenster_path']
+            stage_mapping = {} # staged_path -> real_absolute_path
+            
+            q.put({'type': 'info', 'level': 'info', 'message': f'Staging directory: {staging_dir}'})
+
+            for key in output_keys:
+                real_path = staged_config.get(key)
+                if real_path:
+                    # Determine target subpath structure
+                    if os.path.isabs(real_path):
+                        # Try to find a common root with openhab_path if possible, or just use basename
+                        # Heuristic: if path contains 'openhab', take suffix
+                        norm_real = real_path.replace('\\', '/')
+                        if 'openhab/' in norm_real:
+                             subpath = norm_real.split('openhab/', 1)[1]
+                             staged_path = os.path.join(staging_dir, 'openhab', subpath)
+                        else:
+                             # Just use basename inside key-named folder to avoid collisions
+                             staged_path = os.path.join(staging_dir, key, os.path.basename(real_path))
+                    else:
+                        staged_path = os.path.join(staging_dir, real_path)
+                    
+                    # Ensure dir exists
+                    os.makedirs(os.path.dirname(staged_path), exist_ok=True)
+                    staged_config[key] = staged_path
+                    stage_mapping[staged_path] = real_path
+
             # Capture stdout/stderr for ENTIRE generation process
             old_stdout = sys.stdout
             old_stderr = sys.stderr
@@ -158,85 +200,62 @@ class JobManager:
                     etsmod.PRJ_NAME = prj_name
 
                 sys.stdout = old_stdout
-                q.put({'type': 'info', 'level': 'info', 'message': 'calling ets_to_openhab.main()'})
+                q.put({'type': 'info', 'level': 'info', 'message': 'generating files (staged)...'})
                 sys.stdout = captured_output
                 
-                # ets_to_openhab.main() writes output files
-                etsmod.main()
+                # ets_to_openhab.main() writes output files to STAGING via injected config
+                etsmod.main(configuration=staged_config)
                 
             finally:
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
                 
                 # Send captured output line by line to the queue
-                # Parse log level from message (WARNING:..., ERROR:..., etc.)
                 captured = captured_output.getvalue()
                 if captured:
                     for line in captured.strip().split('\n'):
                         if line.strip():
-                            # Detect log level from message content
                             level = 'info'
                             message = line.strip()
-                            
-                            # Check for WARNING: prefix
                             if message.startswith('WARNING:'):
                                 level = 'warning'
-                                # Remove the "WARNING:" prefix
                                 message = message[len('WARNING:'):].strip()
                             elif message.startswith('ERROR:'):
                                 level = 'error'
-                                # Remove the "ERROR:" prefix
                                 message = message[len('ERROR:'):].strip()
                             elif 'WARNING:' in message and ':' in message:
-                                # e.g., "WARNING:ets_to_openhab:incomplete dimmer: ..."
                                 level = 'warning'
-                                # Extract message after the last ':'
                                 parts = message.split(':')
                                 if len(parts) > 2:
                                     message = ':'.join(parts[2:]).strip()
-                            
                             q.put({'type': 'info', 'level': level, 'message': message})
 
+            # Save staging info to job
+            job['staging_dir'] = staging_dir
+            job['stage_mapping'] = stage_mapping
+            job['staged'] = True
             
-            
-            
-            # Compute detailed statistics by comparing with backup
+            # Compute statistics by comparing STAGED vs LIVE/BACKUP
             try:
-                detailed_stats = self._compute_detailed_stats(openhab_path, backup_path)
-
-                # Validate statistics before logging
-                if not isinstance(detailed_stats, dict) or not detailed_stats:  # Check if stats dict is empty
-                    q.put({'type': 'warning', 'level': 'warning', 'message': 'Statistics calculation returned empty or invalid data, using basic stats'})
-                    # Generate basic stats as fallback
-                    job['stats'] = self._generate_basic_stats(openhab_path)
-                else:
-                    job['stats'] = detailed_stats
-                    # Log statistics with validation
-                    for fn, stat in sorted(job['stats'].items()):
-                        # Validate individual file statistics
-                        if not isinstance(stat, dict) or not all(k in stat for k in ['before', 'after', 'delta', 'added', 'removed']):
-                            q.put({'type': 'warning', 'level': 'warning', 'message': f'Invalid statistics for file: {fn}'})
-                            continue
-
-                        # Ensure numerical values
-                        before = int(stat.get('before', 0))
-                        after = int(stat.get('after', 0))
-                        delta = int(stat.get('delta', after - before))
-                        added = int(stat.get('added', 0))
-                        removed = int(stat.get('removed', 0))
-
-                        msg = f"{fn}: {before} → {after} lines ({delta:+d}) [+{added}/-{removed}]"
-                        q.put({'type': 'stats', 'level': 'info', 'message': msg})
+                detailed_stats = self._compute_staged_stats(stage_mapping, openhab_path)
+                job['stats'] = detailed_stats
+                
+                for fn, stat in sorted(job['stats'].items()):
+                    before = int(stat.get('before', 0))
+                    after = int(stat.get('after', 0))
+                    delta = int(stat.get('delta', after - before))
+                    added = int(stat.get('added', 0))
+                    removed = int(stat.get('removed', 0))
+                    msg = f"{fn}: {before} -> {after} lines ({delta:+d}) [+{added}/-{removed}]"
+                    q.put({'type': 'stats', 'level': 'info', 'message': msg})
 
             except Exception as stats_error:
-                # Log the detailed error for debugging
-                q.put({'type': 'error', 'level': 'error', 'message': f'Statistics calculation failed: {str(stats_error)}'})
-                q.put({'type': 'error', 'level': 'error', 'message': f'Traceback: {traceback.format_exc()}'})
-                
-                # Generate basic stats as fallback when detailed stats fail
-                job['stats'] = self._generate_basic_stats(openhab_path)
+                q.put({'type': 'error', 'level': 'error', 'message': f'Stats error: {str(stats_error)}'})
+                # fallback empty stats
+                job['stats'] = {}
+
             job['status'] = 'completed'
-            q.put({'type': 'status', 'level': 'info', 'message': 'completed'})
+            q.put({'type': 'status', 'level': 'info', 'message': 'completed (staged) - ready to deploy'})
         except Exception as e:
             job['status'] = 'failed'
             err_msg = str(e)
@@ -247,7 +266,6 @@ class JobManager:
             job['log'].append(tb)
         finally:
             save_jobs(self.jobs_dir, self._jobs)
-            # signal end
             q.put(None)
 
     def _compute_detailed_stats(self, openhab_path, backup_path):
@@ -360,6 +378,88 @@ class JobManager:
                     except Exception as e:
                         logger.warning(f"Could not read expected file {full_path}: {e}")
 
+        return stats
+
+    def _compute_staged_stats(self, stage_mapping, openhab_path):
+        """Compute stats by comparing staged files with live files."""
+        stats = {}
+        import difflib
+
+        for staged_path, real_path in stage_mapping.items():
+            # Read staged content (New)
+            curr_lines = []
+            if os.path.exists(staged_path):
+                try:
+                    with open(staged_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        curr_lines = f.readlines()
+                except Exception as e:
+                    logger.warning(f"Could not read staged file {staged_path}: {e}")
+                    continue
+
+            # Read live content (Old)
+            orig_lines = []
+            # Calculate absolute real path
+            # If real_path is relative, it is relative to project root or openhab_path?
+            # In stage_mapping construction, we stored what was in config.
+            # If config has "openhab/items/knx.items", that's relative to project root.
+            # But earlier code used openhab_path from config.
+            
+            # We need to resolve real_path accurately.
+            # In _run_job, we assumed:
+            # if os.path.isabs(real_path): use it
+            # else: os.path.join(staging_dir, real_path) (this was for Staged Path construction)
+            
+            # For reading the LIVE file:
+            abs_real_path = real_path
+
+            
+            # If config says "openhab/items/knx.items", we should check if that exists relative to CWD?
+            # jobs.py CWD is usually project root (or wherever app.py launched from).
+            
+            if not os.path.isabs(abs_real_path):
+                 abs_real_path = os.path.abspath(abs_real_path)
+
+            if os.path.exists(abs_real_path):
+                try:
+                    with open(abs_real_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        orig_lines = f.readlines()
+                except Exception as e:
+                    logger.warning(f"Could not read live file {abs_real_path}: {e}")
+            
+            # Compute Diff
+            matcher = difflib.SequenceMatcher(None, orig_lines, curr_lines)
+            added = 0
+            removed = 0
+            for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+                if tag == 'replace':
+                    removed += i2 - i1
+                    added += j2 - j1
+                elif tag == 'delete':
+                    removed += i2 - i1
+                elif tag == 'insert':
+                    added += j2 - j1
+
+            # Relative path for display (key in stats dict)
+            # Try to make it relative to openhab_path if possible, else basename
+            if os.path.isabs(real_path):
+                 # Try to make relative to openhab_path
+                 if openhab_path and real_path.startswith(openhab_path):
+                      rel_display = os.path.relpath(real_path, openhab_path).replace('\\', '/')
+                 else:
+                      rel_display = os.path.basename(real_path)
+            else:
+                 rel_display = real_path.replace('\\', '/')
+
+            stats[rel_display] = {
+                'before': len(orig_lines),
+                'after': len(curr_lines),
+                'delta': len(curr_lines) - len(orig_lines),
+                'added': added,
+                'removed': removed,
+                'staged_path': staged_path, # Keep track for other uses
+                'real_path': abs_real_path
+            }
+            
         return stats
 
     def _extract_relative_path_from_backup(self, member_name):
@@ -599,6 +699,62 @@ class JobManager:
             return True, f'restored {backup["name"]}'
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+    def deploy(self, job_id):
+        """Deploy staged files to live environment."""
+        job = self._jobs.get(job_id)
+        if not job:
+            raise ValueError('Job not found')
+        
+        if not job.get('staged'):
+            raise ValueError('Job is not staged or already deployed')
+
+        mapping = job.get('stage_mapping', {})
+        if not mapping:
+             raise ValueError('No staged files found')
+             
+        # Create a safety backup before deploying?
+        # Ideally yes, but maybe user wants quick deploy. 
+        # Making a backup is safer.
+        openhab_path = self.cfg.get('openhab_path', 'openhab')
+        ts = __import__('time').strftime('%Y%m%d-%H%M%S')
+        backup_name = f"pre-deploy-{job_id}-{ts}.tar.gz"
+        backup_path = os.path.join(self.backups_dir, backup_name)
+        try:
+             # Basic backup of openhab dir
+             if os.path.exists(openhab_path):
+                with tarfile.open(backup_path, 'w:gz') as tar:
+                    tar.add(openhab_path, arcname=os.path.basename(openhab_path))
+                job['backups'].append({'name': backup_name, 'path': backup_path, 'ts': ts})
+                save_jobs(self.jobs_dir, self._jobs)
+        except Exception as e:
+             logger.error(f"Failed to create pre-deploy backup: {e}")
+             # Proceed? Or abort? Abort is safer.
+             raise Exception(f"Backup failed, aborting deploy: {e}")
+
+        deployed_count = 0
+        try:
+            for staged_path, real_path in mapping.items():
+                if os.path.exists(staged_path):
+                    # Ensure target dir exists
+                    # resolve real_path absolute
+                    target = real_path
+                    if not os.path.isabs(target):
+                        target = os.path.abspath(target)
+                    
+                    os.makedirs(os.path.dirname(target), exist_ok=True)
+                    shutil.copy2(staged_path, target)
+                    deployed_count += 1
+                else:
+                    logger.warning(f"Staged file missing: {staged_path}")
+            
+            job['deployed'] = True
+            save_jobs(self.jobs_dir, self._jobs)
+            return True, f"Deployed {deployed_count} files."
+            
+        except Exception as e:
+            logger.error(f"Deploy failed: {e}")
+            raise
 
     def enforce_retention(self):
         """Enforce retention policy: delete backups older than days or trim by count/size."""

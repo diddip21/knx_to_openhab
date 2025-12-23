@@ -1320,6 +1320,22 @@ function startEvents(jobId) {
                       banner.textContent = `Job ${data.message}`;
                       banner.className = `status-message ${data.message.includes('completed') ? 'success' : 'error'}`;
                     }
+
+                    // Proactively fetch final job data to update stats and status badges immediately
+                    fetch(`/api/job/${jobId}`, { credentials: 'include' })
+                      .then(r => r.json())
+                      .then(j => {
+                        // Update status badge in detail view if this is the current job
+                        if (currentJobId === j.id) {
+                          const statusBadge = document.querySelector('#jobDetail .badge');
+                          if (statusBadge) {
+                            statusBadge.className = `badge ${j.status}`;
+                            statusBadge.textContent = j.status;
+                          }
+                          // Update statistics table
+                          updateStatisticsDisplay(j.stats);
+                        }
+                      }).catch(err => console.error('Error fetching final job data:', err));
                   }
                 } else if (data.type === 'error') {
                   text = `[${timestamp}] [ERROR] ${data.message}`;

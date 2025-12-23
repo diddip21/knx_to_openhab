@@ -276,7 +276,9 @@ async function previewFile(filename) {
     dialog.showModal()
 
     // Fetch current file content
-    const res = await fetch(`/api/file/preview?path=openhab/${normalizedPath}`)
+    let url = `/api/file/preview?path=openhab/${normalizedPath}`
+    if (currentJobId) url += `&job_id=${currentJobId}`
+    const res = await fetch(url)
     if (!res.ok) {
       const error = await res.json()
       throw new Error(error.error || 'Failed to load file')

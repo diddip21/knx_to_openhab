@@ -447,6 +447,7 @@ if FLASK_AVAILABLE:
         """Preview a generated OpenHAB configuration file."""
         file_path = request.args.get('path', '')
         backup_name = request.args.get('backup', None)  # Optional: fetch from backup
+        job_id = request.args.get('job_id', None)       # Optional: fetch from job staging
         
         if not file_path:
             return jsonify({'error': 'path parameter required'}), 400
@@ -458,6 +459,33 @@ if FLASK_AVAILABLE:
         # Check if requested path is within openhab directory
         if not requested_path.startswith(openhab_base):
             return jsonify({'error': 'access denied: path outside openhab directory'}), 403
+        
+        # If job_id specified, check staged files
+        if job_id:
+            job = job_mgr.get_job(job_id)
+            if job and 'stats' in job:
+                # Path in stats is relative to openhab directory, like 'items/knx.items'
+                rel_path = os.path.relpath(requested_path, openhab_base).replace('\\', '/')
+                if rel_path in job['stats']:
+                    staged_path = job['stats'][rel_path].get('staged_path')
+                    if staged_path and os.path.isfile(staged_path):
+                        try:
+                            with open(staged_path, 'r', encoding='utf-8', errors='replace') as f:
+                                content = f.read()
+                            
+                            if len(content) > 1024 * 1024:
+                                content = content[:1024 * 1024] + '\n\n... [Content truncated, file too large]'
+                                
+                            return jsonify({
+                                'path': file_path,
+                                'content': content,
+                                'size': os.path.getsize(staged_path),
+                                'from_staged': True,
+                                'job_id': job_id
+                            })
+                        except Exception as e:
+                            return jsonify({'error': f'failed to read staged file: {str(e)}'}), 500
+            # If job not found or file not in staged, fall back to current/backup logic
         
         # If backup specified, extract file from backup
         if backup_name:

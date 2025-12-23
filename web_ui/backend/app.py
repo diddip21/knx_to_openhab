@@ -452,13 +452,16 @@ if FLASK_AVAILABLE:
         if not file_path:
             return jsonify({'error': 'path parameter required'}), 400
         
-        # Security: Only allow files within openhab directory
-        openhab_base = os.path.abspath(cfg.get('openhab_path', 'openhab'))
-        requested_path = os.path.abspath(file_path)
+        # Security: Allow files within openhab directory OR jobs directory (for staged files/backups)
+        openhab_base = os.path.normpath(os.path.abspath(cfg.get('openhab_path', 'openhab')))
+        jobs_base = os.path.normpath(os.path.abspath(cfg.get('jobs_dir', 'jobs')))
+        requested_path = os.path.normpath(os.path.abspath(file_path))
         
-        # Check if requested path is within openhab directory
-        if not requested_path.startswith(openhab_base):
-            return jsonify({'error': 'access denied: path outside openhab directory'}), 403
+        # Check if requested path is safe (within allowed directories)
+        is_safe = requested_path.startswith(openhab_base) or requested_path.startswith(jobs_base)
+        
+        if not is_safe:
+            return jsonify({'error': 'access denied: path outside allowed directories'}), 403
         
         # If job_id specified, check staged files
         if job_id:

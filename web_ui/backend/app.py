@@ -463,28 +463,35 @@ if FLASK_AVAILABLE:
         # If job_id specified, check staged files
         if job_id:
             job = job_mgr.get_job(job_id)
-            if job and 'stats' in job:
-                # Path in stats is relative to openhab directory, like 'items/knx.items'
+            if job:
                 rel_path = os.path.relpath(requested_path, openhab_base).replace('\\', '/')
-                if rel_path in job['stats']:
+                staged_path = None
+                
+                # 1. Try to get from stats (new jobs)
+                if 'stats' in job and rel_path in job['stats']:
                     staged_path = job['stats'][rel_path].get('staged_path')
-                    if staged_path and os.path.isfile(staged_path):
-                        try:
-                            with open(staged_path, 'r', encoding='utf-8', errors='replace') as f:
-                                content = f.read()
+                
+                # 2. Fallback: construct from staging_dir (supports older jobs on remote)
+                if (not staged_path or not os.path.exists(staged_path)) and 'staging_dir' in job:
+                    staged_path = os.path.join(job['staging_dir'], 'openhab', rel_path)
+                
+                if staged_path and os.path.isfile(staged_path):
+                    try:
+                        with open(staged_path, 'r', encoding='utf-8', errors='replace') as f:
+                            content = f.read()
+                        
+                        if len(content) > 1024 * 1024:
+                            content = content[:1024 * 1024] + '\n\n... [Content truncated, file too large]'
                             
-                            if len(content) > 1024 * 1024:
-                                content = content[:1024 * 1024] + '\n\n... [Content truncated, file too large]'
-                                
-                            return jsonify({
-                                'path': file_path,
-                                'content': content,
-                                'size': os.path.getsize(staged_path),
-                                'from_staged': True,
-                                'job_id': job_id
-                            })
-                        except Exception as e:
-                            return jsonify({'error': f'failed to read staged file: {str(e)}'}), 500
+                        return jsonify({
+                            'path': file_path,
+                            'content': content,
+                            'size': os.path.getsize(staged_path),
+                            'from_staged': True,
+                            'job_id': job_id
+                        })
+                    except Exception as e:
+                        return jsonify({'error': f'failed to read staged file: {str(e)}'}), 500
             # If job not found or file not in staged, fall back to current/backup logic
         
         # If backup specified, extract file from backup

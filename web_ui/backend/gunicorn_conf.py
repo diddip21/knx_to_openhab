@@ -20,7 +20,7 @@ port = conf.get('port', 8085)
 
 # Gunicorn settings
 bind = f"{bind_host}:{port}"
-workers = 2
+workers = 1
 accesslog = '-'
 errorlog = '-'
 # Reload on code changes if needed (optional)

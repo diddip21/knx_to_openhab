@@ -38,11 +38,24 @@ class JobManager:
         self.executor = ThreadPoolExecutor(max_workers=2)
         self.lock = threading.Lock()
 
+    def _reload_jobs(self):
+        """Reload jobs from disk to ensure consistency."""
+        with self.lock:
+            disk_jobs = load_jobs(self.jobs_dir)
+            # Simple merge: just replace the in-memory dict with disk state
+            # This is safe because we primarily read from this dict except during job creation/update
+            self._jobs = disk_jobs
+
     def list_jobs(self):
+        self._reload_jobs()
         return list(self._jobs.values())
 
     def get_job(self, job_id):
-        return self._jobs.get(job_id)
+        job = self._jobs.get(job_id)
+        if not job:
+            self._reload_jobs()
+            job = self._jobs.get(job_id)
+        return job
 
     def get_queue(self, job_id):
         # Ensure job exists before returning queue

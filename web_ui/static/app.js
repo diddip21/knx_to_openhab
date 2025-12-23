@@ -275,8 +275,17 @@ async function previewFile(filename) {
 
     dialog.showModal()
 
+    // Resolve the actual path to fetch
+    let path = normalizedPath
+    if (currentStatsData && currentStatsData[filename] && currentStatsData[filename].real_path) {
+      path = currentStatsData[filename].real_path
+    } else if (!path.startsWith('openhab/') && !path.startsWith('/') && !path.includes(':')) {
+      // Fallback for paths that don't look absolute or already prefixed
+      path = 'openhab/' + path
+    }
+
     // Fetch current file content
-    let url = `/api/file/preview?path=openhab/${normalizedPath}`
+    let url = `/api/file/preview?path=${encodeURIComponent(path)}`
     if (currentJobId) url += `&job_id=${currentJobId}`
     const res = await fetch(url)
     if (!res.ok) {

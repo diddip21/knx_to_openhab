@@ -396,29 +396,12 @@ class JobManager:
                     logger.warning(f"Could not read staged file {staged_path}: {e}")
                     continue
 
+            # Determine absolute paths for comparison and display calculation
+            abs_real_path = os.path.normpath(os.path.abspath(real_path))
+            abs_openhab = os.path.normpath(os.path.abspath(openhab_path))
+            
             # Read live content (Old)
             orig_lines = []
-            # Calculate absolute real path
-            # If real_path is relative, it is relative to project root or openhab_path?
-            # In stage_mapping construction, we stored what was in config.
-            # If config has "openhab/items/knx.items", that's relative to project root.
-            # But earlier code used openhab_path from config.
-            
-            # We need to resolve real_path accurately.
-            # In _run_job, we assumed:
-            # if os.path.isabs(real_path): use it
-            # else: os.path.join(staging_dir, real_path) (this was for Staged Path construction)
-            
-            # For reading the LIVE file:
-            abs_real_path = real_path
-
-            
-            # If config says "openhab/items/knx.items", we should check if that exists relative to CWD?
-            # jobs.py CWD is usually project root (or wherever app.py launched from).
-            
-            if not os.path.isabs(abs_real_path):
-                 abs_real_path = os.path.abspath(abs_real_path)
-
             if os.path.exists(abs_real_path):
                 try:
                     with open(abs_real_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -440,15 +423,12 @@ class JobManager:
                     added += j2 - j1
 
             # Relative path for display (key in stats dict)
-            # Try to make it relative to openhab_path if possible, else basename
-            if os.path.isabs(real_path):
-                 # Try to make relative to openhab_path
-                 if openhab_path and real_path.startswith(openhab_path):
-                      rel_display = os.path.relpath(real_path, openhab_path).replace('\\', '/')
-                 else:
-                      rel_display = os.path.basename(real_path)
+            # Ensure it's relative to openhab_path to avoid double-prefix bugs in the UI
+            if abs_real_path.startswith(abs_openhab):
+                 rel_display = os.path.relpath(abs_real_path, abs_openhab).replace('\\', '/')
             else:
-                 rel_display = real_path.replace('\\', '/')
+                 # Fallback to basename or relative to project root
+                 rel_display = os.path.relpath(abs_real_path, os.getcwd()).replace('\\', '/') if not os.path.isabs(real_path) else os.path.basename(real_path)
 
             stats[rel_display] = {
                 'before': len(orig_lines),

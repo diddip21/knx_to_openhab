@@ -46,8 +46,15 @@ if FLASK_AVAILABLE:
     # Use project root directory as base path for updater
     updater = Updater(base_path=project_root)
 
-    # Basic HTTP auth (simple implementation) -------------------------------------------------
+    # Session-based authentication -------------------------------------------------
     from base64 import b64decode
+    import secrets
+    import time
+
+    # In-memory session store (simple implementation)
+    # Key: session_token, Value: {'user': username, 'created': timestamp}
+    _sessions = {}
+    SESSION_MAX_AGE = 24 * 60 * 60  # 24 hours
 
     def _auth_failed():
         return ("Unauthorized", 401, {"WWW-Authenticate": "Basic realm=\"KNX UI\""})
@@ -64,6 +71,32 @@ if FLASK_AVAILABLE:
         except Exception:
             return False
 
+    def _check_session_cookie() -> bool:
+        """Check if request has a valid session cookie."""
+        session_token = request.cookies.get('knx_session')
+        if not session_token:
+            return False
+        session = _sessions.get(session_token)
+        if not session:
+            return False
+        # Check if session is expired
+        if time.time() - session.get('created', 0) > SESSION_MAX_AGE:
+            del _sessions[session_token]
+            return False
+        return True
+
+    def _create_session(user: str) -> str:
+        """Create a new session and return the token."""
+        # Clean up old sessions periodically
+        now = time.time()
+        expired = [k for k, v in _sessions.items() if now - v.get('created', 0) > SESSION_MAX_AGE]
+        for k in expired:
+            del _sessions[k]
+        # Create new session
+        token = secrets.token_hex(32)
+        _sessions[token] = {'user': user, 'created': now}
+        return token
+
     @app.before_request
     def require_auth():
         # if auth disabled, allow
@@ -77,10 +110,35 @@ if FLASK_AVAILABLE:
         # health/status endpoint allowed
         if path == '/api/status':
             return None
+        
+        # Check for valid session cookie first (for fetch() calls)
+        if _check_session_cookie():
+            return None
+        
+        # Check Basic Auth header
         auth = request.headers.get('Authorization')
         if _check_auth_header(auth):
             return None
         return _auth_failed()
+
+    @app.after_request
+    def set_session_cookie(response):
+        """Set session cookie after successful Basic Auth."""
+        # Only set cookie if auth was successful and no session exists yet
+        if response.status_code < 400:
+            if not request.cookies.get('knx_session'):
+                auth = request.headers.get('Authorization')
+                if _check_auth_header(auth):
+                    acfg = cfg.get('auth', {})
+                    token = _create_session(acfg.get('user', 'admin'))
+                    response.set_cookie(
+                        'knx_session',
+                        token,
+                        httponly=True,
+                        samesite='Lax',
+                        max_age=SESSION_MAX_AGE
+                    )
+        return response
 
 
     @app.route('/')

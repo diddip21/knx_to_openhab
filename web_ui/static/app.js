@@ -1258,13 +1258,7 @@ function startEvents(jobId) {
             // Stream is done - job finished
             allLogEntries.push({ level: 'info', text: '[DONE] Job finished' });
 
-            // Final log persistence
-            fetch(`/api/job/${jobId}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ log: allLogEntries }),
-              credentials: 'include'
-            }).catch(() => { });
+            // Final log persistence is now handled by the backend during _run_job
 
             renderLog();
 
@@ -1302,7 +1296,10 @@ function startEvents(jobId) {
           buffer = lines.pop(); // Keep incomplete line in buffer
 
           lines.forEach(line => {
-            if (line.startsWith('data: ')) {
+            if (line.startsWith('event: done')) {
+              // Done event received - this is an alternative to stream closing
+              console.log('Job completion event received');
+            } else if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.substring(6)); // Remove 'data: ' prefix
                 const level = data.level || 'info';
@@ -1315,6 +1312,15 @@ function startEvents(jobId) {
                   text = `[${timestamp}] [BACKUP] ${data.message}`;
                 } else if (data.type === 'status') {
                   text = `[${timestamp}] [STATUS] ${data.message}`;
+                  // If status is completed or failed, we can update the UI immediately
+                  if (data.message.includes('completed') || data.message.includes('failed')) {
+                    refreshJobs();
+                    const banner = document.getElementById('status');
+                    if (banner) {
+                      banner.textContent = `Job ${data.message}`;
+                      banner.className = `status-message ${data.message.includes('completed') ? 'success' : 'error'}`;
+                    }
+                  }
                 } else if (data.type === 'error') {
                   text = `[${timestamp}] [ERROR] ${data.message}`;
                 } else {
@@ -1323,15 +1329,6 @@ function startEvents(jobId) {
                 }
 
                 allLogEntries.push({ level, text });
-
-                // Persist logs to job.log in the backend
-                fetch(`/api/job/${jobId}`, {
-                  method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ log: allLogEntries }),
-                  credentials: 'include'
-                }).catch(() => { });
-
                 renderLog();
               } catch (e) {
                 console.error('Error parsing event data:', e);

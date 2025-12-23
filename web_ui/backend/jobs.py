@@ -84,6 +84,24 @@ class JobManager:
         self.executor.submit(self._run_job, job_id)
         return job
 
+    def _log_to_queue(self, job_id, q, msg):
+        """Helper to both send to queue and persist in job log."""
+        job = self._jobs.get(job_id)
+        if job:
+            # Format msg for log storage consistent with frontend expectations
+            log_entry = {'level': msg.get('level', 'info'), 'text': msg.get('message', '')}
+            # Also support legacy string format if needed, but dict is better
+            if msg.get('type') == 'stats':
+                log_entry['text'] = f"[STATS] {msg.get('message')}"
+            elif msg.get('type') == 'backup':
+                log_entry['text'] = f"[BACKUP] {msg.get('message')}"
+            elif msg.get('type') == 'status':
+                log_entry['text'] = f"[STATUS] {msg.get('message')}"
+            
+            job['log'].append(log_entry)
+            # Periodic save? For now save at the end or on certain events
+        q.put(msg)
+
     def _run_job(self, job_id):
         job = self._jobs[job_id]
         q = self.queues[job_id]
@@ -101,19 +119,19 @@ class JobManager:
                     tar.add(openhab_path, arcname=os.path.basename(openhab_path))
                 job['backups'].append({'name': backup_name, 'path': backup_path, 'ts': ts})
                 save_jobs(self.jobs_dir, self._jobs)
-                q.put({'type': 'backup', 'level': 'info', 'message': f'backup created: {backup_name}'})
+                self._log_to_queue(job_id, q, {'type': 'backup', 'level': 'info', 'message': f'backup created: {backup_name}'})
                 # enforce retention immediately after creating backup
                 try:
                     self.enforce_retention()
-                    q.put({'type': 'info', 'level': 'debug', 'message': 'retention enforced'})
+                    self._log_to_queue(job_id, q, {'type': 'info', 'level': 'debug', 'message': 'retention enforced'})
                 except Exception as re:
-                    q.put({'type': 'error', 'level': 'warning', 'message': f'retention error: {re}'})
+                    self._log_to_queue(job_id, q, {'type': 'error', 'level': 'warning', 'message': f'retention error: {re}'})
         except Exception as e:
-            q.put({'type': 'error', 'level': 'error', 'message': f'backup failed: {e}'})
+            self._log_to_queue(job_id, q, {'type': 'error', 'level': 'error', 'message': f'backup failed: {e}'})
 
         # Process logic
         try:
-            q.put({'type': 'info', 'level': 'info', 'message': 'start in-process generation'})
+            self._log_to_queue(job_id, q, {'type': 'info', 'level': 'info', 'message': 'start in-process generation'})
             import importlib
             import copy
             knxmod = importlib.import_module('knxproject_to_openhab')
@@ -176,26 +194,26 @@ class JobManager:
                         project = json.load(f)
                     # Temporarily restore stdout to log message
                     sys.stdout = old_stdout
-                    q.put({'type': 'info', 'level': 'info', 'message': 'read project JSON dump'})
+                    self._log_to_queue(job_id, q, {'type': 'info', 'level': 'info', 'message': 'read project JSON dump'})
                     sys.stdout = captured_output
                 else:
                     # try to parse knxproj archive using XKNXProj
                     from xknxproject.xknxproj import XKNXProj
                     sys.stdout = old_stdout
-                    q.put({'type': 'info', 'level': 'info', 'message': 'parsing knxproj archive (this may take a while)'})
+                    self._log_to_queue(job_id, q, {'type': 'info', 'level': 'info', 'message': 'parsing knxproj archive (this may take a while)'})
                     sys.stdout = captured_output
                     pwd = job.get('password')
                     knxproj = XKNXProj(path=job['input'], password=pwd, language='de-DE')
                     project = knxproj.parse()
                     sys.stdout = old_stdout
-                    q.put({'type': 'info', 'level': 'info', 'message': 'parsed knxproj'})
+                    self._log_to_queue(job_id, q, {'type': 'info', 'level': 'info', 'message': 'parsed knxproj'})
                     sys.stdout = captured_output
 
                 # run the same sequence as the CLI main()
                 building = knxmod.create_building(project)
                 addresses = knxmod.get_addresses(project)
                 sys.stdout = old_stdout
-                q.put({'type': 'info', 'level': 'info', 'message': f'{len(addresses)} addresses extracted'})
+                self._log_to_queue(job_id, q, {'type': 'info', 'level': 'info', 'message': f'{len(addresses)} addresses extracted'})
                 sys.stdout = captured_output
                 
                 house = knxmod.put_addresses_in_building(building, addresses, project)
@@ -213,7 +231,7 @@ class JobManager:
                     etsmod.PRJ_NAME = prj_name
 
                 sys.stdout = old_stdout
-                q.put({'type': 'info', 'level': 'info', 'message': 'generating files (staged)...'})
+                self._log_to_queue(job_id, q, {'type': 'info', 'level': 'info', 'message': 'generating files (staged)...'})
                 sys.stdout = captured_output
                 
                 # ets_to_openhab.main() writes output files to STAGING via injected config
@@ -241,7 +259,7 @@ class JobManager:
                                 parts = message.split(':')
                                 if len(parts) > 2:
                                     message = ':'.join(parts[2:]).strip()
-                            q.put({'type': 'info', 'level': level, 'message': message})
+                            self._log_to_queue(job_id, q, {'type': 'info', 'level': level, 'message': message})
 
             # Save staging info to job
             job['staging_dir'] = staging_dir
@@ -260,23 +278,22 @@ class JobManager:
                     added = int(stat.get('added', 0))
                     removed = int(stat.get('removed', 0))
                     msg = f"{fn}: {before} -> {after} lines ({delta:+d}) [+{added}/-{removed}]"
-                    q.put({'type': 'stats', 'level': 'info', 'message': msg})
+                    self._log_to_queue(job_id, q, {'type': 'stats', 'level': 'info', 'message': msg})
 
             except Exception as stats_error:
-                q.put({'type': 'error', 'level': 'error', 'message': f'Stats error: {str(stats_error)}'})
+                self._log_to_queue(job_id, q, {'type': 'error', 'level': 'error', 'message': f'Stats error: {str(stats_error)}'})
                 # fallback empty stats
                 job['stats'] = {}
 
             job['status'] = 'completed'
-            q.put({'type': 'status', 'level': 'info', 'message': 'completed (staged) - ready to deploy'})
+            self._log_to_queue(job_id, q, {'type': 'status', 'level': 'info', 'message': 'completed (staged) - ready to deploy'})
         except Exception as e:
             job['status'] = 'failed'
             err_msg = str(e)
             tb = traceback.format_exc()
-            q.put({'type': 'error', 'level': 'error', 'message': err_msg})
-            q.put({'type': 'error', 'level': 'error', 'message': tb})
-            job['log'].append(f"ERROR: {err_msg}")
-            job['log'].append(tb)
+            self._log_to_queue(job_id, q, {'type': 'error', 'level': 'error', 'message': err_msg})
+            # TB might be long, but we need it for debugging
+            self._log_to_queue(job_id, q, {'type': 'error', 'level': 'error', 'message': tb})
         finally:
             save_jobs(self.jobs_dir, self._jobs)
             q.put(None)

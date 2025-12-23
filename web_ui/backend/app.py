@@ -692,15 +692,16 @@ if FLASK_AVAILABLE:
             except:
                 pass
 
-            job_mgr.delete_job(job_id)
-            return jsonify({'success': True})
-
 
     @app.route('/api/job/<job_id>/deploy', methods=['POST'])
     def job_deploy(job_id):
         try:
             success, msg = job_mgr.deploy(job_id)
             return jsonify({'success': success, 'message': msg})
+        except ValueError as e:
+            if 'not found' in str(e).lower():
+                return jsonify({'error': str(e)}), 404
+            return jsonify({'error': str(e)}), 400
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 

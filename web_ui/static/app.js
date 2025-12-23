@@ -37,7 +37,7 @@ async function refreshJobs() {
       <span class="job-date">${new Date(j.created * 1000).toLocaleString()}</span>
       <button onclick="showJobDetail('${j.id}')">Details</button>
       <button onclick="loadStructureFromJob('${j.id}')">Structure</button>
-      ${j.status === 'completed' && j.staged && !j.deployed ? `<button style="background-color: #28a745; color: white;" onclick="deployJob('${j.id}')">Live schalten</button>` : ''}
+      ${j.status === 'completed' && j.staged && !j.deployed ? `<button style="background-color: #28a745; color: white;" onclick="deployJob('${j.id}')">Deploy</button>` : ''}
       ${j.backups && j.backups.length > 0 ? `<button onclick="showRollbackDialog('${j.id}')">Rollback</button>` : ''}
       <button onclick="deleteJob('${j.id}')">Delete</button>
     `
@@ -147,13 +147,14 @@ async function deleteJob(jobId) {
       method: 'DELETE',
       credentials: 'include'
     })
-    if (res.ok) {
+    const data = await res.json()
+    if (res.ok && data.ok) {
       refreshJobs()
       detailSectionEl.style.display = 'none'
       logSectionEl.style.display = 'none'
       statsSectionEl.style.display = 'none'
     } else {
-      alert('Delete failed')
+      alert('Delete failed: ' + (data.error || 'Unknown error'))
     }
   } catch (e) {
     alert('Error: ' + e.message)
@@ -161,13 +162,13 @@ async function deleteJob(jobId) {
 }
 
 async function deployJob(jobId) {
-  if (!confirm('Daten wirklich Live schalten? Die bestehende Konfiguration wird überschrieben!')) return
+  if (!confirm('Really deploy? The existing configuration will be overwritten!')) return
 
   const btn = event.target || document.querySelector(`button[onclick="deployJob('${jobId}')"]`)
-  const originalText = btn ? btn.textContent : 'Live schalten'
+  const originalText = btn ? btn.textContent : 'Deploy'
   if (btn) {
     btn.disabled = true
-    btn.textContent = 'Verarbeite...'
+    btn.textContent = 'Processing...'
   }
 
   try {
@@ -177,17 +178,17 @@ async function deployJob(jobId) {
     })
     const data = await res.json()
     if (res.ok && data.success) {
-      alert('Erfolgreich Live geschaltet: ' + data.message)
+      alert('Successfully deployed: ' + data.message)
       refreshJobs()
     } else {
-      alert('Fehler beim Live schalten: ' + (data.error || 'Unbekannter Fehler'))
+      alert('Deploy error: ' + (data.error || 'Unknown error'))
       if (btn) {
         btn.textContent = originalText
         btn.disabled = false
       }
     }
   } catch (e) {
-    alert('Fehler: ' + e.message)
+    alert('Error: ' + e.message)
     if (btn) {
       btn.textContent = originalText
       btn.disabled = false

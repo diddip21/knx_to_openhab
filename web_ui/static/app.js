@@ -285,26 +285,16 @@ async function previewFile(filename) {
     }
     const data = await res.json()
 
-    // Try to fetch original file from backup (if available for current job)
+    // Try to fetch original file from Live configuration
     let originalData = null
-    if (currentJobId) {
-      const jobRes = await fetch(`/api/job/${currentJobId}`)
-      if (jobRes.ok) {
-        const job = await jobRes.json()
-        if (job.backups && job.backups.length > 0) {
-          // Get the latest backup (created before job ran)
-          const latestBackup = job.backups[job.backups.length - 1]
-          try {
-            const backupRes = await fetch(`/api/file/preview?path=openhab/${normalizedPath}&backup=${latestBackup.name}`)
-            if (backupRes.ok) {
-              originalData = await backupRes.json()
-            }
-          } catch (e) {
-            // Original file might not exist in backup (new file)
-            console.log('Original file not found in backup:', e)
-          }
-        }
+    try {
+      const liveRes = await fetch(`/api/file/preview?path=openhab/${normalizedPath}`)
+      if (liveRes.ok) {
+        originalData = await liveRes.json()
       }
+    } catch (e) {
+      // Live file might not exist (new file)
+      console.log('Live file not found:', e)
     }
 
 

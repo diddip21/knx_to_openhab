@@ -611,46 +611,44 @@ class JobManager:
         return basic_stats
 
     def get_file_diff(self, job_id, rel_path):
-        """Get diff for a specific file in a job."""
+        """Get diff for a specific file in a job (comparing Staged vs Live)."""
         job = self._jobs.get(job_id)
         if not job:
             return None
         
         openhab_path = self.cfg.get('openhab_path', 'openhab')
-        # Use the latest backup for comparison
-        if not job.get('backups'):
-            return None
-        backup_path = job['backups'][-1]['path']
         
-        # Read current file
-        curr_lines = []
-        fpath = os.path.join(openhab_path, rel_path)
-        if os.path.exists(fpath):
+        # 1. Original = Live Running Config
+        orig_lines = []
+        live_fpath = os.path.join(openhab_path, rel_path)
+        if os.path.exists(live_fpath):
             try:
-                with open(fpath, 'r', encoding='utf8', errors='ignore') as f:
-                    curr_lines = f.readlines()
+                with open(live_fpath, 'r', encoding='utf8', errors='ignore') as f:
+                    orig_lines = f.readlines()
             except Exception:
                 pass
 
-        # Read original file from backup
-        orig_lines = []
-        if os.path.exists(backup_path):
+        # 2. Current = Staged file from Job
+        curr_lines = []
+        staged_path = None
+        
+        # Try to get from stats (new jobs)
+        if 'stats' in job and rel_path in job['stats']:
+            staged_path = job['stats'][rel_path].get('staged_path')
+        
+        # Fallback: construct from staging_dir
+        if (not staged_path or not os.path.exists(staged_path)) and 'staging_dir' in job:
+            staged_path = os.path.join(job['staging_dir'], 'openhab', rel_path)
+
+        if staged_path and os.path.isfile(staged_path):
             try:
-                with tarfile.open(backup_path, 'r:gz') as tar:
-                    # backup structure is openhab/...
-                    # rel_path is like "items/knx.items"
-                    # member name should be "openhab/items/knx.items"
-                    member_path = f"openhab/{rel_path}".replace('\\', '/')
-                    try:
-                        member = tar.getmember(member_path)
-                        f = tar.extractfile(member)
-                        if f:
-                            wrapper = io.TextIOWrapper(f, encoding='utf-8', errors='ignore')
-                            orig_lines = wrapper.readlines()
-                    except KeyError:
-                        pass
+                with open(staged_path, 'r', encoding='utf-8', errors='replace') as f:
+                    curr_lines = f.readlines()
             except Exception:
                 pass
+        
+        # If staged file doesn't exist, we might be comparing a deleted file or something is wrong.
+        # But if we got here, we usually have a staged file.
 
         import difflib
         diff_lines = []

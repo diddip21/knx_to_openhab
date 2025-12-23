@@ -39,12 +39,29 @@ class JobManager:
         self.lock = threading.Lock()
 
     def _reload_jobs(self):
-        """Reload jobs from disk to ensure consistency."""
+        """Reload jobs from disk with a merge strategy to avoid clobbering active state."""
         with self.lock:
             disk_jobs = load_jobs(self.jobs_dir)
-            # Simple merge: just replace the in-memory dict with disk state
-            # This is safe because we primarily read from this dict except during job creation/update
-            self._jobs = disk_jobs
+            for jid, d_job in disk_jobs.items():
+                if jid not in self._jobs:
+                    # New job from another process/disk
+                    self._jobs[jid] = d_job
+                else:
+                    # Job exists in both.
+                    m_job = self._jobs[jid]
+                    m_status = m_job.get('status')
+                    d_status = d_job.get('status')
+
+                    # Merge logic:
+                    # 1. If memory job is 'running', don't overwrite (active worker owns it)
+                    # 2. If memory job is 'completed'/'failed' but disk is still 'running', 
+                    #    don't overwrite (worker just finished, disk is stale)
+                    if m_status == 'running':
+                        continue
+                    if m_status in ['completed', 'failed'] and d_status == 'running':
+                        continue
+                    
+                    self._jobs[jid] = d_job
 
     def list_jobs(self):
         self._reload_jobs()

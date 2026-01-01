@@ -96,7 +96,7 @@ class BuildingGenerator:
         if self.config.get('general', {}).get('FloorNameFromDescription') and floor.get('Description'):
             floor_name = floor['Description']
         
-        items = f"Group   map{floor_nr}   \"{floor_name}\" (Base) [\"Location"] \n"
+        items = f"Group   map{floor_nr}   \"{floor_name}\" (Base) [\"Location"] \n" 
         items += f"Group:Rollershutter:AVG        map{floor_nr}_Blinds         \"{floor_name} Jalousie/Rollo\"      <rollershutter>    (map{floor_nr})  [\"Blinds\"]\n"
         items += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Lights         \"{floor_name} Beleuchtung\"         <light>            (map{floor_nr})  [\"Light\"]\n"
         items += f"Group:Contact:OR(OPEN, CLOSED) map{floor_nr}_Contacts       \"{floor_name} Öffnungsmelder\"      <contact>          (map{floor_nr})  [\"OpenState\"]\n"

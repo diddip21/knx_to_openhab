@@ -41,9 +41,36 @@ def load_jobs(jobs_dir):
 
 def save_jobs(jobs_dir, jobs):
     jf = jobs_file(jobs_dir)
-    with open(jf + '.tmp', 'w', encoding='utf-8') as f:
+    tmp_file = jf + '.tmp'
+    
+    # Write to temporary file
+    with open(tmp_file, 'w', encoding='utf-8') as f:
         json.dump(jobs, f, indent=2, ensure_ascii=False)
-    os.replace(jf + '.tmp', jf)
+    
+    # Windows-safe atomic replacement
+    # On Windows, os.replace() can fail with PermissionError if the target file is in use
+    # Try to replace, and if it fails on Windows, use a fallback strategy
+    try:
+        os.replace(tmp_file, jf)
+    except (PermissionError, OSError) as e:
+        import sys
+        if sys.platform == 'win32':
+            # Windows fallback: try removing target first, then rename
+            try:
+                if os.path.exists(jf):
+                    os.remove(jf)
+                os.rename(tmp_file, jf)
+            except (PermissionError, OSError):
+                # Last resort: copy content and remove temp
+                import shutil
+                shutil.copy2(tmp_file, jf)
+                try:
+                    os.remove(tmp_file)
+                except:
+                    pass  # Ignore errors cleaning up temp file
+        else:
+            # Re-raise on non-Windows platforms
+            raise
 
 
 def save_job(jobs_dir, job):

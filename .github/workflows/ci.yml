@@ -52,13 +52,12 @@ jobs:
       - name: Run unit tests
         run: |
             pytest tests/unit/ tests/integration/ -v --tb=short || exit 1    
-            
-            - name: Check Python syntax
+                  - name: Check Python syntax
+      - name: Check Python syntax
         if: always()
         run: |
           python -m py_compile *.py
           find . -name '*.py' -not -path './venv/*' -not -path './.git/*' -not -path './tests/*' | xargs python -m py_compile
-
   # Multi-platform tests
   multi-platform:
     name: Multi-Platform - ${{ matrix.os }} - Python ${{ matrix.python-version }}

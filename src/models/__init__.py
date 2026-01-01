@@ -1,78 +1,82 @@
-"""Data models and structures"""
+"""Data models for KNX to OpenHAB conversion.
+
+This package contains data classes and models used throughout the application:
+- KNXAddress: Represents a KNX group address with metadata
+- OpenHABItem: Represents an OpenHAB item configuration
+- Floor: Represents a building floor with rooms
+- Room: Represents a room with devices
+"""
 
 from dataclasses import dataclass
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
+
 
 @dataclass
 class KNXAddress:
-    """Represents a KNX group address"""
-    address: str
-    group_name: str
-    datapoint_type: str
-    description: str = ""
-    communication_objects: List[Dict] = None
+    """Represents a KNX group address with metadata."""
+    address: str  # e.g., "1/2/3"
+    name: str
+    datapoint_type: str  # e.g., "DPST-1-1", "DPST-5-1"
+    function: Optional[str] = None
+    usage: Optional[str] = None
+    description: Optional[str] = None
     
-    def __post_init__(self):
-        if self.communication_objects is None:
-            self.communication_objects = []
+    def __str__(self) -> str:
+        return f"{self.name} ({self.address})"
+
 
 @dataclass
 class OpenHABItem:
-    """Represents an OpenHAB item"""
-    name: str
-    item_type: str
-    label: str
-    icon: str = ""
-    groups: List[str] = None
-    semantic_info: str = ""
-    metadata: str = ""
-    channel: str = ""
-    
-    def __post_init__(self):
-        if self.groups is None:
-            self.groups = []
-    
-    def to_openhab_format(self) -> str:
-        """Convert to OpenHAB item definition string"""
-        icon_str = f"<{self.icon}>" if self.icon and not self.icon.startswith('<') else self.icon
-        groups_str = f"({','.join(self.groups)})" if self.groups else ""
-        
-        return f"{self.item_type}   {self.name}   \"{self.label}\"   {icon_str}   {groups_str}   {self.semantic_info}    {{ {self.channel} {self.metadata} }}"
-
-@dataclass
-class OpenHABThing:
-    """Represents an OpenHAB thing"""
-    thing_type: str
+    """Represents an OpenHAB item configuration."""
     name: str
     label: str
-    config: str
+    type: str  # e.g., "Dimmer", "Switch", "Rollershutter"
+    groups: List[str]
+    channel: str
+    tags: List[str]
+    metadata: Dict[str, Any]
     
-    def to_openhab_format(self) -> str:
-        """Convert to OpenHAB thing definition string"""
-        return f"Type {self.thing_type}    :   {self.name}   \"{self.label}\"   [ {self.config} ]"
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'name': self.name,
+            'label': self.label,
+            'type': self.type,
+            'groups': self.groups,
+            'channel': self.channel,
+            'tags': self.tags,
+            'metadata': self.metadata
+        }
 
-@dataclass
-class Floor:
-    """Represents a floor/level in the building"""
-    number: int
-    name: str
-    description: str = ""
-    name_short: str = ""
-    rooms: List['Room'] = None
-    
-    def __post_init__(self):
-        if self.rooms is None:
-            self.rooms = []
 
 @dataclass
 class Room:
-    """Represents a room"""
-    number: int
+    """Represents a room in a building."""
     name: str
-    description: str = ""
-    name_short: str = ""
-    addresses: List[KNXAddress] = None
+    devices: List[Dict[str, Any]]
+    floor: Optional[str] = None
     
-    def __post_init__(self):
-        if self.addresses is None:
-            self.addresses = []
+    def __str__(self) -> str:
+        return f"Room: {self.name} ({len(self.devices)} devices)"
+
+
+@dataclass
+class Floor:
+    """Represents a floor in a building."""
+    name: str
+    level: int
+    rooms: List[Room]
+    
+    def __str__(self) -> str:
+        return f"Floor {self.level}: {self.name} ({len(self.rooms)} rooms)"
+    
+    def total_devices(self) -> int:
+        """Calculate total number of devices on this floor."""
+        return sum(len(room.devices) for room in self.rooms)
+
+
+__all__ = [
+    'KNXAddress',
+    'OpenHABItem',
+    'Room',
+    'Floor',
+]

@@ -1,2 +1,3 @@
-"""KNX to OpenHAB Generator - Main Package"""
+"""KNX to OpenHAB Generator - Refactored modular structure"""
+
 __version__ = "2.0.0"

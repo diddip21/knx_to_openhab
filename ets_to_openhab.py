@@ -1,5 +1,4 @@
 """Module providing a collection of function to generate openhab things/items/sitemap from a knxproject"""
-import csv
 import re
 import os
 import logging
@@ -10,25 +9,6 @@ logger = logging.getLogger(__name__)
 
 pattern_items_Name: str = config['regexpattern']['items_Name']
 pattern_items_Label: str = config['regexpattern']['items_Label']
-
-def data_of_name(data, name, suffix,replace=''):
-    """ Function get data from a Name"""
-    if isinstance(suffix, str):
-        suffix= [suffix,]
-    if isinstance(replace, str):
-        replace= [replace,]
-    for x in data:
-        if x['Group name'] == name:
-            continue
-        for s in suffix:
-            if x['Group name'] == name + s:
-                return x
-            if x['Group name'] == name + ' ' + s:
-                return x
-            for r in replace:
-                if x['Group name'] == name.replace(r,s):
-                    return x
-    return None
 
 #global house,all_addresses,used_addresses
 GWIP=None
@@ -42,38 +22,6 @@ used_addresses = []
 equipments={}
 FENSTERKONTAKTE = []
 PRJ_NAME = 'Our Home'
-
-def read_csvexport():
-    """Reads an ETS csv Export"""
-    csvfile = open(config['ets_export'], newline='', encoding='cp1252')
-    reader = csv.DictReader(csvfile, delimiter='\t')
-
-    for row in reader:
-        #print(row)
-        # check if floor:
-        if row['Address'].endswith('/-/-'):
-            if not 'Group name' in row:
-                row['Group name'] = row['Main']
-            row['rooms'] = []
-            floors.insert(int(row['Address'].split('/')[0]),row)
-            #house[int(row['Address'].split('/')[0])] = row
-        # check if room
-        elif row['Address'].endswith('/-'):
-            if not 'Group name' in row:
-                row['Group name'] = row['Middle']
-            splitter = row['Address'].split('/')
-            row['Addresses'] = []
-            floors[int(splitter[0])]['rooms'].insert(int(splitter[1]),row)
-        # normal group address
-        else:
-            if not 'Group name' in row:
-                row['Group name'] = row['Sub']
-            splitter = row['Address'].split('/')
-            if 'ignore' in row['Description']:
-                logger.debug("ignoreflag in description for: %s", row['Group name'])
-                continue
-            floors[int(splitter[0])]['rooms'][int(splitter[1])]['Addresses'].append(row)
-            all_addresses.append(row)
 
 def gen_building():
     """Generates a Building from an ETS Project"""
@@ -428,8 +376,6 @@ def gen_building():
                                 continue
 
                             basename = address['Group name']
-                            #dimmwert_status =data_of_name(all_addresses, basename, define['status_suffix'],define['absolut_suffix'])
-                            #if not dimmwert_status and co:
                             dimmwert_status=get_address_from_dco_enhanced(co,'status_suffix',define)
                             for drop_name in define['drop']:
                                 drop_addr = data_of_name(all_addresses, basename, drop_name,define['absolut_suffix'])
@@ -441,34 +387,25 @@ def gen_building():
                             if dimmwert_status:
                                 used = True
                                 used_addresses.append(dimmwert_status['Address'])
-                                #relative_command = data_of_name(all_addresses, basename, define['relativ_suffix'],define['absolut_suffix'])
-                                #if not relative_command and co:
                                 relative_command=get_address_from_dco_enhanced(co,'relativ_suffix',define)
-                                #switch_command = data_of_name(all_addresses, basename, define['switch_suffix'],define['absolut_suffix'])
-                                #if not switch_command and co:
                                 if relative_command:
                                     used_addresses.append(relative_command['Address'])
                                     relative_option = f", increaseDecrease=\"{relative_command['Address']}\""
                                 switch_command=get_address_from_dco_enhanced(co,'switch_suffix',define)
                                 if switch_command:
                                     used_addresses.append(switch_command['Address'])
-                                    #switch_status_command = data_of_name(all_addresses, basename, define['switch_status_suffix'],define['absolut_suffix'])
-                                    #if not switch_status_command and co:
                                     switch_status_command=get_address_from_dco_enhanced(co,'switch_status_suffix',define)
                                     if switch_status_command:
                                         used_addresses.append(switch_status_command['Address'])
                                         switch_option_status = f"+<{switch_status_command['Address']}"
                                     switch_option = f", switch=\"{switch_command['Address']}{switch_option_status}\""
-                                #lovely_name = ' '.join(lovely_name.replace('Dimmen','').replace('Dimmer','').replace('absolut','').replace('Licht','').split())
 
                                 auto_add = True
                                 item_type = "Dimmer"
                                 thing_address_info = f"position=\"{address['Address']}+<{dimmwert_status['Address']}\"{switch_option}{relative_option}"
-                                #item_label = f"{lovely_name} [%d %%]"
                                 equipment = 'Lightbulb'
                                 semantic_info = "[\"Light\"]"
                                 item_icon = "light"
-                                #floor_grp = f"map{floor_nr}_Lights"
                                 if B_HOMEKIT:
                                     meta_homekit=', homekit="Lighting, Lighting.Brightness"'
                                 if B_ALEXA:
@@ -479,14 +416,12 @@ def gen_building():
                         # rollos / jalousien
                         elif address['DatapointType'] == get_datapoint_type('rollershutter'):
                             define=config['defines']['rollershutter']
-                            #bol = [x for x in define['up_down_suffix'] if x in address['Group name']]
                             co = get_co_by_functiontext(address,define['up_down_suffix'])
                             if not co:
                                 continue
 
-                            basename = address['Group name'] #.replace(define['up_down_suffix'],'')
+                            basename = address['Group name']
                             fahren_auf_ab = address
-                            #Status Richtung nicht in verwendung durch openhab
                             for drop_name in define['drop']:
                                 drop_addr = data_of_name(all_addresses, basename, drop_name,define['up_down_suffix'])
                                 if drop_addr:
@@ -497,17 +432,11 @@ def gen_building():
                             option_position_status=''
                             if fahren_auf_ab:
                                 used_addresses.append(fahren_auf_ab['Address'])
-                                #fahren_stop = data_of_name(all_addresses, basename, define['stop_suffix'],define['up_down_suffix'])
-                                #if not fahren_stop and co:
                                 fahren_stop=get_address_from_dco_enhanced(co,'stop_suffix',define)
                                 if fahren_stop:
                                     used_addresses.append(fahren_stop['Address'])
                                     option_stop = f", stopMove=\"{fahren_stop['Address']}\""
-                                #absolute_position = data_of_name(all_addresses, basename, define['absolute_position_suffix'],define['up_down_suffix'])
-                                #if not absolute_position and co:
                                 absolute_position=get_address_from_dco_enhanced(co,'absolute_position_suffix',define)
-                                #absolute_position_status = data_of_name(all_addresses, basename, define['status_suffix'],define['up_down_suffix'])
-                                #if not absolute_position_status and co:
                                 absolute_position_status=get_address_from_dco_enhanced(co,'status_suffix',define)
                                 if absolute_position or absolute_position_status:
                                     if absolute_position:
@@ -524,11 +453,9 @@ def gen_building():
                                 auto_add = True
                                 item_type = "Rollershutter"
                                 thing_address_info = f"upDown=\"{fahren_auf_ab['Address']}\"{option_stop}{option_position }"
-                                #item_label = f"{lovely_name} [%d %%]"
                                 equipment = 'Blinds'
                                 semantic_info = "[\"Blinds\"]"
                                 item_icon = "rollershutter"
-                                #floor_grp = f"map{floor_nr}_Blinds"
                                 if B_HOMEKIT:
                                     equip_homekit='homekit = "WindowCovering"'
                                     meta_homekit=', homekit = "CurrentPosition, TargetPosition, PositionState"'
@@ -541,17 +468,14 @@ def gen_building():
                         # Heizung
                         elif address['DatapointType'] in (get_datapoint_type('heating'), get_datapoint_type('heating_mode')):
                             define=config['defines']['heating']
-                            #bol = [x for x in define['level_suffix'] if x in address['Group name']]
                             co = get_co_by_functiontext(address,define['level_suffix'])
                             if  not co:
                                 continue
-                            basename = address['Group name'] #.replace(define['up_down_suffix'],'')
+                            basename = address['Group name']
                             betriebsmodus = address
                             option_status_betriebsmodus=''
                             if betriebsmodus:
                                 used_addresses.append(betriebsmodus['Address'])
-                                #betriebsmodus_status = data_of_name(all_addresses, basename, define['status_level_suffix'],define['level_suffix'])
-                                #if not betriebsmodus_status and co:
                                 betriebsmodus_status=get_address_from_dco_enhanced(co,'status_level_suffix',define)
                                 if betriebsmodus_status:
                                     used_addresses.append(betriebsmodus_status['Address'])
@@ -585,19 +509,13 @@ def gen_building():
                             define=config['defines']['switch']
                             item_type = "Switch"
                             item_label = lovely_name
-                            # umschalten (Licht, Steckdosen)
-                            # only add in first round, if there is a status GA for feedback
-                            #bol = [x for x in define['switch_suffix'] if x in address['Group name']]
                             co = get_co_by_functiontext(address,define['switch_suffix'])
                             if  not co:
                                 continue
 
                             basename = address['Group name']
-                            #status =data_of_name(all_addresses, basename, define['status_suffix'],define['switch_suffix'])
-                            #if not status and co:
                             status=get_address_from_dco_enhanced(co,'status_suffix',define)
                             if status:
-                                #if status['DatapointType'] == 'DPST-1-11':
                                 auto_add = True
                                 used_addresses.append(status['Address'])
                                 thing_address_info = f"ga=\"{address['Address']}+<{status['Address']}\""
@@ -638,8 +556,6 @@ def gen_building():
                                 if 'Soll' in lovely_name:
                                     semantic_info = semantic_info.replace("Measurement","Setpoint")
                                     meta_homekit = meta_homekit.replace("CurrentTemperature","TargetTemperature")
-                                #if 'floor_group' in mapping_info:
-                                #    floor_grp = f"map{floor_nr}_{mapping_info['floor_group']}"
                                 break
                         # window/door
                         if address['DatapointType'] == get_datapoint_type('window_contact'):
@@ -659,7 +575,6 @@ def gen_building():
                                     break
 
                             if mappings!= '':
-                                #data_map = mappings.replace("'",'"').replace('"','') //.replace('=','.0=')
                                 data_map = mappings.replace("'","").split(",")
                                 for index,word in enumerate(data_map):
                                     number_part, word_part = word.strip().split('=')
@@ -668,34 +583,15 @@ def gen_building():
                                 data_str = ','.join(data_map)
                                 metadata=f', stateDescription=\"\"[options=\"NULL=unbekannt ...,{data_str}\"], commandDescription=\"\"[options=\"{data_str}\"]'
                                 item_label = lovely_name
-                                #TODO: Mappings noch über metadata abbilden
-                                #mapfile = f"gen_{item_name}.map"
-                                #mappings = mappings.replace("'",'"')
-
-                                #mapfile_content = mappings.replace('"','').replace(',','\n').replace('mappings=[','').replace(']','').replace(' ','')
-                                #mapfile_content += '\n' + mapfile_content.replace('=','.0=') + '\n-=unknown'
-                                #os.makedirs(os.path.realpath(config['transform_dir_path']), exist_ok=True)
-                                #open(os.path.join(config['transform_dir_path'], mapfile),'w', encoding='utf8').write(mapfile_content)
 
                                 auto_add = True
                                 item_type = "Number"
                                 thing_address_info = f"ga=\"{ga}:{address['Address']}\""
-                                #item_label = f"{lovely_name} [MAP({mapfile}):%s]"
                                 semantic_info = "[\"Equipment\"]"
                                 item_icon = "movecontrol"
                                 sitemap_type = "Selection"
                             else:
                                 logger.info("no mapping for scene %s %s",address['Address'], address['Group name'])
-                            #else:
-                            #    items += f"Number        {item_name}         \"{lovely_name} [%d]\"                <movecontrol>          {{ channel=\"knx:device:bridge:generic:{item_name}\" }}\n"
-                            #    group += f"        Selection item={item_name} label=\"{lovely_name}\"  {visibility}\n"
-
-                        # Szenensteuerung
-                        #if address['DatapointType'] == 'DPST-18-1':
-                        #    print(address)
-                        #    used = True
-                        #    things += f"Type number        : {item_name}        \"{address['Group name']}\"       [ ga=\"18.001:{address['Address']}\" ]\n"
-                        #    items += f"Number        {item_name}         \"{lovely_name} [%d]\"                <sun>  (map{floor_nr}_{room_nr})        {{ channel=\"knx:device:bridge:generic:{item_name}\" }}\n"
 
                     if define and 'change_metadata' in define:
                         for item in define['change_metadata']:
@@ -708,11 +604,6 @@ def gen_building():
                                             item_icon = define['change_metadata'][item][var]
                                         case 'equipment':
                                             equipment = define['change_metadata'][item][var]
-                                        #case 'floor_group':
-                                        #    if define['change_metadata'][item][var]:
-                                        #        floor_grp = f"map{floor_nr}_{define['change_metadata'][item][var]}"
-                                        #    else:
-                                        #        floor_grp = None
                                         case 'homekit':
                                             if B_HOMEKIT:
                                                 meta_homekit=define['change_metadata'][item][var]
@@ -738,13 +629,10 @@ def gen_building():
                         # remvoe floor and room from label
                         if floor['name_short']:
                             item_label_short=item_label_short.replace(floor['name_short'],'')
-                        # if room['name_short']:
-                        #     item_label_short=item_label_short.replace(room['name_short'],'')
                         # remove text by item_label pattern
                         item_label_short = re.sub(pattern_items_Label, '', item_label_short)
                         item_label_short=item_label_short.replace('|',' ')
                         item_label_short=item_label_short.replace('  ',' ')
-                        #item_label_short = ' '.join(item_label_short.split())
                         if item_label_short != '':
                             item_label = item_label_short
 
@@ -800,8 +688,6 @@ def gen_building():
                             homekit_accessorie=0
                             homekit_instance+=1
                         if 'influx' in address['Description']:
-                            #print('influx @ ')
-                            #print(address)
                             export_to_influx.append(item_name)
                     while used_addresses:
                         a = used_addresses.pop()
@@ -815,6 +701,25 @@ def gen_building():
                 sitemap += "\n "
         sitemap += "}\n "
     return items,sitemap,things
+
+def data_of_name(data, name, suffix,replace=''):
+    """ Function get data from a Name"""
+    if isinstance(suffix, str):
+        suffix= [suffix,]
+    if isinstance(replace, str):
+        replace= [replace,]
+    for x in data:
+        if x['Group name'] == name:
+            continue
+        for s in suffix:
+            if x['Group name'] == name + s:
+                return x
+            if x['Group name'] == name + ' ' + s:
+                return x
+            for r in replace:
+                if x['Group name'] == name.replace(r,s):
+                    return x
+    return None
 
 def check_unused_addresses():
     """Logs all unused addresses for further manual actions"""
@@ -865,7 +770,6 @@ def export_output(items,sitemap,things, configuration=None):
     except Exception as e:
         logger.error(f"Failed to write things file to {cfg['things_path']}: {e}")
         raise
-    #set_permissions(cfg['things_path'], cfg)
     # export items:
     try:
         items_template =  open('items.template','r', encoding='utf8').read()
@@ -878,7 +782,6 @@ def export_output(items,sitemap,things, configuration=None):
     except Exception as e:
         logger.error(f"Failed to write items file to {cfg['items_path']}: {e}")
         raise
-    #set_permissions(cfg['items_path'], cfg)
     # export sitemap:
     try:
         sitemap_template = open('sitemap.template','r', encoding='utf8').read()
@@ -890,7 +793,6 @@ def export_output(items,sitemap,things, configuration=None):
     except Exception as e:
         logger.error(f"Failed to write sitemap file to {cfg['sitemaps_path']}: {e}")
         raise
-    #set_permissions(cfg['sitemaps_path'], cfg)
 
     #export persistent
     private_persistence = ''
@@ -917,7 +819,6 @@ def export_output(items,sitemap,things, configuration=None):
     except Exception as e:
         logger.error(f"Failed to write persistence file to {cfg['influx_path']}: {e}")
         raise
-    #set_permissions(cfg['influx_path'], cfg)
 
 
     fenster_rule = ''
@@ -954,7 +855,6 @@ def export_output(items,sitemap,things, configuration=None):
 def main(configuration=None):
     """Main function"""
     logging.basicConfig()
-    #read_csvexport()
     items,sitemap,things=gen_building()
     check_unused_addresses()
     export_output(items,sitemap,things, configuration=configuration)

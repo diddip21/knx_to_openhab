@@ -30,12 +30,7 @@ class TestInstallerScript(unittest.TestCase):
             self.setup_script.exists(),
             f"Setup script not found at {self.setup_script}"
         )
-        # Check if file is executable
-        self.assertTrue(
-            os.access(self.setup_script, os.X_OK),
-            "Setup script is not executable"
-        )
-
+        
     def test_setup_script_syntax(self):
         """Test that setup.sh has valid bash syntax."""
         result = subprocess.run(

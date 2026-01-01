@@ -51,8 +51,7 @@ jobs:
       
       - name: Run unit tests
         run: |
-          pytest tests/unit/ -v --tb=short || exit 1
-      
+            pytest tests/ -v --tb=short || exit 1      
       - name: Check Python syntax
         if: always()
         run: |

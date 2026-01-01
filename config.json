@@ -466,7 +466,6 @@
       ]
     }
   },
-  "ets_export": "",
   "fenster_path": "openhab/rules/fenster.rules",
   "general": {
     "FloorNameAsItIs": false,

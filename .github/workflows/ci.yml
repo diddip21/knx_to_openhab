@@ -1,0 +1,153 @@
+name: CI - Multi-Platform Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:  # Allows manual trigger
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }} - Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.9', '3.10', '3.11']
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov pytest-flask pytest-mock
+    
+    - name: Run unit tests
+      run: |
+        pytest tests/unit/ -v --cov=. --cov-report=xml --cov-report=term
+    
+    - name: Run integration tests
+      run: |
+        pytest tests/integration/ -v
+    
+    - name: Run full generation tests
+      run: |
+        pytest tests/test_full_generation.py -v
+    
+    - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  test-arm:
+    name: Test on ARM64 (Raspberry Pi simulation)
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: arm64
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build and test on ARM64
+      run: |
+        docker buildx build --platform linux/arm64 \
+          -f Dockerfile.test \
+          -t knx-openhab-test:arm64 \
+          --load .
+        docker run --platform linux/arm64 knx-openhab-test:arm64
+
+  ui-tests:
+    name: UI Tests with Playwright
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-playwright
+        playwright install chromium
+    
+    - name: Start web application
+      run: |
+        cd web_ui/backend
+        python app.py &
+        sleep 5
+      env:
+        FLASK_ENV: testing
+    
+    - name: Run UI tests
+      run: |
+        pytest tests/ui/ -v --headed
+    
+    - name: Upload test screenshots
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: playwright-screenshots
+        path: tests/ui/screenshots/
+
+  installation-test:
+    name: Test Installation Script on DietPi/Debian
+    runs-on: ubuntu-latest
+    container:
+      image: debian:bookworm-slim
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install basic dependencies
+      run: |
+        apt-get update
+        apt-get install -y curl git sudo
+    
+    - name: Test installation script
+      run: |
+        bash install.sh
+    
+    - name: Verify installation
+      run: |
+        systemctl status knxohui || echo "Service check skipped in container"
+        test -d /opt/knx_to_openhab
+        test -f /opt/knx_to_openhab/requirements.txt
+    
+    - name: Test uninstallation script
+      run: |
+        bash uninstall.sh

@@ -14,8 +14,7 @@ class SceneGenerator(BaseDeviceGenerator):
         """Check if address is a scene device"""
         return address['DatapointType'] == 'DPST-18-1'  # Scene Control
 
-    def generate(self, address: Dict, context: Dict) -> DeviceGeneratorResult:
-        """
+    def generate(self, address: Dict, context: Optional[Dict] = None) -> DeviceGeneratorResult:        """
         Generate OpenHAB configuration for scene.
 
         Context should contain:
@@ -32,6 +31,16 @@ class SceneGenerator(BaseDeviceGenerator):
         Returns:
             DeviceGeneratorResult with items, things and thing_info
         """
+                # Create default context if not provided
+        if context is None:
+            context = {
+                'item_name': address.get('Group_name', '').replace(' ', '_'),
+                'floor_nr': 0,
+                'room_nr': 0,
+                'floor_name': address.get('Floor_name', 'Unknown'),
+                'room_name': address.get('Room_name', 'Unknown')
+            }
+
         result = DeviceGeneratorResult()
 
         # Get configuration

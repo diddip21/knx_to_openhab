@@ -27,3 +27,4 @@ class DimmerGenerator(BaseDeviceGenerator):
         """
             # Create default context if not provided
             if context is None:
+                            context = {}

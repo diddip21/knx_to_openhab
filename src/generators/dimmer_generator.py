@@ -24,8 +24,8 @@ class DimmerGenerator(BaseDeviceGenerator):
         - room_name: Room name
         - item_name: Pre-generated item name
         """
-                # Create default context if not provided
-        if context is None:
+            # Create default context if not provided
+        if ontext is None:
             context = {
                 'item_name': address.get('Group_name', '').replace(' ', '_'),
                 'floor_nr': 0,

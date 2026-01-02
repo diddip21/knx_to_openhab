@@ -65,9 +65,7 @@ knx_to_openhab/
 
 ### Phase 5: Integration
 - [x] `src/building_generator.py` - Orchestriert alle Generatoren
-- [ ] Migration von `gen_building()` Logik
-- [ ] Rückwärtskompatibilität mit altem Code
-
+- [x] Rückwärtskompatibilität mit altem Code
 ### Phase 6: Testing
 - [ ] Unit Tests für jeden Generator
 - [ ] Integration Tests
@@ -166,8 +164,7 @@ generate_openhab_config(knx_project, config)
 - **Phase 6**: ⏳ Geplant (Unit Tests vorhanden, Integration Tests ausstehend)
 - **Phase 7**: ⏳ Geplant
 
-## Beitragen
-
+- **Phase 5**: ✅ Abgeschlossen
 Bei Fragen oder Vorschlägen:
 1. Issue erstellen
 2. PR gegen `refactor/code-restructuring` Branch

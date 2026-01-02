@@ -863,8 +863,8 @@ def main(configuration=None):
         from src import gen_building_new
         items,sitemap,things=gen_building_new(floors, all_addresses, config)
     else:
-        items,sitemap,things=gen_building()    check_unused_addresses()
-    export_output(items,sitemap,things, configuration=configuration)
-
+        items,sitemap,things=gen_building()
+        check_unused_addresses()
+        export_output(items,sitemap,things, configuration=configuration)
 if __name__ == "__main__":
     main()

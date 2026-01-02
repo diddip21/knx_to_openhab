@@ -26,4 +26,4 @@ class DimmerGenerator(BaseDeviceGenerator):
         - item_name: Pre-generated item name
         """
             # Create default context if not provided
-                if context is None:
+        if context is None:

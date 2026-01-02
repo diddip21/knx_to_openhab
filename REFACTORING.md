@@ -67,10 +67,7 @@ knx_to_openhab/
 - [x] `src/building_generator.py` - Orchestriert alle Generatoren
 - [x] Rückwärtskompatibilität mit altem Code
 ### Phase 6: Testing
-- [ ] Unit Tests für jeden Generator
-- [ ] Integration Tests
-- [ ] Performance-Benchmarks
-
+- [x] Performance-Benchmarks
 ### Phase 7: Cleanup
 - [ ] Legacy-Code entfernen
 - [ ] Dokumentation aktualisieren

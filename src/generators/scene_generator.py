@@ -36,7 +36,7 @@ class SceneGenerator(BaseDeviceGenerator):
                 'item_name': address.get('Group_name', '').replace(' ', '_'),
                 'floor_nr': 0,
                 'room_nr': 0,
-                'floor_name': address.get('Floor_name', 'Unknown'),
+                        'floor_name': address.get('Floor_name', 'Unknown'),
                 'room_name': address.get('Room_name', 'Unknown')
             }
 

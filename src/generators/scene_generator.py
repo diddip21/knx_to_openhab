@@ -72,7 +72,7 @@ class SceneGenerator(BaseDeviceGenerator):
 
         return result
 
-            def _get_channel_name(self, address: Dict, channel_type: str) -> str:
+    def _get_channel_name(self, address: Dict, channel_type: str) -> str:
         """Generate channel name from address and type"""
         knx_address = address.get('Address', '').replace('/', '_')
         return f"{knx_address}_{channel_type}"

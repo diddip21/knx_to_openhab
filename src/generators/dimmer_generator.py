@@ -14,7 +14,8 @@ class DimmerGenerator(BaseDeviceGenerator):
         """Check if address is a dimmer device"""
         return address['DatapointType'] == get_datapoint_type('dimmer')
     
-    def generate(self, address: Dict, context: Optional[Dict] = None) -> DeviceGeneratorResult:        """
+    def generate(self, address: Dict, context: Optional[Dict] = None) -> DeviceGeneratorResult:
+            """
         Generate OpenHAB configuration for dimmer.
         
         Context should contain:

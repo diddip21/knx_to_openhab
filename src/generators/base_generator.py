@@ -7,6 +7,75 @@ logger = logging.getLogger(__name__)
 
 
 class DeviceGeneratorResult:
+        
+    # Legacy fields for backwards compatibility with old format
+    def __init__(self):
+        # Core output strings
+        self.thing: str = ""
+        self.item: str = ""
+        self.sitemap: str = ""
+        
+        # Tracking
+        self.used_addresses: List[str] = []
+        self.success: bool = False
+        self.error_message: Optional[str] = None
+        
+        # Additional metadata
+        self.metadata: Dict[str, Any] = {}
+        
+        # Legacy fields that tests expect (will be deprecated)
+        self.item_type: Optional[str] = None
+        self.item_name: Optional[str] = None
+        self.label: Optional[str] = None
+        self.icon: Optional[str] = None
+        self.equipment: Optional[str] = None
+        self.semantic_info: Optional[str] = None
+        self.thing_info: Optional[str] = None
+        self.item_icon: Optional[str] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert result to dictionary format for legacy compatibility"""
+        result = {
+            'thing': self.thing,
+            'item': self.item,
+            'sitemap': self.sitemap,
+            'used_addresses': self.used_addresses,
+            'success': self.success,
+            'error_message': self.error_message,
+            'metadata': self.metadata
+        }
+        
+        # Add legacy fields if set
+        if self.item_type:
+            result['item_type'] = self.item_type
+        if self.item_name:
+            result['item_name'] = self.item_name
+        if self.label:
+            result['label'] = self.label
+        if self.icon:
+            result['icon'] = self.icon
+        if self.item_icon:
+            result['item_icon'] = self.item_icon
+        if self.equipment:
+            result['equipment'] = self.equipment
+        if self.semantic_info:
+            result['semantic_info'] = self.semantic_info
+        if self.thing_info:
+            result['thing_info'] = self.thing_info
+            
+        return result
+    
+    def __getitem__(self, key):
+        """Allow dict-style access for backwards compatibility with tests"""
+        if hasattr(self, key):
+            return getattr(self, key)
+        if key in self.metadata:
+            return self.metadata[key]
+        raise KeyError(f"Key '{key}' not found in result")
+    
+    def __contains__(self, key):
+        """Support 'in' operator for backwards compatibility"""
+        return hasattr(self, key) or key in self.metadata
     """Result of a device generation operation"""
     
     def __init__(self):

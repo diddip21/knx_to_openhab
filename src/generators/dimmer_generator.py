@@ -47,7 +47,7 @@ class DimmerGenerator(BaseDeviceGenerator):
         result.label = f"{basename}"
         result.item_name = item_name
         result.icon = define.get('icon', 'light')
-                result.item_icon = define.get('icon', 'light')
+        result.item_icon = define.get('icon', 'light')
         result.equipment = 'Lightbulb'
         result.semantic_info = '["Light"]'
         

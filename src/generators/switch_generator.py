@@ -23,8 +23,10 @@ class SwitchGenerator(BaseDeviceGenerator):
         Returns:
             Dictionary with 'item_type', 'thing_info', 'metadata', etc.
         """
-        define = self.config['defines']['switch']
-        
+        define = self.config.get('defines', {}).get('switch', {})        
+                if not define:
+            logger.warning(f"No switch definition found in config")
+            return None
         # Find communication object if not provided
         if not co:
             co = self.get_co_by_functiontext(address, define['switch_suffix'])

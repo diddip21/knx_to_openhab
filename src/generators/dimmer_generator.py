@@ -18,7 +18,7 @@ class DimmerGenerator(BaseDeviceGenerator):
         Generate OpenHAB configuration for dimmer.
         
         Context should contain:
-        - floor_nr: Floor number
+        - floor_nr: Floor numbe
         - room_nr: Room number
         - floor_name: Floor name
         - room_name: Room name

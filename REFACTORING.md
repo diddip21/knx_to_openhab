@@ -69,9 +69,9 @@ knx_to_openhab/
 ### Phase 6: Testing
 - [x] Performance-Benchmarks
 ### Phase 7: Cleanup
-- [ ] Legacy-Code entfernen
-- [ ] Dokumentation aktualisieren
-- [ ] Migration Guide für Nutzer
+- [x] Legacy-Code entfernen
+- [x] Dokumentation aktualisieren
+- [x] Migration Guide für Nutzer
 
 ## Vorteile der neuen Struktur
 
@@ -157,9 +157,9 @@ generate_openhab_config(knx_project, config)
 - **Phase 2**: ✅ Abgeschlossen- **Ph
 - **Phase 3**: ✅ Abgeschlossen
 - **Phase 4**: ✅ Abgeschlossen
-- **Phase 5**: 🔄 In Arbeit (building_generator.py implementiert, Integration mit Legacy-Code ausstehend)
-- **Phase 6**: ⏳ Geplant (Unit Tests vorhanden, Integration Tests ausstehend)
-- **Phase 7**: ⏳ Geplant
+- **Phase 5**: ✅ Abgeschlossen
+- **Phase 6**: ✅ Abgeschlossen
+- **Phase 7**: ✅ Abgeschlossen
 
 - **Phase 5**: ✅ Abgeschlossen
 Bei Fragen oder Vorschlägen:

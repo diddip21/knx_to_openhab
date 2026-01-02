@@ -9,6 +9,9 @@ import queue
 import subprocess
 import traceback
 import io
+import logging
+
+logger = logging.getLogger(__name__)
 from concurrent.futures import ThreadPoolExecutor
 from .storage import save_job, load_jobs, save_jobs, ensure_dirs
 

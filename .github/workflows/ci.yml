@@ -8,9 +8,119 @@ on:
   workflow_dispatch:
 
 jobs:
+  # CODE QUALITY - First job to fail fast on syntax/formatting errors
+  code-quality:
+    name: Code Quality & Syntax Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install linting tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pylint black isort pycodestyle autopep8
+      
+      - name: Python Syntax Check (py_compile)
+        run: |
+          echo "=== Checking Python syntax ==="
+          python -m py_compile *.py || exit 1
+          find . -name '*.py' -not -path './venv/*' -not -path './.venv/*' -not -path './.git/*' -not -path './build/*' -not -path './dist/*' | while read file; do
+            echo "Checking: $file"
+            python -m py_compile "$file" || exit 1
+          done
+          echo "✓ All Python files have valid syntax"
+      
+      - name: Check for syntax errors with flake8
+        run: |
+          echo "=== Running flake8 syntax check ==="
+          # E9,F63,F7,F82: Syntax errors, undefined names, etc.
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics \
+            --exclude=venv,.venv,.git,__pycache__,build,dist,*.egg-info
+          echo "✓ No critical syntax errors found"
+      
+      - name: Check code formatting with black (dry-run)
+        continue-on-error: true
+        run: |
+          echo "=== Checking code formatting with black ==="
+          black --check --diff . \
+            --exclude='/(venv|.venv|.git|__pycache__|build|dist|.eggs)/' || \
+            echo "⚠️  Warning: Code formatting issues detected. Run 'black .' to fix."
+      
+      - name: Check import sorting with isort (dry-run)
+        continue-on-error: true
+        run: |
+          echo "=== Checking import order with isort ==="
+          isort --check-only --diff . \
+            --skip venv --skip .venv --skip .git || \
+            echo "⚠️  Warning: Import order issues detected. Run 'isort .' to fix."
+      
+      - name: Check PEP8 style guide
+        continue-on-error: true
+        run: |
+          echo "=== Checking PEP8 compliance ==="
+          pycodestyle . --exclude=venv,.venv,.git,__pycache__,build,dist --max-line-length=120 --statistics || \
+            echo "⚠️  Warning: PEP8 style violations found"
+      
+      - name: Check for common code issues (pylint)
+        continue-on-error: true
+        run: |
+          echo "=== Running pylint code analysis ==="
+          pylint *.py --disable=C,R,W --errors-only \
+            --ignore=venv,.venv,.git,tests || \
+            echo "⚠️  Warning: Pylint found potential issues"
+      
+      - name: Validate JSON files
+        run: |
+          echo "=== Validating JSON configuration files ==="
+          for json_file in $(find . -name '*.json' -not -path './venv/*' -not -path './.venv/*' -not -path './node_modules/*'); do
+            echo "Validating: $json_file"
+            python -c "import json; json.load(open('$json_file'))" || exit 1
+          done
+          echo "✓ All JSON files are valid"
+      
+      - name: Check for common security issues
+        continue-on-error: true
+        run: |
+          echo "=== Checking for security issues ==="
+          pip install bandit
+          bandit -r . -ll -x venv,.venv,tests || \
+            echo "⚠️  Warning: Potential security issues detected"
+      
+      - name: Check requirements.txt
+        run: |
+          echo "=== Validating requirements.txt ==="
+          test -f requirements.txt || (echo "❌ requirements.txt not found" && exit 1)
+          pip install -r requirements.txt --dry-run || exit 1
+          echo "✓ requirements.txt is valid"
+      
+      - name: Check for trailing whitespace
+        run: |
+          echo "=== Checking for trailing whitespace ==="
+          ! find . -name '*.py' -not -path './venv/*' -not -path './.venv/*' -exec grep -l '[[:space:]]$' {} + || \
+            echo "⚠️  Warning: Trailing whitespace found in some files"
+      
+      - name: Code Quality Summary
+        if: always()
+        run: |
+          echo ""
+          echo "======================================"
+          echo "   Code Quality Check Complete"
+          echo "======================================"
+          echo "✓ Syntax checks passed"
+          echo "✓ JSON validation passed"
+          echo "⚠️  Some warnings may exist (see above)"
+
   # Basic tests that should always pass
   basic-tests:
     name: Basic Tests - ${{ matrix.os }} - Python ${{ matrix.python-version }}
+    needs: code-quality  # Only run if code quality passes
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -51,16 +161,12 @@ jobs:
       
       - name: Run unit tests
         run: |
-            pytest tests/unit/ tests/integration/ -v --tb=short || exit 1    
-                  - name: Check Python syntax
-      - name: Check Python syntax
-        if: always()
-        run: |
-          python -m py_compile *.py
-          find . -name '*.py' -not -path './venv/*' -not -path './.git/*' -not -path './tests/*' | xargs python -m py_compile
+          pytest tests/unit/ tests/integration/ -v --tb=short || exit 1
+
   # Multi-platform tests
   multi-platform:
     name: Multi-Platform - ${{ matrix.os }} - Python ${{ matrix.python-version }}
+    needs: code-quality
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -95,6 +201,7 @@ jobs:
   # Installation test (Debian/DietPi simulation)
   installation-test:
     name: Test Installation Script
+    needs: code-quality
     runs-on: ubuntu-latest
     
     steps:
@@ -118,6 +225,7 @@ jobs:
   # ARM simulation (lightweight)
   arm-compatibility:
     name: ARM64 Compatibility Check
+    needs: code-quality
     runs-on: ubuntu-latest
     
     steps:

@@ -102,6 +102,7 @@ class BaseDeviceGenerator(ABC):
         self.config = config
         self.all_addresses = all_addresses
         self.address_cache: Dict[str, Optional[Dict]] = {}
+                    self.used_addresses_set: set = set()  # Track which addresses have been used
         
     @abstractmethod
     def can_handle(self, address: Dict) -> bool:
@@ -290,3 +291,24 @@ class BaseDeviceGenerator(ABC):
                 return co
         
         return None
+
+    def is_address_used(self, address: str) -> bool:
+        """
+        Check if an address has been marked as used.
+        
+        Args:
+            address: KNX group address to check
+            
+        Returns:
+            True if address has been used
+        """
+        return address in self.used_addresses_set
+    
+    def mark_address_used(self, address: str):
+        """
+        Mark an address as used.
+        
+        Args:
+            address: KNX group address to mark as used
+        """
+        self.used_addresses_set.add(address)

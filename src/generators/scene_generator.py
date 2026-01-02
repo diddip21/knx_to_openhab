@@ -32,7 +32,7 @@ class SceneGenerator(BaseDeviceGenerator):
             DeviceGeneratorResult with items, things and thing_info
         """
                 # Create default context if not provided
-                    if context is None:
+                            if context is None:
             context = {
                 'item_name': address.get('Group_name', '').replace(' ', '_'),
                 'floor_nr': 0,

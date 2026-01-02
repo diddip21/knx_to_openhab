@@ -15,7 +15,7 @@ class DimmerGenerator(BaseDeviceGenerator):
         return address['DatapointType'] == get_datapoint_type('dimmer')
     
     def generate(self, address: Dict, context: Optional[Dict] = None) -> DeviceGeneratorResult:
-            """
+        """
         Generate OpenHAB configuration for dimmer.
         
         Context should contain:
@@ -25,9 +25,9 @@ class DimmerGenerator(BaseDeviceGenerator):
         - room_name: Room name
         - item_name: Pre-generated item name
         """
-            # Create default context if not provided
-            if context is None:
-                            context = {}
+        # Create default context if not provided
+        if context is None:
+            context = {}
                         
         # Create result
         result = DeviceGeneratorResult()

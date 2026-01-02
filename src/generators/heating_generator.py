@@ -33,7 +33,7 @@ class HeatingGenerator(BaseDeviceGenerator):
                 logger.debug(f"No valid CO found for heating {address['Address']}")
                 return None
 
-        basename = address['Group_name']
+        basename = address.get('Group_name', 'Heating')
 
         # Find status address (optional)
         status = None  # For now, set status to None

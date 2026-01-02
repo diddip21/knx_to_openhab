@@ -76,16 +76,6 @@ class DeviceGeneratorResult:
     def __contains__(self, key):
         """Support 'in' operator for backwards compatibility"""
         return hasattr(self, key) or key in self.metadata
-    """Result of a device generation operation"""
-    
-    def __init__(self):
-        self.thing: str = ""
-        self.item: str = ""
-        self.sitemap: str = ""
-        self.used_addresses: List[str] = []
-        self.success: bool = False
-        self.error_message: Optional[str] = None
-        self.metadata: Dict[str, Any] = {}
 
 
 class BaseDeviceGenerator(ABC):

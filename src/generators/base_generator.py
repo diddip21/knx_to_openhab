@@ -102,7 +102,7 @@ class BaseDeviceGenerator(ABC):
         self.config = config
         self.all_addresses = all_addresses
         self.address_cache: Dict[str, Optional[Dict]] = {}
-                    self.used_addresses_set: set = set()  # Track which addresses have been used
+                self.used_addresses_set: set = set()  # Track which addresses have been used
         
     @abstractmethod
     def can_handle(self, address: Dict) -> bool:

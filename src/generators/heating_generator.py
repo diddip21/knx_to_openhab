@@ -25,8 +25,7 @@ class HeatingGenerator(BaseDeviceGenerator):
         Returns:
             Dictionary with 'item_type', 'thing_info', 'metadata', etc.
         """
-        define = self.config['defines']['heating']
-
+        define = self.config.get('defines', {}).get('heating', {})
         # Find communication object if not provided
         if not co:
             co = self.get_co_by_functiontext(address, define['level_suffix'])

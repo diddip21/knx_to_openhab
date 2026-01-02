@@ -5,6 +5,9 @@ import logging
 import shutil
 from config import config, datapoint_mappings,normalize_string
 from utils import get_datapoint_type
+
+# Feature flag for using refactored code
+USE_REFACTORED_GENERATORS = True  # Set to True to use new architecture
 logger = logging.getLogger(__name__)
 
 pattern_items_Name: str = config['regexpattern']['items_Name']
@@ -855,8 +858,12 @@ def export_output(items,sitemap,things, configuration=None):
 def main(configuration=None):
     """Main function"""
     logging.basicConfig()
-    items,sitemap,things=gen_building()
-    check_unused_addresses()
+    # Use refactored or legacy implementation
+    if USE_REFACTORED_GENERATORS:
+        from src import gen_building_new
+        items,sitemap,things=gen_building_new(floors, all_addresses, config)
+    else:
+        items,sitemap,things=gen_building()    check_unused_addresses()
     export_output(items,sitemap,things, configuration=configuration)
 
 if __name__ == "__main__":

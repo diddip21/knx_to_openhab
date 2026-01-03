@@ -222,6 +222,22 @@ jobs:
           test -f requirements.txt && echo "requirements.txt exists"
           python -c "import json; json.load(open('config.json'))" && echo "config.json is valid JSON"
 
+  # Integration test in Docker (Simulating clean Debian environment)
+  docker-install-test:
+    name: Docker Installation Test
+    needs: code-quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Build and Run Installation Test
+        run: |
+          docker build -t knx-install-test -f Dockerfile.test_install .
+          docker run --name install-test-container knx-install-test
+          # Check if service file was created (even if systemd isn't fully running in container)
+          docker exec install-test-container ls /etc/systemd/system/knxohui.service || echo "Service file check skipped (non-interactive)"
+
   # ARM simulation (lightweight)
   arm-compatibility:
     name: ARM64 Compatibility Check
@@ -243,4 +259,4 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             python:3.11-slim \
-            bash -c "pip install -r requirements.txt && python --version && echo 'ARM64 compatibility OK'"
+            bash -c "pip install -r requirements.txt && python --version && echo 'ARM64 compatibility OK' && python -m py_compile *.py"

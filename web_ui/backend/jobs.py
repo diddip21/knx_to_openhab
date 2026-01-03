@@ -771,8 +771,22 @@ class JobManager:
                         target = os.path.abspath(target)
                     
                     os.makedirs(os.path.dirname(target), exist_ok=True)
+                    logger.info(f"Deploying {staged_path} -> {target}")
                     shutil.copy2(staged_path, target)
-                    deployed_count += 1
+                    
+                    # Verify the file was copied correctly
+                    if os.path.exists(target):
+                        staged_size = os.path.getsize(staged_path)
+                        target_size = os.path.getsize(target)
+                        if staged_size == target_size:
+                            logger.info(f"Successfully verified deployment of {os.path.basename(target)}")
+                            deployed_count += 1
+                        else:
+                            logger.error(f"Size mismatch after deploying {target}: {staged_size} vs {target_size}")
+                            raise Exception(f"Deployment verification failed for {target}: size mismatch")
+                    else:
+                        logger.error(f"Target file missing after copy: {target}")
+                        raise Exception(f"Deployment legacy failed for {target}: file not found after copy")
                 else:
                     logger.warning(f"Staged file missing: {staged_path}")
             

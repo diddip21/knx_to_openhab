@@ -1,0 +1,41 @@
+FROM debian:bullseye-slim
+
+# Avoid prompts from apt
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Update and install basic tools
+RUN apt-get update && apt-get install -y \
+    sudo \
+    curl \
+    git \
+    lsb-release \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a non-root test user
+RUN useradd -m -s /bin/bash tester && \
+    echo "tester ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Create /etc/os-release if not exists (should exist in debian)
+# The script checks for /etc/os-release
+
+WORKDIR /home/tester/knx_to_openhab
+COPY . .
+RUN chown -R tester:tester /home/tester/knx_to_openhab
+
+USER tester
+
+# Run the installer
+# We simulate the git checkout by having the files already there
+# But install.sh tries to clone. We can bypass the clone part if we modify it or
+# we let it clone from the local directory.
+# Actually, let's just run it and see if it can handle a local mock.
+
+# To test the actual install.sh without needing a real repo URL at start,
+# we can point it to the local directory or just run setup.sh directly.
+# The user asked about install.sh, so let's try to make it work.
+
+# We will run the install instructions from README/User request:
+# curl -sSL ... | bash
+# But since we are local, we can just run ./install.sh
+
+CMD ["/bin/bash", "-c", "chmod +x install.sh && ./install.sh"]

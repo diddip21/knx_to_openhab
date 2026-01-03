@@ -97,9 +97,13 @@ echo "Installing systemd units and timers"
 sudo cp installer/knxohui.service /etc/systemd/system/knxohui.service
 sudo cp installer/knxohui-backup-cleanup.service /etc/systemd/system/knxohui-backup-cleanup.service
 sudo cp installer/knxohui-backup-cleanup.timer /etc/systemd/system/knxohui-backup-cleanup.timer
-sudo systemctl daemon-reload
-sudo systemctl enable --now knxohui.service || true
-sudo systemctl enable --now knxohui-backup-cleanup.timer || true
+if command -v systemctl >/dev/null 2>&1; then
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now knxohui.service || true
+    sudo systemctl enable --now knxohui-backup-cleanup.timer || true
+else
+    echo "Warning: systemctl not found, skipping service activation (common in Docker)"
+fi
 
 echo "Installation complete. Services installed:"
 echo "  - knxohui.service (Web UI)"

@@ -24,17 +24,21 @@ log_info "Starting uninstallation..."
 
 # 1. Stop and disable services
 log_info "Stopping services..."
-sudo systemctl stop knxohui.service || true
-sudo systemctl stop knxohui-backup-cleanup.timer || true
-sudo systemctl disable knxohui.service || true
-sudo systemctl disable knxohui-backup-cleanup.timer || true
+if command -v systemctl >/dev/null 2>&1; then
+    sudo systemctl stop knxohui.service || true
+    sudo systemctl stop knxohui-backup-cleanup.timer || true
+    sudo systemctl disable knxohui.service || true
+    sudo systemctl disable knxohui-backup-cleanup.timer || true
+fi
 
 # 2. Remove systemd units
 log_info "Removing systemd units..."
 sudo rm -f /etc/systemd/system/knxohui.service
 sudo rm -f /etc/systemd/system/knxohui-backup-cleanup.service
 sudo rm -f /etc/systemd/system/knxohui-backup-cleanup.timer
-sudo systemctl daemon-reload
+if command -v systemctl >/dev/null 2>&1; then
+    sudo systemctl daemon-reload
+fi
 
 # 3. Remove sudoers file
 log_info "Removing sudoers configuration..."

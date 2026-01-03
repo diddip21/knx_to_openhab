@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Ensure USER is set (required for some environments like Docker)
+USER=${USER:-$(id -un)}
+
 # Simple installer for DietPi / Raspberry Pi (no docker)
 BASE="/opt/knx_to_openhab"
 SERVICE_USER="knxohui"

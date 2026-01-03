@@ -4,6 +4,9 @@
 
 set -euo pipefail
 
+# Ensure USER is set (required for some environments like Docker)
+USER=${USER:-$(id -un)}
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'

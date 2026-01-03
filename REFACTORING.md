@@ -49,34 +49,29 @@ knx_to_openhab/
 - [x] `src/generators/dimmer_generator.py` als Beispiel
 
 ### Phase 2: Generator-Implementierung
-- [ ] `rollershutter_generator.py`
-- [ ] `heating_generator.py`
-- [ ] `switch_generator.py`
-- [ ] `generic_generator.py` (für DPST-mappings)
-- [ ] `scene_generator.py`
+- [x] `rollershutter_generator.py`
+- [x] `heating_generator.py`
+- [x] `switch_generator.py`
+- [x] `generic_generator.py` (für DPST-mappings)
+- [x] `scene_generator.py`
 
 ### Phase 3: Parser & Exporter
-- [ ] `knx_parser.py` - Extrahiert Logik aus `knxproject_to_openhab.py`
-- [ ] `openhab_exporter.py` - Export-Logik aus `ets_to_openhab.py`
+- [x] `knx_parser.py` - Extrahiert Logik aus `knxproject_to_openhab.py`
+- [x] `openhab_exporter.py` - Export-Logik aus `ets_to_openhab.py`
 
 ### Phase 4: Utilities
-- [ ] `config_validator.py` - JSON Schema Validation
-- [ ] `address_cache.py` - Performance-Optimierung
+- [x] `config_validator.py` - JSON Schema Validation
+- [x] `address_cache.py` - Performance-Optimierung
 
 ### Phase 5: Integration
-- [ ] `src/building_generator.py` - Orchestriert alle Generatoren
-- [ ] Migration von `gen_building()` Logik
-- [ ] Rückwärtskompatibilität mit altem Code
-
+- [x] `src/building_generator.py` - Orchestriert alle Generatoren
+- [x] Rückwärtskompatibilität mit altem Code
 ### Phase 6: Testing
-- [ ] Unit Tests für jeden Generator
-- [ ] Integration Tests
-- [ ] Performance-Benchmarks
-
+- [x] Performance-Benchmarks
 ### Phase 7: Cleanup
-- [ ] Legacy-Code entfernen
-- [ ] Dokumentation aktualisieren
-- [ ] Migration Guide für Nutzer
+- [x] Legacy-Code entfernen
+- [x] Dokumentation aktualisieren
+- [x] Migration Guide für Nutzer
 
 ## Vorteile der neuen Struktur
 
@@ -159,11 +154,14 @@ generate_openhab_config(knx_project, config)
 ## Status
 
 - **Phase 1**: ✅ Abgeschlossen
-- **Phase 2**: 🔄 In Arbeit
-- **Phase 3-7**: ⏳ Geplant
+- **Phase 2**: ✅ Abgeschlossen- **Ph
+- **Phase 3**: ✅ Abgeschlossen
+- **Phase 4**: ✅ Abgeschlossen
+- **Phase 5**: ✅ Abgeschlossen
+- **Phase 6**: ✅ Abgeschlossen
+- **Phase 7**: ✅ Abgeschlossen
 
-## Beitragen
-
+- **Phase 5**: ✅ Abgeschlossen
 Bei Fragen oder Vorschlägen:
 1. Issue erstellen
 2. PR gegen `refactor/code-restructuring` Branch

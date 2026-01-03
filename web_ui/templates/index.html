@@ -101,10 +101,6 @@
           <!-- General Tab -->
           <div id="tab-general" class="tab-content active">
             <div class="form-group">
-              <label>ETS Export Path</label>
-              <input type="text" id="conf-ets-export" class="form-control">
-            </div>
-            <div class="form-group">
               <label>Items Path</label>
               <input type="text" id="conf-items-path" class="form-control">
             </div>
@@ -124,6 +120,10 @@
               <label>Fenster Rules Path</label>
               <input type="text" id="conf-fenster-path" class="form-control">
             </div>
+            <div class="form-group">
+              <label>Transform Path</label>
+              <input type="text" id="conf-transform-path" class="form-control">
+            </div>
 
             <fieldset>
               <legend>Naming Conventions</legend>
@@ -142,6 +142,16 @@
             <div class="form-group">
               <label>Unknown Room Name</label>
               <input type="text" id="conf-unknown-room" class="form-control">
+            </div>
+            <div class="form-group">
+              <label>Floor Name Prefix</label>
+              <input type="text" id="conf-floor-prefix" class="form-control">
+              <small>Default: =</small>
+            </div>
+            <div class="form-group">
+              <label>Room Name Prefix</label>
+              <input type="text" id="conf-room-prefix" class="form-control">
+              <small>Default: +</small>
             </div>
           </div>
 

@@ -218,21 +218,25 @@ fi
 
 # Restart the service
 log "Restarting $SERVICE_NAME..."
-if ! sudo systemctl restart "$SERVICE_NAME"; then
-    log "ERROR: Failed to restart service"
-    log "Service may need manual restart: sudo systemctl restart $SERVICE_NAME"
-    exit 1
-fi
-
-# Wait a moment for service to start
-sleep 2
-
-# Check if service is running
-if sudo systemctl is-active --quiet "$SERVICE_NAME"; then
-    log "Service restarted successfully"
+if command -v systemctl >/dev/null 2>&1; then
+    if ! sudo systemctl restart "$SERVICE_NAME"; then
+        log "ERROR: Failed to restart service"
+        log "Service may need manual restart: sudo systemctl restart $SERVICE_NAME"
+        exit 1
+    fi
+    
+    # Wait a moment for service to start
+    sleep 2
+    
+    # Check if service is running
+    if sudo systemctl is-active --quiet "$SERVICE_NAME"; then
+        log "Service restarted successfully"
+    else
+        log "WARNING: Service may not be running properly"
+        log "Check status with: sudo systemctl status $SERVICE_NAME"
+    fi
 else
-    log "WARNING: Service may not be running properly"
-    log "Check status with: sudo systemctl status $SERVICE_NAME"
+    log "Warning: systemctl not found, skipping service restart"
 fi
 
 log "========================================="

@@ -4,6 +4,9 @@
 
 set -euo pipefail
 
+# Ensure USER is set (required for some environments like Docker)
+USER=${USER:-$(id -un)}
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -12,9 +15,9 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-REPO_URL="https://github.com/diddip21/knx_to_openhab.git"
+REPO_URL="${REPO_URL:-https://github.com/diddip21/knx_to_openhab.git}"
 INSTALL_DIR="/opt/knx_to_openhab"
-BRANCH="main"
+BRANCH="${BRANCH:-main}"
 
 # Helper functions
 log_info() {

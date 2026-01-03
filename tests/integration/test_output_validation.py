@@ -18,7 +18,8 @@ sys.path.append(PROJECT_ROOT)
 
 import knxproject_to_openhab
 import ets_to_openhab
-from config import config
+import config
+import importlib
 
 # Paths
 TESTS_DIR = Path(__file__).parent.parent
@@ -29,7 +30,12 @@ TEST_PROJECT = TESTS_DIR / "Charne.knxproj.json"
 class TestOutputValidation:
     
     def setup_method(self):
-        """Setup for each test - reset global state"""
+        """Setup for each test - reset global state and reload modules"""
+        # Ensure fresh state for each test by reloading modules that hold state
+        importlib.reload(config)
+        importlib.reload(ets_to_openhab)
+        importlib.reload(knxproject_to_openhab)
+        
         # Reset module-level variables
         ets_to_openhab.floors = []
         ets_to_openhab.all_addresses = []
@@ -39,9 +45,15 @@ class TestOutputValidation:
         ets_to_openhab.export_to_influx = []
         
         # Set config defaults
-        config['general']['FloorNameAsItIs'] = False
-        config['general']['RoomNameAsItIs'] = False
-        config['general']['addMissingItems'] = True
+        config.config['general']['FloorNameAsItIs'] = False
+        config.config['general']['RoomNameAsItIs'] = False
+        config.config['general']['addMissingItems'] = True
+        
+        # New fields added recently
+        config.config['general']['item_Floor_nameshort_prefix'] = '='
+        config.config['general']['item_Room_nameshort_prefix'] = '+'
+        config.config['general']['unknown_floorname'] = 'unknown'
+        config.config['general']['unknown_roomname'] = 'unknown'
         
         knxproject_to_openhab.FloorNameAsItIs = False
         knxproject_to_openhab.RoomNameAsItIs = False
@@ -71,23 +83,23 @@ class TestOutputValidation:
         
         # Temporarily override config paths to write to tmp_path
         original_paths = {
-            'items_path': config['items_path'],
-            'things_path': config['things_path'],
-            'sitemaps_path': config['sitemaps_path'],
-            'influx_path': config['influx_path']
+            'items_path': config.config['items_path'],
+            'things_path': config.config['things_path'],
+            'sitemaps_path': config.config['sitemaps_path'],
+            'influx_path': config.config['influx_path']
         }
         
-        config['items_path'] = str(tmp_path / "knx.items")
-        config['things_path'] = str(tmp_path / "knx.things")
-        config['sitemaps_path'] = str(tmp_path / "knx.sitemap")
-        config['influx_path'] = str(tmp_path / "influxdb.persist")
+        config.config['items_path'] = str(tmp_path / "knx.items")
+        config.config['things_path'] = str(tmp_path / "knx.things")
+        config.config['sitemaps_path'] = str(tmp_path / "knx.sitemap")
+        config.config['influx_path'] = str(tmp_path / "influxdb.persist")
         
         # Export files
         ets_to_openhab.export_output(items, sitemap, things)
         
         # Restore original paths
         for key, value in original_paths.items():
-            config[key] = value
+            config.config[key] = value
         
         return tmp_path
 

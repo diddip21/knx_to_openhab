@@ -93,7 +93,7 @@ def test_generate_basic_dimmer(config, dimmer_address, all_addresses):
     assert result.item_type == 'Dimmer'
     assert result.equipment == 'Lightbulb'
     assert result.semantic_info == '["Light"]'
-    assert result.item_icon == 'light' or result.icon == 'light'
+    assert result.item_icon == 'light'
     
     # Test thing_info contains addresses
     assert '1/2/3' in result.thing_info
@@ -101,7 +101,7 @@ def test_generate_basic_dimmer(config, dimmer_address, all_addresses):
 
 
 def test_generate_incomplete_dimmer(config, all_addresses):
-    """Test dimmer without status address returns None."""
+    """Test dimmer without status address returns unsuccessful result or None."""
     incomplete_dimmer = {
         'Address': '1/2/5',
         'Group_name': 'Incomplete Dimmer',
@@ -116,7 +116,8 @@ def test_generate_incomplete_dimmer(config, all_addresses):
     generator = DimmerGenerator(config, [incomplete_dimmer])
     result = generator.generate(incomplete_dimmer)
     
-    assert result is None
+    # Current implementation returns None for incomplete dimmer
+    assert result is None or (result is not None and result.success is False)
 
 
 def test_generate_with_homekit(config, dimmer_address, all_addresses):
@@ -126,8 +127,9 @@ def test_generate_with_homekit(config, dimmer_address, all_addresses):
     result = generator.generate(dimmer_address)
     
     assert result is not None
+    assert result.success is True
     assert 'homekit' in result.metadata
-    assert 'Lighting' in result.metadata['homekit']
+    assert result.metadata['homekit'] == 'Lighting'
 
 
 def test_mark_address_used(config, dimmer_address, all_addresses):

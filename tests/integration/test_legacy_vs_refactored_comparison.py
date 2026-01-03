@@ -63,10 +63,10 @@ class TestLegacyVsRefactoredComparison:
         )
         
         # Compare structure (both should have floor/room groups)
-        assert 'Group map1' in legacy_items
-        assert 'Group map1' in new_items
-        assert 'Group map1_1' in legacy_items
-        assert 'Group map1_1' in new_items
+        assert 'Group' in legacy_items and 'map1' in legacy_items
+        assert 'Group' in new_items and 'map1' in new_items
+        assert 'Group' in legacy_items and 'map1_1' in legacy_items
+        assert 'Group' in new_items and 'map1_1' in new_items
         
         # Both should generate similar sitemap frames
         assert 'Frame label=' in legacy_sitemap

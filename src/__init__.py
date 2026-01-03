@@ -34,6 +34,13 @@ def gen_building_new(floors, all_addresses, config):
     # Generate the building configuration
     items, sitemap, things = building_gen.generate(floors)
     
+    # Remove used addresses from all_addresses for backward compatibility
+    # This allows check_unused_addresses() in ets_to_openhab to work correctly
+    for addr_str in building_gen.used_addresses:
+        found = next((x for x in all_addresses if x['Address'] == addr_str), None)
+        if found:
+            all_addresses.remove(found)
+            
     return items, sitemap, things
 
 

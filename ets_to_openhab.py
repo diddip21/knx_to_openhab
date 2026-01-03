@@ -728,7 +728,7 @@ def check_unused_addresses():
     """Logs all unused addresses for further manual actions"""
     # process all addresses which were not used
     for address in all_addresses:
-        logger.debug("unused: %s: %s with type %s",address['Address'],address['Group name'],address['DatapointType'])
+        logger.info("unused: %s: %s with type %s",address['Address'],address['Group name'],address['DatapointType'])
 
 def set_permissions(file_path, configuration=None):
     """
@@ -864,7 +864,8 @@ def main(configuration=None):
         items,sitemap,things=gen_building_new(floors, all_addresses, config)
     else:
         items,sitemap,things=gen_building()
-        check_unused_addresses()
-        export_output(items,sitemap,things, configuration=configuration)
+        
+    check_unused_addresses()
+    export_output(items,sitemap,things, configuration=configuration)
 if __name__ == "__main__":
     main()

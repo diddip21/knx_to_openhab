@@ -45,30 +45,27 @@ class SceneGenerator(BaseDeviceGenerator):
         result = DeviceGeneratorResult()
 
         # Get configuration
-        define = self.config['defines']['scene']
+        define = self.config.get('defines', {}).get('scene', {})
 
         # Extract base information
-        basename = address['Group_name']
+        basename = address.get('Group_name') or address.get('Group name', 'Scene')
         item_name = context.get('item_name', basename.replace(' ', '_'))
 
-        # Scene devices are typically buttons/triggers
+        # Set result properties
         result.item_type = 'Number'
         result.label = f"{basename}"
         result.item_name = item_name
-
-        # Add icon
         result.icon = define.get('icon', 'scene')
-
-        # Add channel
-        result.channel_id = self._get_channel_name(address, 'trigger')
+        result.item_icon = define.get('icon', 'scene')
+        result.success = True
+        
+        main_addr = address.get('Address', '')
+        result.used_addresses.append(main_addr)
 
         # Scene triggering
         result.thing_info = {
-            'control': self._format_ga(address.get('Address', ''))
+            'control': main_addr.replace('/', ':')
         }
-
-        # Add to groups
-        self._add_to_groups(result, context, define)
 
         return result
 

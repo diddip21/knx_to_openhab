@@ -39,7 +39,7 @@ class DimmerGenerator(BaseDeviceGenerator):
             return result
         
         # Extract base information
-        basename = address.get('Group_name', 'Dimmer')
+        basename = address.get('Group_name') or address.get('Group name', 'Dimmer')
         item_name = context.get('item_name', basename.replace(' ', '_'))
         
         # Set result properties
@@ -55,7 +55,8 @@ class DimmerGenerator(BaseDeviceGenerator):
         status_address = self.find_related_address(
             address.get('communication_object', [{}])[0] if address.get('communication_object') else {},
             'status_suffix',
-            define
+            define,
+            base_address_str=address.get('Address')
         )
         
         # Build thing_info string
@@ -63,14 +64,14 @@ class DimmerGenerator(BaseDeviceGenerator):
         if status_address:
             status_addr = status_address.get('Address', '')
             result.thing_info = f'position="{main_addr}" state="{status_addr}"'
+            result.used_addresses.append(status_addr)
+            result.success = True
         else:
-            # No status address found - return None as test expects
+            # No status address found - return unsuccessful but NOT None
+            result.thing_info = f'position="{main_addr}"'
             result.success = False
-            return None
         
-        # Mark as successful
-        result.success = True
-        result.used_addresses.append(address.get('Address', ''))
+        result.used_addresses.append(main_addr)
 
                 # Add homekit metadata if enabled
         if self.config.get('homekit_enabled', False):

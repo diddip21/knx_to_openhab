@@ -4,9 +4,8 @@ openhab/*
 *.knxproj*
 example.ini
 .vscode/*
-__pycache__/*
+__pycache__/
 .pytest_cache/
-*/*/__pycache__/*
 .venv*/
 venv/
 
@@ -16,6 +15,4 @@ var/backups/knx_to_openhab/
 
 # Test data
 tests/test_project.json
-
-
 web_ui/backend/server.log

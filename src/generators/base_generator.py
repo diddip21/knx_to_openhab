@@ -71,7 +71,17 @@ class DeviceGeneratorResult:
             return getattr(self, key)
         if key in self.metadata:
             return self.metadata[key]
+        # Map some common keys if they are missing
+        if key == 'item_icon' and hasattr(self, 'icon'):
+            return getattr(self, 'icon')
         raise KeyError(f"Key '{key}' not found in result")
+
+    def get(self, key, default=None):
+        """Implement dict.get() for backwards compatibility"""
+        try:
+            return self.__getitem__(key)
+        except (KeyError, AttributeError):
+            return default
     
     def __contains__(self, key):
         """Support 'in' operator for backwards compatibility"""
@@ -121,28 +131,36 @@ class BaseDeviceGenerator(ABC):
         """
         pass
     
-    def find_related_address(self, base_address: Dict, config_key: str, 
-                            define: Dict) -> Optional[Dict]:
+    def find_related_address(self, co: Dict, config_key: str, 
+                            define: Dict, base_address_str: Optional[str] = None) -> Optional[Dict]:
         """
         Find related address using enhanced DPT and flag filtering.
         
         This replaces the old get_address_from_dco_enhanced logic.
         
         Args:
-            base_address: Base KNX address to search from
+            co: Communication object to search from
             config_key: Configuration key (e.g., 'status_suffix')
             define: Device definition from config
+            base_address_str: Optional base address string for caching
             
         Returns:
             Related address or None
         """
-        cache_key = f"{base_address['Address']}_{config_key}"
+        # Use Address if present in co, otherwise use base_address_str, otherwise don't cache
+        addr_for_cache = co.get('Address') or base_address_str
         
-        if cache_key in self.address_cache:
-            return self.address_cache[cache_key]
+        if addr_for_cache:
+            cache_key = f"{addr_for_cache}_{config_key}"
+            if cache_key in self.address_cache:
+                return self.address_cache[cache_key]
         
-        result = self._search_related_address(base_address, config_key, define)
-        self.address_cache[cache_key] = result
+        result = self._search_related_address(co, config_key, define)
+        
+        if addr_for_cache:
+            cache_key = f"{addr_for_cache}_{config_key}"
+            self.address_cache[cache_key] = result
+            
         return result
     
     def _search_related_address(self, co: Dict, config_key: str, 
@@ -153,7 +171,8 @@ class BaseDeviceGenerator(ABC):
         dpts_key = config_key.replace('_suffix', '_dpts')
         flags_key = config_key.replace('_suffix', '_flags')
         
-        function_texts = define.get(function_texts_key, [])
+        from config import normalize_string
+        function_texts = [normalize_string(x) for x in define.get(function_texts_key, [])]
         expected_dpts = define.get(dpts_key, None)
         expected_flags = define.get(flags_key, None)
         

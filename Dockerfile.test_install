@@ -24,18 +24,17 @@ RUN chown -R tester:tester /home/tester/knx_to_openhab
 
 USER tester
 
+
+# Arguments for the installer (can be passed via --build-arg)
+ARG USER_ARG=tester
+ARG REPO_URL_ARG=/home/tester/knx_to_openhab
+ARG BRANCH_ARG=main
+
+# Set environment variables for the installer
+ENV USER=${USER_ARG}
+ENV REPO_URL=${REPO_URL_ARG}
+ENV BRANCH=${BRANCH_ARG}
+
 # Run the installer
-# We simulate the git checkout by having the files already there
-# But install.sh tries to clone. We can bypass the clone part if we modify it or
-# we let it clone from the local directory.
-# Actually, let's just run it and see if it can handle a local mock.
-
-# To test the actual install.sh without needing a real repo URL at start,
-# we can point it to the local directory or just run setup.sh directly.
-# The user asked about install.sh, so let's try to make it work.
-
-# We will run the install instructions from README/User request:
-# curl -sSL ... | bash
-# But since we are local, we can just run ./install.sh
-
+# This tests the local changes to install.sh and setup.sh
 CMD ["/bin/bash", "-c", "chmod +x install.sh && ./install.sh"]

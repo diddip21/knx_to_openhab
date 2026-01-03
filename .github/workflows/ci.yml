@@ -233,7 +233,10 @@ jobs:
       
       - name: Build and Run Installation Test
         run: |
-          docker build -t knx-install-test -f Dockerfile.test_install .
+          docker build -t knx-install-test \
+            --build-arg REPO_URL_ARG="https://github.com/${{ github.repository }}.git" \
+            --build-arg BRANCH_ARG="${{ github.head_ref || github.ref_name }}" \
+            -f Dockerfile.test_install .
           docker run --name install-test-container knx-install-test
           # Check if service file was created (even if systemd isn't fully running in container)
           docker exec install-test-container ls /etc/systemd/system/knxohui.service || echo "Service file check skipped (non-interactive)"

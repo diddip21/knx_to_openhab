@@ -46,7 +46,7 @@ USE_REFACTORED_GENERATORS = True  # Nutzt neue Architektur
 ### Installation/Update
 
 ```bash
-git pull origin refactor/code-restructuring
+git pull origin main
 python ets_to_openhab.py  # Funktioniert wie vorher
 ```
 
@@ -199,18 +199,18 @@ pytest tests/integration/test_legacy_vs_refactored_comparison.py -v
 
 Dieser Test zeigt genau, wo Unterschiede liegen.
 
-## Zeitplan für Legacy-Code Removal
+## Status
 
-- **Jetzt**: Beide Versionen parallel verfügbar
-- **Q2 2025**: Legacy-Code als deprecated markiert
-- **Q3 2025**: Legacy-Code entfernt (nach ausreichender Testphase)
+- **Aktuell**: Refactoring ist vollständig abgeschlossen
+- **Neue Architektur**: Voll funktionsfähig und getestet
+- **Legacy-Code**: Wird weiterhin unterstützt für Abwärtskompatibilität
 
 ## Support
 
 Bei Fragen oder Problemen:
 
 1. **Issues**: [GitHub Issues](https://github.com/diddip21/knx_to_openhab/issues)
-2. **Dokumentation**: Siehe `REFACTORING.md`
+2. **Dokumentation**: Siehe `docs/DEVELOPER_GUIDE.md`
 3. **Tests**: Siehe `tests/` Verzeichnis
 
 ## Zusammenfassung

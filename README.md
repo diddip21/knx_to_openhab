@@ -17,7 +17,8 @@ It includes a **Web UI** for easy management, file uploads, and monitoring, as w
 
 - **[User Guide](docs/USER_GUIDE.md)**: Configuration, ETS preparation, Logic, and Troubleshooting.
 - **[Production Guide](docs/PRODUCTION_GUIDE.md)**: Installation on Raspberry Pi/DietPi (Service, Systemd).
-- **[Developer Guide](docs/DEVELOPER_GUIDE.md)**: Architecture, Testing, and Local Development.
+- **[Developer Guide](docs/DEVELOPER_GUIDE.md)**: Refactored Architecture, Testing, and Local Development.
+- **[Migration Guide](MIGRATION_GUIDE.md)**: Information about the refactored code structure.
 
 ---
 

@@ -4,7 +4,7 @@ Strategies {
     everyDay : "0 0 0 * * ?"
     every2Minutes : "0 */2 * ? * *"
     }
-
+    
     Items {
     
 }

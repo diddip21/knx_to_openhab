@@ -14,67 +14,172 @@ class DimmerGenerator(BaseDeviceGenerator):
         """Check if address is a dimmer device"""
         return address['DatapointType'] == get_datapoint_type('dimmer')
     
-    def generate(self, address: Dict, context: Optional[Dict] = None) -> DeviceGeneratorResult:
+    def generate(self, address: Dict, context: Dict) -> DeviceGeneratorResult:
         """
         Generate OpenHAB configuration for dimmer.
         
         Context should contain:
-        - floor_nr: Floor numbe
+        - floor_nr: Floor number
         - room_nr: Room number
         - floor_name: Floor name
         - room_name: Room name
         - item_name: Pre-generated item name
         """
-        # Create default context if not provided
-        if context is None:
-            context = {}
-                        
-        # Create result
         result = DeviceGeneratorResult()
         
-        # Get configuration
-        define = self.config.get('defines', {}).get('dimmer', {})
-        if not define:
-            logger.warning(f"No dimmer definition found in config")
+        define = self.config['defines']['dimmer']
+        
+        # Find the communication object
+        co = self.get_co_by_functiontext(address, define['absolut_suffix'])
+        if not co:
+            result.error_message = f"No communication object found for dimmer {address['Address']}"
             return result
         
-        # Extract base information
-        basename = address.get('Group_name') or address.get('Group name', 'Dimmer')
-        item_name = context.get('item_name', basename.replace(' ', '_'))
+        basename = address['Group name']
         
-        # Set result properties
-        result.item_type = 'Dimmer'
-        result.label = f"{basename}"
-        result.item_name = item_name
-        result.icon = define.get('icon', 'light')
-        result.item_icon = define.get('icon', 'light')
-        result.equipment = 'Lightbulb'
-        result.semantic_info = '["Light"]'
+        # Find related addresses
+        status = self.find_related_address(co, 'status_suffix', define)
         
-        # Find status address for thing_info
-        status_address = self.find_related_address(
-            address.get('communication_object', [{}])[0] if address.get('communication_object') else {},
-            'status_suffix',
-            define,
-            base_address_str=address.get('Address')
+        if not status:
+            result.error_message = f"Incomplete dimmer: missing status for {basename}"
+            logger.error(result.error_message)
+            return result
+        
+        # Mark addresses as used
+        result.used_addresses.append(address['Address'])
+        result.used_addresses.append(status['Address'])
+        
+        # Handle drop addresses
+        for drop_name in define['drop']:
+            drop_addr = self._find_by_name(basename, drop_name, define['absolut_suffix'])
+            if drop_addr:
+                result.used_addresses.append(drop_addr['Address'])
+        
+        # Build configuration options
+        options = self._build_dimmer_options(co, define, result)
+        
+        # Generate thing, item, sitemap
+        result.thing = self._generate_thing(
+            context['item_name'],
+            address,
+            status,
+            options
         )
         
-        # Build thing_info string
-        main_addr = address.get('Address', '')
-        if status_address:
-            status_addr = status_address.get('Address', '')
-            result.thing_info = f'position="{main_addr}" state="{status_addr}"'
-            result.used_addresses.append(status_addr)
-            result.success = True
-        else:
-            # No status address found - return unsuccessful but NOT None
-            result.thing_info = f'position="{main_addr}"'
-            result.success = False
+        result.item = self._generate_item(
+            context['item_name'],
+            address['Group name'],
+            context['floor_nr'],
+            context['room_nr'],
+            context
+        )
         
-        result.used_addresses.append(main_addr)
-
-                # Add homekit metadata if enabled
-        if self.config.get('homekit_enabled', False):
-            result.metadata['homekit'] = 'Lighting'
+        result.sitemap = self._generate_sitemap(
+            context['item_name'],
+            address['Group name'],
+            context
+        )
         
+        # Store metadata
+        result.metadata = {
+            'device_type': 'dimmer',
+            'equipment': 'Lightbulb',
+            'semantic_info': '["Light"]',
+            'item_icon': 'light'
+        }
+        
+        result.success = True
         return result
+    
+    def _build_dimmer_options(self, co: Dict, define: Dict, 
+                             result: DeviceGeneratorResult) -> Dict[str, str]:
+        """Build dimmer-specific options (relative, switch, etc.)"""
+        options = {}
+        
+        # Relative dimming
+        relative_command = self.find_related_address(co, 'relativ_suffix', define)
+        if relative_command:
+            result.used_addresses.append(relative_command['Address'])
+            options['relative'] = f", increaseDecrease=\"{relative_command['Address']}\""
+        
+        # Switch functionality
+        switch_command = self.find_related_address(co, 'switch_suffix', define)
+        if switch_command:
+            result.used_addresses.append(switch_command['Address'])
+            
+            switch_status = self.find_related_address(co, 'switch_status_suffix', define)
+            switch_option_status = ""
+            if switch_status:
+                result.used_addresses.append(switch_status['Address'])
+                switch_option_status = f"+<{switch_status['Address']}"
+            
+            options['switch'] = f", switch=\"{switch_command['Address']}{switch_option_status}\""
+        
+        return options
+    
+    def _generate_thing(self, item_name: str, address: Dict, 
+                       status: Dict, options: Dict) -> str:
+        """Generate thing configuration"""
+        relative_opt = options.get('relative', '')
+        switch_opt = options.get('switch', '')
+        
+        thing = (
+            f"Type dimmer    :   {item_name}   \"{address['Group name']}\"   "
+            f"[ position=\"{address['Address']}+<{status['Address']}\""
+            f"{switch_opt}{relative_opt} ]\n"
+        )
+        return thing
+    
+    def _generate_item(self, item_name: str, label: str, floor_nr: int, 
+                      room_nr: int, context: Dict) -> str:
+        """Generate item configuration"""
+        # Check for equipment grouping
+        equipment_group = context.get('equipment_group', '')
+        root = f"map{floor_nr}_{room_nr}"
+        
+        if equipment_group:
+            root = equipment_group
+        
+        homekit_meta = ""
+        alexa_meta = ""
+        
+        if context.get('homekit_enabled'):
+            homekit_instance = context.get('homekit_instance', 1)
+            homekit_meta = f', homekit="Lighting, Lighting.Brightness" [Instance={homekit_instance}]'
+        
+        if context.get('alexa_enabled'):
+            alexa_meta = ', alexa = "Light"'
+        
+        item = (
+            f"Dimmer   {item_name}   \"{label}\"   <light>   ({root})   [\"Light\"]    "
+            f"{{ channel=\"knx:device:bridge:generic:{item_name}\"{homekit_meta}{alexa_meta} }}\n"
+        )
+        return item
+    
+    def _generate_sitemap(self, item_name: str, label: str, context: Dict) -> str:
+        """Generate sitemap entry"""
+        visibility = context.get('visibility', '')
+        return f"        Default item={item_name} label=\"{label}\" {visibility}\n"
+    
+    def _find_by_name(self, base_name: str, suffix: str, replace: str) -> Optional[Dict]:
+        """Find address by name pattern (legacy compatibility)"""
+        if isinstance(suffix, str):
+            suffix = [suffix]
+        if isinstance(replace, str):
+            replace = [replace]
+        
+        for addr in self.all_addresses:
+            if addr['Group name'] == base_name:
+                continue
+            
+            for s in suffix:
+                if addr['Group name'] == base_name + s:
+                    return addr
+                if addr['Group name'] == base_name + ' ' + s:
+                    return addr
+                
+                for r in replace:
+                    if addr['Group name'] == base_name.replace(r, s):
+                        return addr
+        
+        return None

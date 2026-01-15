@@ -1,7 +1,7 @@
 # Golden Files for Charne
 
 Generated from: `Charne.knxproj.json`
-Date: 2026-01-02 21:49:57
+Date: 2025-11-26 10:35:54
 
 ## Files
 - knx.items

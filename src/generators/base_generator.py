@@ -7,85 +7,16 @@ logger = logging.getLogger(__name__)
 
 
 class DeviceGeneratorResult:
-        
-    # Legacy fields for backwards compatibility with old format
+    """Result of a device generation operation"""
+    
     def __init__(self):
-        # Core output strings
         self.thing: str = ""
         self.item: str = ""
         self.sitemap: str = ""
-        
-        # Tracking
         self.used_addresses: List[str] = []
         self.success: bool = False
         self.error_message: Optional[str] = None
-        
-        # Additional metadata
         self.metadata: Dict[str, Any] = {}
-        
-        # Legacy fields that tests expect (will be deprecated)
-        self.item_type: Optional[str] = None
-        self.item_name: Optional[str] = None
-        self.label: Optional[str] = None
-        self.icon: Optional[str] = None
-        self.equipment: Optional[str] = None
-        self.semantic_info: Optional[str] = None
-        self.thing_info: Optional[str] = None
-        self.item_icon: Optional[str] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert result to dictionary format for legacy compatibility"""
-        result = {
-            'thing': self.thing,
-            'item': self.item,
-            'sitemap': self.sitemap,
-            'used_addresses': self.used_addresses,
-            'success': self.success,
-            'error_message': self.error_message,
-            'metadata': self.metadata
-        }
-        
-        # Add legacy fields if set
-        if self.item_type:
-            result['item_type'] = self.item_type
-        if self.item_name:
-            result['item_name'] = self.item_name
-        if self.label:
-            result['label'] = self.label
-        if self.icon:
-            result['icon'] = self.icon
-        if self.item_icon:
-            result['item_icon'] = self.item_icon
-        if self.equipment:
-            result['equipment'] = self.equipment
-        if self.semantic_info:
-            result['semantic_info'] = self.semantic_info
-        if self.thing_info:
-            result['thing_info'] = self.thing_info
-            
-        return result
-    
-    def __getitem__(self, key):
-        """Allow dict-style access for backwards compatibility with tests"""
-        if hasattr(self, key):
-            return getattr(self, key)
-        if key in self.metadata:
-            return self.metadata[key]
-        # Map some common keys if they are missing
-        if key == 'item_icon' and hasattr(self, 'icon'):
-            return getattr(self, 'icon')
-        raise KeyError(f"Key '{key}' not found in result")
-
-    def get(self, key, default=None):
-        """Implement dict.get() for backwards compatibility"""
-        try:
-            return self.__getitem__(key)
-        except (KeyError, AttributeError):
-            return default
-    
-    def __contains__(self, key):
-        """Support 'in' operator for backwards compatibility"""
-        return hasattr(self, key) or key in self.metadata
 
 
 class BaseDeviceGenerator(ABC):
@@ -102,7 +33,6 @@ class BaseDeviceGenerator(ABC):
         self.config = config
         self.all_addresses = all_addresses
         self.address_cache: Dict[str, Optional[Dict]] = {}
-        self.used_addresses_set: set = set()  # Track which addresses have been used
         
     @abstractmethod
     def can_handle(self, address: Dict) -> bool:
@@ -131,36 +61,28 @@ class BaseDeviceGenerator(ABC):
         """
         pass
     
-    def find_related_address(self, co: Dict, config_key: str, 
-                            define: Dict, base_address_str: Optional[str] = None) -> Optional[Dict]:
+    def find_related_address(self, base_address: Dict, config_key: str, 
+                            define: Dict) -> Optional[Dict]:
         """
         Find related address using enhanced DPT and flag filtering.
         
         This replaces the old get_address_from_dco_enhanced logic.
         
         Args:
-            co: Communication object to search from
+            base_address: Base KNX address to search from
             config_key: Configuration key (e.g., 'status_suffix')
             define: Device definition from config
-            base_address_str: Optional base address string for caching
             
         Returns:
             Related address or None
         """
-        # Use Address if present in co, otherwise use base_address_str, otherwise don't cache
-        addr_for_cache = co.get('Address') or base_address_str
+        cache_key = f"{base_address['Address']}_{config_key}"
         
-        if addr_for_cache:
-            cache_key = f"{addr_for_cache}_{config_key}"
-            if cache_key in self.address_cache:
-                return self.address_cache[cache_key]
+        if cache_key in self.address_cache:
+            return self.address_cache[cache_key]
         
-        result = self._search_related_address(co, config_key, define)
-        
-        if addr_for_cache:
-            cache_key = f"{addr_for_cache}_{config_key}"
-            self.address_cache[cache_key] = result
-            
+        result = self._search_related_address(base_address, config_key, define)
+        self.address_cache[cache_key] = result
         return result
     
     def _search_related_address(self, co: Dict, config_key: str, 
@@ -171,8 +93,7 @@ class BaseDeviceGenerator(ABC):
         dpts_key = config_key.replace('_suffix', '_dpts')
         flags_key = config_key.replace('_suffix', '_flags')
         
-        from config import normalize_string
-        function_texts = [normalize_string(x) for x in define.get(function_texts_key, [])]
+        function_texts = define.get(function_texts_key, [])
         expected_dpts = define.get(dpts_key, None)
         expected_flags = define.get(flags_key, None)
         
@@ -300,24 +221,3 @@ class BaseDeviceGenerator(ABC):
                 return co
         
         return None
-
-    def is_address_used(self, address: str) -> bool:
-        """
-        Check if an address has been marked as used.
-        
-        Args:
-            address: KNX group address to check
-            
-        Returns:
-            True if address has been used
-        """
-        return address in self.used_addresses_set
-    
-    def mark_address_used(self, address: str):
-        """
-        Mark an address as used.
-        
-        Args:
-            address: KNX group address to mark as used
-        """
-        self.used_addresses_set.add(address)

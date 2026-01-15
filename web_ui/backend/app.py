@@ -3,10 +3,6 @@ import sys
 import json
 import uuid
 import time
-import tarfile
-import logging
-
-logger = logging.getLogger(__name__)
 try:
     from flask import Flask, request, jsonify, send_from_directory, render_template, stream_with_context, Response
     from werkzeug.utils import secure_filename

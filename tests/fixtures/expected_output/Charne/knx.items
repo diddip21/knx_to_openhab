@@ -15,75 +15,76 @@ Group:Rollershutter            Base_BlindsSouth    "Jalousie/Rollo Süd"        
 Group:Rollershutter            Base_BlindsWest     "Jalousie/Rollo West"                 <rollershutter>    (Base_Blinds)          ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]}
 
 Group   map1   "Untergeschoss"  (Base) ["Location"]  
-Group:Rollershutter:AVG        map1_Blinds         "Untergeschoss Jalousie/Rollo"                      <rollershutter>    (map1)                  ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]} 
-Group:Switch:OR(ON, OFF)       map1_Lights         "Untergeschoss Beleuchtung"                         <light>            (map1)                  ["Light"] 
-Group:Contact:OR(OPEN, CLOSED) map1_Contacts       "Untergeschoss Öffnungsmelder"                      <contact>          (map1)                ["OpenState"] 
-Group:Number:Temperature:AVG   map1_Temperature    "Untergeschoss Ø Temperatur"                        <temperature>      (map1)             ["Measurement", "Temperature"]        {stateDescription=""[pattern="%.1f %unit%"]} 
-Group   map1_1   "Technik"    (map1)   ["Room", "Technik"] 
-Group   map1_2   "Küche"    (map1)   ["Room", "Küche"] 
+Group:Rollershutter:AVG        map1_Blinds         "Untergeschoss Jalousie/Rollo"                      <rollershutter>    (map1,Base_Blinds)                  ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]} 
+Group:Switch:OR(ON, OFF)       map1_Lights         "Untergeschoss Beleuchtung"                         <light>            (map1,Base_Lights)                  ["Light"] 
+Group:Contact:OR(OPEN, CLOSED) map1_Contacts       "Untergeschoss Öffnungsmelder"                      <contact>          (map1,Base_Contacts)                ["OpenState"] 
+Group:Number:Temperature:AVG   map1_Temperature    "Untergeschoss Ø Temperatur"                        <temperature>      (map1,Base_Temperature)             ["Measurement", "Temperature"]        {stateDescription=""[pattern="%.1f %unit%"]} 
+Group   map1_1   "Technik"    (map1)   ["Location", "Room", "Technik"] 
+Group   map1_2   "Küche"    (map1)   ["Location", "Room", "Küche"] 
 Group   equipment_i_UG_RM2_Betriebsmodus   "RM2 Betriebsmodus"  <heating_mode>  (map1_2)   ["HVAC"] 
 Number   i_UG_RM2_Betriebsmodus   "RM2 Betriebsmodus"   <heating_mode>   (equipment_i_UG_RM2_Betriebsmodus)   ["HVAC"]    { channel="knx:device:bridge:generic:i_UG_RM2_Betriebsmodus" , stateDescription=""[options="NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], commandDescription=""[options="1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], listWidget=""[iconUseState="true"] }
 Switch   i_UG_RM2_H12Schalten   "RM2 H1-2 Schalten"      (map1_2)       { channel="knx:device:bridge:generic:i_UG_RM2_H12Schalten"  }
-Number:Temperature   i_UG_RM2_IstTemperatur   "RM2 Ist-Temperatur"   <temperature>   (map1_2)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_UG_RM2_IstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
-Number:Temperature   i_UG_RM2_StatusSollwert   "RM2 Status Sollwert"   <temperature>   (map1_2)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_UG_RM2_StatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
-Group   map1_3   "Essen"    (map1)   ["Room", "Essen"] 
+Number:Temperature   i_UG_RM2_IstTemperatur   "RM2 Ist-Temperatur"   <temperature>   (map1_2,map1_Temperature)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_UG_RM2_IstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
+Number:Temperature   i_UG_RM2_StatusSollwert   "RM2 Status Sollwert"   <temperature>   (map1_2,map1_Temperature)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_UG_RM2_StatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
+Group   map1_3   "Essen"    (map1)   ["Location", "Room", "Essen"] 
 Group   equipment_i_UG_RM3_M1AufAb   "RM3 M1 Auf/Ab"  <rollershutter>  (map1_3)   ["Blinds"] 
-Rollershutter   i_UG_RM3_M1AufAb   "RM3 M1 Auf/Ab"   <rollershutter>   (equipment_i_UG_RM3_M1AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_UG_RM3_M1AufAb"  }
+Rollershutter   i_UG_RM3_M1AufAb   "RM3 M1 Auf/Ab"   <rollershutter>   (equipment_i_UG_RM3_M1AufAb,map1_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_UG_RM3_M1AufAb"  }
 Switch   i_UG_RM3_H5Schalten   "RM3 H5 Schalten"      (map1_3)       { channel="knx:device:bridge:generic:i_UG_RM3_H5Schalten"  }
-Group   map1_4   "Wohnen"    (map1)   ["Room", "Wohnen"] 
+Group   map1_4   "Wohnen"    (map1)   ["Location", "Room", "Wohnen"] 
 Group   equipment_i_UG_RM4_M1AufAb   "RM4 M1 Auf/Ab"  <rollershutter>  (map1_4)   ["Blinds"] 
-Rollershutter   i_UG_RM4_M1AufAb   "RM4 M1 Auf/Ab"   <rollershutter>   (equipment_i_UG_RM4_M1AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_UG_RM4_M1AufAb"  }
+Rollershutter   i_UG_RM4_M1AufAb   "RM4 M1 Auf/Ab"   <rollershutter>   (equipment_i_UG_RM4_M1AufAb,map1_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_UG_RM4_M1AufAb"  }
 Switch   i_UG_RM4_H8Schalten   "RM4 H8 Schalten"      (map1_4)       { channel="knx:device:bridge:generic:i_UG_RM4_H8Schalten"  }
-Group   map1_5   "Schlafen"    (map1)   ["Room", "Schlafen"] 
+Group   map1_5   "Schlafen"    (map1)   ["Location", "Room", "Schlafen"] 
 Group   equipment_i_UG_RM5_Betriebsmodus   "RM5 Betriebsmodus"  <heating_mode>  (map1_5)   ["HVAC"] 
 Number   i_UG_RM5_Betriebsmodus   "RM5 Betriebsmodus"   <heating_mode>   (equipment_i_UG_RM5_Betriebsmodus)   ["HVAC"]    { channel="knx:device:bridge:generic:i_UG_RM5_Betriebsmodus" , stateDescription=""[options="NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], commandDescription=""[options="1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], listWidget=""[iconUseState="true"] }
 Switch   i_UG_RM5_H1Schalten   "RM5 H1 Schalten"      (map1_5)       { channel="knx:device:bridge:generic:i_UG_RM5_H1Schalten"  }
-Number:Temperature   i_UG_RM5_IstTemperatur   "RM5 Ist-Temperatur"   <temperature>   (map1_5)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_UG_RM5_IstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
-Number:Temperature   i_UG_RM5_StatusSollwert   "RM5 Status Sollwert"   <temperature>   (map1_5)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_UG_RM5_StatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
-Group   map1_6   "Bad"    (map1)   ["Room", "Bad"] 
+Number:Temperature   i_UG_RM5_IstTemperatur   "RM5 Ist-Temperatur"   <temperature>   (map1_5,map1_Temperature)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_UG_RM5_IstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
+Number:Temperature   i_UG_RM5_StatusSollwert   "RM5 Status Sollwert"   <temperature>   (map1_5,map1_Temperature)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_UG_RM5_StatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
+Group   map1_6   "Bad"    (map1)   ["Location", "Room", "Bad"] 
 Group   equipment_i_UG_RM6_Betriebsmodus   "RM6 Betriebsmodus"  <heating_mode>  (map1_6)   ["HVAC"] 
 Number   i_UG_RM6_Betriebsmodus   "RM6 Betriebsmodus"   <heating_mode>   (equipment_i_UG_RM6_Betriebsmodus)   ["HVAC"]    { channel="knx:device:bridge:generic:i_UG_RM6_Betriebsmodus" , stateDescription=""[options="NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], commandDescription=""[options="1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], listWidget=""[iconUseState="true"] }
 Switch   i_UG_RM6_H1Schalten   "RM6 H1 Schalten"      (map1_6)       { channel="knx:device:bridge:generic:i_UG_RM6_H1Schalten"  }
-Number:Temperature   i_UG_RM6_H1IstTemperatur   "RM6 H1 Ist-Temperatur"   <temperature>   (map1_6)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_UG_RM6_H1IstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
-Number:Temperature   i_UG_RM6_StatusSollwert   "RM6 Status Sollwert"   <temperature>   (map1_6)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_UG_RM6_StatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
-Group   map1_7   "Werkstatt"    (map1)   ["Room", "Werkstatt"] 
+Number:Temperature   i_UG_RM6_H1IstTemperatur   "RM6 H1 Ist-Temperatur"   <temperature>   (map1_6,map1_Temperature)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_UG_RM6_H1IstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
+Number:Temperature   i_UG_RM6_StatusSollwert   "RM6 Status Sollwert"   <temperature>   (map1_6,map1_Temperature)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_UG_RM6_StatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
+Group   map1_7   "Werkstatt"    (map1)   ["Location", "Room", "Werkstatt"] 
 Switch   i_UG_RM7_H1Schalten   "RM7 H1 Schalten"      (map1_7)       { channel="knx:device:bridge:generic:i_UG_RM7_H1Schalten"  }
-Group   map1_8   "Abstellen"    (map1)   ["Room", "Abstellen"] 
+Group   map1_8   "Abstellen"    (map1)   ["Location", "Room", "Abstellen"] 
 Switch   i_UG_RM8_H1Schalten   "RM8 H1 Schalten"      (map1_8)       { channel="knx:device:bridge:generic:i_UG_RM8_H1Schalten"  }
-Group   map1_9   ""    (map1)   ["Room", ""] 
-Group   map1_10   ""    (map1)   ["Room", ""] 
+Group   map1_9   ""    (map1)   ["Location", "Room", ""] 
+Group   map1_10   ""    (map1)   ["Location", "Room", ""] 
 Switch   i_UG_RM12_H10Schalten   "RM12 H10 Schalten"      (map1_10)       { channel="knx:device:bridge:generic:i_UG_RM12_H10Schalten"  }
 Group   map2   "Erdgeschoss"  (Base) ["Location"]  
-Group:Rollershutter:AVG        map2_Blinds         "Erdgeschoss Jalousie/Rollo"                      <rollershutter>    (map2)                  ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]} 
-Group:Switch:OR(ON, OFF)       map2_Lights         "Erdgeschoss Beleuchtung"                         <light>            (map2)                  ["Light"] 
-Group:Contact:OR(OPEN, CLOSED) map2_Contacts       "Erdgeschoss Öffnungsmelder"                      <contact>          (map2)                ["OpenState"] 
-Group:Number:Temperature:AVG   map2_Temperature    "Erdgeschoss Ø Temperatur"                        <temperature>      (map2)             ["Measurement", "Temperature"]        {stateDescription=""[pattern="%.1f %unit%"]} 
-Group   map2_1   ""    (map2)   ["Room", ""] 
+Group:Rollershutter:AVG        map2_Blinds         "Erdgeschoss Jalousie/Rollo"                      <rollershutter>    (map2,Base_Blinds)                  ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]} 
+Group:Switch:OR(ON, OFF)       map2_Lights         "Erdgeschoss Beleuchtung"                         <light>            (map2,Base_Lights)                  ["Light"] 
+Group:Contact:OR(OPEN, CLOSED) map2_Contacts       "Erdgeschoss Öffnungsmelder"                      <contact>          (map2,Base_Contacts)                ["OpenState"] 
+Group:Number:Temperature:AVG   map2_Temperature    "Erdgeschoss Ø Temperatur"                        <temperature>      (map2,Base_Temperature)             ["Measurement", "Temperature"]        {stateDescription=""[pattern="%.1f %unit%"]} 
+Group   map2_1   ""    (map2)   ["Location", "Room", ""] 
 Group   equipment_i_EG_RM1_H2021Dimmenabsolut   "RM1 H20/21 Dimmen absolut"  <light>  (map2_1)   ["Lightbulb"] 
-Dimmer   i_EG_RM1_H2021Dimmenabsolut   "RM1 H20/21 Dimmen absolut"   <light>   (equipment_i_EG_RM1_H2021Dimmenabsolut)   ["Light"]    { channel="knx:device:bridge:generic:i_EG_RM1_H2021Dimmenabsolut"  }
+Dimmer   i_EG_RM1_H2021Dimmenabsolut   "RM1 H20/21 Dimmen absolut"   <light>   (equipment_i_EG_RM1_H2021Dimmenabsolut,map2_Lights)   ["Light"]    { channel="knx:device:bridge:generic:i_EG_RM1_H2021Dimmenabsolut"  }
 Switch   i_EG_RM1_H15Schalten   "RM1 H1-5 Schalten"      (map2_1)       { channel="knx:device:bridge:generic:i_EG_RM1_H15Schalten"  }
 Switch   i_EG_RM1_1OG2H3031Schalten   "1.OG +RM12 H30,31 Schalten"      (map2_1)       { channel="knx:device:bridge:generic:i_EG_RM1_1OG2H3031Schalten"  }
-Group   map2_2   ""    (map2)   ["Room", ""] 
+Group   map2_2   ""    (map2)   ["Location", "Room", ""] 
 Group   equipment_i_EG_RM2_H10Dimmenabsolut   "RM2 H10 Dimmen absolut"  <light>  (map2_2)   ["Lightbulb"] 
-Dimmer   i_EG_RM2_H10Dimmenabsolut   "RM2 H10 Dimmen absolut"   <light>   (equipment_i_EG_RM2_H10Dimmenabsolut)   ["Light"]    { channel="knx:device:bridge:generic:i_EG_RM2_H10Dimmenabsolut"  }
+Dimmer   i_EG_RM2_H10Dimmenabsolut   "RM2 H10 Dimmen absolut"   <light>   (equipment_i_EG_RM2_H10Dimmenabsolut,map2_Lights)   ["Light"]    { channel="knx:device:bridge:generic:i_EG_RM2_H10Dimmenabsolut"  }
 Group   equipment_i_EG_RM2_H20Dimmenabsolut   "RM2 H20 Dimmen absolut"  <light>  (map2_2)   ["Lightbulb"] 
-Dimmer   i_EG_RM2_H20Dimmenabsolut   "RM2 H20 Dimmen absolut"   <light>   (equipment_i_EG_RM2_H20Dimmenabsolut)   ["Light"]    { channel="knx:device:bridge:generic:i_EG_RM2_H20Dimmenabsolut"  }
+Dimmer   i_EG_RM2_H20Dimmenabsolut   "RM2 H20 Dimmen absolut"   <light>   (equipment_i_EG_RM2_H20Dimmenabsolut,map2_Lights)   ["Light"]    { channel="knx:device:bridge:generic:i_EG_RM2_H20Dimmenabsolut"  }
 Group   equipment_i_EG_RM2_M1AufAb   "RM2-M1 Auf/Ab"  <rollershutter>  (map2_2)   ["Blinds"] 
-Rollershutter   i_EG_RM2_M1AufAb   "RM2-M1 Auf/Ab"   <rollershutter>   (equipment_i_EG_RM2_M1AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM2_M1AufAb"  }
+Rollershutter   i_EG_RM2_M1AufAb   "RM2-M1 Auf/Ab"   <rollershutter>   (equipment_i_EG_RM2_M1AufAb,map2_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM2_M1AufAb"  }
 Number   i_EG_RM2_Betriebsmodus   "RM2 Betriebsmodus"   <heating_mode>   (equipment_i_UG_RM2_Betriebsmodus)   ["HVAC"]    { channel="knx:device:bridge:generic:i_EG_RM2_Betriebsmodus" , stateDescription=""[options="NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], commandDescription=""[options="1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], listWidget=""[iconUseState="true"] }
 Switch   i_EG_RM2_EGH16Schalten   "RM2 EG H1-6 Schalten"      (map2_2)       { channel="knx:device:bridge:generic:i_EG_RM2_EGH16Schalten"  }
 Switch   i_EG_RM2_H3031Schalten   "RM2 H30/31 Schalten"      (map2_2)       { channel="knx:device:bridge:generic:i_EG_RM2_H3031Schalten"  }
-Number:Temperature   i_EG_RM2_IstTemperatur   "RM2 Ist-Temperatur"   <temperature>   (map2_2)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM2_IstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
-Number:Temperature   i_EG_RM2_StatusSollwert   "RM2 Status Sollwert"   <temperature>   (map2_2)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM2_StatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
-Group   map2_3   ""    (map2)   ["Room", ""] 
+Number:Temperature   i_EG_RM2_IstTemperatur   "RM2 Ist-Temperatur"   <temperature>   (map2_2,map2_Temperature)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM2_IstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
+Number:Temperature   i_EG_RM2_StatusSollwert   "RM2 Status Sollwert"   <temperature>   (map2_2,map2_Temperature)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM2_StatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
+Group   map2_3   ""    (map2)   ["Location", "Room", ""] 
 Group   equipment_i_EG_RM3_M1AusAb   "RM3 M1 Aus/Ab"  <rollershutter>  (map2_3)   ["Blinds"] 
-Rollershutter   i_EG_RM3_M1AusAb   "RM3 M1 Aus/Ab"   <rollershutter>   (equipment_i_EG_RM3_M1AusAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM3_M1AusAb"  }
+Rollershutter   i_EG_RM3_M1AusAb   "RM3 M1 Aus/Ab"   <rollershutter>   (equipment_i_EG_RM3_M1AusAb,map2_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM3_M1AusAb"  }
 Group   equipment_i_EG_RM3_M2AufAb   "RM3 M2 Auf/Ab"  <rollershutter>  (map2_3)   ["Blinds"] 
-Rollershutter   i_EG_RM3_M2AufAb   "RM3 M2 Auf/Ab"   <rollershutter>   (equipment_i_EG_RM3_M2AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM3_M2AufAb"  }
+Rollershutter   i_EG_RM3_M2AufAb   "RM3 M2 Auf/Ab"   <rollershutter>   (equipment_i_EG_RM3_M2AufAb,map2_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM3_M2AufAb"  }
 Group   equipment_i_EG_RM3_M1M2AufAb   "RM3 M1/M2 Auf/Ab"  <rollershutter>  (map2_3)   ["Blinds"] 
-Rollershutter   i_EG_RM3_M1M2AufAb   "RM3 M1/M2 Auf/Ab"   <rollershutter>   (equipment_i_EG_RM3_M1M2AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM3_M1M2AufAb"  }
+Rollershutter   i_EG_RM3_M1M2AufAb   "RM3 M1/M2 Auf/Ab"   <rollershutter>   (equipment_i_EG_RM3_M1M2AufAb,map2_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM3_M1M2AufAb"  }
 Group   equipment_i_EG_RM3_Betriebsmodus   "RM3 Betriebsmodus"  <heating_mode>  (map2_3)   ["HVAC"] 
 Number   i_EG_RM3_Betriebsmodus   "RM3 Betriebsmodus"   <heating_mode>   (equipment_i_EG_RM3_Betriebsmodus)   ["HVAC"]    { channel="knx:device:bridge:generic:i_EG_RM3_Betriebsmodus" , stateDescription=""[options="NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], commandDescription=""[options="1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], listWidget=""[iconUseState="true"] }
+Number:Temperature   i_EG_RM3_Aussentemperatur   "Außentemperatur"   <temperature>   (map2_3,map2_Temperature)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM3_Aussentemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
 Switch   i_EG_RM3_H12Schalten   "RM3 H1-2 Schalten"      (map2_3)       { channel="knx:device:bridge:generic:i_EG_RM3_H12Schalten"  }
 Switch   i_EG_RM3_AUBE2H1010Schalten   "AU+BE2 H10-10 Schalten"      (map2_3)       { channel="knx:device:bridge:generic:i_EG_RM3_AUBE2H1010Schalten"  }
 Switch   i_EG_RM3_AUBE2H34Schalten   "AU+BE2 H3-4 Schalten"      (map2_3)       { channel="knx:device:bridge:generic:i_EG_RM3_AUBE2H34Schalten"  }
@@ -91,66 +92,65 @@ Switch   i_EG_RM3_H58Schalten   "RM3 H5-8 Schalten"      (map2_3)       { channe
 Switch   i_EG_RM3_X50WeihnachtsbelEssenWohnenKuecheSchalten   "X50 Weihnachtsbel. Essen Wohnen Küche Schalten"      (map2_3)       { channel="knx:device:bridge:generic:i_EG_RM3_X50WeihnachtsbelEssenWohnenKuecheSchalten"  }
 Switch   i_EG_RM3_X50WeihnachtsbelTreppenhausSchalten   "X50 Weihnachtsbel. Treppenhaus Schalten"      (map2_3)       { channel="knx:device:bridge:generic:i_EG_RM3_X50WeihnachtsbelTreppenhausSchalten"  }
 Switch   i_EG_RM3_X50WeihnachtsbelBueroSchalten   "X50 Weihnachtsbel. Büro Schalten"      (map2_3)       { channel="knx:device:bridge:generic:i_EG_RM3_X50WeihnachtsbelBueroSchalten"  }
-Number:Temperature   i_EG_RM3_Aussentemperatur   "Außentemperatur"   <temperature>   (map2_3)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM3_Aussentemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
-Number:Temperature   i_EG_RM3_IstTemperatur   "RM3 Ist-Temperatur"   <temperature>   (map2_3)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM3_IstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
-Number:Temperature   i_EG_RM3_StatusSollwert   "RM3 Status Sollwert"   <temperature>   (map2_3)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM3_StatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
-Group   map2_4   ""    (map2)   ["Room", ""] 
+Number:Temperature   i_EG_RM3_IstTemperatur   "RM3 Ist-Temperatur"   <temperature>   (map2_3,map2_Temperature)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM3_IstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
+Number:Temperature   i_EG_RM3_StatusSollwert   "RM3 Status Sollwert"   <temperature>   (map2_3,map2_Temperature)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM3_StatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
+Group   map2_4   ""    (map2)   ["Location", "Room", ""] 
 Group   equipment_i_EG_RM4_H10Dimmenabsolut   "RM4 H10 Dimmen absolut"  <light>  (map2_4)   ["Lightbulb"] 
-Dimmer   i_EG_RM4_H10Dimmenabsolut   "RM4 H10 Dimmen absolut"   <light>   (equipment_i_EG_RM4_H10Dimmenabsolut)   ["Light"]    { channel="knx:device:bridge:generic:i_EG_RM4_H10Dimmenabsolut"  }
-Rollershutter   i_EG_RM4_M1AufAb   "RM4 M1 Auf/Ab"   <rollershutter>   (equipment_i_UG_RM4_M1AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM4_M1AufAb"  }
+Dimmer   i_EG_RM4_H10Dimmenabsolut   "RM4 H10 Dimmen absolut"   <light>   (equipment_i_EG_RM4_H10Dimmenabsolut,map2_Lights)   ["Light"]    { channel="knx:device:bridge:generic:i_EG_RM4_H10Dimmenabsolut"  }
+Rollershutter   i_EG_RM4_M1AufAb   "RM4 M1 Auf/Ab"   <rollershutter>   (equipment_i_UG_RM4_M1AufAb,map2_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM4_M1AufAb"  }
 Group   equipment_i_EG_RM4_M2AufAb   "RM4 M2 Auf/Ab"  <rollershutter>  (map2_4)   ["Blinds"] 
-Rollershutter   i_EG_RM4_M2AufAb   "RM4 M2 Auf/Ab"   <rollershutter>   (equipment_i_EG_RM4_M2AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM4_M2AufAb"  }
+Rollershutter   i_EG_RM4_M2AufAb   "RM4 M2 Auf/Ab"   <rollershutter>   (equipment_i_EG_RM4_M2AufAb,map2_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM4_M2AufAb"  }
 Switch   i_EG_RM4_H14Schalten   "RM4 H1-4 Schalten"      (map2_4)       { channel="knx:device:bridge:generic:i_EG_RM4_H14Schalten"  }
-Group   map2_5   ""    (map2)   ["Room", ""] 
+Group   map2_5   ""    (map2)   ["Location", "Room", ""] 
 Group   equipment_i_EG_RM5_M1AufAb   "RM5 M1 Auf/Ab"  <rollershutter>  (map2_5)   ["Blinds"] 
-Rollershutter   i_EG_RM5_M1AufAb   "RM5 M1 Auf/Ab"   <rollershutter>   (equipment_i_EG_RM5_M1AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM5_M1AufAb"  }
+Rollershutter   i_EG_RM5_M1AufAb   "RM5 M1 Auf/Ab"   <rollershutter>   (equipment_i_EG_RM5_M1AufAb,map2_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM5_M1AufAb"  }
 Group   equipment_i_EG_RM5_M2AufAb   "RM5 M2 Auf/Ab"  <rollershutter>  (map2_5)   ["Blinds"] 
-Rollershutter   i_EG_RM5_M2AufAb   "RM5 M2 Auf/Ab"   <rollershutter>   (equipment_i_EG_RM5_M2AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM5_M2AufAb"  }
+Rollershutter   i_EG_RM5_M2AufAb   "RM5 M2 Auf/Ab"   <rollershutter>   (equipment_i_EG_RM5_M2AufAb,map2_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM5_M2AufAb"  }
 Group   equipment_i_EG_RM5_ges_auf_ab   "RM5 ges_auf_ab"  <rollershutter>  (map2_5)   ["Blinds"] 
-Rollershutter   i_EG_RM5_ges_auf_ab   "RM5 ges_auf_ab"   <rollershutter>   (equipment_i_EG_RM5_ges_auf_ab)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM5_ges_auf_ab"  }
+Rollershutter   i_EG_RM5_ges_auf_ab   "RM5 ges_auf_ab"   <rollershutter>   (equipment_i_EG_RM5_ges_auf_ab,map2_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM5_ges_auf_ab"  }
 Number   i_EG_RM5_Betriebsmodus   "RM5 Betriebsmodus"   <heating_mode>   (equipment_i_UG_RM5_Betriebsmodus)   ["HVAC"]    { channel="knx:device:bridge:generic:i_EG_RM5_Betriebsmodus" , stateDescription=""[options="NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], commandDescription=""[options="1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], listWidget=""[iconUseState="true"] }
 Switch   i_EG_RM5_H14Schalten   "RM5 H1-4 Schalten"      (map2_5)       { channel="knx:device:bridge:generic:i_EG_RM5_H14Schalten"  }
 Dimmer   i_EG_RM5_M1Rueckmeldung   "RM5 M1 Rückmeldung"      (map2_5)   ["Measurement"]    { channel="knx:device:bridge:generic:i_EG_RM5_M1Rueckmeldung" , unit="%", stateDescription=""[pattern="%.1f %%"] }
 Dimmer   i_EG_RM5_M2Rueckmeldung   "RM5 M2 Rückmeldung"      (map2_5)   ["Measurement"]    { channel="knx:device:bridge:generic:i_EG_RM5_M2Rueckmeldung" , unit="%", stateDescription=""[pattern="%.1f %%"] }
-Number:Temperature   i_EG_RM5_IstTemperatur   "RM5 Ist-Temperatur"   <temperature>   (map2_5)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM5_IstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
-Number:Temperature   i_EG_RM5_StatusSollwert   "RM5 Status Sollwert"   <temperature>   (map2_5)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM5_StatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
-Group   map2_6   ""    (map2)   ["Room", ""] 
+Number:Temperature   i_EG_RM5_IstTemperatur   "RM5 Ist-Temperatur"   <temperature>   (map2_5,map2_Temperature)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM5_IstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
+Number:Temperature   i_EG_RM5_StatusSollwert   "RM5 Status Sollwert"   <temperature>   (map2_5,map2_Temperature)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM5_StatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
+Group   map2_6   ""    (map2)   ["Location", "Room", ""] 
 Group   equipment_i_EG_RM6_M1AufAb   "RM6 M1 Auf/Ab"  <rollershutter>  (map2_6)   ["Blinds"] 
-Rollershutter   i_EG_RM6_M1AufAb   "RM6 M1 Auf/Ab"   <rollershutter>   (equipment_i_EG_RM6_M1AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM6_M1AufAb"  }
+Rollershutter   i_EG_RM6_M1AufAb   "RM6 M1 Auf/Ab"   <rollershutter>   (equipment_i_EG_RM6_M1AufAb,map2_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM6_M1AufAb"  }
 Number   i_EG_RM6_Betriebsmodus   "RM6 Betriebsmodus"   <heating_mode>   (equipment_i_UG_RM6_Betriebsmodus)   ["HVAC"]    { channel="knx:device:bridge:generic:i_EG_RM6_Betriebsmodus" , stateDescription=""[options="NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], commandDescription=""[options="1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], listWidget=""[iconUseState="true"] }
 Switch   i_EG_RM6_H2021Schalten   "RM6 H20-21 Schalten"      (map2_6)       { channel="knx:device:bridge:generic:i_EG_RM6_H2021Schalten"  }
-Switch   i_EG_RM6_H10Schalten   "RM6 H10 Schalten"   <switch>   (map2_6)   ["Switch"]    { channel="knx:device:bridge:generic:i_EG_RM6_H10Schalten"  }
+Switch   i_EG_RM6_H10Schalten   "RM6 H10 Schalten"   <switch>   (map2_6)   ["Control", "Switch"]    { channel="knx:device:bridge:generic:i_EG_RM6_H10Schalten"  }
 Dimmer   i_EG_RM6_M1Rueckmeldung   "RM6 M1 Rückmeldung"      (map2_6)   ["Measurement"]    { channel="knx:device:bridge:generic:i_EG_RM6_M1Rueckmeldung" , unit="%", stateDescription=""[pattern="%.1f %%"] }
-Number:Temperature   i_EG_RM6_IstTemperatur   "RM6 Ist-Temperatur"   <temperature>   (map2_6)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM6_IstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
-Number:Temperature   i_EG_RM6_StatusSollwert   "RM6 Status Sollwert"   <temperature>   (map2_6)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM6_StatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
-Group   map2_7   ""    (map2)   ["Room", ""] 
-Group   map2_8   ""    (map2)   ["Room", ""] 
+Number:Temperature   i_EG_RM6_IstTemperatur   "RM6 Ist-Temperatur"   <temperature>   (map2_6,map2_Temperature)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM6_IstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
+Number:Temperature   i_EG_RM6_StatusSollwert   "RM6 Status Sollwert"   <temperature>   (map2_6,map2_Temperature)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_EG_RM6_StatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
+Group   map2_7   ""    (map2)   ["Location", "Room", ""] 
+Group   map2_8   ""    (map2)   ["Location", "Room", ""] 
 Group   equipment_i_EG_BE2_Alg_Rollo_AufAb   "Alg_Rollo_Auf/Ab"  <rollershutter>  (map2_8)   ["Blinds"] 
-Rollershutter   i_EG_BE2_Alg_Rollo_AufAb   "Alg_Rollo_Auf/Ab"   <rollershutter>   (equipment_i_EG_BE2_Alg_Rollo_AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_BE2_Alg_Rollo_AufAb"  }
+Rollershutter   i_EG_BE2_Alg_Rollo_AufAb   "Alg_Rollo_Auf/Ab"   <rollershutter>   (equipment_i_EG_BE2_Alg_Rollo_AufAb,map2_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_BE2_Alg_Rollo_AufAb"  }
 Number:Illuminance   i_EG_BE2_Daemmerung   "Dämmerung"   <sun>   (map2_8)   ["Measurement", "Light"]    { channel="knx:device:bridge:generic:i_EG_BE2_Daemmerung" , stateDescription=""[pattern="%.1f %unit%"] }
 Number:Speed   i_EG_BE2_Windgeschwindigkeit   "Windgeschwindigkeit"   <wind>   (map2_8)   ["Measurement", "Wind"]    { channel="knx:device:bridge:generic:i_EG_BE2_Windgeschwindigkeit" , unit="m/s", stateDescription=""[pattern="%.1f %unit%"] }
 Number:Illuminance   i_EG_BE2_HelligkeitOst   "Helligkeit Ost"   <sun>   (map2_8)   ["Measurement", "Light"]    { channel="knx:device:bridge:generic:i_EG_BE2_HelligkeitOst" , stateDescription=""[pattern="%.1f %unit%"] }
 Number:Illuminance   i_EG_BE2_HelligkeitSued   "Helligkeit Süd"   <sun>   (map2_8)   ["Measurement", "Light"]    { channel="knx:device:bridge:generic:i_EG_BE2_HelligkeitSued" , stateDescription=""[pattern="%.1f %unit%"] }
 Number:Illuminance   i_EG_BE2_HelligkeitWest   "Helligkeit West"   <sun>   (map2_8)   ["Measurement", "Light"]    { channel="knx:device:bridge:generic:i_EG_BE2_HelligkeitWest" , stateDescription=""[pattern="%.1f %unit%"] }
 Group   map3   "1. Obergeschoss"  (Base) ["Location"]  
-Group:Rollershutter:AVG        map3_Blinds         "1. Obergeschoss Jalousie/Rollo"                      <rollershutter>    (map3)                  ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]} 
-Group:Switch:OR(ON, OFF)       map3_Lights         "1. Obergeschoss Beleuchtung"                         <light>            (map3)                  ["Light"] 
-Group:Contact:OR(OPEN, CLOSED) map3_Contacts       "1. Obergeschoss Öffnungsmelder"                      <contact>          (map3)                ["OpenState"] 
-Group:Number:Temperature:AVG   map3_Temperature    "1. Obergeschoss Ø Temperatur"                        <temperature>      (map3)             ["Measurement", "Temperature"]        {stateDescription=""[pattern="%.1f %unit%"]} 
-Group   map3_1   ""    (map3)   ["Room", ""] 
+Group:Rollershutter:AVG        map3_Blinds         "1. Obergeschoss Jalousie/Rollo"                      <rollershutter>    (map3,Base_Blinds)                  ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]} 
+Group:Switch:OR(ON, OFF)       map3_Lights         "1. Obergeschoss Beleuchtung"                         <light>            (map3,Base_Lights)                  ["Light"] 
+Group:Contact:OR(OPEN, CLOSED) map3_Contacts       "1. Obergeschoss Öffnungsmelder"                      <contact>          (map3,Base_Contacts)                ["OpenState"] 
+Group:Number:Temperature:AVG   map3_Temperature    "1. Obergeschoss Ø Temperatur"                        <temperature>      (map3,Base_Temperature)             ["Measurement", "Temperature"]        {stateDescription=""[pattern="%.1f %unit%"]} 
+Group   map3_1   ""    (map3)   ["Location", "Room", ""] 
 Group   equipment_i_OG_RM12_UGRM1LEDTreppeDimmenabsolut   "UG +RM1 LED Treppe Dimmen absolut"  <light>  (map3_1)   ["Lightbulb"] 
-Dimmer   i_OG_RM12_UGRM1LEDTreppeDimmenabsolut   "UG +RM1 LED Treppe Dimmen absolut"   <light>   (equipment_i_OG_RM12_UGRM1LEDTreppeDimmenabsolut)   ["Light"]    { channel="knx:device:bridge:generic:i_OG_RM12_UGRM1LEDTreppeDimmenabsolut"  }
+Dimmer   i_OG_RM12_UGRM1LEDTreppeDimmenabsolut   "UG +RM1 LED Treppe Dimmen absolut"   <light>   (equipment_i_OG_RM12_UGRM1LEDTreppeDimmenabsolut,map3_Lights)   ["Light"]    { channel="knx:device:bridge:generic:i_OG_RM12_UGRM1LEDTreppeDimmenabsolut"  }
 Group   equipment_i_OG_RM12_M30AufAb   "RM12-M30 Auf/Ab"  <rollershutter>  (map3_1)   ["Blinds"] 
-Rollershutter   i_OG_RM12_M30AufAb   "RM12-M30 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM12_M30AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM12_M30AufAb"  }
-Switch   i_OG_RM12_1OGH36Schalten   "1.OG +RM12 H36 Schalten"      (map3_1)       { channel="knx:device:bridge:generic:i_OG_RM12_1OGH36Schalten"  }
+Rollershutter   i_OG_RM12_M30AufAb   "RM12-M30 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM12_M30AufAb,map3_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM12_M30AufAb"  }
 Number:Illuminance   i_OG_RM12_Hlligkeitdeb   "Hlligkeit deb"   <sun>   (map3_1)   ["Measurement", "Light"]    { channel="knx:device:bridge:generic:i_OG_RM12_Hlligkeitdeb" , stateDescription=""[pattern="%.1f %unit%"] }
-Group   map3_2   ""    (map3)   ["Room", ""] 
+Switch   i_OG_RM12_1OGH36Schalten   "1.OG +RM12 H36 Schalten"      (map3_1)       { channel="knx:device:bridge:generic:i_OG_RM12_1OGH36Schalten"  }
+Group   map3_2   ""    (map3)   ["Location", "Room", ""] 
 Group   equipment_i_OG_RM5_1OGM1AufAb   "1.OG +RM5 M1 Auf/Ab"  <rollershutter>  (map3_2)   ["Blinds"] 
-Rollershutter   i_OG_RM5_1OGM1AufAb   "1.OG +RM5 M1 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM5_1OGM1AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM5_1OGM1AufAb"  }
+Rollershutter   i_OG_RM5_1OGM1AufAb   "1.OG +RM5 M1 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM5_1OGM1AufAb,map3_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM5_1OGM1AufAb"  }
 Group   equipment_i_OG_RM5_1OGM2AufAb   "1.OG +RM5 M2 Auf/Ab"  <rollershutter>  (map3_2)   ["Blinds"] 
-Rollershutter   i_OG_RM5_1OGM2AufAb   "1.OG +RM5 M2 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM5_1OGM2AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM5_1OGM2AufAb"  }
+Rollershutter   i_OG_RM5_1OGM2AufAb   "1.OG +RM5 M2 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM5_1OGM2AufAb,map3_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM5_1OGM2AufAb"  }
 Group   equipment_i_OG_RM5_1OGRollos_ges_auf_ab   "1.OG +RM5 Rollos_ges_auf_ab"  <rollershutter>  (map3_2)   ["Blinds"] 
-Rollershutter   i_OG_RM5_1OGRollos_ges_auf_ab   "1.OG +RM5 Rollos_ges_auf_ab"   <rollershutter>   (equipment_i_OG_RM5_1OGRollos_ges_auf_ab)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM5_1OGRollos_ges_auf_ab"  }
+Rollershutter   i_OG_RM5_1OGRollos_ges_auf_ab   "1.OG +RM5 Rollos_ges_auf_ab"   <rollershutter>   (equipment_i_OG_RM5_1OGRollos_ges_auf_ab,map3_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM5_1OGRollos_ges_auf_ab"  }
 Group   equipment_i_OG_RM5_1OGBetriebsmodus   "1.OG +RM5 Betriebsmodus"  <heating_mode>  (map3_2)   ["HVAC"] 
 Number   i_OG_RM5_1OGBetriebsmodus   "1.OG +RM5 Betriebsmodus"   <heating_mode>   (equipment_i_OG_RM5_1OGBetriebsmodus)   ["HVAC"]    { channel="knx:device:bridge:generic:i_OG_RM5_1OGBetriebsmodus" , stateDescription=""[options="NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], commandDescription=""[options="1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], listWidget=""[iconUseState="true"] }
 Switch   i_OG_RM5_1OGX2022Schalten   "1.OG +RM5 X20/22 Schalten"      (map3_2)       { channel="knx:device:bridge:generic:i_OG_RM5_1OGX2022Schalten"  }
@@ -160,61 +160,61 @@ Switch   i_OG_RM5_1OGH10H13Schalten   "1.OG +RM5 H10 & H1-3 Schalten"      (map3
 Dimmer   i_OG_RM5_1OGH10H13DimmenRueckmeldung   "1.OG +RM5 H10 & H1-3 Dimmen Rückmeldung"      (map3_2)   ["Measurement"]    { channel="knx:device:bridge:generic:i_OG_RM5_1OGH10H13DimmenRueckmeldung" , unit="%", stateDescription=""[pattern="%.1f %%"] }
 Dimmer   i_OG_RM5_1OGM1Rueckmeldung   "1.OG +RM5 M1 Rückmeldung"      (map3_2)   ["Measurement"]    { channel="knx:device:bridge:generic:i_OG_RM5_1OGM1Rueckmeldung" , unit="%", stateDescription=""[pattern="%.1f %%"] }
 Dimmer   i_OG_RM5_1OGM2Rueckmeldung   "1.OG +RM5 M2 Rückmeldung"      (map3_2)   ["Measurement"]    { channel="knx:device:bridge:generic:i_OG_RM5_1OGM2Rueckmeldung" , unit="%", stateDescription=""[pattern="%.1f %%"] }
-Number:Temperature   i_OG_RM5_1OGIstTemperatur   "1.OG +RM5 Ist-Temperatur"   <temperature>   (map3_2)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_OG_RM5_1OGIstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
-Number:Temperature   i_OG_RM5_1OGStatusSollwert   "1.OG +RM5 Status Sollwert"   <temperature>   (map3_2)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_OG_RM5_1OGStatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
-Group   map3_3   ""    (map3)   ["Room", ""] 
+Number:Temperature   i_OG_RM5_1OGIstTemperatur   "1.OG +RM5 Ist-Temperatur"   <temperature>   (map3_2,map3_Temperature)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_OG_RM5_1OGIstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
+Number:Temperature   i_OG_RM5_1OGStatusSollwert   "1.OG +RM5 Status Sollwert"   <temperature>   (map3_2,map3_Temperature)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_OG_RM5_1OGStatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
+Group   map3_3   ""    (map3)   ["Location", "Room", ""] 
 Group   equipment_i_OG_RM6_1OGRolloM2AufAb   "1.OG +RM6 Rollo M2 Auf/Ab"  <rollershutter>  (map3_3)   ["Blinds"] 
-Rollershutter   i_OG_RM6_1OGRolloM2AufAb   "1.OG +RM6 Rollo M2 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM6_1OGRolloM2AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM6_1OGRolloM2AufAb"  }
+Rollershutter   i_OG_RM6_1OGRolloM2AufAb   "1.OG +RM6 Rollo M2 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM6_1OGRolloM2AufAb,map3_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM6_1OGRolloM2AufAb"  }
 Group   equipment_i_OG_RM6_1OGRolloM1AufAb   "1.OG +RM6 Rollo M1 Auf/Ab"  <rollershutter>  (map3_3)   ["Blinds"] 
-Rollershutter   i_OG_RM6_1OGRolloM1AufAb   "1.OG +RM6 Rollo M1 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM6_1OGRolloM1AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM6_1OGRolloM1AufAb"  }
+Rollershutter   i_OG_RM6_1OGRolloM1AufAb   "1.OG +RM6 Rollo M1 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM6_1OGRolloM1AufAb,map3_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM6_1OGRolloM1AufAb"  }
 Group   equipment_i_OG_RM6_1OGRollos_ges_auf_ab   "1.OG +RM6 Rollos_ges_auf_ab"  <rollershutter>  (map3_3)   ["Blinds"] 
-Rollershutter   i_OG_RM6_1OGRollos_ges_auf_ab   "1.OG +RM6 Rollos_ges_auf_ab"   <rollershutter>   (equipment_i_OG_RM6_1OGRollos_ges_auf_ab)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM6_1OGRollos_ges_auf_ab"  }
+Rollershutter   i_OG_RM6_1OGRollos_ges_auf_ab   "1.OG +RM6 Rollos_ges_auf_ab"   <rollershutter>   (equipment_i_OG_RM6_1OGRollos_ges_auf_ab,map3_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM6_1OGRollos_ges_auf_ab"  }
 Group   equipment_i_OG_RM6_1OGBetriebsmodus   "1.OG +RM6 Betriebsmodus"  <heating_mode>  (map3_3)   ["HVAC"] 
 Number   i_OG_RM6_1OGBetriebsmodus   "1.OG +RM6 Betriebsmodus"   <heating_mode>   (equipment_i_OG_RM6_1OGBetriebsmodus)   ["HVAC"]    { channel="knx:device:bridge:generic:i_OG_RM6_1OGBetriebsmodus" , stateDescription=""[options="NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], commandDescription=""[options="1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], listWidget=""[iconUseState="true"] }
-Switch   i_OG_RM6_1OGH16Schalten   "1.OG +RM6 H1-6 Schalten"      (map3_3)       { channel="knx:device:bridge:generic:i_OG_RM6_1OGH16Schalten"  }
 DateTime   i_OG_RM6_DatumUhrzeit   "Datum/Uhrzeit"   <time>   (map3_3)       { channel="knx:device:bridge:generic:i_OG_RM6_DatumUhrzeit"  }
+Switch   i_OG_RM6_1OGH16Schalten   "1.OG +RM6 H1-6 Schalten"      (map3_3)       { channel="knx:device:bridge:generic:i_OG_RM6_1OGH16Schalten"  }
 Dimmer   i_OG_RM6_1OGM1Rueckmeldung   "1.OG +RM6 M1 Rückmeldung"      (map3_3)   ["Measurement"]    { channel="knx:device:bridge:generic:i_OG_RM6_1OGM1Rueckmeldung" , unit="%", stateDescription=""[pattern="%.1f %%"] }
 Dimmer   i_OG_RM6_1OGM2Rueckmeldung   "1.OG +RM6 M2 Rückmeldung"      (map3_3)   ["Measurement"]    { channel="knx:device:bridge:generic:i_OG_RM6_1OGM2Rueckmeldung" , unit="%", stateDescription=""[pattern="%.1f %%"] }
-Number:Temperature   i_OG_RM6_1OGIstTemperatur   "1.OG +RM6 Ist-Temperatur"   <temperature>   (map3_3)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_OG_RM6_1OGIstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
-Number:Temperature   i_OG_RM6_1OGStatusSollwert   "1.OG +RM6 Status Sollwert"   <temperature>   (map3_3)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_OG_RM6_1OGStatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
-Group   map3_4   ""    (map3)   ["Room", ""] 
+Number:Temperature   i_OG_RM6_1OGIstTemperatur   "1.OG +RM6 Ist-Temperatur"   <temperature>   (map3_3,map3_Temperature)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_OG_RM6_1OGIstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
+Number:Temperature   i_OG_RM6_1OGStatusSollwert   "1.OG +RM6 Status Sollwert"   <temperature>   (map3_3,map3_Temperature)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_OG_RM6_1OGStatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
+Group   map3_4   ""    (map3)   ["Location", "Room", ""] 
 Group   equipment_i_OG_RM7_1OGM1AufAb   "1.OG +RM7 M1 Auf/Ab"  <rollershutter>  (map3_4)   ["Blinds"] 
-Rollershutter   i_OG_RM7_1OGM1AufAb   "1.OG +RM7 M1 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM7_1OGM1AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM7_1OGM1AufAb"  }
+Rollershutter   i_OG_RM7_1OGM1AufAb   "1.OG +RM7 M1 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM7_1OGM1AufAb,map3_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM7_1OGM1AufAb"  }
 Group   equipment_i_OG_RM7_1OGM2AufAb   "1.OG +RM7 M2 Auf/Ab"  <rollershutter>  (map3_4)   ["Blinds"] 
-Rollershutter   i_OG_RM7_1OGM2AufAb   "1.OG +RM7 M2 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM7_1OGM2AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM7_1OGM2AufAb"  }
+Rollershutter   i_OG_RM7_1OGM2AufAb   "1.OG +RM7 M2 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM7_1OGM2AufAb,map3_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM7_1OGM2AufAb"  }
 Group   equipment_i_OG_RM7_1OGRollos_ges_auf_ab   "1.OG +RM7 Rollos_ges_auf_ab"  <rollershutter>  (map3_4)   ["Blinds"] 
-Rollershutter   i_OG_RM7_1OGRollos_ges_auf_ab   "1.OG +RM7 Rollos_ges_auf_ab"   <rollershutter>   (equipment_i_OG_RM7_1OGRollos_ges_auf_ab)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM7_1OGRollos_ges_auf_ab"  }
+Rollershutter   i_OG_RM7_1OGRollos_ges_auf_ab   "1.OG +RM7 Rollos_ges_auf_ab"   <rollershutter>   (equipment_i_OG_RM7_1OGRollos_ges_auf_ab,map3_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM7_1OGRollos_ges_auf_ab"  }
 Group   equipment_i_OG_RM7_1OGBetriebsmodus   "1.OG +RM7 Betriebsmodus"  <heating_mode>  (map3_4)   ["HVAC"] 
 Number   i_OG_RM7_1OGBetriebsmodus   "1.OG +RM7 Betriebsmodus"   <heating_mode>   (equipment_i_OG_RM7_1OGBetriebsmodus)   ["HVAC"]    { channel="knx:device:bridge:generic:i_OG_RM7_1OGBetriebsmodus" , stateDescription=""[options="NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], commandDescription=""[options="1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], listWidget=""[iconUseState="true"] }
 Switch   i_OG_RM7_1OGH14SpotsDecke   "1.OG +RM7-H1-4 Spots Decke"      (map3_4)       { channel="knx:device:bridge:generic:i_OG_RM7_1OGH14SpotsDecke"  }
 Dimmer   i_OG_RM7_1OGM1Rueckmeldung   "1.OG +RM7 M1 Rückmeldung"      (map3_4)   ["Measurement"]    { channel="knx:device:bridge:generic:i_OG_RM7_1OGM1Rueckmeldung" , unit="%", stateDescription=""[pattern="%.1f %%"] }
 Dimmer   i_OG_RM7_1OGM2Rueckmeldung   "1.OG +RM7 M2 Rückmeldung"      (map3_4)   ["Measurement"]    { channel="knx:device:bridge:generic:i_OG_RM7_1OGM2Rueckmeldung" , unit="%", stateDescription=""[pattern="%.1f %%"] }
-Number:Temperature   i_OG_RM7_1OGIstTemperatur   "1.OG +RM7 Ist-Temperatur"   <temperature>   (map3_4)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_OG_RM7_1OGIstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
-Number:Temperature   i_OG_RM7_1OGStatusSollwert   "1.OG +RM7 Status Sollwert"   <temperature>   (map3_4)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_OG_RM7_1OGStatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
-Group   map3_5   ""    (map3)   ["Room", ""] 
+Number:Temperature   i_OG_RM7_1OGIstTemperatur   "1.OG +RM7 Ist-Temperatur"   <temperature>   (map3_4,map3_Temperature)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_OG_RM7_1OGIstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
+Number:Temperature   i_OG_RM7_1OGStatusSollwert   "1.OG +RM7 Status Sollwert"   <temperature>   (map3_4,map3_Temperature)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_OG_RM7_1OGStatusSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
+Group   map3_5   ""    (map3)   ["Location", "Room", ""] 
 Group   equipment_i_OG_RM8_1OGM1AufAb   "1.OG +RM8 M1 Auf/Ab"  <rollershutter>  (map3_5)   ["Blinds"] 
-Rollershutter   i_OG_RM8_1OGM1AufAb   "1.OG +RM8 M1 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM8_1OGM1AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM8_1OGM1AufAb"  }
+Rollershutter   i_OG_RM8_1OGM1AufAb   "1.OG +RM8 M1 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM8_1OGM1AufAb,map3_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM8_1OGM1AufAb"  }
 Group   equipment_i_OG_RM8_1OGM2AufAb   "1.OG +RM8 M2 Auf/Ab"  <rollershutter>  (map3_5)   ["Blinds"] 
-Rollershutter   i_OG_RM8_1OGM2AufAb   "1.OG +RM8 M2 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM8_1OGM2AufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM8_1OGM2AufAb"  }
+Rollershutter   i_OG_RM8_1OGM2AufAb   "1.OG +RM8 M2 Auf/Ab"   <rollershutter>   (equipment_i_OG_RM8_1OGM2AufAb,map3_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM8_1OGM2AufAb"  }
 Group   equipment_i_OG_RM8_1OGRollos_ges_auf_ab   "1.OG +RM8 Rollos_ges_auf_ab"  <rollershutter>  (map3_5)   ["Blinds"] 
-Rollershutter   i_OG_RM8_1OGRollos_ges_auf_ab   "1.OG +RM8 Rollos_ges_auf_ab"   <rollershutter>   (equipment_i_OG_RM8_1OGRollos_ges_auf_ab)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM8_1OGRollos_ges_auf_ab"  }
+Rollershutter   i_OG_RM8_1OGRollos_ges_auf_ab   "1.OG +RM8 Rollos_ges_auf_ab"   <rollershutter>   (equipment_i_OG_RM8_1OGRollos_ges_auf_ab,map3_Blinds)   ["Blinds"]    { channel="knx:device:bridge:generic:i_OG_RM8_1OGRollos_ges_auf_ab"  }
 Group   equipment_i_OG_RM8_1OGBetriebsmodus   "1.OG +RM8 Betriebsmodus"  <heating_mode>  (map3_5)   ["HVAC"] 
 Number   i_OG_RM8_1OGBetriebsmodus   "1.OG +RM8 Betriebsmodus"   <heating_mode>   (equipment_i_OG_RM8_1OGBetriebsmodus)   ["HVAC"]    { channel="knx:device:bridge:generic:i_OG_RM8_1OGBetriebsmodus" , stateDescription=""[options="NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], commandDescription=""[options="1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], listWidget=""[iconUseState="true"] }
 Switch   i_OG_RM8_1OGH14Schalten   "1.OG +RM8 H1-4 Schalten"      (map3_5)       { channel="knx:device:bridge:generic:i_OG_RM8_1OGH14Schalten"  }
 Dimmer   i_OG_RM8_1OGM1Rueckmeldung   "1.OG +RM8 M1 Rückmeldung"      (map3_5)   ["Measurement"]    { channel="knx:device:bridge:generic:i_OG_RM8_1OGM1Rueckmeldung" , unit="%", stateDescription=""[pattern="%.1f %%"] }
 Dimmer   i_OG_RM8_1OGM2Rueckmeldung   "1.OG +RM8 M2 Rückmeldung"      (map3_5)   ["Measurement"]    { channel="knx:device:bridge:generic:i_OG_RM8_1OGM2Rueckmeldung" , unit="%", stateDescription=""[pattern="%.1f %%"] }
-Number:Temperature   i_OG_RM8_1OGIstTemperatur   "1.OG +RM8 Ist-Temperatur"   <temperature>   (map3_5)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_OG_RM8_1OGIstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
-Number:Temperature   i_OG_RM8_1OGStausSollwert   "1.OG +RM8 Staus Sollwert"   <temperature>   (map3_5)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_OG_RM8_1OGStausSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
+Number:Temperature   i_OG_RM8_1OGIstTemperatur   "1.OG +RM8 Ist-Temperatur"   <temperature>   (map3_5,map3_Temperature)   ["Measurement", "Temperature"]    { channel="knx:device:bridge:generic:i_OG_RM8_1OGIstTemperatur" , stateDescription=""[pattern="%.1f %unit%"] }
+Number:Temperature   i_OG_RM8_1OGStausSollwert   "1.OG +RM8 Staus Sollwert"   <temperature>   (map3_5,map3_Temperature)   ["Setpoint", "Temperature"]    { channel="knx:device:bridge:generic:i_OG_RM8_1OGStausSollwert" , stateDescription=""[pattern="%.1f %unit%"] }
 Group   map4   "unknown"  (Base) ["Location"]  
-Group:Rollershutter:AVG        map4_Blinds         "unknown Jalousie/Rollo"                      <rollershutter>    (map4)                  ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]} 
-Group:Switch:OR(ON, OFF)       map4_Lights         "unknown Beleuchtung"                         <light>            (map4)                  ["Light"] 
-Group:Contact:OR(OPEN, CLOSED) map4_Contacts       "unknown Öffnungsmelder"                      <contact>          (map4)                ["OpenState"] 
-Group:Number:Temperature:AVG   map4_Temperature    "unknown Ø Temperatur"                        <temperature>      (map4)             ["Measurement", "Temperature"]        {stateDescription=""[pattern="%.1f %unit%"]} 
-Group   map4_1   "unknown"    (map4)   ["Room", "unknown"] 
+Group:Rollershutter:AVG        map4_Blinds         "unknown Jalousie/Rollo"                      <rollershutter>    (map4,Base_Blinds)                  ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]} 
+Group:Switch:OR(ON, OFF)       map4_Lights         "unknown Beleuchtung"                         <light>            (map4,Base_Lights)                  ["Light"] 
+Group:Contact:OR(OPEN, CLOSED) map4_Contacts       "unknown Öffnungsmelder"                      <contact>          (map4,Base_Contacts)                ["OpenState"] 
+Group:Number:Temperature:AVG   map4_Temperature    "unknown Ø Temperatur"                        <temperature>      (map4,Base_Temperature)             ["Measurement", "Temperature"]        {stateDescription=""[pattern="%.1f %unit%"]} 
+Group   map4_1   "unknown"    (map4)   ["Location", "Room", "unknown"] 
 Group   equipment_i_unknown_unknown_1OGRM6Wanne_abs   "1.OG +RM6 Wanne_abs"  <light>  (map4_1)   ["Lightbulb"] 
-Dimmer   i_unknown_unknown_1OGRM6Wanne_abs   "1.OG +RM6 Wanne_abs"   <light>   (equipment_i_unknown_unknown_1OGRM6Wanne_abs)   ["Light"]    { channel="knx:device:bridge:generic:i_unknown_unknown_1OGRM6Wanne_abs"  }
+Dimmer   i_unknown_unknown_1OGRM6Wanne_abs   "1.OG +RM6 Wanne_abs"   <light>   (equipment_i_unknown_unknown_1OGRM6Wanne_abs,map4_Lights)   ["Light"]    { channel="knx:device:bridge:generic:i_unknown_unknown_1OGRM6Wanne_abs"  }
 Group   equipment_i_unknown_unknown_1OGRM6Dusche_abs   "1.OG +RM6 Dusche_abs"  <light>  (map4_1)   ["Lightbulb"] 
-Dimmer   i_unknown_unknown_1OGRM6Dusche_abs   "1.OG +RM6 Dusche_abs"   <light>   (equipment_i_unknown_unknown_1OGRM6Dusche_abs)   ["Light"]    { channel="knx:device:bridge:generic:i_unknown_unknown_1OGRM6Dusche_abs"  }
-Switch   i_unknown_unknown_LogikZentralSchlafenallesausaktor   "Logik Zentral Schlafen alles aus aktor"   <switch>   (map4_1)   ["Switch"]    { channel="knx:device:bridge:generic:i_unknown_unknown_LogikZentralSchlafenallesausaktor"  }
-Switch   i_unknown_unknown_1OGRM6PatschZentralaktor   "1.OG +RM6 Patsch Zentral aktor"   <switch>   (map4_1)   ["Switch"]    { channel="knx:device:bridge:generic:i_unknown_unknown_1OGRM6PatschZentralaktor"  }
+Dimmer   i_unknown_unknown_1OGRM6Dusche_abs   "1.OG +RM6 Dusche_abs"   <light>   (equipment_i_unknown_unknown_1OGRM6Dusche_abs,map4_Lights)   ["Light"]    { channel="knx:device:bridge:generic:i_unknown_unknown_1OGRM6Dusche_abs"  }
+Switch   i_unknown_unknown_LogikZentralSchlafenallesausaktor   "Logik Zentral Schlafen alles aus aktor"   <switch>   (map4_1)   ["Control", "Switch"]    { channel="knx:device:bridge:generic:i_unknown_unknown_LogikZentralSchlafenallesausaktor"  }
+Switch   i_unknown_unknown_1OGRM6PatschZentralaktor   "1.OG +RM6 Patsch Zentral aktor"   <switch>   (map4_1)   ["Control", "Switch"]    { channel="knx:device:bridge:generic:i_unknown_unknown_1OGRM6PatschZentralaktor"  }
 Switch   i_unknown_unknown_AUBE1H13Schalten   "AU +BE1 H1-3 Schalten"      (map4_1)       { channel="knx:device:bridge:generic:i_unknown_unknown_AUBE1H13Schalten"  }

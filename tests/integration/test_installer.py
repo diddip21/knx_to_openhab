@@ -31,7 +31,6 @@ class TestInstallerScript(unittest.TestCase):
             f"Setup script not found at {self.setup_script}"
         )
         
-    @unittest.skipIf(os.name == 'nt', "Bash syntax check not supported on Windows")
     def test_setup_script_syntax(self):
         """Test that setup.sh has valid bash syntax."""
         result = subprocess.run(

@@ -194,11 +194,7 @@ class BuildingGenerator:
         """Build complete item/thing/sitemap configuration."""
         # Thing
         thing_type = gen_result['item_type'].lower().split(":")[0]
-        thing_info = gen_result['thing_info']
-        if isinstance(thing_info, dict):
-            thing_info = ', '.join([f'{k}="{v}"' for k, v in thing_info.items()])
-            
-        thing = f"Type {thing_type}    :   {item_name}   \"{address['Group name']}\"   [ {thing_info} ]\n"
+        thing = f"Type {thing_type}    :   {item_name}   \"{address['Group name']}\"   [ {gen_result['thing_info']} ]\n"
         
         # Item groups
         root_group = f"map{floor_nr}_{room_nr}"

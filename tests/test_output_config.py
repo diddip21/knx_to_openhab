@@ -15,8 +15,9 @@ import json
 class TestOutputConfig(unittest.TestCase):
 
     def setUp(self):
-        # We don't reload here as we need patches active during reload
-        pass
+        # We need to reload config to trigger the logic again with different mocks
+        if 'config' in sys.modules:
+            del sys.modules['config']
 
     @patch('subprocess.run')
     def test_openhab_cli_detection(self, mock_run):
@@ -33,8 +34,6 @@ class TestOutputConfig(unittest.TestCase):
         mock_run.return_value = mock_proc
 
         import config
-        import importlib
-        importlib.reload(config)
         # Verify paths are updated
         from pathlib import Path
         expected = str(Path('/etc/openhab') / 'items' / 'knx.items')
@@ -59,8 +58,6 @@ class TestOutputConfig(unittest.TestCase):
             with patch("json.load", return_value=mock_data):
                 with patch("pathlib.Path.exists", return_value=True):
                      import config
-                     import importlib
-                     importlib.reload(config)
                      from pathlib import Path
                      expected = str(Path('/opt/openhab') / 'items' / 'knx.items')
                      self.assertEqual(config.config['items_path'], expected)
@@ -74,32 +71,20 @@ class TestOutputConfig(unittest.TestCase):
         # Mock path exists false for web ui
         with patch("pathlib.Path.exists", return_value=False):
             import config
-            import importlib
-            importlib.reload(config)
             self.assertIn('openhab', config.config['items_path']) # Expect openhab/items/knx.items
             self.assertIsNone(config.config['target_user'])
 
     @patch('shutil.chown')
     def test_permission_setting(self, mock_chown):
-        # We need to ensure config is in a known state for this test
+        # Import config with detected settings first
         with patch('subprocess.run') as mock_run:
              mock_proc = MagicMock()
              mock_proc.returncode = 0
              mock_proc.stdout = "User: testuser\nUser Groups: testgroup\nOPENHAB_CONF | /tmp/oh"
              mock_run.return_value = mock_proc
-             
-             # Force reload or re-import within the patch context
-             if 'config' in sys.modules:
-                 import importlib
-                 import config
-                 importlib.reload(config)
-             else:
-                 import config
+             import config
         
         import ets_to_openhab
-        # Force reload ets_to_openhab to ensure it sees the reloaded config
-        import importlib
-        importlib.reload(ets_to_openhab)
         
         # We invoke set_permissions
         ets_to_openhab.set_permissions('/tmp/testfile')

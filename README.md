@@ -17,8 +17,7 @@ It includes a **Web UI** for easy management, file uploads, and monitoring, as w
 
 - **[User Guide](docs/USER_GUIDE.md)**: Configuration, ETS preparation, Logic, and Troubleshooting.
 - **[Production Guide](docs/PRODUCTION_GUIDE.md)**: Installation on Raspberry Pi/DietPi (Service, Systemd).
-- **[Developer Guide](docs/DEVELOPER_GUIDE.md)**: Refactored Architecture, Testing, and Local Development.
-- **[Migration Guide](MIGRATION_GUIDE.md)**: Information about the refactored code structure.
+- **[Developer Guide](docs/DEVELOPER_GUIDE.md)**: Architecture, Testing, and Local Development.
 
 ---
 
@@ -52,3 +51,9 @@ curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/uninsta
 3.  **Configure**: Go to **Settings** to map DPTs or adjust naming rules.
 4.  **Generate**: The system automatically generates Items, Things, and Sitemaps.
 5.  **Update**: Click the Version badge in the header to check for and apply updates.
+
+---
+
+## License
+
+This project is open-source.

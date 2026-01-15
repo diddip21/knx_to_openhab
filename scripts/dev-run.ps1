@@ -28,4 +28,4 @@ Write-Host ""
 $env:FLASK_APP = "web_ui.backend.app:app"
 $env:FLASK_ENV = "development"
 
-flask run --host 127.0.0.1 --port 5000 --debug
+flask run --host 127.0.0.1 --port 5001 --debug

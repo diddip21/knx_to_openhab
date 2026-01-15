@@ -132,16 +132,8 @@ knx_to_openhab/
 ├── config.json                     # Main KNX parser configuration
 ├── config.py                       # Config loader
 │
-├── src/                            # Core: Refactored modular architecture
-│   ├── __init__.py                 # Public API with backward compatibility
-│   ├── building_generator.py       # Main orchestrator for all generators
-│   ├── models/                     # Data models (KNXAddress, OpenHABItem, etc.)
-│   ├── generators/                 # Device type generators (Dimmer, RollerShutter, etc.)
-│   ├── parsers/                    # KNX project parsing logic
-│   ├── exporters/                  # OpenHAB file export logic
-│   └── utils/                      # Utility functions (caching, validation)
-├── knxproject_to_openhab.py        # Legacy: KNX project parser (for backward compatibility)
-├── ets_to_openhab.py               # Legacy: Main entry point (now uses refactored code)
+├── knxproject_to_openhab.py        # Core: KNX project parser
+├── ets_to_openhab.py               # Core: OpenHAB file generator
 │
 ├── web_ui/                         # Web UI application
 │   ├── backend/
@@ -171,13 +163,8 @@ knx_to_openhab/
 │
 ├── tests/                          # Test files
 │   ├── unit/                       # Unit tests
-│   │   ├── test_dimmer_generator.py     # Tests for dimmer generator
-│   │   ├── test_rollershutter_generator.py  # Tests for rollershutter generator
-│   │   ├── test_switch_generator.py     # Tests for switch generator
-│   │   ├── test_heating_generator.py    # Tests for heating generator
-│   │   ├── test_scene_generator.py      # Tests for scene generator
-│   │   ├── test_generic_generator.py    # Tests for generic generator
-│   │   └── test_knx_parsing.py          # Tests for parsing logic
+│   │   ├── test_knx_parsing.py     # Tests for parsing logic
+│   │   └── test_knxproject_to_openhab_Mayer.py
 │   ├── integration/                # Integration tests
 │   │   └── test_file_import.py     # End-to-end file processing tests
 │   ├── ui/                         # UI tests (Playwright)
@@ -198,27 +185,22 @@ knx_to_openhab/
 
 ## Core Components
 
-### 1. Refactored Architecture (`src/`)
+### 1. KNX Parser (`knxproject_to_openhab.py`)
 
-The core logic has been refactored into a modular architecture:
-- **Models** (`src/models/`) - Data models (KNXAddress, OpenHABItem, Floor, Room)
-- **Generators** (`src/generators/`) - Device type-specific logic (Dimmer, Rollershutter, Switch, etc.)
-- **Parsers** (`src/parsers/`) - KNX project parsing logic
-- **Exporters** (`src/exporters/`) - OpenHAB file export logic
-- **Utils** (`src/utils/`) - Utility functions (caching, validation)
-- **Building Generator** (`src/building_generator.py`) - Main orchestrator
+Parses `.knxproj`, `.knxprojarchive`, or `.json` files and extracts:
+- Building structure (floors, rooms)
+- Group addresses with data point types
+- Device communication objects
+- Semantic metadata
 
-**Usage (via ets_to_openhab.py):**
+**Usage:**
 ```bash
-python ets_to_openhab.py --input project.knxproj
+python knxproject_to_openhab.py --input project.knxproj
 ```
 
-### 2. Legacy Entry Points (for backward compatibility)
+### 2. OpenHAB Generator (`ets_to_openhab.py`)
 
-- **KNX Parser** (`knxproject_to_openhab.py`) - Parses `.knxproj`, `.knxprojarchive`, or `.json` files
-- **OpenHAB Generator** (`ets_to_openhab.py`) - Generates OpenHAB configuration files (now uses refactored architecture internally)
-
-Legacy components generate:
+Generates OpenHAB configuration files from parsed KNX data:
 - `items/*.items` - Item definitions
 - `things/*.things` - Thing definitions
 - `sitemaps/*.sitemap` - UI sitemaps
@@ -317,15 +299,9 @@ python -m pytest tests/unit/ -v
 ```bash
 python -m pytest tests/unit/test_knx_parsing.py -v
 ```
-**Coverage:**
-- `test_dimmer_generator.py` - Tests for dimmer generator logic
-- `test_rollershutter_generator.py` - Tests for rollershutter generator logic
-- `test_switch_generator.py` - Tests for switch generator logic
-- `test_heating_generator.py` - Tests for heating generator logic
-- `test_scene_generator.py` - Tests for scene generator logic
-- `test_generic_generator.py` - Tests for generic generator fallback logic
-- `test_knx_parsing.py` - Tests for floor/room name extraction and building structure parsing
 
+**Coverage:**
+- `test_knx_parsing.py` - Tests for floor/room name extraction and building structure parsing
 
 ### Integration Tests
 

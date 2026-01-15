@@ -5,9 +5,6 @@ import logging
 import shutil
 from config import config, datapoint_mappings,normalize_string
 from utils import get_datapoint_type
-
-# Feature flag for using refactored code
-USE_REFACTORED_GENERATORS = True  # Set to True to use new architecture
 logger = logging.getLogger(__name__)
 
 pattern_items_Name: str = config['regexpattern']['items_Name']
@@ -728,7 +725,7 @@ def check_unused_addresses():
     """Logs all unused addresses for further manual actions"""
     # process all addresses which were not used
     for address in all_addresses:
-        logger.info("unused: %s: %s with type %s",address['Address'],address['Group name'],address['DatapointType'])
+        logger.debug("unused: %s: %s with type %s",address['Address'],address['Group name'],address['DatapointType'])
 
 def set_permissions(file_path, configuration=None):
     """
@@ -858,14 +855,9 @@ def export_output(items,sitemap,things, configuration=None):
 def main(configuration=None):
     """Main function"""
     logging.basicConfig()
-    # Use refactored or legacy implementation
-    if USE_REFACTORED_GENERATORS:
-        from src import gen_building_new
-        items,sitemap,things=gen_building_new(floors, all_addresses, config)
-    else:
-        items,sitemap,things=gen_building()
-        
+    items,sitemap,things=gen_building()
     check_unused_addresses()
     export_output(items,sitemap,things, configuration=configuration)
+
 if __name__ == "__main__":
     main()

@@ -758,12 +758,12 @@ async function loadConfig() {
     if (!currentConfig.regexpattern) currentConfig.regexpattern = {}
 
     // Populate General Tab
+    document.getElementById('conf-ets-export').value = currentConfig.ets_export || ''
     document.getElementById('conf-items-path').value = currentConfig.items_path || ''
     document.getElementById('conf-things-path').value = currentConfig.things_path || ''
     document.getElementById('conf-sitemaps-path').value = currentConfig.sitemaps_path || ''
     document.getElementById('conf-influx-path').value = currentConfig.influx_path || ''
     document.getElementById('conf-fenster-path').value = currentConfig.fenster_path || ''
-    document.getElementById('conf-transform-path').value = currentConfig.transform_dir_path || ''
 
     const gen = currentConfig.general || {}
     document.getElementById('conf-floor-asis').checked = gen.FloorNameAsItIs || false
@@ -773,8 +773,6 @@ async function loadConfig() {
     document.getElementById('conf-add-missing').checked = gen.addMissingItems || false
     document.getElementById('conf-unknown-floor').value = gen.unknown_floorname || 'unknown'
     document.getElementById('conf-unknown-room').value = gen.unknown_roomname || 'unknown'
-    document.getElementById('conf-floor-prefix').value = gen.item_Floor_nameshort_prefix || '='
-    document.getElementById('conf-room-prefix').value = gen.item_Room_nameshort_prefix || '+'
 
     // Populate Devices Tab
     const dev = currentConfig.devices || {}
@@ -790,8 +788,8 @@ async function loadConfig() {
     // Populate Advanced Tab
     renderRegexSettings(currentConfig.regexpattern || {})
 
-    // Show settings content (Removed auto-expansion)
-    // document.getElementById('settings-content').style.display = 'block'
+    // Show settings content
+    document.getElementById('settings-content').style.display = 'block'
     configStatus.textContent = '✓ Configuration loaded'
     configStatus.className = 'status-message success'
   } catch (e) {
@@ -907,12 +905,12 @@ async function saveConfig(reprocess = false) {
     const newConfig = { ...currentConfig }
 
     // General
+    newConfig.ets_export = document.getElementById('conf-ets-export').value
     newConfig.items_path = document.getElementById('conf-items-path').value
     newConfig.things_path = document.getElementById('conf-things-path').value
     newConfig.sitemaps_path = document.getElementById('conf-sitemaps-path').value
     newConfig.influx_path = document.getElementById('conf-influx-path').value
     newConfig.fenster_path = document.getElementById('conf-fenster-path').value
-    newConfig.transform_dir_path = document.getElementById('conf-transform-path').value
 
     newConfig.general = {
       FloorNameAsItIs: document.getElementById('conf-floor-asis').checked,
@@ -922,8 +920,8 @@ async function saveConfig(reprocess = false) {
       addMissingItems: document.getElementById('conf-add-missing').checked,
       unknown_floorname: document.getElementById('conf-unknown-floor').value,
       unknown_roomname: document.getElementById('conf-unknown-room').value,
-      item_Floor_nameshort_prefix: document.getElementById('conf-floor-prefix').value || "=",
-      item_Room_nameshort_prefix: document.getElementById('conf-room-prefix').value || "+"
+      item_Floor_nameshort_prefix: currentConfig.general?.item_Floor_nameshort_prefix || "=",
+      item_Room_nameshort_prefix: currentConfig.general?.item_Room_nameshort_prefix || "+"
     }
 
     // Devices

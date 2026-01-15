@@ -1,4 +1,5 @@
 """Unit tests for dimmer generator"""
+
 import pytest
 from src.generators.dimmer_generator import DimmerGenerator
 
@@ -17,8 +18,7 @@ def config():
                 'relativ_dpts': ['DPST-3-7'],
                 'switch_suffix': ['Schalten'],
                 'switch_status_suffix': ['Status Ein/Aus'],
-                'drop': [],
-                'icon': 'light'
+                'drop': []
             }
         },
         'homekit_enabled': False,
@@ -31,7 +31,7 @@ def dimmer_address():
     """Sample dimmer address."""
     return {
         'Address': '1/2/3',
-        'Group_name': 'Wohnzimmer Licht Dimmen absolut',
+        'Group name': 'Wohnzimmer Licht Dimmen absolut',
         'DatapointType': 'DPST-5-1',
         'Description': 'Main light',
         'communication_object': [{
@@ -56,7 +56,7 @@ def status_address():
     """Sample status address."""
     return {
         'Address': '1/2/4',
-        'Group_name': 'Wohnzimmer Licht Status Dimmwert',
+        'Group name': 'Wohnzimmer Licht Status Dimmwert',
         'DatapointType': 'DPST-5-1'
     }
 
@@ -85,26 +85,21 @@ def test_generate_basic_dimmer(config, dimmer_address, all_addresses):
     generator = DimmerGenerator(config, all_addresses)
     result = generator.generate(dimmer_address)
     
-    # Test that result is returned and successful
     assert result is not None
-    assert result.success is True
-    
-    # Test basic fields are set
-    assert result.item_type == 'Dimmer'
-    assert result.equipment == 'Lightbulb'
-    assert result.semantic_info == '["Light"]'
-    assert result.item_icon == 'light'
-    
-    # Test thing_info contains addresses
-    assert '1/2/3' in result.thing_info
-    assert '1/2/4' in result.thing_info
+    assert result['item_type'] == 'Dimmer'
+    assert result['equipment'] == 'Lightbulb'
+    assert result['semantic_info'] == '["Light"]'
+    assert result['item_icon'] == 'light'
+    assert 'position=' in result['thing_info']
+    assert '1/2/3' in result['thing_info']
+    assert '1/2/4' in result['thing_info']  # Status address
 
 
 def test_generate_incomplete_dimmer(config, all_addresses):
-    """Test dimmer without status address returns unsuccessful result or None."""
+    """Test dimmer without status address returns None."""
     incomplete_dimmer = {
         'Address': '1/2/5',
-        'Group_name': 'Incomplete Dimmer',
+        'Group name': 'Incomplete Dimmer',
         'DatapointType': 'DPST-5-1',
         'communication_object': [{
             'function_text': 'Dimmen absolut',
@@ -116,8 +111,7 @@ def test_generate_incomplete_dimmer(config, all_addresses):
     generator = DimmerGenerator(config, [incomplete_dimmer])
     result = generator.generate(incomplete_dimmer)
     
-    # Current implementation returns None for incomplete dimmer
-    assert result is None or (result is not None and result.success is False)
+    assert result is None
 
 
 def test_generate_with_homekit(config, dimmer_address, all_addresses):
@@ -127,15 +121,14 @@ def test_generate_with_homekit(config, dimmer_address, all_addresses):
     result = generator.generate(dimmer_address)
     
     assert result is not None
-    assert result.success is True
-    assert 'homekit' in result.metadata
-    assert result.metadata['homekit'] == 'Lighting'
+    assert 'homekit=' in result['metadata']
+    assert 'Lighting' in result['metadata']
 
 
 def test_mark_address_used(config, dimmer_address, all_addresses):
     """Test that addresses are marked as used."""
     generator = DimmerGenerator(config, all_addresses)
-    result = generator.generate(dimmer_address)
+    generator.generate(dimmer_address)
     
-    # Main address should be in used_addresses
-    assert '1/2/3' in result.used_addresses
+    # Status address should be marked as used
+    assert generator.is_address_used('1/2/4')

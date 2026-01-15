@@ -52,9 +52,3 @@ curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/uninsta
 3.  **Configure**: Go to **Settings** to map DPTs or adjust naming rules.
 4.  **Generate**: The system automatically generates Items, Things, and Sitemaps.
 5.  **Update**: Click the Version badge in the header to check for and apply updates.
-
----
-
-## License
-
-This project is open-source.

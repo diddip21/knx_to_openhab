@@ -7,8 +7,13 @@ SERVICE_USER="knxohui"
 PYVER=$(python3 -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))')
 
 echo "Creating service user"
+# Create group first if it doesn't exist
+if ! getent group $SERVICE_USER >/dev/null 2>&1; then
+  sudo groupadd -r $SERVICE_USER
+fi
+# Create user with the group (whether it existed before or not)
 if ! id -u $SERVICE_USER >/dev/null 2>&1; then
-  sudo useradd -r -s /bin/bash -m $SERVICE_USER || true
+  sudo useradd -r -g $SERVICE_USER -s /bin/bash -m $SERVICE_USER
 fi
 
 echo "Creating base dir $BASE"

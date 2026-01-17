@@ -69,11 +69,6 @@ if [ -d "/etc/openhab" ]; then
     sudo chmod -R 775 /etc/openhab 2>/dev/null || true
 fi
 
-echo "Creating service user"
-if ! id -u $SERVICE_USER >/dev/null 2>&1; then
-  sudo useradd -r -s /bin/bash -m $SERVICE_USER || true
-fi
-
 echo "Create sudoers entry for restarting services and git operations"
 SUDOERS_FILE="/etc/sudoers.d/knxohui"
 # Allow both /bin/systemctl and /usr/bin/systemctl to cover different OS layouts

@@ -91,6 +91,22 @@ def gen_building():
         
         return True
     
+    def get_dpt_from_dco(dco):
+        """
+        Extract DPT from a device communication object and format as DPST string.
+        
+        Args:
+            dco: Device communication object with potential dpts array
+        
+        Returns:
+            str or None: Formatted DPST string (e.g., 'DPST-5-1') or None if no DPT found
+        """
+        dco_dpts = dco.get("dpts", [])
+        if dco_dpts:
+            dpt = dco_dpts[0]
+            return f'DPST-{dpt["main"]}-{dpt.get("sub", 0)}'
+        return None
+    
     def get_address_from_dco_enhanced(co, config_key, define):
         """
         Enhanced search for group addresses with flag and DPT filtering.
@@ -144,11 +160,8 @@ def gen_building():
             
             # Filter 2: DPT filtering (if defined in config)
             if expected_dpts:
-                # Convert dpts array to DPST string for comparison
-                dco_dpts = dco.get("dpts", [])
-                if dco_dpts:
-                    dpt = dco_dpts[0]
-                    dco_dpst = f'DPST-{dpt["main"]}-{dpt.get("sub", 0)}'
+                dco_dpst = get_dpt_from_dco(dco)
+                if dco_dpst:
                     if dco_dpst not in expected_dpts:
                         continue
                 else:
@@ -159,7 +172,6 @@ def gen_building():
                 dco_flags = get_co_flags(dco)
                 if not flags_match(dco_flags, expected_flags):
                     continue
-            
             
             # Filter 4: Function text (only as fallback if neither DPT nor flags are defined)
             # If DPT or flags are defined, we rely on those instead of function_text
@@ -197,6 +209,7 @@ def gen_building():
         else:
             return min(best_candidate['addresses'],
                       key=lambda sa: len(sa.get("communication_object", [])))
+    
     def get_address_from_dco(co,config_functiontexts):
         """
         Diese Funktion sucht in einem Kommunikationsobjekt (co) nach einem Funktions-Text und filtert nach Gruppenzugehörigkeit entweder über die Channels oder über den 'text'.
@@ -245,6 +258,7 @@ def gen_building():
                                     lowco = sa
                         return lowco
         return None
+    
     def process_description(descriptions, variable):
         """
         Process description parts and update corresponding variables.
@@ -261,6 +275,7 @@ def gen_building():
             elif description.startswith('name='):
                 variable['name'] = description.replace('name=', '')
         return variable
+    
     def generate_floor_configuration(floor, floor_nr):
         """
         Generate configuration entries for a floor.
@@ -273,13 +288,14 @@ def gen_building():
         floor_variables = {'visibility': '', 'semantic': '["Location"]', 'synonyms': '', 'icon': '','name':floor_name}
         floor_variables = process_description(description, floor_variables)
 
-        floor_configuration += f"Group   map{floor_nr}   \"{floor_variables['name']}\" {floor_variables['icon']} (Base) {floor_variables['semantic']} {floor_variables['synonyms']} \n"
+        floor_configuration += f"Group   map{floor_nr}   \"{floor_variables['name']}\" {floor_variables['icon']} (Base) {floor_variables['semantic']} {floor_variables['synonyms']}\n"
         floor_configuration += f"Group:Rollershutter:AVG        map{floor_nr}_Blinds         \"{floor_variables['name']} Jalousie/Rollo\"                      <rollershutter>    (map{floor_nr})                  [\"Blinds\"]         {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
         floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Lights         \"{floor_variables['name']} Beleuchtung\"                         <light>            (map{floor_nr})                  [\"Light\"] \n"
         #floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Presence       \"{floor_variables['name']} Präsenz [MAP(presence.map):%s]\"      <presence>         (map{floor_nr},Base)                  [\"Presence\"] \n"
         floor_configuration += f"Group:Contact:OR(OPEN, CLOSED) map{floor_nr}_Contacts       \"{floor_variables['name']} Öffnungsmelder\"                      <contact>          (map{floor_nr})                [\"OpenState\"] \n"
         floor_configuration += f"Group:Number:Temperature:AVG   map{floor_nr}_Temperature    \"{floor_variables['name']} Ø Temperatur\"                        <temperature>      (map{floor_nr})             [\"Measurement\", \"Temperature\"]        {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
         return floor_configuration, floor_name
+    
     def generate_room_configuration(room, floor_nr, room_nr):
         """
         Generate configuration entries for a room.
@@ -295,6 +311,7 @@ def gen_building():
 
         room_configuration += f"Group   map{floor_nr}_{room_nr}   \"{room_variables['name']}\"  {room_variables['icon']}  (map{floor_nr})   {room_variables['semantic']} {room_variables['synonyms']}\n"
         return room_configuration, room_name, room_variables
+    
     items=''
     sitemap=''
     things=''
@@ -522,8 +539,8 @@ def gen_building():
                             else:
                                 auto_add = True
                                 thing_address_info = f"ga=\"{address['Address']}\""
-                                semantic_info = "[\"Switch\"]"
-                                item_icon = "switch"
+                            semantic_info = "[\"Switch\"]"
+                            item_icon = "switch"
                             if B_HOMEKIT:
                                 meta_homekit=', homekit="Switchable"'
                             if B_ALEXA:
@@ -698,8 +715,8 @@ def gen_building():
             if group != '':
                 sitemap += f" {{\n{group}\n    }}\n"
             else:
-                sitemap += "\n "
-        sitemap += "}\n "
+                sitemap += "\n"
+        sitemap += "}\n"
     return items,sitemap,things
 
 def data_of_name(data, name, suffix,replace=''):

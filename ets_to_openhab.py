@@ -53,6 +53,62 @@ def gen_building():
                     return co
         return None
     
+    def get_co_flags(co):
+        """
+        Extracts flags from a communication object.
+        
+        Args:
+            co: Communication object with flags dictionary
+        
+        Returns:
+            dict: Dictionary with read, write, transmit, update flags or None
+        """
+        if "flags" not in co:
+            return None
+        
+        return {
+            "read": co["flags"].get("read", False),
+            "write": co["flags"].get("write", False),
+            "transmit": co["flags"].get("transmit", False),
+            "update": co["flags"].get("update", False)
+        }
+    
+    def flags_match(co_flags, expected_flags):
+        """
+        Compares CO flags with expected flags from config.
+        
+        Args:
+            co_flags: Dictionary with actual flags
+            expected_flags: Dictionary with expected flags from config.json
+        
+        Returns:
+            bool: True if all expected flags match
+        """
+        if not co_flags or not expected_flags:
+            return True  # No flag filtering requested
+        
+        for key, expected_value in expected_flags.items():
+            if co_flags.get(key, False) != expected_value:
+                return False
+        
+        return True
+    
+    def get_dpt_from_dco(dco):
+        """
+        Extract DPT from a device communication object and format as DPST string.
+        
+        Args:
+            dco: Device communication object with potential dpts array
+        
+        Returns:
+            str or None: Formatted DPST string (e.g., 'DPST-5-1') or None if no DPT found
+        """
+        dco_dpts = dco.get("dpts", [])
+        if dco_dpts:
+            dpt = dco_dpts[0]
+            return f'DPST-{dpt["main"]}-{dpt.get("sub", 0)}'
+        return None
+    
     def get_address_from_dco_enhanced(co, config_key, define):
         """
         Enhanced search for group addresses with flag and DPT filtering.

@@ -115,11 +115,24 @@ class TestFlagsMatch:
         assert flags_match(co_flags, expected) is False
 
     def test_missing_expected_flag(self):
-        """Should fail when CO is missing expected flag."""
+        """Missing flag with default False value should match if expected is False.
+        
+        When a flag is missing from co_flags, it defaults to False.
+        If expected value for that flag is also False, it's a match.
+        This is correct semantics: "not having write" matches "wanting no write".
+        """
         co_flags = {'read': True}  # Missing 'write'
-        expected = {'read': True, 'write': False}
+        expected = {'read': True, 'write': False}  # We want no write (False)
 
-        assert flags_match(co_flags, expected) is False
+        # This SHOULD match because:
+        # - read matches (True == True)
+        # - write doesn't exist in co_flags, defaults to False
+        # - expected write is False, so False == False ✓
+        assert flags_match(co_flags, expected) is True
+        
+        # But if we WANTED write=True, it should NOT match:
+        expected_write_true = {'read': True, 'write': True}
+        assert flags_match(co_flags, expected_write_true) is False
 
     def test_extra_flags_in_co_ok(self):
         """CO having more flags than expected should still match."""

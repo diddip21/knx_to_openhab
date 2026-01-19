@@ -2,9 +2,9 @@ name: CI Tests
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ '**' ]  # Run on ALL branches
   pull_request:
-    branches: [ main, develop ]
+    branches: [ '**' ]  # Run on ALL branches
   workflow_dispatch:
 
 jobs:
@@ -56,7 +56,7 @@ jobs:
       - name: Check Python syntax
         if: always()
         run: |
-          python -m py_compile *.py
+          python -m py_compile src/*.py
           find . -name '*.py' -not -path './venv/*' -not -path './.git/*' -not -path './tests/*' -not -path './src/*' | xargs python -m py_compile
 
   # Validation tests for generated OpenHAB configurations

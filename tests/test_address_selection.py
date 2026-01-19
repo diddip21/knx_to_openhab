@@ -13,7 +13,7 @@ from unittest.mock import Mock, MagicMock
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ets_to_openhab import get_co_flags, flags_match
+from ets_helpers import get_co_flags, flags_match
 
 
 class TestCoFlags:

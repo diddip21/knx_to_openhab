@@ -5,6 +5,8 @@ import logging
 import shutil
 from config import config, datapoint_mappings,normalize_string
 from utils import get_datapoint_type
+from ets_helpers import get_co_flags, flags_match, get_dpt_from_dco
+
 logger = logging.getLogger(__name__)
 
 pattern_items_Name: str = config['regexpattern']['items_Name']
@@ -306,7 +308,7 @@ def gen_building():
             room_name = room['Description']
         #room_name_original = room_name
         description = room['Description'].split(';')
-        room_variables = {'visibility': '', 'semantic': f'["Room", "{room_name}"]', 'icon': '', 'synonyms': '', 'name': room_name}
+        room_variables = {'visibility': '', 'semantic': f'[\"Room\", \"{room_name}\"]', 'icon': '', 'synonyms': '', 'name': room_name}
         room_variables = process_description(description, room_variables)
 
         room_configuration += f"Group   map{floor_nr}_{room_nr}   \"{room_variables['name']}\"  {room_variables['icon']}  (map{floor_nr})   {room_variables['semantic']} {room_variables['synonyms']}\n"
@@ -841,8 +843,7 @@ def export_output(items,sitemap,things, configuration=None):
     fenster_rule = ''
     for i in FENSTERKONTAKTE:
         fenster_rule += f'var save_fk_count_{i["item_name"]} = 0 \n'
-    fenster_rule += '''
-    rule "fensterkontakt check"
+    fenster_rule += '''\n    rule "fensterkontakt check"
     when
         Time cron "0 * * * * ? *"
     then
@@ -857,8 +858,7 @@ def export_output(items,sitemap,things, configuration=None):
         fenster_rule +=  '    } else { \n'
         fenster_rule += f'        save_fk_count_{i["item_name"]} = 0; \n'
         fenster_rule +=  '    } \n'
-    fenster_rule += '''
-    end
+    fenster_rule += '''\n    end
     '''
     try:
         os.makedirs(os.path.dirname(cfg['fenster_path']), exist_ok=True)

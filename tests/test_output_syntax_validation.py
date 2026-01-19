@@ -7,6 +7,10 @@ This module validates the syntax and structure of generated:
 
 These tests ensure that the KNX project generator produces valid
 OpenHAB configuration that can be deployed without syntax errors.
+
+IMPORTANT: Tests require that OpenHAB files are generated first via
+the generated_openhab_files fixture. This fixture must be available
+and run BEFORE these tests execute.
 """
 
 import pytest
@@ -23,11 +27,13 @@ class TestItemsFileSyntax:
     """Validates generated items file has valid OpenHAB Items syntax."""
 
     @pytest.fixture(autouse=True)
-    def _verify_items_file_exists(self, helpers_module):
-        """Ensure items file exists and helpers are available for all tests in this class."""
-        # Verify helpers module is available
-        assert helpers_module is not None, "Helpers module not available"
+    def _ensure_files_generated(self, generated_openhab_files):
+        """Ensure OpenHAB files are generated before running tests in this class.
         
+        This fixture ensures that the items file exists and is ready for
+        validation. It depends on the session-scoped generated_openhab_files
+        fixture which generates all files from the ETS project.
+        """
         # Verify items file exists
         assert os.path.exists(config['items_path']), \
             f"Items file not found: {config['items_path']}"
@@ -141,13 +147,13 @@ class TestThingsFileSyntax:
     """Validates generated things file has valid OpenHAB Things syntax."""
 
     @pytest.fixture(autouse=True)
-    def _verify_things_file_exists(self, knx_helper_functions):
-        """Ensure things file exists and helper functions are available for all tests in this class."""
-        # Verify helper functions are available
-        assert knx_helper_functions is not None, "Helper functions not available"
-        assert knx_helper_functions.get('get_co_flags') is not None, "get_co_flags not available"
-        assert knx_helper_functions.get('flags_match') is not None, "flags_match not available"
+    def _ensure_files_generated(self, generated_openhab_files):
+        """Ensure OpenHAB files are generated before running tests in this class.
         
+        This fixture ensures that the things file exists and is ready for
+        validation. It depends on the session-scoped generated_openhab_files
+        fixture which generates all files from the ETS project.
+        """
         # Verify things file exists
         assert os.path.exists(config['things_path']), \
             f"Things file not found: {config['things_path']}"
@@ -241,11 +247,13 @@ class TestSitemapFileSyntax:
     """Validates generated sitemap has valid OpenHAB Sitemap syntax."""
 
     @pytest.fixture(autouse=True)
-    def _verify_sitemap_file_exists(self, generator_module):
-        """Ensure sitemap file exists and generator module is available for all tests in this class."""
-        # Verify generator module is available
-        assert generator_module is not None, "Generator module not available"
+    def _ensure_files_generated(self, generated_openhab_files):
+        """Ensure OpenHAB files are generated before running tests in this class.
         
+        This fixture ensures that the sitemap file exists and is ready for
+        validation. It depends on the session-scoped generated_openhab_files
+        fixture which generates all files from the ETS project.
+        """
         # Verify sitemap file exists
         assert os.path.exists(config['sitemaps_path']), \
             f"Sitemap file not found: {config['sitemaps_path']}"

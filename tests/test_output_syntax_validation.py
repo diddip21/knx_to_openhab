@@ -23,8 +23,12 @@ class TestItemsFileSyntax:
     """Validates generated items file has valid OpenHAB Items syntax."""
 
     @pytest.fixture(autouse=True)
-    def _verify_items_file_exists(self):
-        """Ensure items file exists for all tests in this class."""
+    def _verify_items_file_exists(self, helpers_module):
+        """Ensure items file exists and helpers are available for all tests in this class."""
+        # Verify helpers module is available
+        assert helpers_module is not None, "Helpers module not available"
+        
+        # Verify items file exists
         assert os.path.exists(config['items_path']), \
             f"Items file not found: {config['items_path']}"
         yield
@@ -116,7 +120,7 @@ class TestItemsFileSyntax:
             if not line.strip() or line.strip().startswith('//'):
                 continue
             # Extract item name (second token after type)
-            match = re.match(r'^\w+(?::\w+)*\s+(\w+)\s+"', line)
+            match = re.match(r'^\w+(?:\w+)*\s+(\w+)\s+"', line)
             if match:
                 item_name = match.group(1)
                 if item_name in item_names:
@@ -137,8 +141,14 @@ class TestThingsFileSyntax:
     """Validates generated things file has valid OpenHAB Things syntax."""
 
     @pytest.fixture(autouse=True)
-    def _verify_things_file_exists(self):
-        """Ensure things file exists for all tests in this class."""
+    def _verify_things_file_exists(self, knx_helper_functions):
+        """Ensure things file exists and helper functions are available for all tests in this class."""
+        # Verify helper functions are available
+        assert knx_helper_functions is not None, "Helper functions not available"
+        assert knx_helper_functions.get('get_co_flags') is not None, "get_co_flags not available"
+        assert knx_helper_functions.get('flags_match') is not None, "flags_match not available"
+        
+        # Verify things file exists
         assert os.path.exists(config['things_path']), \
             f"Things file not found: {config['things_path']}"
         yield
@@ -231,8 +241,12 @@ class TestSitemapFileSyntax:
     """Validates generated sitemap has valid OpenHAB Sitemap syntax."""
 
     @pytest.fixture(autouse=True)
-    def _verify_sitemap_file_exists(self):
-        """Ensure sitemap file exists for all tests in this class."""
+    def _verify_sitemap_file_exists(self, generator_module):
+        """Ensure sitemap file exists and generator module is available for all tests in this class."""
+        # Verify generator module is available
+        assert generator_module is not None, "Generator module not available"
+        
+        # Verify sitemap file exists
         assert os.path.exists(config['sitemaps_path']), \
             f"Sitemap file not found: {config['sitemaps_path']}"
         yield

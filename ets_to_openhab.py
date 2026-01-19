@@ -5,6 +5,8 @@ import logging
 import shutil
 from config import config, datapoint_mappings,normalize_string
 from utils import get_datapoint_type
+from ets_helpers import get_co_flags, flags_match, get_dpt_from_dco
+
 logger = logging.getLogger(__name__)
 
 pattern_items_Name: str = config['regexpattern']['items_Name']
@@ -50,46 +52,6 @@ def gen_building():
                 if normalize_string(co["function_text"]) in config_functiontexts:
                     return co
         return None
-    
-    def get_co_flags(co):
-        """
-        Extracts flags from a communication object.
-        
-        Args:
-            co: Communication object with flags dictionary
-        
-        Returns:
-            dict: Dictionary with read, write, transmit, update flags or None
-        """
-        if "flags" not in co:
-            return None
-        
-        return {
-            "read": co["flags"].get("read", False),
-            "write": co["flags"].get("write", False),
-            "transmit": co["flags"].get("transmit", False),
-            "update": co["flags"].get("update", False)
-        }
-    
-    def flags_match(co_flags, expected_flags):
-        """
-        Compares CO flags with expected flags from config.
-        
-        Args:
-            co_flags: Dictionary with actual flags
-            expected_flags: Dictionary with expected flags from config.json
-        
-        Returns:
-            bool: True if all expected flags match
-        """
-        if not co_flags or not expected_flags:
-            return True  # No flag filtering requested
-        
-        for key, expected_value in expected_flags.items():
-            if co_flags.get(key, False) != expected_value:
-                return False
-        
-        return True
     
     def get_address_from_dco_enhanced(co, config_key, define):
         """
@@ -144,11 +106,8 @@ def gen_building():
             
             # Filter 2: DPT filtering (if defined in config)
             if expected_dpts:
-                # Convert dpts array to DPST string for comparison
-                dco_dpts = dco.get("dpts", [])
-                if dco_dpts:
-                    dpt = dco_dpts[0]
-                    dco_dpst = f'DPST-{dpt["main"]}-{dpt.get("sub", 0)}'
+                dco_dpst = get_dpt_from_dco(dco)
+                if dco_dpst:
                     if dco_dpst not in expected_dpts:
                         continue
                 else:
@@ -159,7 +118,6 @@ def gen_building():
                 dco_flags = get_co_flags(dco)
                 if not flags_match(dco_flags, expected_flags):
                     continue
-            
             
             # Filter 4: Function text (only as fallback if neither DPT nor flags are defined)
             # If DPT or flags are defined, we rely on those instead of function_text
@@ -197,6 +155,7 @@ def gen_building():
         else:
             return min(best_candidate['addresses'],
                       key=lambda sa: len(sa.get("communication_object", [])))
+    
     def get_address_from_dco(co,config_functiontexts):
         """
         Diese Funktion sucht in einem Kommunikationsobjekt (co) nach einem Funktions-Text und filtert nach Gruppenzugehörigkeit entweder über die Channels oder über den 'text'.
@@ -245,6 +204,7 @@ def gen_building():
                                     lowco = sa
                         return lowco
         return None
+    
     def process_description(descriptions, variable):
         """
         Process description parts and update corresponding variables.
@@ -261,6 +221,7 @@ def gen_building():
             elif description.startswith('name='):
                 variable['name'] = description.replace('name=', '')
         return variable
+    
     def generate_floor_configuration(floor, floor_nr):
         """
         Generate configuration entries for a floor.
@@ -273,13 +234,14 @@ def gen_building():
         floor_variables = {'visibility': '', 'semantic': '["Location"]', 'synonyms': '', 'icon': '','name':floor_name}
         floor_variables = process_description(description, floor_variables)
 
-        floor_configuration += f"Group   map{floor_nr}   \"{floor_variables['name']}\" {floor_variables['icon']} (Base) {floor_variables['semantic']} {floor_variables['synonyms']} \n"
+        floor_configuration += f"Group   map{floor_nr}   \"{floor_variables['name']}\" {floor_variables['icon']} (Base) {floor_variables['semantic']} {floor_variables['synonyms']}\n"
         floor_configuration += f"Group:Rollershutter:AVG        map{floor_nr}_Blinds         \"{floor_variables['name']} Jalousie/Rollo\"                      <rollershutter>    (map{floor_nr})                  [\"Blinds\"]         {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
         floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Lights         \"{floor_variables['name']} Beleuchtung\"                         <light>            (map{floor_nr})                  [\"Light\"] \n"
         #floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Presence       \"{floor_variables['name']} Präsenz [MAP(presence.map):%s]\"      <presence>         (map{floor_nr},Base)                  [\"Presence\"] \n"
         floor_configuration += f"Group:Contact:OR(OPEN, CLOSED) map{floor_nr}_Contacts       \"{floor_variables['name']} Öffnungsmelder\"                      <contact>          (map{floor_nr})                [\"OpenState\"] \n"
         floor_configuration += f"Group:Number:Temperature:AVG   map{floor_nr}_Temperature    \"{floor_variables['name']} Ø Temperatur\"                        <temperature>      (map{floor_nr})             [\"Measurement\", \"Temperature\"]        {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
         return floor_configuration, floor_name
+    
     def generate_room_configuration(room, floor_nr, room_nr):
         """
         Generate configuration entries for a room.
@@ -290,11 +252,12 @@ def gen_building():
             room_name = room['Description']
         #room_name_original = room_name
         description = room['Description'].split(';')
-        room_variables = {'visibility': '', 'semantic': f'["Room", "{room_name}"]', 'icon': '', 'synonyms': '', 'name': room_name}
+        room_variables = {'visibility': '', 'semantic': f'[\"Room\", \"{room_name}\"]', 'icon': '', 'synonyms': '', 'name': room_name}
         room_variables = process_description(description, room_variables)
 
         room_configuration += f"Group   map{floor_nr}_{room_nr}   \"{room_variables['name']}\"  {room_variables['icon']}  (map{floor_nr})   {room_variables['semantic']} {room_variables['synonyms']}\n"
         return room_configuration, room_name, room_variables
+    
     items=''
     sitemap=''
     things=''
@@ -522,8 +485,8 @@ def gen_building():
                             else:
                                 auto_add = True
                                 thing_address_info = f"ga=\"{address['Address']}\""
-                                semantic_info = "[\"Switch\"]"
-                                item_icon = "switch"
+                            semantic_info = "[\"Switch\"]"
+                            item_icon = "switch"
                             if B_HOMEKIT:
                                 meta_homekit=', homekit="Switchable"'
                             if B_ALEXA:
@@ -698,8 +661,8 @@ def gen_building():
             if group != '':
                 sitemap += f" {{\n{group}\n    }}\n"
             else:
-                sitemap += "\n "
-        sitemap += "}\n "
+                sitemap += "\n"
+        sitemap += "}\n"
     return items,sitemap,things
 
 def data_of_name(data, name, suffix,replace=''):
@@ -824,8 +787,7 @@ def export_output(items,sitemap,things, configuration=None):
     fenster_rule = ''
     for i in FENSTERKONTAKTE:
         fenster_rule += f'var save_fk_count_{i["item_name"]} = 0 \n'
-    fenster_rule += '''
-    rule "fensterkontakt check"
+    fenster_rule += '''\n    rule "fensterkontakt check"
     when
         Time cron "0 * * * * ? *"
     then
@@ -840,8 +802,7 @@ def export_output(items,sitemap,things, configuration=None):
         fenster_rule +=  '    } else { \n'
         fenster_rule += f'        save_fk_count_{i["item_name"]} = 0; \n'
         fenster_rule +=  '    } \n'
-    fenster_rule += '''
-    end
+    fenster_rule += '''\n    end
     '''
     try:
         os.makedirs(os.path.dirname(cfg['fenster_path']), exist_ok=True)

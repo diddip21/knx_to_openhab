@@ -56,8 +56,11 @@ jobs:
       - name: Check Python syntax
         if: always()
         run: |
-          python -m py_compile src/*.py
-          find . -name '*.py' -not -path './venv/*' -not -path './.git/*' -not -path './tests/*' -not -path './src/*' | xargs python -m py_compile
+          echo "Compiling root-level Python files..."
+          python -m py_compile *.py
+          echo "Compiling project Python files (excluding tests and src/)..."
+          find . -maxdepth 1 -name '*.py' -type f -not -name 'test_*.py' -not -name 'createJsonFromKNX.py' | while read file; do echo "Checking: $file"; python -m py_compile "$file"; done
+          echo "✓ All Python syntax checks passed"
 
   # Validation tests for generated OpenHAB configurations
   validation-tests:

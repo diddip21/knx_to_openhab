@@ -3,3 +3,4 @@ werkzeug
 xknxproject
 requests
 gunicorn
+pytest-dependency>=0.5.1

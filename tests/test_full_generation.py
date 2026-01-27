@@ -7,13 +7,13 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 # Import the module to be tested
-# We need to add the parent directory to sys.path if not running as package
+# We need to add the src directory to sys.path for package imports
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
 
-import knxproject_to_openhab
-import ets_to_openhab
-import config
+from knx_to_openhab import knxproject
+from knx_to_openhab import generator
+from knx_to_openhab.config import config
 
 # Configure logging to capture output
 logging.basicConfig(level=logging.INFO)
@@ -43,20 +43,20 @@ def mock_config(tmp_path):
     # but we must restore it after test (pytest fixture handles this by yield?)
     # Dictionary updates are persistent in memory across tests if not reverted.
     
-    original_config = config.config.copy()
+    original_config = config.copy()
     
     # Update paths
-    config.config['items_path'] = str(tmp_path / "openhab/items/knx.items")
-    config.config['things_path'] = str(tmp_path / "openhab/things/knx.things")
-    config.config['sitemaps_path'] = str(tmp_path / "openhab/sitemaps/knx.sitemap")
-    config.config['influx_path'] = str(tmp_path / "openhab/persistence/influxdb.persist")
-    config.config['fenster_path'] = str(tmp_path / "openhab/rules/fenster.rules")
+    config['items_path'] = str(tmp_path / "openhab/items/knx.items")
+    config['things_path'] = str(tmp_path / "openhab/things/knx.things")
+    config['sitemaps_path'] = str(tmp_path / "openhab/sitemaps/knx.sitemap")
+    config['influx_path'] = str(tmp_path / "openhab/persistence/influxdb.persist")
+    config['fenster_path'] = str(tmp_path / "openhab/rules/fenster.rules")
     
-    yield config.config
+    yield config
     
-    # Restore (mocking config.config directly might be safer with patch.dict)
-    config.config.clear()
-    config.config.update(original_config)
+    # Restore (mocking config directly might be safer with patch.dict)
+    config.clear()
+    config.update(original_config)
 
 @pytest.mark.parametrize("project_file", PROJECT_FILES)
 def test_full_generation(project_file, mock_config, caplog, tmp_path):
@@ -74,19 +74,19 @@ def test_full_generation(project_file, mock_config, caplog, tmp_path):
     
     # Patch argparse to return our args
     with patch('argparse.ArgumentParser.parse_args', return_value=test_args), \
-         patch('sys.argv', ['knxproject_to_openhab.py']), \
+         patch('sys.argv', ['knxproject.py']), \
          patch('tkinter.Tk', MagicMock()): # Mock GUI just in case
         
         # We need to capture the `house` object to pass to validation
-        # Since `knxproject_to_openhab.main` doesn't return it (it sets globals in `ets_to_openhab`),
-        # we can access `ets_to_openhab.floors` after run.
+        # Since `knxproject.main` doesn't return it (it sets globals in `generator`),
+        # we can access `generator.floors` after run.
         
-        # Reset globals in ets_to_openhab to ensure clean state
-        ets_to_openhab.floors = []
-        ets_to_openhab.all_addresses = []
+        # Reset globals in generator to ensure clean state
+        generator.floors = []
+        generator.all_addresses = []
         
         try:
-            knxproject_to_openhab.main()
+            knxproject.main()
         except SystemExit as e:
             # Some scripts exit on success/failure, capture this
             if e.code != 0:
@@ -111,23 +111,23 @@ def test_full_generation(project_file, mock_config, caplog, tmp_path):
         logger.warning(f"Found {len(warnings)} warnings.")
 
     # 2. File Existence Validation
-    assert os.path.exists(config.config['items_path']), "Items file was not created"
-    assert os.path.exists(config.config['things_path']), "Things file was not created"
-    assert os.path.exists(config.config['sitemaps_path']), "Sitemap file was not created"
+    assert os.path.exists(config['items_path']), "Items file was not created"
+    assert os.path.exists(config['things_path']), "Things file was not created"
+    assert os.path.exists(config['sitemaps_path']), "Sitemap file was not created"
     
-    assert os.path.getsize(config.config['items_path']) > 0, "Items file is empty"
+    assert os.path.getsize(config['items_path']) > 0, "Items file is empty"
     
     # 3. Semantic Validation
-    items_content = open(config.config['items_path'], 'r', encoding='utf-8').read()
-    things_content = open(config.config['things_path'], 'r', encoding='utf-8').read()
+    items_content = open(config['items_path'], 'r', encoding='utf-8').read()
+    things_content = open(config['things_path'], 'r', encoding='utf-8').read()
     
     #parsed_items = validation_logic.parse_items_file(items_content)
     #parsed_things = validation_logic.parse_things_file(things_content)
     
     # Reconstruct project structure from globals for validation
-    # The `house` structure is roughly what `ets_to_openhab.floors` holds (list of floors)
+    # The `house` structure is roughly what `generator.floors` holds (list of floors)
     # We wrap it in a pseudo-building list as `validate_project_structure` expects
-    #project_structure = [{'floors': ets_to_openhab.floors}]
+    #project_structure = [{'floors': generator.floors}]
     
     #structure_errors = validation_logic.validate_project_structure(parsed_items, project_structure)
     #if structure_errors:

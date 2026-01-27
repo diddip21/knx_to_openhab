@@ -10,10 +10,10 @@ import sys
 import os
 from unittest.mock import Mock, MagicMock
 
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add src directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
 
-from ets_helpers import get_co_flags, flags_match
+from knx_to_openhab.ets_helpers import get_co_flags, flags_match
 
 
 class TestCoFlags:

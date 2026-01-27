@@ -175,7 +175,7 @@ jobs:
         run: |
           python -c "from knx_to_openhab import knxproject; print('✓ knxproject module OK')"
           python -c "from knx_to_openhab import generator; print('✓ generator module OK')"
-          python -c "from knx_to_openhab import helpers; print('✓ helpers module OK')"
+          python -c "from knx_to_openhab import ets_helpers; print('✓ ets_helpers module OK')"
           python -c "from knx_to_openhab.config import config; print('✓ config module OK')"
       
       - name: Run file import tests

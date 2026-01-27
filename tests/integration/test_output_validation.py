@@ -12,13 +12,12 @@ import filecmp
 import difflib
 from pathlib import Path
 
-# Add project root to sys.path
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-sys.path.append(PROJECT_ROOT)
+# Add src directory to path for package imports
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'src'))
 
-import knxproject_to_openhab
-import ets_to_openhab
-from config import config
+from knx_to_openhab import knxproject
+from knx_to_openhab import generator
+from knx_to_openhab.config import config
 
 # Paths
 TESTS_DIR = Path(__file__).parent.parent
@@ -31,21 +30,17 @@ class TestOutputValidation:
     def setup_method(self):
         """Setup for each test - reset global state"""
         # Reset module-level variables
-        ets_to_openhab.floors = []
-        ets_to_openhab.all_addresses = []
-        ets_to_openhab.used_addresses = []
-        ets_to_openhab.equipments = {}
-        ets_to_openhab.FENSTERKONTAKTE = []
-        ets_to_openhab.export_to_influx = []
+        generator.floors = []
+        generator.all_addresses = []
+        generator.used_addresses = []
+        generator.equipments = {}
+        generator.FENSTERKONTAKTE = []
+        generator.export_to_influx = []
         
         # Set config defaults
         config['general']['FloorNameAsItIs'] = False
         config['general']['RoomNameAsItIs'] = False
         config['general']['addMissingItems'] = True
-        
-        knxproject_to_openhab.FloorNameAsItIs = False
-        knxproject_to_openhab.RoomNameAsItIs = False
-        knxproject_to_openhab.ADD_MISSING_ITEMS = True
 
     def _generate_openhab_files(self, tmp_path):
         """Helper to generate OpenHAB files from test project"""
@@ -54,20 +49,20 @@ class TestOutputValidation:
             project = json.load(f)
         
         # Generate building structure and addresses
-        building = knxproject_to_openhab.create_building(project)
-        addresses = knxproject_to_openhab.get_addresses(project)
-        house = knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
+        building = knxproject.create_building(project)
+        addresses = knxproject.get_addresses(project)
+        house = knxproject.put_addresses_in_building(building, addresses, project)
         
-        # Set module variables for ets_to_openhab
-        ets_to_openhab.floors = house[0]["floors"]
-        ets_to_openhab.all_addresses = addresses
-        ets_to_openhab.GWIP = knxproject_to_openhab.get_gateway_ip(project)
-        ets_to_openhab.B_HOMEKIT = knxproject_to_openhab.is_homekit_enabled(project)
-        ets_to_openhab.B_ALEXA = knxproject_to_openhab.is_alexa_enabled(project)
-        ets_to_openhab.PRJ_NAME = house[0]['name_long']
+        # Set module variables for generator
+        generator.floors = house[0]["floors"]
+        generator.all_addresses = addresses
+        generator.GWIP = knxproject.get_gateway_ip(project)
+        generator.B_HOMEKIT = knxproject.is_homekit_enabled(project)
+        generator.B_ALEXA = knxproject.is_alexa_enabled(project)
+        generator.PRJ_NAME = house[0]['name_long']
         
         # Generate items, sitemap, things
-        items, sitemap, things = ets_to_openhab.gen_building()
+        items, sitemap, things = generator.gen_building()
         
         # Temporarily override config paths to write to tmp_path
         original_paths = {
@@ -83,7 +78,7 @@ class TestOutputValidation:
         config['influx_path'] = str(tmp_path / "influxdb.persist")
         
         # Export files
-        ets_to_openhab.export_output(items, sitemap, things)
+        generator.export_output(items, sitemap, things)
         
         # Restore original paths
         for key, value in original_paths.items():

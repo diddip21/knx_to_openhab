@@ -85,22 +85,26 @@ def main():
         # Import here to avoid loading dependencies unless needed
         from . import knxproject
         
-        # Create args that knxproject.main() expects
-        knxproject_args = argparse.Namespace(
-            file_path=args.file_path,
-            knxPW=args.password,
-            readDump=args.file_path.suffix.lower() == '.json'
-        )
-        
-        # Call the main function
+        # Mock sys.argv so knxproject.main() can parse it correctly
+        # knxproject.main() expects to parse sys.argv itself
+        original_argv = sys.argv
         try:
-            knxproject.main(knxproject_args)
+            # Build argv for knxproject.main()
+            sys.argv = ['knx_to_openhab', '--file_path', str(args.file_path)]
+            if args.password:
+                sys.argv.extend(['--knxPW', args.password])
+            
+            # Call the main function
+            knxproject.main()
         except KeyboardInterrupt:
             print('\nConversion cancelled by user.', file=sys.stderr)
             sys.exit(130)  # Standard exit code for SIGINT
         except Exception as e:
             print(f'Error: {e}', file=sys.stderr)
             sys.exit(1)
+        finally:
+            # Restore original sys.argv
+            sys.argv = original_argv
     
     elif args.command == 'web':
         # Import here to avoid loading Flask unless needed

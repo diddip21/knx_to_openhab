@@ -5,11 +5,11 @@ import json
 from pathlib import Path
 from xknxproject.xknxproj import XKNXProj
 
-# Add project root to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
+# Add src directory to path for package imports
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'src'))
 
-import knxproject_to_openhab
-from config import config
+from knx_to_openhab import knxproject
+from knx_to_openhab.config import config
 
 # Define path to tests directory
 TESTS_DIR = Path(__file__).parent.parent
@@ -36,15 +36,6 @@ class TestFileImport:
         config['general']['addMissingItems'] = True
         config['general']['unknown_floorname'] = 'unknown'
         config['general']['unknown_roomname'] = 'unknown'
-        
-        # Update module level vars
-        knxproject_to_openhab.FloorNameAsItIs = False
-        knxproject_to_openhab.RoomNameAsItIs = False
-        knxproject_to_openhab.ITEM_FLOOR_NAME_SHORT_PREFIX = '='
-        knxproject_to_openhab.ITEM_ROOM_NAME_SHORT_PREFIX = '+'
-        knxproject_to_openhab.ADD_MISSING_ITEMS = True
-        knxproject_to_openhab.UNKNOWN_FLOOR_NAME = 'unknown'
-        knxproject_to_openhab.UNKNOWN_ROOM_NAME = 'unknown'
 
 
     @pytest.mark.parametrize("json_file", get_json_files())
@@ -56,7 +47,7 @@ class TestFileImport:
             project = json.load(f)
             
         # 1. Create Building
-        building = knxproject_to_openhab.create_building(project)
+        building = knxproject.create_building(project)
         assert building is not None
         assert isinstance(building, list)
         assert len(building) > 0
@@ -69,7 +60,7 @@ class TestFileImport:
         # 2. Get Addresses
         # Some JSON dumps might be partial or old, so we wrap in try-except if keys are missing
         try:
-            addresses = knxproject_to_openhab.get_addresses(project)
+            addresses = knxproject.get_addresses(project)
             assert isinstance(addresses, list)
         except KeyError as e:
             pytest.skip(f"Skipping address extraction due to missing key in JSON: {e}")
@@ -79,7 +70,7 @@ class TestFileImport:
         # 3. Put Addresses in Building
         # This modifies 'building' in place
         try:
-            knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
+            knxproject.put_addresses_in_building(building, addresses, project)
         except Exception as e:
             pytest.fail(f"Failed to put addresses in building: {e}")
             
@@ -116,13 +107,13 @@ class TestFileImport:
         assert project is not None
         
         # Run the same steps as JSON
-        building = knxproject_to_openhab.create_building(project)
+        building = knxproject.create_building(project)
         assert building is not None
         
-        addresses = knxproject_to_openhab.get_addresses(project)
+        addresses = knxproject.get_addresses(project)
         assert isinstance(addresses, list)
         
-        knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
+        knxproject.put_addresses_in_building(building, addresses, project)
 
 if __name__ == "__main__":
     sys.exit(pytest.main(["-v", __file__]))

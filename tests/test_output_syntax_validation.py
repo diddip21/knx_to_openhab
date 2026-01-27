@@ -221,7 +221,7 @@ class TestThingsFileSyntax:
         # Only fail if we have actual definitions
         if len(lines) > 0:
             assert len(missing_ga) < len(lines), \
-                f"Most Things ({len(missing_ga)}/{len(lines)}) missing KNX group address (ga=")
+                f"Most Things ({len(missing_ga)}/{len(lines)}) missing KNX group address (ga=)"
 
     def test_things_knx_group_addresses_valid_format(self):
         """KNX group addresses must follow valid format (M/G/S).

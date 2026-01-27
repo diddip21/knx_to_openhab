@@ -16,8 +16,13 @@ and run BEFORE these tests execute.
 import pytest
 import re
 import os
+import sys
 from pathlib import Path
-from config import config
+
+# Add src directory to path for package imports
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
+
+from knx_to_openhab.config import config
 import logging
 
 logger = logging.getLogger(__name__)
@@ -216,7 +221,7 @@ class TestThingsFileSyntax:
         # Only fail if we have actual definitions
         if len(lines) > 0:
             assert len(missing_ga) < len(lines), \
-                f"Most Things ({len(missing_ga)}/{len(lines)}) missing KNX group address (ga=)"
+                f"Most Things ({len(missing_ga)}/{len(lines)}) missing KNX group address (ga=")
 
     def test_things_knx_group_addresses_valid_format(self):
         """KNX group addresses must follow valid format (M/G/S).
@@ -228,7 +233,7 @@ class TestThingsFileSyntax:
             content = f.read()
 
         # Match ga="M/G/S" or ga=M/G/S patterns
-        ga_pattern = r'ga=(?:")?([\.\d/]+)(?:")?'
+        ga_pattern = r'ga=(?:")?([\d/]+)(?:")?'
         matches = re.findall(ga_pattern, content)
 
         if len(matches) == 0:

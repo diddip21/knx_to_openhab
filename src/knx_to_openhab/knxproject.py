@@ -3,6 +3,7 @@ import logging
 import re
 import json
 import argparse
+import shutil
 from pathlib import Path
 from xknxproject.models.knxproject import KNXProject
 from xknxproject.xknxproj import XKNXProj
@@ -251,6 +252,28 @@ def format_datapoint_type(address):
     """Format datapoint type string."""
     dpt = address["dpt"]
     return f'DPST-{dpt["main"]}-{dpt["sub"]}' if dpt["sub"] else f'DPT-{dpt["main"]}'
+
+def set_permissions(file_path, configuration=None):
+    """Set file permissions (user:group ownership).
+    
+    Args:
+        file_path: Path to the file
+        configuration: Configuration dict with target_user and target_group
+    """
+    if not configuration:
+        configuration = config
+    
+    user = configuration.get('target_user')
+    group = configuration.get('target_group')
+    
+    if user and group:
+        try:
+            shutil.chown(file_path, user=user, group=group)
+            logger.info(f"Set permissions for {file_path} to {user}:{group}")
+        except Exception as e:
+            logger.warning(f"Failed to set permissions for {file_path}: {e}")
+    else:
+        logger.debug(f"No user/group specified for {file_path}, skipping chown")
 
 def put_addresses_in_building(building, addresses, project: KNXProject):
     """Place addresses in a building object based on their associated floors and rooms."""

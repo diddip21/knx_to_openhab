@@ -291,11 +291,11 @@ def gen_building():
         floor_variables = process_description(description, floor_variables)
 
         floor_configuration += f"Group   map{floor_nr}   \"{floor_variables['name']}\" {floor_variables['icon']} (Base) {floor_variables['semantic']} {floor_variables['synonyms']}\n"
-        floor_configuration += f"Group:Rollershutter:AVG        map{floor_nr}_Blinds         \"{floor_variables['name']} Jalousie/Rollo\"                      <rollershutter>    (map{floor_nr})                  [\"Blinds\"]         {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
-        floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Lights         \"{floor_variables['name']} Beleuchtung\"                         <light>            (map{floor_nr})                  [\"Light\"] \n"
-        #floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Presence       \"{floor_variables['name']} Präsenz [MAP(presence.map):%s]\"      <presence>         (map{floor_nr},Base)                  [\"Presence\"] \n"
-        floor_configuration += f"Group:Contact:OR(OPEN, CLOSED) map{floor_nr}_Contacts       \"{floor_variables['name']} Öffnungsmelder\"                      <contact>          (map{floor_nr})                [\"OpenState\"] \n"
-        floor_configuration += f"Group:Number:Temperature:AVG   map{floor_nr}_Temperature    \"{floor_variables['name']} Ø Temperatur\"                        <temperature>      (map{floor_nr})             [\"Measurement\", \"Temperature\"]        {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
+        #floor_configuration += f"Group:Rollershutter:AVG        map{floor_nr}_Blinds         \"{floor_variables['name']} Jalousie/Rollo\"                      <rollershutter>    (map{floor_nr})                  [\"Blinds\"]         {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
+        #floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Lights         \"{floor_variables['name']} Beleuchtung\"                         <light>            (map{floor_nr})                  [\"Light\"] \n"
+        ##floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Presence       \"{floor_variables['name']} Präsenz [MAP(presence.map):%s]\"      <presence>         (map{floor_nr},Base)                  [\"Presence\"] \n"
+        #floor_configuration += f"Group:Contact:OR(OPEN, CLOSED) map{floor_nr}_Contacts       \"{floor_variables['name']} Öffnungsmelder\"                      <contact>          (map{floor_nr})                [\"OpenState\"] \n"
+        #floor_configuration += f"Group:Number:Temperature:AVG   map{floor_nr}_Temperature    \"{floor_variables['name']} Ø Temperatur\"                        <temperature>      (map{floor_nr})             [\"Measurement\", \"Temperature\"]        {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
         return floor_configuration, floor_name
     
     def generate_room_configuration(room, floor_nr, room_nr):

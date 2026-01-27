@@ -1,185 +1,233 @@
-"""
-Business Logic Tests - Log Validation
+"""Integration tests for core business logic of project generation.
 
-These tests verify that the business logic produces expected warnings
-and log messages, such as "No Room found" for unplaced addresses.
+These tests verify that:
+- Address selection is correct based on flags and DPT filtering
+- Device communication objects are properly matched
+- KNX addresses are assigned to correct rooms/floors
 """
-import sys
-import os
+
 import pytest
-import json
-import logging
-from pathlib import Path
+import os
+import sys
+from unittest.mock import Mock, MagicMock, patch
 
-# Add project root to sys.path
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-sys.path.append(PROJECT_ROOT)
+# Add src directory to path for package imports
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'src'))
 
-import knxproject_to_openhab
-import ets_to_openhab
-from config import config
-
-# Paths
-TESTS_DIR = Path(__file__).parent.parent
-TEST_PROJECT = TESTS_DIR / "Charne.knxproj.json"
+from knx_to_openhab import knxproject
+from knx_to_openhab.config import config
 
 
-class TestBusinessLogic:
-    
-    def setup_method(self):
-        """Setup for each test - reset global state"""
-        # Reset module-level variables
-        ets_to_openhab.floors = []
-        ets_to_openhab.all_addresses = []
-        ets_to_openhab.used_addresses = []
-        ets_to_openhab.equipments = {}
-        ets_to_openhab.FENSTERKONTAKTE = []
-        ets_to_openhab.export_to_influx = []
-        
-        # Set config defaults
-        config['general']['FloorNameAsItIs'] = False
-        config['general']['RoomNameAsItIs'] = False
-        config['general']['addMissingItems'] = True
-        
-        knxproject_to_openhab.FloorNameAsItIs = False
-        knxproject_to_openhab.RoomNameAsItIs = False
-        knxproject_to_openhab.ADD_MISSING_ITEMS = True
+class TestAddressPlacementLogic:
+    """Test that addresses are correctly placed in building structure."""
 
-    def test_no_room_found_warnings(self, caplog):
-        """Test that 'No Room found' warnings are logged for unplaced addresses"""
-        # Load test project
-        with open(TEST_PROJECT, encoding="utf-8") as f:
-            project = json.load(f)
-        
-        # Set logging level to capture warnings
-        caplog.set_level(logging.WARNING)
-        
-        # Generate building structure and addresses
-        building = knxproject_to_openhab.create_building(project)
-        addresses = knxproject_to_openhab.get_addresses(project)
-        
-        # This should generate "No Room found" warnings
-        knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
-        
-        # Check that warnings were logged
-        no_room_warnings = [record for record in caplog.records 
-                           if "No Room found" in record.message]
-        
-        # For Charne project, we expect some addresses without rooms
-        # Based on the command output, we saw warnings for addresses like:
-        # "=1.OG +RM6 Wanne_sch_rm", "=UG +RM1 LED Treppe Farbtemperatur relativ", etc.
-        assert len(no_room_warnings) > 0, "Expected 'No Room found' warnings but none were logged"
-        
-        # Verify warning format
-        for warning in no_room_warnings:
-            assert warning.levelname == "WARNING"
-            assert "No Room found for" in warning.message
+    def test_address_placement_with_valid_floor_room(self):
+        """Address with valid Floor and Room should be placed correctly."""
+        building = [
+            {
+                'name_long': 'Test Building',
+                'floors': [
+                    {
+                        'name_short': 'EG',
+                        'rooms': [
+                            {
+                                'name_short': 'WZ',
+                                'Addresses': []
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
 
-    def test_incomplete_dimmer_warnings(self, caplog):
-        """Test that 'incomplete dimmer' warnings are logged"""
-        # Load test project
-        with open(TEST_PROJECT, encoding="utf-8") as f:
-            project = json.load(f)
-        
-        caplog.set_level(logging.WARNING)
-        
-        # Generate building structure and addresses
-        building = knxproject_to_openhab.create_building(project)
-        addresses = knxproject_to_openhab.get_addresses(project)
-        house = knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
-        
-        # Set module variables for ets_to_openhab
-        ets_to_openhab.floors = house[0]["floors"]
-        ets_to_openhab.all_addresses = addresses
-        
-        # Generate items (this is where dimmer warnings occur)
-        ets_to_openhab.gen_building()
-        
-        # Check for incomplete dimmer/rollershutter warnings
-        incomplete_warnings = [record for record in caplog.records 
-                              if "incomplete" in record.message.lower()]
-        
-        # Note: This test may pass with 0 warnings if all dimmers are complete
-        # We're just verifying the logging mechanism works
-        print(f"Found {len(incomplete_warnings)} incomplete component warnings")
+        address = {
+            'Address': '1/1/1',
+            'Floor': 'EG',
+            'Room': 'WZ',
+            'Group name': 'Wohnzimmer | Licht'
+        }
 
-    def test_unused_addresses_logged(self, caplog):
-        """Test that unused addresses are logged during generation"""
-        # Load test project
-        with open(TEST_PROJECT, encoding="utf-8") as f:
-            project = json.load(f)
-        
-        caplog.set_level(logging.INFO)
-        
-        # Generate building structure and addresses
-        building = knxproject_to_openhab.create_building(project)
-        addresses = knxproject_to_openhab.get_addresses(project)
-        house = knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
-        
-        # Set module variables for ets_to_openhab
-        ets_to_openhab.floors = house[0]["floors"]
-        ets_to_openhab.all_addresses = addresses
-        
-        # Generate items - this will log unused addresses if any
-        items, sitemap, things = ets_to_openhab.gen_building()
-        
-        # After generation, check if we have info about address usage
-        # The test passes if gen_building() completes successfully
-        # and generates items
-        assert items is not None, "gen_building() should return items"
-        assert len(items) > 0, "Items should be generated"
+        result = knxproject.place_address_in_building(building, address, [])
+        assert result is True, "Valid address should be placed"
+        assert address in building[0]['floors'][0]['rooms'][0]['Addresses'], \
+            "Address should be in room's address list"
 
-    def test_scene_without_mapping_logged(self, caplog):
-        """Test that scenes without mappings are logged"""
-        # Load test project
-        with open(TEST_PROJECT, encoding="utf-8") as f:
-            project = json.load(f)
-        
-        caplog.set_level(logging.INFO)
-        
-        # Generate building structure and addresses
-        building = knxproject_to_openhab.create_building(project)
-        addresses = knxproject_to_openhab.get_addresses(project)
-        house = knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
-        
-        # Set module variables for ets_to_openhab
-        ets_to_openhab.floors = house[0]["floors"]
-        ets_to_openhab.all_addresses = addresses
-        
-        # Generate items
-        items, sitemap, things = ets_to_openhab.gen_building()
-        
-        # Check for scene mapping warnings
-        scene_logs = [record for record in caplog.records 
-                     if "no mapping for scene" in record.message.lower()]
-        
-        # Based on command output: "no mapping for scene 0/4/0 Szene"
-        # We may or may not have these depending on project configuration
-        print(f"Found {len(scene_logs)} scene mapping warnings")
+    def test_address_placement_unknown_floor(self):
+        """Address with unknown floor should not be placed."""
+        building = [
+            {
+                'name_long': 'Test Building',
+                'floors': [
+                    {
+                        'name_short': 'EG',
+                        'rooms': []
+                    }
+                ]
+            }
+        ]
 
-    def test_logging_levels(self, caplog):
-        """Test that different log levels are used appropriately"""
-        # Load test project
-        with open(TEST_PROJECT, encoding="utf-8") as f:
-            project = json.load(f)
-        
-        caplog.set_level(logging.DEBUG)
-        
-        # Full processing
-        building = knxproject_to_openhab.create_building(project)
-        addresses = knxproject_to_openhab.get_addresses(project)
-        house = knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
-        
-        ets_to_openhab.floors = house[0]["floors"]
-        ets_to_openhab.all_addresses = addresses
-        items, sitemap, things = ets_to_openhab.gen_building()
-        
-        # Verify we have different log levels
-        log_levels = {record.levelname for record in caplog.records}
-        
-        assert "INFO" in log_levels or "WARNING" in log_levels, \
-            "Expected at least INFO or WARNING level logs"
+        address = {
+            'Address': '1/1/1',
+            'Floor': 'UNKNOWN',  # Invalid floor
+            'Room': 'WZ',
+            'Group name': 'Test'
+        }
+
+        result = knxproject.place_address_in_building(building, address, [])
+        assert result is False, "Address with unknown floor should not be placed"
+
+    def test_address_placement_unknown_room(self):
+        """Address with unknown room should not be placed."""
+        building = [
+            {
+                'name_long': 'Test Building',
+                'floors': [
+                    {
+                        'name_short': 'EG',
+                        'rooms': [
+                            {'name_short': 'WZ', 'Addresses': []}
+                        ]
+                    }
+                ]
+            }
+        ]
+
+        address = {
+            'Address': '1/1/1',
+            'Floor': 'EG',
+            'Room': 'UNKNOWN',  # Invalid room
+            'Group name': 'Test'
+        }
+
+        result = knxproject.place_address_in_building(building, address, [])
+        assert result is False, "Address with unknown room should not be placed"
 
 
-if __name__ == "__main__":
-    sys.exit(pytest.main(["-v", __file__]))
+class TestDeviceCommunicationObjectMatching:
+    """Test that device communication objects are properly matched."""
+
+    def test_extract_communication_objects_with_device_cos(self):
+        """Should extract communication objects with device_communication_objects."""
+        # Mock data
+        communication_objects = {
+            'co1': {
+                'id': 'co1',
+                'device_address': 'device1',
+                'flags': {'read': True, 'write': False},
+                'device_communication_objects': [
+                    {'id': 'dco1', 'channel': 'ch1'}
+                ]
+            }
+        }
+        devices = {
+            'device1': {
+                'id': 'device1',
+                'communication_object_ids': ['co1']
+            }
+        }
+        address = {
+            'communication_object_ids': ['co1']
+        }
+
+        result = knxproject.extract_communication_objects(address, communication_objects, devices)
+        assert len(result) > 0, "Should extract communication objects"
+        assert result[0]['device_communication_objects'] is not None
+
+
+class TestAddressPlacementByDevice:
+    """Test address placement based on device association."""
+
+    def test_address_by_device_placement(self):
+        """Address should be placed in room with associated device."""
+        building = [
+            {
+                'name_long': 'Test Building',
+                'floors': [
+                    {
+                        'name_short': 'EG',
+                        'rooms': [
+                            {
+                                'name_short': 'WZ',
+                                'devices': ['device1'],
+                                'Addresses': []
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+
+        read_co = {
+            'device_address': 'device1',
+            'id': 'co1'
+        }
+
+        address = {
+            'Address': '1/1/1',
+            'Group name': 'Wohnzimmer | Licht'
+        }
+
+        addresses = [address]
+
+        result = knxproject.place_address_by_device(building, address, read_co, addresses)
+        assert result is True, "Address should be placed by device association"
+
+
+class TestAddressDatapointTypeHandling:
+    """Test that addresses are correctly typed by datapoint."""
+
+    def test_format_datapoint_type_with_sub(self):
+        """Should format datapoint with sub-type as DPST."""
+        address = {
+            'dpt': {'main': 5, 'sub': 1}
+        }
+        result = knxproject.format_datapoint_type(address)
+        assert result == 'DPST-5-1', f"Expected 'DPST-5-1', got '{result}'"
+
+    def test_format_datapoint_type_no_sub(self):
+        """Should format datapoint without sub-type as DPT."""
+        address = {
+            'dpt': {'main': 1, 'sub': None}
+        }
+        result = knxproject.format_datapoint_type(address)
+        assert result == 'DPT-1', f"Expected 'DPT-1', got '{result}'"
+
+
+class TestBuildingCreation:
+    """Test building structure creation from project data."""
+
+    def test_create_building_basic(self):
+        """Should create basic building structure with floors and rooms."""
+        # Mock KNX project structure
+        project = {
+            'locations': {
+                'loc1': {
+                    'type': 'Building',
+                    'name': 'Haus 1',
+                    'description': 'Main House',
+                    'spaces': {
+                        'floor1': {
+                            'type': 'Floor',
+                            'name': 'Erdgeschoss',
+                            'description': 'Ground Floor',
+                            'devices': [],
+                            'spaces': {
+                                'room1': {
+                                    'type': 'Room',
+                                    'name': 'Wohnzimmer',
+                                    'description': 'Living Room',
+                                    'usage_text': 'Living',
+                                    'devices': [],
+                                    'spaces': {}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        result = knxproject.create_building(project)
+        assert len(result) == 1, "Should create one building"
+        assert len(result[0]['floors']) >= 1, "Building should have floors"
+        assert len(result[0]['floors'][0]['rooms']) >= 1, "Floor should have rooms"

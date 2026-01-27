@@ -314,10 +314,12 @@ def put_address_to_right_place(address, floor_name, room_name, addresses):
     address["Floor"] = floor_name
     address["Room"] = room_name
     item_subaddress = []
-    for co in address.get("communication_object"):
+    # Safely get communication_object with default empty list
+    communication_objects = address.get("communication_object") or []
+    for co in communication_objects:
         if co.get('device_communication_objects'):
-            for dco in co.get('device_communication_objects'):
-                for sub_address in dco.get('group_address_links'):
+            for dco in co.get('device_communication_objects', []):
+                for sub_address in dco.get('group_address_links', []):
                     item_subaddress += [item for item in addresses if item.get('Address') == sub_address]
     if item_subaddress:
         for item in item_subaddress:

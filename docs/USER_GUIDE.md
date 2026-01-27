@@ -4,12 +4,35 @@ This guide explains how to prepare your ETS project, configure the generator, an
 
 ## Table of Contents
 
+1. [Command Line Usage (CLI)](#command-line-usage)
 1. [Configuration (`config.json`)](#configuration-configjson)
-2. [ETS Project Preparation](#ets-project-preparation)
-3. [Logic & Mappings](#logic--mappings)
-4. [Troubleshooting](#troubleshooting)
+1. [ETS Project Preparation](#ets-project-preparation)
+1. [Logic & Mappings](#logic--mappings)
+1. [Troubleshooting](#troubleshooting)
 
 ---
+
+## Command Line Usage
+
+You can run the generator directly from the command line without the Web UI:
+
+```bash
+python knxproject_to_openhab.py --file_path "MyHouse.knxproj"
+```
+
+**Parameters:**
+
+- `--file_path`: Path to your `.knxproj` file (or `.json` dump). If omitted, a file picker opens.
+- `--knxPW`: Password for protected KNX project files.
+- `--readDump`: Read from JSON dump instead of `.knxproj`.
+
+**Example with password:**
+
+```bash
+python knxproject_to_openhab.py --file_path "project.knxproj" --knxPW "password"
+```
+
+The CLI uses the same `config.json` and generates the same output as the Web UI.
 
 ## Configuration (`config.json`)
 

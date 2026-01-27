@@ -14,6 +14,9 @@ import os
 import json
 import logging
 
+# Add src directory to path for package imports
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,19 +30,19 @@ class TestOutputConfig(unittest.TestCase):
         imported fresh with the correct mocks in place.
         """
         # Remove config from sys.modules to force re-import
-        if 'config' in sys.modules:
-            del sys.modules['config']
-        # Also clear any ets_to_openhab that might depend on config
-        if 'ets_to_openhab' in sys.modules:
-            del sys.modules['ets_to_openhab']
+        if 'knx_to_openhab.config' in sys.modules:
+            del sys.modules['knx_to_openhab.config']
+        # Also clear any knxproject_to_openhab that might depend on config
+        if 'knx_to_openhab.knxproject' in sys.modules:
+            del sys.modules['knx_to_openhab.knxproject']
 
     def tearDown(self):
         """Clean up after each test."""
         # Remove modules after test
-        if 'config' in sys.modules:
-            del sys.modules['config']
-        if 'ets_to_openhab' in sys.modules:
-            del sys.modules['ets_to_openhab']
+        if 'knx_to_openhab.config' in sys.modules:
+            del sys.modules['knx_to_openhab.config']
+        if 'knx_to_openhab.knxproject' in sys.modules:
+            del sys.modules['knx_to_openhab.knxproject']
 
     @patch('subprocess.run')
     def test_openhab_cli_detection(self, mock_run):
@@ -62,15 +65,15 @@ class TestOutputConfig(unittest.TestCase):
         mock_run.return_value = mock_proc
 
         # Execute: Import config with mocked subprocess
-        import config
+        from knx_to_openhab.config import config
 
         # Verify: Check that paths and user:group were detected correctly
         from pathlib import Path
         expected_items = str(Path('/etc/openhab') / 'items' / 'knx.items')
-        self.assertEqual(config.config['items_path'], expected_items)
-        self.assertEqual(config.config['target_user'], 'openhab')
-        self.assertEqual(config.config['target_group'], 'openhab')
-        logger.info(f"✓ OpenHAB CLI detection: items_path={config.config['items_path']}")
+        self.assertEqual(config['items_path'], expected_items)
+        self.assertEqual(config['target_user'], 'openhab')
+        self.assertEqual(config['target_group'], 'openhab')
+        logger.info(f"✓ OpenHAB CLI detection: items_path={config['items_path']}")
 
     @patch('pathlib.Path.exists')
     @patch('builtins.open', new_callable=mock_open)
@@ -98,16 +101,16 @@ class TestOutputConfig(unittest.TestCase):
         mock_path_exists.return_value = True
 
         # Execute: Import config with mocked filesystem
-        import config
+        from knx_to_openhab.config import config
 
         # Verify: Check that paths were set from web UI config
         from pathlib import Path
         expected_items = str(Path('/opt/openhab') / 'items' / 'knx.items')
-        self.assertEqual(config.config['items_path'], expected_items)
+        self.assertEqual(config['items_path'], expected_items)
         # Should use default openhab user when web UI method used
-        self.assertEqual(config.config['target_user'], 'openhab')
-        self.assertEqual(config.config['target_group'], 'openhab')
-        logger.info(f"✓ Web UI fallback: items_path={config.config['items_path']}")
+        self.assertEqual(config['target_user'], 'openhab')
+        self.assertEqual(config['target_group'], 'openhab')
+        logger.info(f"✓ Web UI fallback: items_path={config['items_path']}")
 
     @patch('pathlib.Path.exists')
     @patch('subprocess.run')
@@ -123,13 +126,13 @@ class TestOutputConfig(unittest.TestCase):
         mock_path_exists.return_value = False  # Web UI config doesn't exist
 
         # Execute: Import config with both methods failing
-        import config
+        from knx_to_openhab.config import config
 
         # Verify: Check that local paths are used
-        self.assertIn('openhab', config.config['items_path'])
+        self.assertIn('openhab', config['items_path'])
         # In local mode, no user is set
-        self.assertIsNone(config.config.get('target_user'))
-        logger.info(f"✓ Local fallback: items_path={config.config['items_path']}")
+        self.assertIsNone(config.get('target_user'))
+        logger.info(f"✓ Local fallback: items_path={config['items_path']}")
 
     @patch('subprocess.run')
     def test_openhab_cli_different_user(self, mock_run):
@@ -150,12 +153,12 @@ class TestOutputConfig(unittest.TestCase):
         mock_run.return_value = mock_proc
 
         # Execute: Import config
-        import config
+        from knx_to_openhab.config import config
 
         # Verify: Check correct user is detected
-        self.assertEqual(config.config['target_user'], 'myopenhab')
-        self.assertEqual(config.config['target_group'], 'myopenhab')
-        logger.info(f"✓ Non-standard user detection: user={config.config['target_user']}")
+        self.assertEqual(config['target_user'], 'myopenhab')
+        self.assertEqual(config['target_group'], 'myopenhab')
+        logger.info(f"✓ Non-standard user detection: user={config['target_user']}")
 
     @patch('shutil.chown')
     @patch('subprocess.run')
@@ -177,12 +180,12 @@ class TestOutputConfig(unittest.TestCase):
         mock_run.return_value = mock_proc
 
         # Execute: Import config and test permission setting
-        import config
-        import ets_to_openhab
+        from knx_to_openhab.config import config
+        from knx_to_openhab import knxproject
 
         # Call set_permissions
         test_file = '/tmp/testfile.items'
-        ets_to_openhab.set_permissions(test_file, configuration=config.config)
+        knxproject.set_permissions(test_file, configuration=config)
 
         # Verify: Check that chown was called with correct parameters
         mock_chown.assert_called_with(
@@ -202,7 +205,7 @@ class TestOutputConfig(unittest.TestCase):
         mock_run.return_value = mock_proc
 
         # Execute
-        import config
+        from knx_to_openhab.config import config
 
         # Verify: Check that subprocess.run was called
         # (We can't check exact args without more complex mocking,

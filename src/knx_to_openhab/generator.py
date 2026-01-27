@@ -11,8 +11,22 @@ from .ets_helpers import get_co_flags, flags_match, get_dpt_from_dco
 
 logger = logging.getLogger(__name__)
 
-pattern_items_Name: str = config['regexpattern']['items_Name']
-pattern_items_Label: str = config['regexpattern']['items_Label']
+# Lazy-loaded patterns - will be set on first use
+pattern_items_Name = None
+pattern_items_Label = None
+
+def _ensure_patterns_loaded():
+    """Ensure regex patterns are loaded from config."""
+    global pattern_items_Name, pattern_items_Label
+    if pattern_items_Name is None:
+        try:
+            pattern_items_Name = config['regexpattern']['items_Name']
+            pattern_items_Label = config['regexpattern']['items_Label']
+        except (KeyError, TypeError) as e:
+            logger.warning(f"Failed to load regex patterns from config: {e}. Using defaults.")
+            # Provide safe defaults if config is incomplete
+            pattern_items_Name = r'_+'
+            pattern_items_Label = r'_+'
 
 #global house,all_addresses,used_addresses
 GWIP=None
@@ -96,6 +110,9 @@ def _load_template(template_name):
 
 def gen_building():
     """Generates a Building from an ETS Project"""
+    # Ensure patterns are loaded before using them
+    _ensure_patterns_loaded()
+    
     def get_co_by_functiontext(cos,config_functiontexts,checkwriteflag=True):
         """
         Diese Funktion sucht in einer Liste von Kommunikationsobjekten (cos) nach einem bestimmten Funktions-Text.
@@ -845,8 +862,8 @@ def export_output(items,sitemap,things, configuration=None):
             things_template = things_template.replace('###gwip###', GWIP)
         else:
             logger.info("No Gateway IP found. Using KNX Router mode (multicast).")
-            things_template = things_template.replace('type="TUNNEL"', 'type="ROUTER"')
-            things_template = re.sub(r'.*ipAddress="###gwip###",.*\n', '', things_template)
+            things_template = things_template.replace('type=\"TUNNEL\"', 'type=\"ROUTER\"')
+            things_template = re.sub(r'.*ipAddress=\"###gwip###\",.*\n', '', things_template)
             things_template = re.sub(r'.*portNumber=3671,.*\n', '', things_template)
             things_template = things_template.replace('autoReconnectPeriod=30', 'autoReconnectPeriod=60')
 
@@ -887,10 +904,10 @@ def export_output(items,sitemap,things, configuration=None):
     if os.path.isfile("private_persistence"):
         private_persistence = open('private_persistence','r', encoding='utf8').read()
     persist = '''Strategies {
-    everyMinute : "0 * * * * ?"
-    everyHour : "0 0 * * * ?"
-    everyDay : "0 0 0 * * ?"
-    every2Minutes : "0 */2 * ? * *"
+    everyMinute : \"0 * * * * ?\"
+    everyHour : \"0 0 * * * ?\"
+    everyDay : \"0 0 0 * * ?\"
+    every2Minutes : \"0 */2 * ? * *\"
     }
 
     Items {
@@ -912,17 +929,17 @@ def export_output(items,sitemap,things, configuration=None):
     fenster_rule = ''
     for i in FENSTERKONTAKTE:
         fenster_rule += f'var save_fk_count_{i["item_name"]} = 0 \n'
-    fenster_rule += '''\n    rule "fensterkontakt check"
+    fenster_rule += '''\n    rule \"fensterkontakt check\"
     when
-        Time cron "0 * * * * ? *"
+        Time cron \"0 * * * * ? *\"
     then
     '''
     for i in FENSTERKONTAKTE:
         fenster_rule += f'    if({i["item_name"]}.state == OPEN){{ \n'
         fenster_rule += f'         save_fk_count_{i["item_name"]} += 1\n'
         fenster_rule += f'         if(save_fk_count_{i["item_name"]} == 15) {{\n'
-        fenster_rule +=  '             val telegramAction = getActions("telegram","telegram:telegramBot:Telegram_Bot"); \n'
-        fenster_rule += f'             telegramAction.sendTelegram("{i["name"]} seit über 15 Minuten offen!");\n'
+        fenster_rule +=  '             val telegramAction = getActions(\"telegram\",\"telegram:telegramBot:Telegram_Bot\"); \n'
+        fenster_rule += f'             telegramAction.sendTelegram(\"{i["name"]} seit über 15 Minuten offen!\");\n'
         fenster_rule +=  '         }\n'
         fenster_rule +=  '    } else { \n'
         fenster_rule += f'        save_fk_count_{i["item_name"]} = 0; \n'

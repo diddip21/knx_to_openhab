@@ -1,20 +1,493 @@
 {
-  "items_path": "openhab/items/knx.items",
-  "things_path": "openhab/things/knx.things",
-  "sitemaps_path": "openhab/sitemaps/knx.sitemap",
-  "influx_path": "openhab/persistence/influxdb.persist",
+  "datapoint_mappings": {
+    "DPST-1-100": {
+      "alexa": "",
+      "ga_prefix": "1.100",
+      "homekit": "",
+      "item_icon": "temperature",
+      "item_type": "Switch",
+      "metadata": "",
+      "semantic_info": "[\"Measurement\", \"Status\"]"
+    },
+    "DPST-1-11": {
+      "alexa": "",
+      "ga_prefix": "1.011",
+      "homekit": "",
+      "item_icon": "switch",
+      "item_type": "Switch",
+      "metadata": "",
+      "semantic_info": "[\"Measurement\", \"Status\"]"
+    },
+    "DPST-1-19": {
+      "alexa": ", alexa = \"ContactDetectionState\"",
+      "floor_group": "Contacts",
+      "ga_prefix": "1.019",
+      "homekit": ", homekit=\"ContactSensor\"",
+      "item_icon": "window",
+      "item_type": "Contact",
+      "metadata": "",
+      "semantic_info": "[\"OpenState\", \"Opening\"]"
+    },
+    "DPST-1-24": {
+      "alexa": "",
+      "ga_prefix": "1.024",
+      "homekit": "",
+      "item_icon": "moon",
+      "item_type": "Switch",
+      "metadata": "",
+      "semantic_info": "[\"Control\"]"
+    },
+    "DPST-1-5": {
+      "alexa": "",
+      "ga_prefix": "1.005",
+      "homekit": "",
+      "item_icon": "siren",
+      "item_type": "Switch",
+      "metadata": "",
+      "semantic_info": "[\"Alarm\"]"
+    },
+    "DPST-12-1200": {
+      "alexa": "",
+      "ga_prefix": "12.1200",
+      "homekit": "",
+      "item_icon": "water",
+      "item_type": "Number:Volume",
+      "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
+      "semantic_info": "[\"Measurement\", \"Volume\"]"
+    },
+    "DPST-13-10": {
+      "alexa": "",
+      "ga_prefix": "13.010",
+      "homekit": "",
+      "item_icon": "batterylevel",
+      "item_type": "Number:Energy",
+      "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
+      "semantic_info": "[\"Measurement\", \"Energy\"]"
+    },
+    "DPST-13-100": {
+      "alexa": "",
+      "ga_prefix": "13.100",
+      "homekit": "",
+      "item_icon": "time",
+      "item_type": "Number:Time",
+      "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
+      "semantic_info": "[\"Measurement\", \"Duration\"]"
+    },
+    "DPST-14-56": {
+      "alexa": "",
+      "ga_prefix": "14.056",
+      "homekit": "",
+      "item_icon": "energy",
+      "item_type": "Number:Power",
+      "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
+      "semantic_info": "[\"Measurement\", \"Power\"]"
+    },
+    "DPST-16-0": {
+      "alexa": "",
+      "ga_prefix": "16.000",
+      "homekit": "",
+      "item_icon": "text",
+      "item_type": "String",
+      "metadata": "",
+      "semantic_info": ""
+    },
+    "DPST-19-1": {
+      "alexa": "",
+      "ga_prefix": "19.001",
+      "homekit": "",
+      "item_icon": "time",
+      "item_type": "DateTime",
+      "metadata": "",
+      "semantic_info": ""
+    },
+    "DPST-20-102": {
+      "alexa": ",alexa = \"HeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
+      "ga_prefix": "20.102",
+      "homekit": ",homekit = \"CurrentHeatingCoolingMode, TargetHeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
+      "item_icon": "heating_mode",
+      "item_type": "Number:Dimensionless",
+      "metadata": ", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]",
+      "semantic_info": "[\"HVAC\"]"
+    },
+    "DPST-5-010": {
+      "alexa": ",alexa = \"HeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
+      "ga_prefix": "5.010",
+      "homekit": ",homekit = \"CurrentHeatingCoolingMode, TargetHeatingCoolingMode\" [OFF=\"4\", HEAT=\"1\", COOL=\"2\"]",
+      "item_icon": "heating_mode",
+      "item_type": "Number:Dimensionless",
+      "metadata": ", stateDescription=\"\"[options=\"NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], commandDescription=\"\"[options=\"1=Komfort,2=Standby,3=Nacht,4=Frostschutz\"], listWidget=\"\"[iconUseState=\"true\"]",
+      "semantic_info": "[\"HVAC\"]"
+    },
+    "DPST-5-1": {
+      "alexa": "",
+      "ga_prefix": "position=5.001",
+      "homekit": "",
+      "item_icon": "",
+      "item_type": "Dimmer",
+      "metadata": ", unit=\"%%\", stateDescription=\"\"[pattern=\"%.1f %%%%\"]",
+      "semantic_info": "[\"Measurement\"]"
+    },
+    "DPST-7-12": {
+      "alexa": "",
+      "ga_prefix": "7.012",
+      "homekit": "",
+      "item_icon": "energy",
+      "item_type": "Number:ElectricCurrent",
+      "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
+      "semantic_info": "[\"Measurement\", \"Current\"]"
+    },
+    "DPST-9-1": {
+      "alexa": ", alexa = \"CurrentTemperature\"",
+      "floor_group": "Temperature",
+      "ga_prefix": "9.001",
+      "homekit": ", homekit = \"CurrentTemperature\"",
+      "item_icon": "temperature",
+      "item_type": "Number:Temperature",
+      "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
+      "semantic_info": "[\"Measurement\", \"Temperature\"]"
+    },
+    "DPST-9-4": {
+      "alexa": "",
+      "ga_prefix": "9.004",
+      "homekit": ", homekit=\"LightSensor\"",
+      "item_icon": "sun",
+      "item_type": "Number:Illuminance",
+      "metadata": ", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
+      "semantic_info": "[\"Measurement\", \"Light\"]"
+    },
+    "DPST-9-5": {
+      "alexa": "",
+      "ga_prefix": "9.005",
+      "homekit": "",
+      "item_icon": "wind",
+      "item_type": "Number:Speed",
+      "metadata": ", unit=\"m/s\", stateDescription=\"\"[pattern=\"%.1f %unit%\"]",
+      "semantic_info": "[\"Measurement\", \"Wind\"]"
+    },
+    "DPST-9-7": {
+      "alexa": ", alexa = \"CurrentHumidity\"",
+      "ga_prefix": "9.001",
+      "homekit": ", homekit=\"HumiditySensor\"",
+      "item_icon": "humidity",
+      "item_type": "Number:Dimensionless",
+      "metadata": ", unit=\"%%\", stateDescription=\"\"[pattern=\"%.1f %%%%\"]",
+      "semantic_info": "[\"Measurement\", \"Humidity\"]"
+    },
+    "DPST-9-8": {
+      "alexa": "",
+      "ga_prefix": "9.005",
+      "homekit": "",
+      "item_icon": "",
+      "item_type": "Number:Dimensionless",
+      "metadata": ", stateDescription=\"\"[pattern=\"%.1f ppm\"]",
+      "semantic_info": "[\"Measurement\"]"
+    },
+    "DPT-16": {
+      "alexa": "",
+      "ga_prefix": "16.000",
+      "homekit": "",
+      "item_icon": "text",
+      "item_type": "String",
+      "metadata": "",
+      "semantic_info": ""
+    }
+  },
+  "datapoint_types": {
+    "dimmer": "DPST-5-1",
+    "heating": "DPST-5-010",
+    "heating_mode": "DPST-20-102",
+    "rollershutter": "DPST-1-8",
+    "scene": "DPST-17-1",
+    "switch": "DPST-1-1",
+    "window_contact": "DPST-1-19"
+  },
+  "defines": {
+    "dimmer": {
+      "absolut_dpts": [
+        "DPST-5-1"
+      ],
+      "absolut_flags": {
+        "read": false,
+        "write": true
+      },
+      "absolut_suffix": [
+        "Dimmen absolut",
+        ":(Dimm Wert)",
+        "Absolute Lamellenposition",
+        "Helligkeitswert"
+      ],
+      "change_metadata": {
+        "Farbtemperatur": {
+          "alexa": "",
+          "homekit": "",
+          "item_icon": "material:contrast",
+          "semantic_info": "[\"Setpoint\"]"
+        },
+        "Lamellenposition": {
+          "alexa": ", alexa = \"TiltAngle\"",
+          "floor_group": null,
+          "homekit": ", homekit = \"CurrentHorizontalTiltAngle, TargetHorizontalTiltAngle\"",
+          "item_icon": "rollershutter",
+          "semantic_info": "[\"Blinds\"]"
+        },
+        "Stellwert": {
+          "alexa": "",
+          "homekit": "",
+          "item_icon": "heating",
+          "semantic_info": "[\"HVAC\"]"
+        }
+      },
+      "drop": [],
+      "relativ_dpts": [
+        "DPST-3-7",
+        "DPST-3-3"
+      ],
+      "relativ_flags": {
+        "read": false,
+        "write": true
+      },
+      "relativ_suffix": [
+        "Dimmen relativ",
+        ":(Heller/Dunkler)",
+        "Dimmen"
+      ],
+      "status_dpts": [
+        "DPST-5-1"
+      ],
+      "status_flags": {
+        "read": true,
+        "transmit": true,
+        "write": false
+      },
+      "status_suffix": [
+        "Rückmeldung Dimmen",
+        "Dimmen Rückmeldung",
+        "Dimmen rm",
+        "Status Dimmwert",
+        ":(Status Dimm Wert)",
+        "Status Absolute Lamellenposition",
+        "Status akt. Lamellenposition",
+        "Rückmeldung Helligkeitswert"
+      ],
+      "switch_dpts": [
+        "DPST-1-1"
+      ],
+      "switch_flags": {
+        "read": false,
+        "write": true
+      },
+      "switch_status_dpts": [
+        "DPST-1-1"
+      ],
+      "switch_status_flags": {
+        "read": true,
+        "transmit": true,
+        "write": false
+      },
+      "switch_status_suffix": [
+        "Status Ein/Aus",
+        "Rückmeldung",
+        "Schalten Rückmeldung",
+        "Schalten rm",
+        ":(Status An/Aus)",
+        "Rückmeldung Schalten"
+      ],
+      "switch_suffix": [
+        "Schalten",
+        ":(An/Aus)",
+        ":(Schalten)",
+        "Ein/Aus",
+        "Schalten EIN/AUS"
+      ]
+    },
+    "drop_words": [
+      "Fensterkontakt",
+      "Licht",
+      "Steckdose",
+      "Steckdosen",
+      "Strom",
+      "Leistung",
+      "AUF/ZU",
+      "AUF"
+    ],
+    "heating": {
+      "level_dpts": [
+        "DPST-5-010",
+        "DPST-20-102"
+      ],
+      "level_flags": {
+        "read": false,
+        "write": true
+      },
+      "level_suffix": [
+        "Betriebsmodus",
+        "Betriebsartvorwahl"
+      ],
+      "status_level_dpts": [
+        "DPST-5-010",
+        "DPST-20-102"
+      ],
+      "status_level_flags": {
+        "read": true,
+        "transmit": true,
+        "write": false
+      },
+      "status_level_suffix": [
+        "Status Betriebsmodus",
+        "DPT_HVAC Mode: Reglerstatus senden"
+      ]
+    },
+    "rollershutter": {
+      "absolute_position_dpts": [
+        "DPST-5-1"
+      ],
+      "absolute_position_flags": {
+        "read": false,
+        "write": true
+      },
+      "absolute_position_suffix": [
+        "absolute Position",
+        ":(Absolute Position)"
+      ],
+      "drop": [
+        "Status Richtung",
+        ":(Status aktuelle Richtung)",
+        ":(Status obere Position)",
+        ":(Status untere Position)"
+      ],
+      "status_dpts": [
+        "DPST-5-1"
+      ],
+      "status_flags": {
+        "read": true,
+        "transmit": true,
+        "write": false
+      },
+      "status_suffix": [
+        "Status",
+        "Rückmeldung",
+        ":(Status Absolute Position)",
+        ":(Status aktuelle Position)",
+        "Status aktuelle Position"
+      ],
+      "stop_dpts": [
+        "DPST-1-10",
+        "DPST-1-9",
+        "DPST-1-7"
+      ],
+      "stop_flags": {
+        "read": false,
+        "write": true
+      },
+      "stop_suffix": [
+        "Stop",
+        "Stop/Lamellen",
+        "Lamellen",
+        ":(Lamellenverstellung/Stop)",
+        ":(Stop)",
+        "Stopp",
+        "Lamellenverstellung / Stopp"
+      ],
+      "up_down_dpts": [
+        "DPST-1-8"
+      ],
+      "up_down_flags": {
+        "read": false,
+        "write": true
+      },
+      "up_down_suffix": [
+        "Auf/Ab",
+        ":(Jalousie Auf/Ab)",
+        ":(Rolladen Auf/Ab)",
+        "Rollladen Auf/Ab",
+        "Jalousie Auf/Ab",
+        "Single Object Control"
+      ]
+    },
+    "switch": {
+      "change_metadata": {
+        "Audio": {
+          "equipment": "Speaker",
+          "item_icon": "soundvolume",
+          "semantic_info": "[\"Switch\"]"
+        },
+        "Heizen": {
+          "equipment": "HVAC",
+          "item_icon": "radiator",
+          "semantic_info": "[\"Heating\", \"Switch\"]"
+        },
+        "Licht": {
+          "alexa": ", alexa = \"Light\"",
+          "equipment": "Lightbulb",
+          "floor_group": "Lights",
+          "homekit": ", homekit = \"Lighting\"",
+          "item_icon": "light",
+          "semantic_info": "[\"Control\", \"Light\"]"
+        },
+        "Steckdose": {
+          "equipment": "PowerOutlet",
+          "item_icon": "poweroutlet",
+          "semantic_info": "[\"Switch\"]"
+        }
+      },
+      "status_dpts": [
+        "DPST-1-1",
+        "DPST-1-11"
+      ],
+      "status_flags": {
+        "read": true,
+        "transmit": true,
+        "write": false
+      },
+      "status_suffix": [
+        "Status",
+        " RM",
+        "Rückmeldung",
+        ":(RM Schalten)",
+        "Status Ein/Aus",
+        "Status Aktorkanal",
+        "HCL Status"
+      ],
+      "switch_suffix": [
+        "Schalten",
+        ":(An/Aus)",
+        ":(Schalten)",
+        "Ein/Aus",
+        "Schalten EIN/AUS",
+        "HCL starten"
+      ]
+    }
+  },
+  "devices": {
+    "gateway": {
+      "hardware_name": [
+        "IP Interface Secure",
+        "KNX IP Interface"
+      ]
+    }
+  },
   "fenster_path": "openhab/rules/fenster.rules",
-  "homekit_path": "openhab/misc/homekit.items",
-  "alexa_path": "openhab/misc/alexa.items",
-  "ga_path": "openhab/misc/google_assistant.items",
-  "rules_path": "openhab/rules",
-  "scripts_path": "openhab/scripts",
-  "openhab_path": "openhab",
-  "jobs_dir": "var/lib/knx_to_openhab",
-  "backups_dir": "var/backups/knx_to_openhab",
-  "retention": {
-    "days": 14,
-    "max_backups": 50,
-    "max_backups_size_mb": 500
-  }
+  "general": {
+    "FloorNameAsItIs": false,
+    "FloorNameFromDescription": false,
+    "RoomNameAsItIs": false,
+    "RoomNameFromDescription": false,
+    "addMissingItems": true,
+    "unknown_floorname": "unknown",
+    "unknown_roomname": "unknown",
+    "item_Floor_nameshort_prefix": "=",
+    "item_Room_nameshort_prefix": "+"
+  },
+  "influx_path": "openhab/persistence/influxdb.persist",
+  "items_path": "openhab/items/knx.items",
+  "regexpattern": {
+    "item_Floor": "^=?[1-9\\.A-Z]{1,5}",
+    "item_Floor_nameshort": "^=?[a-zA-Z]{1,5}\\b",
+    "item_Room": "\\++[A-Z].[0-9]+",
+    "items_Label": "^\\[\\w*\\]\\@\\s?(\\+RM(\\d+(\\/|\\\\|-)*)*(\\d+))*\\s|:\\(.*\\)\\s?",
+    "items_Name": "[^A-Za-z0-9_]+"
+  },
+  "sitemaps_path": "openhab/sitemaps/knx.sitemap",
+  "things_path": "openhab/things/knx.things",
+  "transform_dir_path": "openhab/transform"
 }

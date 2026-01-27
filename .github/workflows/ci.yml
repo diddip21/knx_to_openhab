@@ -147,9 +147,9 @@ jobs:
           test -f requirements.txt && echo "requirements.txt exists"
           python -c "import json; json.load(open('config.json'))" && echo "config.json is valid JSON"
 
-  # Legacy code tests
-  legacy-tests:
-    name: Legacy Code Tests
+  # Integration tests for new package structure
+  integration-tests:
+    name: Integration Tests - New Package Structure
     runs-on: ubuntu-latest
     
     steps:
@@ -167,19 +167,20 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-mock
       
-      - name: Test legacy module imports
+      - name: Test new package imports
         run: |
-          python -c "import ets_to_openhab; print('✓ ets_to_openhab OK')"
-          python -c "import knxproject_to_openhab; print('✓ knxproject_to_openhab OK')"
-          python -c "import config; print('✓ config OK')"
+          python -c "from knx_to_openhab import knxproject; print('✓ knxproject module OK')"
+          python -c "from knx_to_openhab import generator; print('✓ generator module OK')"
+          python -c "from knx_to_openhab import helpers; print('✓ helpers module OK')"
+          python -c "from knx_to_openhab.config import config; print('✓ config module OK')"
       
-      - name: Run full generation tests
+      - name: Run file import tests
         run: |
-          pytest tests/test_full_generation.py -v --tb=short
+          pytest tests/integration/test_file_import.py -v --tb=short
       
-      - name: Run output config tests
+      - name: Run business logic tests
         run: |
-          pytest tests/test_output_config.py -v --tb=short
+          pytest tests/integration/test_business_logic.py -v --tb=short
 
   # ARM simulation (lightweight)
   arm-compatibility:

@@ -1,0 +1,20 @@
+{
+  "items_path": "openhab/items/knx.items",
+  "things_path": "openhab/things/knx.things",
+  "sitemaps_path": "openhab/sitemaps/knx.sitemap",
+  "influx_path": "openhab/persistence/influxdb.persist",
+  "fenster_path": "openhab/rules/fenster.rules",
+  "homekit_path": "openhab/misc/homekit.items",
+  "alexa_path": "openhab/misc/alexa.items",
+  "ga_path": "openhab/misc/google_assistant.items",
+  "rules_path": "openhab/rules",
+  "scripts_path": "openhab/scripts",
+  "openhab_path": "openhab",
+  "jobs_dir": "var/lib/knx_to_openhab",
+  "backups_dir": "var/backups/knx_to_openhab",
+  "retention": {
+    "days": 14,
+    "max_backups": 50,
+    "max_backups_size_mb": 500
+  }
+}

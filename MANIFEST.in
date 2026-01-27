@@ -1,0 +1,20 @@
+# Include config files
+include README.md
+include LICENSE.txt
+include requirements.txt
+include requirements-dev.txt
+
+# Package data
+recursive-include src/knx_to_openhab *.json
+recursive-include src/knx_to_openhab *.py
+
+# Web UI static and template files
+recursive-include src/knx_to_openhab/web_ui *.html
+recursive-include src/knx_to_openhab/web_ui *.css
+recursive-include src/knx_to_openhab/web_ui *.js
+recursive-include src/knx_to_openhab/web_ui *.json
+
+# Keep old structure for backward compatibility (deprecated)
+include config.json
+include ets_helpers.py
+include utils.py

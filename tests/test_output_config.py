@@ -19,6 +19,37 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 
 logger = logging.getLogger(__name__)
 
+# Complete test configuration structure with all required keys
+TEST_CONFIG = {
+    "defines": {},
+    "regexpattern": {
+        "item_Room": "\\++[A-Z].[0-9]+",
+        "item_Floor": "^=?[1-9\\.A-Z]{1,5}",
+        "item_Floor_nameshort": "^=?[a-zA-Z]{1,5}\\b",
+        "items_Label": "^\\[\\w*\\]\\@\\s?(\\+RM(\\d+(\\/|\\\\|-)*)*(\\d+))*\\s|:\\(.*\\)\\s?",
+        "items_Name": "[^A-Za-z0-9_]+"
+    },
+    "general": {
+        "FloorNameAsItIs": False,
+        "FloorNameFromDescription": False,
+        "RoomNameAsItIs": False,
+        "RoomNameFromDescription": False,
+        "addMissingItems": True,
+        "unknown_floorname": "unknown",
+        "unknown_roomname": "unknown",
+        "item_Floor_nameshort_prefix": "=",
+        "item_Room_nameshort_prefix": "+"
+    },
+    "devices": {
+        "gateway": {
+            "hardware_name": ["IP Interface Secure", "KNX IP Interface"]
+        }
+    },
+    "datapoint_mappings": {}
+}
+
+TEST_CONFIG_JSON = json.dumps(TEST_CONFIG)
+
 
 class TestOutputConfig(unittest.TestCase):
     """Test configuration detection and path resolution."""
@@ -29,23 +60,36 @@ class TestOutputConfig(unittest.TestCase):
         Since config.py executes on import, we need to ensure it's
         imported fresh with the correct mocks in place.
         """
-        # Remove config from sys.modules to force re-import
-        if 'knx_to_openhab.config' in sys.modules:
-            del sys.modules['knx_to_openhab.config']
-        # Also clear any knxproject_to_openhab that might depend on config
-        if 'knx_to_openhab.knxproject' in sys.modules:
-            del sys.modules['knx_to_openhab.knxproject']
+        # List of all modules to clean up for proper isolation
+        modules_to_clean = [
+            'knx_to_openhab',
+            'knx_to_openhab.__init__',
+            'knx_to_openhab.config',
+            'knx_to_openhab.knxproject',
+            'knx_to_openhab.generator',
+        ]
+        
+        for module_name in modules_to_clean:
+            if module_name in sys.modules:
+                del sys.modules[module_name]
 
     def tearDown(self):
         """Clean up after each test."""
-        # Remove modules after test
-        if 'knx_to_openhab.config' in sys.modules:
-            del sys.modules['knx_to_openhab.config']
-        if 'knx_to_openhab.knxproject' in sys.modules:
-            del sys.modules['knx_to_openhab.knxproject']
+        # Same comprehensive cleanup as setUp
+        modules_to_clean = [
+            'knx_to_openhab',
+            'knx_to_openhab.__init__',
+            'knx_to_openhab.config',
+            'knx_to_openhab.knxproject',
+            'knx_to_openhab.generator',
+        ]
+        
+        for module_name in modules_to_clean:
+            if module_name in sys.modules:
+                del sys.modules[module_name]
 
     @patch('pathlib.Path.exists', return_value=True)
-    @patch('builtins.open', new_callable=mock_open, read_data='{"defines": {}, "regexpattern": {}, "general": {}, "devices": {"gateway": {"hardware_name": []}}, "datapoint_mappings": {}}')
+    @patch('builtins.open', new_callable=mock_open, read_data=TEST_CONFIG_JSON)
     @patch('subprocess.run')
     def test_openhab_cli_detection(self, mock_run, mock_file, mock_exists):
         """Test detection of OpenHAB via openhab-cli command.
@@ -75,7 +119,7 @@ class TestOutputConfig(unittest.TestCase):
         logger.info(f"✓ OpenHAB CLI detection: user={config['target_user']}")
 
     @patch('pathlib.Path.exists', return_value=False)
-    @patch('builtins.open', new_callable=mock_open, read_data='{"defines": {}, "regexpattern": {}, "general": {}, "devices": {"gateway": {"hardware_name": []}}, "datapoint_mappings": {}}')
+    @patch('builtins.open', new_callable=mock_open, read_data=TEST_CONFIG_JSON)
     @patch('subprocess.run')
     def test_default_local_paths(self, mock_run, mock_file, mock_exists):
         """Test fallback to local paths when no external detection works.
@@ -97,7 +141,7 @@ class TestOutputConfig(unittest.TestCase):
         logger.info(f"✓ Local fallback: target_user={config.get('target_user')}")
 
     @patch('pathlib.Path.exists', return_value=True)
-    @patch('builtins.open', new_callable=mock_open, read_data='{"defines": {}, "regexpattern": {}, "general": {}, "devices": {"gateway": {"hardware_name": []}}, "datapoint_mappings": {}}')
+    @patch('builtins.open', new_callable=mock_open, read_data=TEST_CONFIG_JSON)
     @patch('subprocess.run')
     def test_openhab_cli_different_user(self, mock_run, mock_file, mock_exists):
         """Test openhab-cli detection with non-standard user.
@@ -125,7 +169,7 @@ class TestOutputConfig(unittest.TestCase):
         logger.info(f"✓ Non-standard user detection: user={config['target_user']}")
 
     @patch('pathlib.Path.exists', return_value=True)
-    @patch('builtins.open', new_callable=mock_open, read_data='{"defines": {}, "regexpattern": {}, "general": {}, "devices": {"gateway": {"hardware_name": []}}, "datapoint_mappings": {}}')
+    @patch('builtins.open', new_callable=mock_open, read_data=TEST_CONFIG_JSON)
     @patch('shutil.chown')
     @patch('subprocess.run')
     def test_permission_setting(self, mock_run, mock_chown, mock_file, mock_exists):
@@ -164,7 +208,7 @@ class TestOutputConfig(unittest.TestCase):
             logger.warning("✓ set_permissions not implemented (skipped)")
 
     @patch('pathlib.Path.exists', return_value=True)
-    @patch('builtins.open', new_callable=mock_open, read_data='{"defines": {}, "regexpattern": {}, "general": {}, "devices": {"gateway": {"hardware_name": []}}, "datapoint_mappings": {}}')
+    @patch('builtins.open', new_callable=mock_open, read_data=TEST_CONFIG_JSON)
     @patch('subprocess.run')
     def test_openhab_cli_command_called_correctly(self, mock_run, mock_file, mock_exists):
         """Test that openhab-cli is called with correct parameters."""

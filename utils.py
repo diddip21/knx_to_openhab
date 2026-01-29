@@ -3,6 +3,7 @@
 
 from config import config
 
+
 def get_datapoint_type(key: str) -> str:
     """Return the DPST string for a given logical key.
 
@@ -12,4 +13,6 @@ def get_datapoint_type(key: str) -> str:
     try:
         return config["datapoint_types"][key]
     except KeyError as exc:
-        raise KeyError(f"Datapoint type key '{key}' not found in config['datapoint_types']") from exc
+        raise KeyError(
+            f"Datapoint type key '{key}' not found in config['datapoint_types']"
+        ) from exc

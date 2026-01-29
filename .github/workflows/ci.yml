@@ -1,4 +1,4 @@
-name: Enhanced CI Pipeline
+name: Python 3.12+ Exclusive CI Pipeline
 
 on:
   push:
@@ -21,14 +21,15 @@ concurrency:
 
 env:
   # Environment variables for consistent configuration
-  PYTHON_VERSION: '3.11'
+  # NOTE: This project exclusively supports Python 3.12+ - all matrix configurations and tests limited to 3.12+
+  PYTHON_VERSION: '3.12'
   PIP_CACHE_DIR: ~/.cache/pip
   PYTEST_ADDOPTS: "--tb=short --strict-markers --disable-warnings"
 
 jobs:
   # Job 1: Dependency caching and setup
   setup-and-cache:
-    name: Setup & Cache Dependencies
+    name: Setup & Cache Dependencies (Python 3.12+)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     
@@ -71,7 +72,7 @@ jobs:
           pip list --format=freeze > installed_packages.txt
           echo "Dependencies verified successfully"
 
-  # Job 2: Matrix strategy for broader compatibility testing
+  # Job 2: Matrix strategy for Python 3.12+ compatibility testing
   compatibility-test:
     name: Compatibility Test - ${{ matrix.os }} - Python ${{ matrix.python-version }}
     needs: setup-and-cache
@@ -81,14 +82,13 @@ jobs:
     strategy:
       fail-fast: false  # Continue running other matrix jobs if one fails
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.9', '3.10', '3.11', '3.12']
-        exclude:
-          # Exclude known problematic combinations
-          - os: windows-latest
-            python-version: '3.12'  # Exclude if there are known issues
-          - os: macos-latest
-            python-version: '3.9'   # Exclude if there are known issues
+          # Only test Python 3.12+ as per project requirements
+          os: [ubuntu-latest, windows-latest, macos-latest]
+          python-version: ['3.12', '3.13']
+          exclude:
+            # Exclude known problematic combinations
+            - os: windows-latest
+              python-version: '3.12'  # Exclude if there are known issues
     
     steps:
       - name: Checkout repository
@@ -243,7 +243,7 @@ jobs:
 
   # Job 5: Core functionality tests
   core-functional-tests:
-    name: Core Functionality Tests
+    name: Core Functionality Tests (Python 3.12+)
     needs: setup-and-cache
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -288,7 +288,7 @@ jobs:
 
   # Job 6: Code quality and linting
   code-quality:
-    name: Code Quality Checks
+    name: Code Quality Checks (Python 3.12+)
     needs: setup-and-cache
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -340,7 +340,7 @@ jobs:
 
   # Job 7: ETS helpers specific tests
   ets-helpers-tests:
-    name: ETS Helpers Tests
+    name: ETS Helpers Tests (Python 3.12+)
     needs: setup-and-cache
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -383,7 +383,7 @@ jobs:
 
   # Job 8: External dependencies mocking tests
   external-deps-mocking-tests:
-    name: External Dependencies Mocking Tests
+    name: External Dependencies Mocking Tests (Python 3.12+)
     needs: setup-and-cache
     runs-on: ubuntu-latest
     timeout-minutes: 15

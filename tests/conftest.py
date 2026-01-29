@@ -5,8 +5,10 @@ import sys
 import os
 from pathlib import Path
 
-# Add project root to Python path
+# Add project root AND src to Python path for proper module resolution
 project_root = Path(__file__).parent.parent
+src_path = project_root / "src"
+sys.path.insert(0, str(src_path))
 sys.path.insert(0, str(project_root))
 
 
@@ -66,17 +68,17 @@ def generator_module():
     """Provide the main generator module for testing.
     
     This fixture ensures the generator module is properly imported and
-    available for tests. It adds the project root to sys.path if needed.
+    available for tests. It adds the src to sys.path if needed.
     
     Returns:
-        The imported ets_to_openhab module for generator testing.
+        The imported knx_to_openhab.generator module for testing.
         
     Raises:
         ImportError: If the generator module cannot be imported.
     """
     try:
-        import ets_to_openhab
-        return ets_to_openhab
+        from knx_to_openhab import generator
+        return generator
     except ImportError as e:
         pytest.skip(f"Generator module not available: {e}")
 
@@ -86,16 +88,16 @@ def helpers_module():
     """Provide the helpers module for testing.
     
     This fixture ensures helper functions are properly imported and available
-    for tests. Handles cases where helpers are in different locations.
+    for tests. Uses the new restructured import path.
     
     Returns:
-        The imported ets_helpers module containing helper functions.
+        The imported knx_to_openhab.ets_helpers module containing helper functions.
         
     Raises:
         ImportError: If the helpers module cannot be imported.
     """
     try:
-        import ets_helpers
+        from knx_to_openhab import ets_helpers
         return ets_helpers
     except ImportError as e:
         pytest.skip(f"Helpers module not available: {e}")
@@ -152,31 +154,32 @@ def generated_openhab_files(generator_module):
         FileNotFoundError: If ETS project file not found
         Exception: If generation fails
     """
-    from config import config
+    from knx_to_openhab import config as config_module
     import os
     import logging
     
     logger = logging.getLogger(__name__)
     
-    # Import after project root is in sys.path
-    from ets_to_openhab import gen_building, export_output
+    # Import after src is in sys.path
+    from knx_to_openhab import generator as gen_module
     
     try:
         logger.info("Generating OpenHAB configuration files...")
         
         # Step 1: Generate the items/sitemap/things from ETS data
-        items, sitemap, things = gen_building()
+        items, sitemap, things = gen_module.gen_building()
         logger.info(f"✓ Generated {len(items)} items, {len(sitemap)} sitemap bytes, {len(things)} things bytes")
         
         # Step 2: Write the generated content to files
-        export_output(items, sitemap, things, configuration=config)
-        logger.info(f"✓ Exported to: {config['items_path']}, {config['things_path']}, {config['sitemaps_path']}")
+        cfg = config_module.config
+        gen_module.export_output(items, sitemap, things, configuration=cfg)
+        logger.info(f"✓ Exported to: {cfg['items_path']}, {cfg['things_path']}, {cfg['sitemaps_path']}")
         
         # Step 3: Verify files were created
         files_to_check = [
-            config['items_path'],
-            config['things_path'],
-            config['sitemaps_path']
+            cfg['items_path'],
+            cfg['things_path'],
+            cfg['sitemaps_path']
         ]
         
         for file_path in files_to_check:

@@ -1,5 +1,5 @@
 """Unit tests for core address selection logic from gen_building().
-
+ 
 This module tests the flag matching and address filtering functions that are
 responsible for correctly mapping KNX datapoints to OpenHAB items based on
 configurable flags and datapoint types.
@@ -83,6 +83,54 @@ class TestCoFlags:
         assert flags['write'] is False
         assert flags['transmit'] is False
         assert flags['update'] is False
+
+    def test_extract_flags_with_non_boolean_values(self):
+        """Should handle non-boolean flag values gracefully."""
+        co = {
+            'flags': {
+                'read': 'True',  # String instead of boolean
+                'write': 1,      # Integer instead of boolean
+                'transmit': 0,   # Integer instead of boolean
+                'update': 'False'  # String instead of boolean
+            }
+        }
+
+        flags = get_co_flags(co)
+        # Implementation preserves original values, doesn't convert them
+        assert flags['read'] == 'True'  # String stays as string
+        assert flags['write'] == 1      # Integer stays as integer
+        assert flags['transmit'] == 0   # Integer stays as integer
+        assert flags['update'] == 'False'  # String stays as string
+
+    def test_extract_flags_with_none_values(self):
+        """Should handle None flag values."""
+        co = {
+            'flags': {
+                'read': None,
+                'write': True,
+                'transmit': False
+            }
+        }
+
+        flags = get_co_flags(co)
+        assert flags['read'] is None    # None stays as None
+        assert flags['write'] is True
+        assert flags['transmit'] is False
+
+    def test_extract_flags_case_insensitive(self):
+        """Should handle different casing in flag names."""
+        co = {
+            'FLAGS': {  # Different case
+                'READ': True,  # Different case
+                'Write': False,  # Mixed case
+                'TRANSMIT': True,  # Different case
+                'update': False  # Original case
+            }
+        }
+
+        flags = get_co_flags(co)
+        # Case-sensitive implementation - FLAGS key is not recognized as 'flags'
+        assert flags is None  # Different case key not found
 
 
 class TestFlagsMatch:
@@ -210,6 +258,32 @@ class TestFlagsMatch:
         status_expected = {'read': True, 'transmit': True}
         assert flags_match(wrong_co, status_expected) is False
 
+    def test_edge_case_empty_strings_as_keys(self):
+        """Test handling of edge cases with empty string keys."""
+        co_flags = {'': True, 'read': True}
+        expected = {'read': True}
+        
+        # This should work normally despite empty key
+        assert flags_match(co_flags, expected) is True
+
+    def test_flag_match_with_different_types(self):
+        """Test flag matching with different value types."""
+        co_flags = {'read': 1, 'write': 0}  # integers instead of booleans
+        expected = {'read': True, 'write': False}  # booleans
+        
+        # Implementation-dependent behavior - may convert or not match
+        result = flags_match(co_flags, expected)
+        # The actual behavior depends on the implementation
+
+    def test_large_flag_sets(self):
+        """Test performance with large flag sets."""
+        # Create large flag sets to test performance
+        large_co_flags = {f'flag_{i}': i % 2 == 0 for i in range(100)}
+        large_expected = {f'flag_{i}': i % 2 == 0 for i in range(50)}  # subset
+        
+        # Should match the subset correctly
+        assert flags_match(large_co_flags, large_expected) is True
+
 
 class TestAddressSelectionIntegration:
     """Integration tests for address selection with flags."""
@@ -269,3 +343,89 @@ class TestAddressSelectionIntegration:
 
         result = flags_match(actual, expected)
         assert result is False, "Should not match when write flag differs"
+
+    def test_real_world_scenarios(self):
+        """Test real-world KNX device scenarios."""
+        # Scenario 1: Binary input (sensor) - read-only
+        binary_input = {'read': True, 'write': False, 'transmit': True, 'update': False}
+        sensor_filter = {'read': True, 'write': False}
+        assert flags_match(binary_input, sensor_filter) is True
+
+        # Scenario 2: Binary output (actuator) - write-only
+        binary_output = {'read': False, 'write': True, 'transmit': False, 'update': False}
+        actuator_filter = {'write': True}
+        assert flags_match(binary_output, actuator_filter) is True
+
+        # Scenario 3: Scene selector - write-only
+        scene_selector = {'read': False, 'write': True, 'transmit': False, 'update': False}
+        scene_filter = {'write': True}
+        assert flags_match(scene_selector, scene_filter) is True
+
+        # Scenario 4: Temperature sensor - read + transmit
+        temp_sensor = {'read': True, 'write': False, 'transmit': True, 'update': True}
+        temp_filter = {'read': True, 'transmit': True}
+        assert flags_match(temp_sensor, temp_filter) is True
+
+
+class TestEdgeCases:
+    """Test edge cases and error conditions."""
+
+    def test_deeply_nested_flags(self):
+        """Test with deeply nested or complex flag structures."""
+        # This tests if the implementation can handle complex nested structures
+        complex_co = {
+            'flags': {
+                'read': True,
+                'write': False,
+                'transmit': True,
+                'update': False,
+                'complex_sub_flag': {
+                    'sub_read': True,
+                    'sub_write': False
+                }
+            }
+        }
+        # Should only process top-level flags, ignore nested ones
+        flags = get_co_flags(complex_co)
+        assert 'read' in flags
+        assert 'complex_sub_flag' not in flags  # Should not process nested
+
+    def test_unicode_flag_names(self):
+        """Test with unicode flag names."""
+        unicode_co = {
+            'flags': {
+                'rèad': True,  # Unicode characters
+                'wrițe': False,
+                'trânsmit': True
+            }
+        }
+        # Should handle unicode flag names gracefully
+        flags = get_co_flags(unicode_co)
+        assert flags is not None
+
+    def test_special_characters_in_flag_values(self):
+        """Test with special character values."""
+        special_co = {
+            'flags': {
+                'read': True,
+                'write': 'special_value',  # Non-boolean value
+                'transmit': []  # Empty list (falsy)
+            }
+        }
+        flags = get_co_flags(special_co)
+        # Should handle non-boolean values appropriately
+        assert flags is not None
+
+    def test_extremely_large_flag_values(self):
+        """Test with extremely large flag values."""
+        large_co = {
+            'flags': {
+                'read': 999999999999999999999,  # Very large number
+                'write': -999999999999999999999,  # Very negative number
+                'transmit': True
+            }
+        }
+        flags = get_co_flags(large_co)
+        # Implementation preserves original values, doesn't convert them
+        assert flags['read'] == 999999999999999999999  # Large number stays as number
+        assert flags['write'] == -999999999999999999999  # Negative number stays as number

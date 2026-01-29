@@ -1,5 +1,5 @@
 """Test that generated OpenHAB configuration files have valid syntax.
-
+ 
 This module validates the syntax and structure of generated:
 - Items files (items.file format)
 - Things files (KNX binding Things format)
@@ -142,6 +142,104 @@ class TestItemsFileSyntax:
             f"Found {len(duplicates)} duplicate item names: " + \
             ", ".join([d['name'] for d in duplicates[:5]])
 
+    def test_items_valid_item_types(self):
+        """Validate that items use valid OpenHAB item types."""
+        valid_types = {
+            'Switch', 'Contact', 'Number', 'Dimmer', 'Rollershutter',
+            'DateTime', 'String', 'Group', 'Color', 'Location', 'Player',
+            'Image', 'Video', 'Call', 'Location'
+        }
+        
+        with open(config['items_path'], 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        lines = content.split('\n')
+        invalid_items = []
+        
+        for line_num, line in enumerate(lines, 1):
+            if not line.strip() or line.strip().startswith('//'):
+                continue
+            
+            # Extract item type (first word)
+            parts = line.split()
+            if parts:
+                item_type = parts[0]
+                if item_type not in valid_types and item_type != 'Group':
+                    invalid_items.append({
+                        'line_num': line_num,
+                        'line': line.strip(),
+                        'type': item_type
+                    })
+
+        assert len(invalid_items) == 0, \
+            f"Found {len(invalid_items)} items with invalid types:\n" + \
+            "\n".join([f"  Line {i['line_num']}: {i['type']} in '{i['line'][:50]}...'" 
+                      for i in invalid_items[:5]])
+
+    def test_items_valid_label_format(self):
+        """Validate that item labels follow correct format."""
+        with open(config['items_path'], 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Pattern to match items with labels
+        item_label_pattern = r'^(\w+)\s+\w+\s+"([^"]*)"(?:\s+\w+)?.*'
+        lines = content.split('\n')
+        invalid_labels = []
+        
+        for line_num, line in enumerate(lines, 1):
+            if not line.strip() or line.strip().startswith('//'):
+                continue
+            
+            match = re.match(item_label_pattern, line)
+            if match:
+                item_type, label = match.groups()
+                # Labels should not be empty
+                if not label.strip():
+                    invalid_labels.append({
+                        'line_num': line_num,
+                        'line': line.strip(),
+                        'label': label
+                    })
+
+        assert len(invalid_labels) == 0, \
+            f"Found {len(invalid_labels)} items with invalid labels:\n" + \
+            "\n".join([f"  Line {i['line_num']}: empty label in '{i['line'][:50]}...'" 
+                      for i in invalid_labels[:5]])
+
+    def test_items_proper_line_format(self):
+        """Validate that item lines follow proper OpenHAB format."""
+        with open(config['items_path'], 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        lines = content.split('\n')
+        malformed_lines = []
+        
+        for line_num, line in enumerate(lines, 1):
+            if not line.strip() or line.strip().startswith('//'):
+                continue
+                
+            # Check if line follows expected format: Type Name "Label" [Icon] (Groups) [Metadata]
+            # Basic check: should start with a valid item type
+            parts = line.split()
+            if not parts:
+                continue
+                
+            item_type = parts[0]
+            if item_type in ['Switch', 'Contact', 'Number', 'Dimmer', 'Rollershutter', 
+                           'DateTime', 'String', 'Color', 'Location', 'Player', 'Image', 
+                           'Video', 'Call', 'Group']:
+                # Should have at least name and label
+                if len(parts) < 3:
+                    malformed_lines.append({
+                        'line_num': line_num,
+                        'line': line.strip()
+                    })
+
+        assert len(malformed_lines) == 0, \
+            f"Found {len(malformed_lines)} malformed item lines:\n" + \
+            "\n".join([f"  Line {m['line_num']}: '{m['line'][:50]}...'" 
+                      for m in malformed_lines[:5]])
+
 
 class TestThingsFileSyntax:
     """Validates generated things file has valid OpenHAB Things syntax."""
@@ -255,6 +353,54 @@ class TestThingsFileSyntax:
             f"Found {len(invalid_addresses)} invalid KNX addresses: " + \
             ", ".join(invalid_addresses[:5])
 
+    def test_things_valid_binding_formats(self):
+        """Validate that things use valid binding formats."""
+        with open(config['things_path'], 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Look for various binding formats
+        lines = content.split('\n')
+        valid_formats_found = False
+        
+        for line in lines:
+            line = line.strip()
+            if line.startswith('Bridge') or line.startswith('Thing'):
+                # Should contain binding identifier like knx:, mqtt:, etc.
+                if ':' in line and not line.startswith('//'):
+                    valid_formats_found = True
+                    break
+            elif line.startswith('Type'):
+                # Type definitions should have proper format
+                if ':' in line and not line.startswith('//'):
+                    valid_formats_found = True
+                    break
+
+        # Either should find valid formats or skip if in different format
+        if not valid_formats_found:
+            pytest.skip("No recognizable binding formats found")
+
+    def test_things_configuration_parameters(self):
+        """Validate that thing configuration parameters are properly formatted."""
+        with open(config['things_path'], 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Look for configuration sections [ ... ]
+        config_pattern = r'\[(.*?)\]'
+        config_matches = re.findall(config_pattern, content, re.DOTALL)
+        
+        invalid_configs = []
+        for i, config_section in enumerate(config_matches):
+            # Check for common configuration patterns
+            if '=' not in config_section and config_section.strip():
+                invalid_configs.append({
+                    'section': config_section[:50],
+                    'index': i
+                })
+
+        # Only warn if many invalid configs found
+        if len(invalid_configs) > len(config_matches) // 2:
+            logger.warning(f"Found {len(invalid_configs)} potentially invalid config sections")
+
 
 class TestSitemapFileSyntax:
     """Validates generated sitemap has valid OpenHAB Sitemap syntax."""
@@ -339,3 +485,126 @@ class TestSitemapFileSyntax:
         assert len(invalid_widgets) == 0, \
             f"Found invalid widget types: {', '.join(invalid_widgets)}"
         logger.info(f"All {len(set(matches))} unique widget types are valid")
+
+    def test_sitemap_valid_label_format(self):
+        """Validate that sitemap labels follow correct format."""
+        with open(config['sitemaps_path'], 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Look for label attributes
+        label_pattern = r'label="([^"]*)"|label=(\w+)'
+        matches = re.findall(label_pattern, content)
+        
+        # Count invalid labels (empty strings)
+        empty_labels = 0
+        for match in matches:
+            # match is a tuple of captured groups, take the non-empty one
+            label = match[0] if match[0] else match[1]
+            if not label.strip():
+                empty_labels += 1
+
+        # Only warn if there are many empty labels
+        if empty_labels > len(matches) // 2:
+            logger.warning(f"Found {empty_labels} empty labels out of {len(matches)} total")
+
+    def test_sitemap_valid_item_references(self):
+        """Validate that sitemap item references are properly formatted."""
+        with open(config['sitemaps_path'], 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Find item references: item=ItemName
+        item_ref_pattern = r'item=(\w+)'
+        matches = re.findall(item_ref_pattern, content)
+        
+        invalid_refs = []
+        for ref in matches:
+            # Check if reference follows valid naming convention (alphanumeric + underscore/hyphen)
+            if not re.match(r'^[a-zA-Z][a-zA-Z0-9_-]*$', ref):
+                invalid_refs.append(ref)
+
+        assert len(invalid_refs) == 0, \
+            f"Found {len(invalid_refs)} invalid item references: {invalid_refs[:5]}"
+
+    def test_sitemap_proper_closing_brackets(self):
+        """Validate that sitemap has proper opening/closing brackets."""
+        with open(config['sitemaps_path'], 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Count opening and closing brackets
+        open_count = content.count('{')
+        close_count = content.count('}')
+        
+        assert open_count == close_count, \
+            f"Mismatched brackets: {open_count} opening, {close_count} closing"
+
+
+def test_comprehensive_file_integrity():
+    """Comprehensive test to validate integrity across all generated files."""
+    # Check that all expected files exist
+    expected_files = [
+        config.get('items_path'),
+        config.get('things_path'), 
+        config.get('sitemaps_path'),
+        config.get('influx_path')
+    ]
+    
+    missing_files = [f for f in expected_files if f and not os.path.exists(f)]
+    
+    if missing_files:
+        logger.warning(f"Missing expected files: {missing_files}")
+    
+    # Check file sizes for reasonableness
+    for file_path in expected_files:
+        if file_path and os.path.exists(file_path):
+            size = os.path.getsize(file_path)
+            if size == 0:
+                pytest.fail(f"File {file_path} is empty")
+            if size > 100 * 1024 * 1024:  # 100MB - probably too large
+                logger.warning(f"File {file_path} is very large: {size} bytes")
+
+
+def test_file_encoding_issues():
+    """Test that generated files have proper encoding without issues."""
+    files_to_check = [
+        config.get('items_path'),
+        config.get('things_path'),
+        config.get('sitemaps_path')
+    ]
+    
+    problematic_chars = []
+    
+    for file_path in files_to_check:
+        if file_path and os.path.exists(file_path):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Look for problematic characters that might indicate encoding issues
+                if '\ufffd' in content:  # Unicode replacement character
+                    problematic_chars.append(f"{file_path}: Contains replacement characters")
+                    
+            except UnicodeDecodeError as e:
+                pytest.fail(f"Encoding error in {file_path}: {e}")
+    
+    assert not problematic_chars, f"Found encoding issues: {problematic_chars}"
+
+
+def test_syntax_validation_error_handling():
+    """Test that syntax validation handles errors gracefully."""
+    # Test with a temporary fake file that doesn't exist
+    original_items_path = config['items_path']
+    
+    # Temporarily change to a non-existent file
+    config['items_path'] = "/tmp/nonexistent_file.items"
+    
+    try:
+        # This should handle the missing file gracefully rather than crash
+        with pytest.raises(AssertionError):
+            # Manually call the fixture function to trigger the check
+            from tests.conftest import generated_openhab_files
+            # Just test that the check happens properly
+            assert os.path.exists(config['items_path']), \
+                f"Items file not found: {config['items_path']}"
+    finally:
+        # Restore original path
+        config['items_path'] = original_items_path

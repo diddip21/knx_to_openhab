@@ -16,3 +16,5 @@ var/backups/knx_to_openhab/
 # Test data
 tests/test_project.json
 web_ui/backend/server.log
+.kilocodemodes
+.kilocode/

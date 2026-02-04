@@ -535,18 +535,25 @@ def main():
     args = parser.parse_args()
 
     if not args.file_path:
-        import tkinter as tk
-        from tkinter import filedialog
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
 
-        root = tk.Tk()
-        root.withdraw()
-        root.wm_attributes("-topmost", 1)
-        file_path = filedialog.askopenfilename()
-        if not file_path:
-            raise SystemExit
-        args.file_path = Path(file_path)
-        if args.file_path.suffix == ".json":
-            args.readDump = True
+            root = tk.Tk()
+            root.withdraw()
+            root.wm_attributes("-topmost", 1)
+            file_path = filedialog.askopenfilename()
+            if not file_path:
+                raise SystemExit
+            args.file_path = Path(file_path)
+            if args.file_path.suffix == ".json":
+                args.readDump = True
+        except Exception:
+            # Headless or tkinter not available: bail with a helpful message
+            raise SystemExit(
+                "No --file_path provided and tkinter GUI unavailable. "
+                "Run with --file_path <path> or install python3-tk."
+            )
 
     if args.readDump:
         with open(args.file_path, encoding="utf-8") as f:

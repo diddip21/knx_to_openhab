@@ -26,6 +26,8 @@ It includes a **Web UI** for easy management, file uploads, and monitoring, as w
 ### One-Command Installer (Linux / Raspberry Pi)
 Ideally use a fresh install of Raspberry Pi OS (Lite) or DietPi.
 
+**Prereqs (apt):** `python3-venv python3-tk build-essential`
+
 ```bash
 curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install.sh | bash
 ```

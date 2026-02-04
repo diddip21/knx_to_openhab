@@ -190,6 +190,17 @@ if FLASK_AVAILABLE:
             return jsonify({"error": "not found"}), 404
         return jsonify(j)
 
+    @app.route("/api/job/<job_id>/diff", methods=["GET"])
+    def job_diff(job_id):
+        job = job_mgr.get_job(job_id)
+        if not job:
+            return jsonify({"error": "not found"}), 404
+        stats = job.get("stats", {}) or {}
+        if not stats:
+            return jsonify({"error": "no stats available"}), 400
+        diffs = {rel_path: job_mgr.get_file_diff(job_id, rel_path) or [] for rel_path in stats.keys()}
+        return jsonify(diffs)
+
     @app.route("/api/job/<job_id>", methods=["PATCH"])
     def update_job(job_id):
         data = request.get_json() or {}

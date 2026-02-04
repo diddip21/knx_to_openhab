@@ -2,6 +2,7 @@ import os
 import sys
 import threading
 import time
+from urllib.parse import urlparse
 
 import pytest
 import requests
@@ -21,7 +22,7 @@ def _safe_artifact_name(name: str) -> str:
     return "".join(c if c.isalnum() or c in "-_" else "_" for c in name)
 
 
-def run_server():
+def run_server(host: str, port: int):
     """Run the Flask app."""
     # Disable auth for testing
     if "auth" not in cfg:
@@ -29,12 +30,12 @@ def run_server():
     cfg["auth"]["enabled"] = False
 
     # Disable reloader to avoid main thread issues
-    app.run(host="127.0.0.1", port=8081, use_reloader=False)
+    app.run(host=host, port=port, use_reloader=False)
 
 
 @pytest.fixture(scope="session")
 def base_url():
-    return "http://127.0.0.1:8081"
+    return os.getenv("UI_BASE_URL", "http://127.0.0.1:8081")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -42,8 +43,12 @@ def server(base_url):
     """Start the Flask server in a separate thread."""
     # Use a different port than default 8080 to avoid conflicts
 
+    parsed = urlparse(base_url)
+    host = parsed.hostname or "127.0.0.1"
+    port = parsed.port or 8081
+
     # Start server thread
-    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread = threading.Thread(target=run_server, args=(host, port), daemon=True)
     server_thread.start()
 
     # Wait for server to be ready

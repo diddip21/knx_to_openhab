@@ -44,6 +44,14 @@ The Web UI exposes **reports** in the *Generated Files* table (Preview / Downloa
 - `partial_report.json`
 - `completeness_report.json` (checks for missing required channels and recommended feedback)
 
+**Completeness rules (summary):**
+- **Required:** dimmer → `position`; rollershutter → `upDown`; switch/number/string/datetime → `ga`
+- **Recommended:**
+  - dimmer → one of `switch` or `increaseDecrease`
+  - rollershutter → one of `stopMove` or `position`
+  - switch/number → status feedback (`ga` with `+<` status binding)
+  - number with HVAC DPT 20.102 → status feedback if missing
+
 ## First-Run (Recommended Flow)
 
 1. **Upload** your `.knxproj` (or JSON dump)

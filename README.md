@@ -62,7 +62,7 @@ The UI surfaces **reports** for anything that couldn't be fully placed (unknown 
 
 - **UI toggle:** Settings → **Auto-place unknown addresses**
 - **Config flag:** `config.json` → `general.auto_place_unknown`
-- **Report export:** In the *Generated Files* table you can **Preview / Download / Copy** `unknown_report.json` and `partial_report.json` (unknown report is generated even when `addMissingItems` is disabled)
+- **Report export:** In the *Generated Files* table you can **Preview / Download / Copy** `unknown_report.json`, `partial_report.json`, and `completeness_report.json` (unknown report is generated even when `addMissingItems` is disabled)
 
 **Home overview**
 

@@ -1,13 +1,11 @@
 """UI tests for the knx_to_openhab web interface using Playwright."""
 
-import os
 import re
 import time
 
 import pytest
 from playwright.sync_api import Page, expect
 
-BASE_URL = os.getenv("UI_BASE_URL", "http://127.0.0.1:8081")
 DEFAULT_USERNAME = "admin"
 DEFAULT_PASSWORD = "logihome"
 
@@ -23,16 +21,16 @@ def browser_context_args(browser_context_args):
 
 
 @pytest.fixture
-def authenticated_page(page: Page):
+def authenticated_page(page: Page, base_url):
     """Provide an authenticated page session."""
-    page.goto(BASE_URL)
+    page.goto(base_url)
 
     # Check if already logged in, if not, login
     if "login" in page.url.lower() or page.locator("input[name='username']").count() > 0:
         page.fill("input[name='username']", DEFAULT_USERNAME)
         page.fill("input[name='password']", DEFAULT_PASSWORD)
         page.click("button[type='submit']")
-        page.wait_for_load_state("networkidle")
+        expect(page.locator("#upload-section")).to_be_visible(timeout=10000)
 
     return page
 
@@ -40,9 +38,9 @@ def authenticated_page(page: Page):
 class TestAuthentication:
     """Test authentication and login functionality."""
 
-    def test_login_page_loads(self, page: Page):
+    def test_login_page_loads(self, page: Page, base_url):
         """Test that login page loads correctly."""
-        page.goto(BASE_URL)
+        page.goto(base_url)
         expect(page).to_have_title(re.compile(r"knx|openhab", re.IGNORECASE))
         # If auth is disabled in test server, login fields won't exist
         if page.locator("input[name='username']").count() == 0:
@@ -50,9 +48,9 @@ class TestAuthentication:
         expect(page.locator("input[name='username']")).to_be_visible()
         expect(page.locator("input[name='password']")).to_be_visible()
 
-    def test_successful_login(self, page: Page):
+    def test_successful_login(self, page: Page, base_url):
         """Test successful login with correct credentials."""
-        page.goto(BASE_URL)
+        page.goto(base_url)
         if page.locator("input[name='username']").count() == 0:
             # Auth disabled in test server
             assert "login" not in page.url.lower()
@@ -62,15 +60,14 @@ class TestAuthentication:
         page.fill("input[name='password']", DEFAULT_PASSWORD)
         page.click("button[type='submit']")
 
-        # Wait for navigation
-        page.wait_for_load_state("networkidle")
+        expect(page.locator("#upload-section")).to_be_visible(timeout=10000)
 
         # Should be redirected to main page
         assert "login" not in page.url.lower()
 
-    def test_failed_login(self, page: Page):
+    def test_failed_login(self, page: Page, base_url):
         """Test login failure with incorrect credentials."""
-        page.goto(BASE_URL)
+        page.goto(base_url)
         if page.locator("input[name='username']").count() == 0:
             pytest.skip("Auth disabled in test server")
 
@@ -127,7 +124,7 @@ class TestSettings:
 
         if settings_link.count() > 0:
             settings_link.first.click()
-            page.wait_for_load_state("networkidle")
+            expect(page.locator("#settings-content")).to_be_visible(timeout=5000)
 
             # Verify we're on settings page
             assert (
@@ -145,7 +142,7 @@ class TestSettings:
         )
         if settings_link.count() > 0:
             settings_link.first.click()
-            page.wait_for_load_state("networkidle")
+            expect(page.locator("#settings-content")).to_be_visible(timeout=5000)
 
             # Look for password fields
             password_fields = page.locator("input[type='password']")
@@ -156,10 +153,10 @@ class TestSettings:
 class TestGeneration:
     """Test OpenHAB configuration generation."""
 
-    def test_generation_status_visible(self, authenticated_page: Page):
+    def test_generation_status_visible(self, authenticated_page: Page, base_url):
         """Test that generation status is visible on main page."""
         page = authenticated_page
-        page.goto(BASE_URL)
+        page.goto(base_url)
 
         # Look for status indicators or generation buttons
         status_indicators = page.locator("text=/status|generate|processing/i")
@@ -177,7 +174,7 @@ class TestGeneration:
         # At least some preview capability should exist
         if preview_links.count() > 0:
             preview_links.first.click()
-            page.wait_for_load_state("networkidle")
+            expect(page.locator("body")).not_to_be_empty(timeout=5000)
             # Should show some content
             assert len(page.content()) > 1000
 
@@ -193,13 +190,13 @@ class TestResponsiveness:
             {"width": 375, "height": 667},  # Mobile
         ],
     )
-    def test_responsive_layout(self, page: Page, viewport):
+    def test_responsive_layout(self, page: Page, viewport, base_url):
         """Test that UI works on different screen sizes."""
         page.set_viewport_size(viewport)
-        page.goto(BASE_URL)
+        page.goto(base_url)
 
         # Page should load without errors
-        expect(page).to_have_url(re.compile(re.escape(BASE_URL)))
+        expect(page).to_have_url(re.compile(re.escape(base_url)))
 
         # Basic header should be visible
         assert page.locator(".header-container, h1").count() > 0
@@ -208,10 +205,10 @@ class TestResponsiveness:
 class TestVersionCheck:
     """Test version check and update functionality."""
 
-    def test_version_badge_visible(self, authenticated_page: Page):
+    def test_version_badge_visible(self, authenticated_page: Page, base_url):
         """Test that version information is displayed."""
         page = authenticated_page
-        page.goto(BASE_URL)
+        page.goto(base_url)
 
         # Look for version badge mentioned in README
         version_elements = page.locator("#versionBadge, [class*='version'], [id*='version']")

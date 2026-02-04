@@ -317,6 +317,9 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
     if config.get("general", {}).get("auto_place_unknown"):
         auto_place_unknowns(building, unknown_addresses, addresses, cabinet_devices)
 
+    # Always write report for remaining unknowns (for UI/CLI visibility)
+    write_unknown_report(unknown_addresses)
+
     if ADD_MISSING_ITEMS:
         add_unknown_addresses(building, unknown_addresses)
     else:
@@ -527,35 +530,38 @@ def auto_place_unknowns(building, unknown_addresses, all_addresses, cabinet_devi
         logger.info("auto_place_unknown: nothing placed")
 
 
+def write_unknown_report(unknown_addresses):
+    """Write report for remaining unknown addresses."""
+    if not unknown_addresses:
+        return
+    try:
+        import json
+        from pathlib import Path
+
+        report = {
+            "total": len(unknown_addresses),
+            "addresses": [
+                {
+                    "Address": a.get("Address"),
+                    "Group name": a.get("Group name"),
+                    "DPT": a.get("dpt"),
+                    "Floor": a.get("Floor"),
+                    "Room": a.get("Room"),
+                }
+                for a in unknown_addresses
+            ],
+        }
+        base = config.get("openhab_path", "openhab")
+        Path(base).mkdir(parents=True, exist_ok=True)
+        Path(base, "unknown_report.json").write_text(
+            json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+    except Exception as e:
+        logger.warning("Failed to write unknown_report.json: %s", e)
+
+
 def add_unknown_addresses(building, unknown_addresses):
     """Add unknown addresses to a default floor and room in the building."""
-    # Generate a report for remaining unknowns
-    if unknown_addresses:
-        try:
-            import json
-            from pathlib import Path
-
-            report = {
-                "total": len(unknown_addresses),
-                "addresses": [
-                    {
-                        "Address": a.get("Address"),
-                        "Group name": a.get("Group name"),
-                        "DPT": a.get("dpt"),
-                        "Floor": a.get("Floor"),
-                        "Room": a.get("Room"),
-                    }
-                    for a in unknown_addresses
-                ],
-            }
-            base = config.get("openhab_path", "openhab")
-            Path(base).mkdir(parents=True, exist_ok=True)
-            Path(base, "unknown_report.json").write_text(
-                json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
-        except Exception as e:
-            logger.warning("Failed to write unknown_report.json: %s", e)
-
     default_floor = {
         "Description": UNKNOWN_FLOOR_NAME,
         "Group name": UNKNOWN_FLOOR_NAME,

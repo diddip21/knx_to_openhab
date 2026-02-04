@@ -40,7 +40,7 @@ The CLI uses the same `config.json` and generates the same output as the Web UI.
 - **CLI**: Best for automation or headless environments.
 
 The Web UI exposes **reports** in the *Generated Files* table (Preview / Download / Copy):
-- `unknown_report.json`
+- `unknown_report.json` (generated even when `addMissingItems` is disabled)
 - `partial_report.json`
 - `completeness_report.json` (checks for missing required channels and recommended feedback)
 

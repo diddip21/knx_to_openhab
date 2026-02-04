@@ -7,23 +7,38 @@ import knxproject_to_openhab
 from config import config
 
 TESTS_DIR = Path(__file__).parent
-MINI_PROJECT = TESTS_DIR / "fixtures" / "mini_project.json"
+PROJECTS = [
+    TESTS_DIR / "fixtures" / "mini_project.json",
+    TESTS_DIR / "Charne.knxproj.json",
+    TESTS_DIR / "upload.knxprojarchive.json",
+]
 
 PARAM_KV = re.compile(r"(\w+)=\"([^\"]+)\"")
 
 
 class Rule:
-    def __init__(self, required=None, one_of=None, recommend_status=False):
+    def __init__(
+        self,
+        required=None,
+        one_of=None,
+        recommend_one_of=None,
+        recommend_status=False,
+    ):
         self.required = required or []
         self.one_of = one_of or []
+        self.recommend_one_of = recommend_one_of or []
         self.recommend_status = recommend_status
 
 
 RULES = {
-    "dimmer": Rule(required=["position"], one_of=[["switch", "increaseDecrease"]]),
-    "rollershutter": Rule(required=["upDown"], one_of=[["stopMove", "position"]]),
+    "dimmer": Rule(required=["position"], recommend_one_of=[["switch", "increaseDecrease"]]),
+    "rollershutter": Rule(
+        required=["upDown"], recommend_one_of=[["stopMove", "position"]]
+    ),
     "switch": Rule(required=["ga"], recommend_status=True),
     "number": Rule(required=["ga"], recommend_status=True),
+    "string": Rule(required=["ga"]),
+    "datetime": Rule(required=["ga"]),
 }
 
 
@@ -87,8 +102,8 @@ def _has_status(ga_value: str) -> bool:
     return "+<" in ga_value if ga_value else False
 
 
-def test_things_completeness_matrix_mini_fixture(tmp_path):
-    things_text = _generate_things(MINI_PROJECT, tmp_path)
+def _rule_checks_for_project(project_path: Path, tmp_path: Path):
+    things_text = _generate_things(project_path, tmp_path)
     missing_required = []
     recommended_missing = []
 
@@ -108,8 +123,30 @@ def test_things_completeness_matrix_mini_fixture(tmp_path):
             if not any(key in params for key in group):
                 missing_required.append((kind, "one_of:" + "/".join(group), line))
 
+        for group in rule.recommend_one_of:
+            if not any(key in params for key in group):
+                recommended_missing.append((kind, "one_of:" + "/".join(group), line))
+
         if rule.recommend_status and "ga" in params and not _has_status(params["ga"]):
             recommended_missing.append((kind, "status_feedback", line))
+
+        if kind == "number" and "ga" in params and "20.102" in params["ga"]:
+            if not _has_status(params["ga"]):
+                recommended_missing.append((kind, "status_feedback", line))
+
+    return missing_required, recommended_missing
+
+
+def test_things_completeness_matrix_all_projects(tmp_path):
+    missing_required = []
+    recommended_missing = []
+
+    for project_path in PROJECTS:
+        project_missing, project_recommended = _rule_checks_for_project(
+            project_path, tmp_path
+        )
+        missing_required.extend(project_missing)
+        recommended_missing.extend(project_recommended)
 
     if recommended_missing:
         print("Recommended (not required) feedback missing:")

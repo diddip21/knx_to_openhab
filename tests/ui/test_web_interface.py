@@ -179,6 +179,14 @@ class TestGeneration:
             # Should show some content
             assert len(page.content()) > 1000
 
+    def test_completeness_summary_present(self, authenticated_page: Page, base_url):
+        """Ensure completeness summary container is present in UI."""
+        page = authenticated_page
+        page.goto(base_url)
+
+        summary = page.locator("#completenessSummary")
+        expect(summary).to_be_visible()
+
 
 class TestResponsiveness:
     """Test responsive design for different screen sizes (important for Raspberry Pi)."""

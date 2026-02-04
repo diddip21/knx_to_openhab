@@ -34,6 +34,15 @@ python knxproject_to_openhab.py --file_path "project.knxproj" --knxPW "password"
 
 The CLI uses the same `config.json` and generates the same output as the Web UI.
 
+## Web UI vs CLI
+
+- **Web UI**: Best for interactive uploads, quick config edits, and report review (unknown/partial items).
+- **CLI**: Best for automation or headless environments.
+
+The Web UI exposes **reports** in the *Generated Files* table (Preview / Download / Copy):
+- `unknown_report.json`
+- `partial_report.json`
+
 ## Configuration (`config.json`)
 
 The `config.json` file controls global settings for the generator.
@@ -172,6 +181,12 @@ The Web UI shows **reports** for unknown or partially matched items so you can q
 ---
 
 ## Troubleshooting
+
+### "Login/401 in Web UI"
+
+- The Web UI uses **Basic Auth** by default.
+- Default credentials: **admin / logihome** (change in Settings).
+- If you disabled auth in `web_ui/backend/config.json`, restart the UI service.
 
 ### "My device shows as a generic Number"
 

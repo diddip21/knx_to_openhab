@@ -16,6 +16,8 @@ This guide helps you set up a local development environment to work on the KNX t
 
 ## Quick Start
 
+> **Note:** Default test runs ignore `tests/ui` (Playwright). See **Running Tests** for how to enable UI tests.
+
 ### Windows
 
 ```powershell

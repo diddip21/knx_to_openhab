@@ -299,6 +299,20 @@ async function showDiff(jobId) {
   }
 }
 
+function resolvePreviewPath(filename) {
+  const normalizedPath = filename.replace(/\\/g, '/')
+
+  if (currentStatsData && currentStatsData[filename] && currentStatsData[filename].real_path) {
+    return currentStatsData[filename].real_path
+  }
+
+  if (!normalizedPath.startsWith('openhab/') && !normalizedPath.startsWith('/') && !normalizedPath.includes(':')) {
+    return 'openhab/' + normalizedPath
+  }
+
+  return normalizedPath
+}
+
 async function previewFile(filename) {
   try {
     // Normalize path separators (backslash to forward slash) for cross-platform compatibility
@@ -326,13 +340,7 @@ async function previewFile(filename) {
     dialog.showModal()
 
     // Resolve the actual path to fetch
-    let path = normalizedPath
-    if (currentStatsData && currentStatsData[filename] && currentStatsData[filename].real_path) {
-      path = currentStatsData[filename].real_path
-    } else if (!path.startsWith('openhab/') && !path.startsWith('/') && !path.includes(':')) {
-      // Fallback for paths that don't look absolute or already prefixed
-      path = 'openhab/' + path
-    }
+    let path = resolvePreviewPath(filename)
 
     // Fetch current file content
     let url = `/api/file/preview?path=${encodeURIComponent(path)}`
@@ -390,6 +398,50 @@ async function previewFile(filename) {
   } catch (e) {
     alert('Error loading file: ' + e.message)
     document.getElementById('filePreviewDialog').close()
+  }
+}
+
+async function downloadReport(filename) {
+  try {
+    const path = resolvePreviewPath(filename)
+    let url = `/api/file/preview?path=${encodeURIComponent(path)}`
+    if (currentJobId) url += `&job_id=${currentJobId}`
+
+    const res = await fetch(url)
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}))
+      throw new Error(error.error || `HTTP ${res.status}`)
+    }
+    const data = await res.json()
+    const blob = new Blob([data.content || ''], { type: 'application/json' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = filename.split('/').pop()
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(link.href)
+  } catch (e) {
+    alert('Report-Download fehlgeschlagen: ' + e.message)
+  }
+}
+
+async function copyReport(filename) {
+  try {
+    const path = resolvePreviewPath(filename)
+    let url = `/api/file/preview?path=${encodeURIComponent(path)}`
+    if (currentJobId) url += `&job_id=${currentJobId}`
+
+    const res = await fetch(url)
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}))
+      throw new Error(error.error || `HTTP ${res.status}`)
+    }
+    const data = await res.json()
+    await navigator.clipboard.writeText(data.content || '')
+    alert('Report in die Zwischenablage kopiert')
+  } catch (e) {
+    alert('Kopieren fehlgeschlagen: ' + e.message)
   }
 }
 
@@ -733,13 +785,22 @@ function updateStatisticsDisplay(stats) {
 
         // Escape backslashes for HTML onclick attribute (double escape needed)
         const escapedFname = fname.replace(/\\/g, '\\\\')
+        const isReport = fname.endsWith('unknown_report.json') || fname.endsWith('partial_report.json')
+        const actions = [
+          `<button onclick="previewFile('${escapedFname}')">Preview</button>`
+        ]
+        if (isReport) {
+          actions.push(`<button onclick="downloadReport('${escapedFname}')">Download</button>`)
+          actions.push(`<button onclick="copyReport('${escapedFname}')">Copy</button>`)
+        }
+
         statsHtml += `<tr>
           <td>${escapeHtml(fname)}</td>
           <td>${before}</td>
           <td>${after}</td>
           <td class="${deltaClass}">${deltaStr}</td>
           <td>${diffHtml}</td>
-          <td><button onclick="previewFile('${escapedFname}')">Preview</button></td>
+          <td>${actions.join(' ')}</td>
         </tr>`
       }
 

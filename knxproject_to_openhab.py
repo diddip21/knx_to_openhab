@@ -5,6 +5,7 @@ import json
 import logging
 import re
 from pathlib import Path
+from typing import Any
 
 from xknxproject.models.knxproject import KNXProject
 from xknxproject.xknxproj import XKNXProj
@@ -52,7 +53,7 @@ def find_floors(spaces: dict) -> list:
     return floors
 
 
-def create_building(project: KNXProject):
+def create_building(project: KNXProject) -> list[dict[str, Any]]:
     """Create a building with all floors and rooms."""
     # get name / description from knxproj object
     # extract Groupname = "Erdgeschoss"
@@ -64,9 +65,9 @@ def create_building(project: KNXProject):
         logger.error("'locations' is empty.")
         raise ValueError("'locations' is empty.")
 
-    buildings = []
+    buildings: list[dict[str, Any]] = []
     for loc in locations.values():
-        building = {"floors": []}
+        building: dict[str, Any] = {"floors": []}
         if loc["type"] in ("Building", "BuildingPart"):
             building = {
                 "Description": loc["description"],
@@ -640,7 +641,7 @@ def is_homekit_enabled(project: KNXProject):
     """Determine if HomeKit is enabled for the project."""
     # TODO: Read project info or some other method to get Homekit enabled status
     comment_value = project["info"].get("comment")
-    if comment_value:
+    if isinstance(comment_value, str) and comment_value:
         comments = comment_value.casefold().split(";")
         for comment in comments:
             if comment.startswith("homekit="):
@@ -653,7 +654,7 @@ def is_homekit_enabled(project: KNXProject):
 def is_alexa_enabled(project: KNXProject):
     """Determine if Alexa is enabled for the project."""
     comment_value = project["info"].get("comment")
-    if comment_value:
+    if isinstance(comment_value, str) and comment_value:
         comments = comment_value.casefold().split(";")
         for comment in comments:
             if comment.startswith("alexa="):

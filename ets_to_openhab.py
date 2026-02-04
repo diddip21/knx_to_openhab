@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import shutil
+from typing import Any
 
 from config import config, datapoint_mappings, normalize_string
 from utils import get_datapoint_type
@@ -18,12 +19,12 @@ GWIP = None
 B_HOMEKIT = False
 B_ALEXA = False
 HOMEKIT_MAX_ACCESSORIES_PER_INSTANCE = 130
-floors = []
-all_addresses = []
-export_to_influx = []
-used_addresses = []
-partial_dimmers = []  # collect incomplete dimmer definitions
-partial_unknowns = []  # collect other partials if needed
+floors: list[dict[str, Any]] = []
+all_addresses: list[dict[str, Any]] = []
+export_to_influx: list[dict[str, Any]] = []
+used_addresses: list[dict[str, Any]] = []
+partial_dimmers: list[dict[str, Any]] = []  # collect incomplete dimmer definitions
+partial_unknowns: list[dict[str, Any]] = []  # collect other partials if needed
 
 equipments = {}
 FENSTERKONTAKTE = []

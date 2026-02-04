@@ -501,7 +501,9 @@ def add_unknown_addresses(building, unknown_addresses):
                     for a in unknown_addresses
                 ],
             }
-            Path("openhab/unknown_report.json").write_text(
+            base = config.get("openhab_path", "openhab")
+            Path(base).mkdir(parents=True, exist_ok=True)
+            Path(base, "unknown_report.json").write_text(
                 json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8"
             )
         except Exception as e:

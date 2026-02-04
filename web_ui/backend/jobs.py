@@ -68,13 +68,18 @@ class JobManager:
 
     def list_jobs(self):
         self._reload_jobs()
-        return list(self._jobs.values())
+        jobs = list(self._jobs.values())
+        for j in jobs:
+            j["auto_place_unknown"] = self.cfg.get("general", {}).get("auto_place_unknown", False)
+        return jobs
 
     def get_job(self, job_id):
         job = self._jobs.get(job_id)
         if not job:
             self._reload_jobs()
             job = self._jobs.get(job_id)
+        if job is not None:
+            job["auto_place_unknown"] = self.cfg.get("general", {}).get("auto_place_unknown", False)
         return job
 
     def get_queue(self, job_id):
@@ -214,6 +219,7 @@ class JobManager:
 
             # Create a copy of the config dict to modify
             staged_config = copy.copy(global_config_module.config)
+            staged_config['openhab_path'] = os.path.join(staging_dir, 'openhab')
 
             # Define output keys to override
             output_keys = [
@@ -353,6 +359,13 @@ class JobManager:
                 # ets_to_openhab.main() writes output files to STAGING via injected config
                 etsmod.main(configuration=staged_config)
 
+                # Add reports to stage mapping if present
+                for report in ['unknown_report.json', 'partial_report.json']:
+                    staged_report = os.path.join(staged_config.get('openhab_path', ''), report)
+                    if staged_report and os.path.exists(staged_report):
+                        real_report = os.path.join(openhab_path, report)
+                        stage_mapping[staged_report] = real_report
+
             finally:
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
@@ -460,6 +473,7 @@ class JobManager:
             ".db",
             ".cfg",
             ".properties",
+            ".json",
         }
 
         # Get list of current files
@@ -707,6 +721,7 @@ class JobManager:
             ".db",
             ".cfg",
             ".properties",
+            ".json",
         }
 
         # Check file extension

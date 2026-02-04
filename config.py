@@ -198,6 +198,7 @@ def main():
 
     config["target_user"] = oh_user
     config["target_group"] = oh_group
+    config["openhab_path"] = oh_conf
 
 
 # if __name__ == "__main__":

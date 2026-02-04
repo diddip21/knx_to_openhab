@@ -821,6 +821,7 @@ async function loadConfig() {
     document.getElementById('conf-room-asis').checked = gen.RoomNameAsItIs || false
     document.getElementById('conf-room-desc').checked = gen.RoomNameFromDescription || false
     document.getElementById('conf-add-missing').checked = gen.addMissingItems || false
+    document.getElementById('conf-auto-place').checked = gen.auto_place_unknown || false
     document.getElementById('conf-unknown-floor').value = gen.unknown_floorname || 'unknown'
     document.getElementById('conf-unknown-room').value = gen.unknown_roomname || 'unknown'
 
@@ -968,6 +969,7 @@ async function saveConfig(reprocess = false) {
       RoomNameAsItIs: document.getElementById('conf-room-asis').checked,
       RoomNameFromDescription: document.getElementById('conf-room-desc').checked,
       addMissingItems: document.getElementById('conf-add-missing').checked,
+      auto_place_unknown: document.getElementById('conf-auto-place').checked,
       unknown_floorname: document.getElementById('conf-unknown-floor').value,
       unknown_roomname: document.getElementById('conf-unknown-room').value,
       item_Floor_nameshort_prefix: currentConfig.general?.item_Floor_nameshort_prefix || "=",

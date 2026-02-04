@@ -412,6 +412,62 @@ def put_address_to_right_place(address, floor_name, room_name, addresses):
     return True
 
 
+
+
+# Heuristic: create missing floor/room nodes if names are known but not yet in structure
+def create_floor_room_if_missing(building, address):
+    """If floor/room names exist (not unknown), create them and place address."""
+    floor = address.get("Floor")
+    room = address.get("Room")
+    if not floor or not room:
+        return False
+    if floor == UNKNOWN_FLOOR_NAME or room == UNKNOWN_ROOM_NAME:
+        return False
+
+    for building_data in building:
+        # find or create floor
+        target_floor = None
+        for fl in building_data.get("floors", []):
+            if fl.get("name_short") == floor:
+                target_floor = fl
+                break
+        if target_floor is None:
+            target_floor = {
+                "Description": floor,
+                "Group name": floor,
+                "name_long": floor,
+                "name_short": floor,
+                "rooms": [],
+            }
+            building_data.setdefault("floors", []).append(target_floor)
+
+        # find or create room
+        target_room = None
+        for rm in target_floor.get("rooms", []):
+            if rm.get("name_short") == room:
+                target_room = rm
+                break
+        if target_room is None:
+            target_room = {
+                "Description": room,
+                "Group name": room,
+                "name_long": room,
+                "name_short": room,
+                "Addresses": [],
+            }
+            target_floor.setdefault("rooms", []).append(target_room)
+
+        target_room.setdefault("Addresses", []).append(address)
+        logger.debug(
+            "Created floor/room on-the-fly and placed %s in %s/%s",
+            address.get("Address"),
+            floor,
+            room,
+        )
+        return True
+
+    return False
+
 def auto_place_unknowns(building, unknown_addresses, all_addresses, cabinet_devices):
     """Heuristisch unbekannte Adressen zuordnen (opt-in per config.general.auto_place_unknown)."""
     placed = 0
@@ -693,56 +749,3 @@ if __name__ == "__main__":
     main()
 
 
-
-def create_floor_room_if_missing(building, address):
-    """If floor/room names exist (not unknown), create them and place address."""
-    floor = address.get("Floor")
-    room = address.get("Room")
-    if not floor or not room:
-        return False
-    if floor == UNKNOWN_FLOOR_NAME or room == UNKNOWN_ROOM_NAME:
-        return False
-
-    for building_data in building:
-        # find or create floor
-        target_floor = None
-        for fl in building_data.get("floors", []):
-            if fl.get("name_short") == floor:
-                target_floor = fl
-                break
-        if target_floor is None:
-            target_floor = {
-                "Description": floor,
-                "Group name": floor,
-                "name_long": floor,
-                "name_short": floor,
-                "rooms": [],
-            }
-            building_data.setdefault("floors", []).append(target_floor)
-
-        # find or create room
-        target_room = None
-        for rm in target_floor.get("rooms", []):
-            if rm.get("name_short") == room:
-                target_room = rm
-                break
-        if target_room is None:
-            target_room = {
-                "Description": room,
-                "Group name": room,
-                "name_long": room,
-                "name_short": room,
-                "Addresses": [],
-            }
-            target_floor.setdefault("rooms", []).append(target_room)
-
-        target_room.setdefault("Addresses", []).append(address)
-        logger.debug(
-            "Created floor/room on-the-fly and placed %s in %s/%s",
-            address.get("Address"),
-            floor,
-            room,
-        )
-        return True
-
-    return False

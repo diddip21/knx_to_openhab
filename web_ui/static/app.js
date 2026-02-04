@@ -96,6 +96,7 @@ function showJobDetail(jobId) {
 
       // Display file statistics if available
       updateStatisticsDisplay(j.stats)
+      renderCompletenessSummary(j.id, j.stats)
 
       // Load stored log entries from job.log
       if (j.log && j.log.length > 0) {
@@ -781,6 +782,89 @@ function escapeHtml(text) {
     "'": '&#039;'
   }
   return text.replace(/[&<>"']/g, m => map[m])
+}
+
+async function renderCompletenessSummary(jobId, stats) {
+  const summaryEl = document.getElementById('completenessSummary')
+  if (!summaryEl) return
+
+  if (!stats || typeof stats !== 'object') {
+    summaryEl.innerHTML = ''
+    return
+  }
+
+  const reportEntry = Object.entries(stats).find(([fname]) => fname.endsWith('completeness_report.json'))
+  if (!reportEntry) {
+    summaryEl.innerHTML = ''
+    return
+  }
+
+  const [reportKey, reportStat] = reportEntry
+  const reportPath = reportStat.staged_path || reportStat.real_path || resolvePreviewPath(reportKey)
+  summaryEl.innerHTML = '<div class="muted">Loading completeness summary...</div>'
+
+  try {
+    const res = await fetch(`/api/file/preview?path=${encodeURIComponent(reportPath)}&job_id=${jobId}`, { credentials: 'include' })
+    if (!res.ok) throw new Error(`Preview API error ${res.status}`)
+    const data = await res.json()
+
+    let report = null
+    try {
+      report = JSON.parse(data.content || '{}')
+    } catch (e) {
+      summaryEl.innerHTML = '<div class="error">Completeness report is not valid JSON.</div>'
+      return
+    }
+
+    const summary = report.summary || {}
+    const missingRequired = summary.missing_required ?? 0
+    const recommendedMissing = summary.recommended_missing ?? 0
+    const totalChecked = summary.total_things_checked ?? 0
+
+    const statusClass = missingRequired > 0 ? 'error' : recommendedMissing > 0 ? 'warning' : 'success'
+    const statusText = missingRequired > 0
+      ? 'Issues found'
+      : recommendedMissing > 0
+        ? 'Recommendations'
+        : 'All required channels present'
+
+    const requiredPreview = (report.missing_required || []).slice(0, 5)
+    let requiredHtml = ''
+    if (requiredPreview.length > 0) {
+      requiredHtml = '<div><strong>Missing required:</strong><ul>' + requiredPreview.map(entry => {
+        const line = escapeHtml(entry.line || '')
+        return `<li><code>${escapeHtml(entry.kind || '')}</code> ${escapeHtml(entry.reason || '')} — ${line}</li>`
+      }).join('') + '</ul></div>'
+    }
+
+    const recommendedPreview = (report.recommended_missing || []).slice(0, 5)
+    let recommendedHtml = ''
+    if (recommendedPreview.length > 0) {
+      recommendedHtml = '<div><strong>Recommended:</strong><ul>' + recommendedPreview.map(entry => {
+        const line = escapeHtml(entry.line || '')
+        return `<li><code>${escapeHtml(entry.kind || '')}</code> ${escapeHtml(entry.reason || '')} — ${line}</li>`
+      }).join('') + '</ul></div>'
+    }
+
+    const escapedKey = reportKey.replace(/\\/g, '\\\\')
+
+    summaryEl.innerHTML = `
+      <div class="summary-header">
+        <span class="badge ${statusClass}">${statusText}</span>
+        <span class="muted">Completeness report</span>
+        <button onclick="previewFile('${escapedKey}')">Preview report</button>
+      </div>
+      <div class="summary-counts">
+        <span class="badge ${missingRequired > 0 ? 'error' : 'success'}">Required missing: ${missingRequired}</span>
+        <span class="badge ${recommendedMissing > 0 ? 'warning' : 'success'}">Recommended missing: ${recommendedMissing}</span>
+        <span class="badge info">Things checked: ${totalChecked}</span>
+      </div>
+      ${requiredHtml}
+      ${recommendedHtml}
+    `
+  } catch (e) {
+    summaryEl.innerHTML = `<div class="error">Completeness summary failed: ${escapeHtml(e.message)}</div>`
+  }
 }
 
 // Centralized statistics display function to prevent race conditions

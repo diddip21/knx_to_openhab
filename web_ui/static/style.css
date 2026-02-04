@@ -1583,6 +1583,32 @@ legend {
   background: var(--lighter-gray);
  }
 
+.report-summary {
+  margin: 12px 0 16px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: #fff;
+ }
+
+.report-summary .summary-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+ }
+
+.report-summary .summary-counts {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+ }
+
+.report-summary ul {
+  margin: 6px 0 0 18px;
+ }
+
  .map-input {
   width: 100%;
   padding: 6px;

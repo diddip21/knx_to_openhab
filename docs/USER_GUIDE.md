@@ -43,6 +43,14 @@ The Web UI exposes **reports** in the *Generated Files* table (Preview / Downloa
 - `unknown_report.json`
 - `partial_report.json`
 
+## First-Run (Recommended Flow)
+
+1. **Upload** your `.knxproj` (or JSON dump)
+2. **Preview Structure** to verify floors/rooms
+3. **Process** and check **Generated Files** + **Reports**
+4. **Fix ETS naming** or **enable Auto‑Place** if you want quick placement
+5. **Deploy** when you’re happy with the output
+
 ## Configuration (`config.json`)
 
 The `config.json` file controls global settings for the generator.

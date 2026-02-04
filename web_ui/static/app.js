@@ -416,7 +416,13 @@ async function previewFile(filename) {
       title.textContent = `${filename} (${sizeKB} KB)`
     }
   } catch (e) {
-    alert('Error loading file: ' + e.message)
+    const msg = e.message || ''
+    const hint = msg.includes('access denied')
+      ? '\n\nHinweis: Diese Datei ist nicht im erlaubten Pfad.'
+      : msg.includes('file not found')
+        ? '\n\nHinweis: Datei existiert (noch) nicht.'
+        : ''
+    alert('Error loading file: ' + msg + hint)
     document.getElementById('filePreviewDialog').close()
   }
 }
@@ -442,7 +448,13 @@ async function downloadReport(filename) {
     link.remove()
     URL.revokeObjectURL(link.href)
   } catch (e) {
-    alert('Report-Download fehlgeschlagen: ' + e.message)
+    const msg = e.message || ''
+    const hint = msg.includes('access denied')
+      ? '\n\nHinweis: Diese Datei ist nicht im erlaubten Pfad.'
+      : msg.includes('file not found')
+        ? '\n\nHinweis: Datei existiert (noch) nicht.'
+        : ''
+    alert('Report-Download fehlgeschlagen: ' + msg + hint)
   }
 }
 
@@ -461,7 +473,13 @@ async function copyReport(filename) {
     await navigator.clipboard.writeText(data.content || '')
     alert('Report in die Zwischenablage kopiert')
   } catch (e) {
-    alert('Kopieren fehlgeschlagen: ' + e.message)
+    const msg = e.message || ''
+    const hint = msg.includes('access denied')
+      ? '\n\nHinweis: Diese Datei ist nicht im erlaubten Pfad.'
+      : msg.includes('file not found')
+        ? '\n\nHinweis: Datei existiert (noch) nicht.'
+        : ''
+    alert('Kopieren fehlgeschlagen: ' + msg + hint)
   }
 }
 

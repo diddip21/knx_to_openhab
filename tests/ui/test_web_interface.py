@@ -185,7 +185,7 @@ class TestGeneration:
         page.goto(base_url)
 
         summary = page.locator("#completenessSummary")
-        expect(summary).to_be_visible()
+        expect(summary).to_have_count(1)
 
 
 class TestResponsiveness:

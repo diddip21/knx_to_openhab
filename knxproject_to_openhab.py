@@ -322,12 +322,15 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
         unknown_addresses.append(address)
     # TODO: Loop over unknown_addresses to identify Groups/Channels in the same "level"
 
+    # Optional auto-placement for unknown addresses
+    if config.get("general", {}).get("auto_place_unknown"):
+        auto_place_unknowns(building, unknown_addresses, addresses, cabinet_devices)
+
     if ADD_MISSING_ITEMS:
         add_unknown_addresses(building, unknown_addresses)
     else:
         logger.info("Unknown addresses: %s", unknown_addresses)
         logger.info("Total unknown addresses: %d", len(unknown_addresses))
-
     return building
 
 
@@ -403,6 +406,79 @@ def put_address_to_right_place(address, floor_name, room_name, addresses):
         logger.debug("here u can put all sub addreses to te right place to")
 
     return True
+
+
+def auto_place_unknowns(building, unknown_addresses, all_addresses, cabinet_devices):
+    """Heuristisch unbekannte Adressen zuordnen (opt-in per config.general.auto_place_unknown)."""
+    placed = 0
+    report = []
+    floor_pref = config.get("general", {}).get("item_Floor_nameshort_prefix", "=")
+    room_pref = config.get("general", {}).get("item_Room_nameshort_prefix", "+")
+
+    def try_assign(addr, floor, room, reason):
+        nonlocal placed
+        if not floor or not room:
+            return False
+        if floor == UNKNOWN_FLOOR_NAME or room == UNKNOWN_ROOM_NAME:
+            return False
+        addr["Floor"] = floor
+        addr["Room"] = room
+        placed += 1
+        report.append({"Address": addr.get("Address"), "Floor": floor, "Room": room, "reason": reason})
+        try:
+            unknown_addresses.remove(addr)
+        except ValueError:
+            pass
+        # Auch Subadressen übernehmen
+        put_address_to_right_place(addr, floor, room, all_addresses)
+        return True
+
+    # 1) Device-basierte Vererbung: gleiche device_address wie bekannte Adresse
+    for addr in list(unknown_addresses):
+        device_ids = set()
+        for co in addr.get("communication_object", []):
+            dev = co.get("device_address")
+            if dev and dev not in cabinet_devices:
+                device_ids.add(dev)
+        if not device_ids:
+            continue
+        candidates = set()
+        for other in all_addresses:
+            if other is addr:
+                continue
+            if other.get("Floor") in (UNKNOWN_FLOOR_NAME, None) or other.get("Room") in (UNKNOWN_ROOM_NAME, None):
+                continue
+            for co in other.get("communication_object", []):
+                if co.get("device_address") in device_ids:
+                    candidates.add((other["Floor"], other["Room"]))
+        if len(candidates) == 1:
+            floor, room = next(iter(candidates))
+            try_assign(addr, floor, room, "device-match")
+
+    # 2) Namensheuristik aus Group name ("=Floor +Room ...")
+    import re
+    floor_rx = re.compile(r"%s([A-Za-z0-9\.]+)" % re.escape(floor_pref))
+    room_rx = re.compile(r"%s([A-Za-z0-9_\-\.]+)" % re.escape(room_pref))
+    for addr in list(unknown_addresses):
+        gname = addr.get("Group name", "")
+        floor = room = None
+        m_f = floor_rx.search(gname)
+        m_r = room_rx.search(gname)
+        if m_f:
+            floor = m_f.group(1)
+            if not floor.startswith(floor_pref):
+                floor = floor_pref + floor
+        if m_r:
+            room = m_r.group(1)
+            if not room.startswith(room_pref):
+                room = room_pref + room
+        if floor and room:
+            try_assign(addr, floor, room, "name-heuristic")
+
+    if report:
+        logger.info("auto_place_unknown: placed=%d details=%s", placed, report)
+    else:
+        logger.info("auto_place_unknown: nothing placed")
 
 
 def add_unknown_addresses(building, unknown_addresses):

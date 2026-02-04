@@ -476,7 +476,8 @@
     "unknown_floorname": "unknown",
     "unknown_roomname": "unknown",
     "item_Floor_nameshort_prefix": "=",
-    "item_Room_nameshort_prefix": "+"
+    "item_Room_nameshort_prefix": "+",
+    "auto_place_unknown": false
   },
   "influx_path": "openhab/persistence/influxdb.persist",
   "items_path": "openhab/items/knx.items",

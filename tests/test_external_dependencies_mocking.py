@@ -7,23 +7,24 @@ This module tests the main modules with mocked external dependencies like:
 - External libraries
 """
 
-import pytest
-from unittest.mock import Mock, MagicMock, patch, mock_open
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, Mock, mock_open, patch
+
+import pytest
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from ets_to_openhab import export_output, gen_building
 from knxproject_to_openhab import (
     create_building,
     get_addresses,
-    put_addresses_in_building,
     get_gateway_ip,
-    is_homekit_enabled,
     is_alexa_enabled,
+    is_homekit_enabled,
+    put_addresses_in_building,
 )
-from ets_to_openhab import gen_building, export_output
 
 
 class TestXknxProjectMocking:
@@ -266,9 +267,7 @@ class TestNetworkAndExternalCallsMocking:
             set_permissions("/tmp/test.items", configuration=mock_config)
 
             # Verify that chown was called
-            mock_chown.assert_called_once_with(
-                "/tmp/test.items", user="openhab", group="openhab"
-            )
+            mock_chown.assert_called_once_with("/tmp/test.items", user="openhab", group="openhab")
 
 
 class TestConfigurationMocking:
@@ -332,9 +331,7 @@ class TestIntegrationWithMocks:
 
     @patch("knxproject_to_openhab.XKNXProj")
     @patch("ets_to_openhab.export_output")
-    def test_full_pipeline_with_selective_mocks(
-        self, mock_export_output, mock_xknxproj_class
-    ):
+    def test_full_pipeline_with_selective_mocks(self, mock_export_output, mock_xknxproj_class):
         """Test the full pipeline with external dependencies mocked."""
         # Mock the XKNXProj to return our test data
         mock_proj_instance = Mock()

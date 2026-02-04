@@ -1,9 +1,10 @@
 """Shared pytest fixtures for all tests."""
 
-import pytest
-import sys
 import os
+import sys
 from pathlib import Path
+
+import pytest
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent
@@ -154,14 +155,15 @@ def generated_openhab_files(generator_module):
         FileNotFoundError: If ETS project file not found
         Exception: If generation fails
     """
-    from config import config
-    import os
     import logging
+    import os
+
+    from config import config
 
     logger = logging.getLogger(__name__)
 
     # Import after project root is in sys.path
-    from ets_to_openhab import gen_building, export_output
+    from ets_to_openhab import export_output, gen_building
 
     try:
         logger.info("Generating OpenHAB configuration files...")
@@ -187,9 +189,7 @@ def generated_openhab_files(generator_module):
 
         for file_path in files_to_check:
             if not os.path.exists(file_path):
-                raise FileNotFoundError(
-                    f"Generated file not found after export: {file_path}"
-                )
+                raise FileNotFoundError(f"Generated file not found after export: {file_path}")
             file_size = os.path.getsize(file_path)
             logger.info(f"  ✓ {file_path} ({file_size} bytes)")
 

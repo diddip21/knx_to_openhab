@@ -4,6 +4,7 @@ Test script to verify the configuration update functionality
 """
 
 import json
+
 from web_ui.backend.app import app
 
 
@@ -38,9 +39,7 @@ def test_config_update():
         print(f"Toggling addMissingItems from {original_value} to {new_value}")
 
         # Update the config
-        response = client.post(
-            "/api/config", headers=headers, data=json.dumps(modified_config)
-        )
+        response = client.post("/api/config", headers=headers, data=json.dumps(modified_config))
         print(f"Update status: {response.status_code}")
 
         if response.status_code == 200:
@@ -66,9 +65,7 @@ def test_config_update():
 
             print("PASS: Configuration update functionality working")
         else:
-            print(
-                f"FAIL: Configuration update failed with status {response.status_code}"
-            )
+            print(f"FAIL: Configuration update failed with status {response.status_code}")
             print(f"Response: {response.data.decode('utf-8')}")
 
 

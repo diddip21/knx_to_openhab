@@ -81,8 +81,8 @@ def get_service_status(service_name: str):
         uptime_str = None
         last_run_str = None
 
-        from datetime import datetime, timedelta
         import time
+        from datetime import datetime, timedelta
 
         # Helper to parse systemd timestamp (simplified)
         # Systemd format: "Day YYYY-MM-DD HH:MM:SS TZ" or "Mon 2023-..."
@@ -122,9 +122,7 @@ def get_service_status(service_name: str):
                 uptime_str = ts
         else:
             # If inactive, show when it stopped or changed state
-            ts = info_dict.get("InactiveEnterTimestamp") or info_dict.get(
-                "StateChangeTimestamp"
-            )
+            ts = info_dict.get("InactiveEnterTimestamp") or info_dict.get("StateChangeTimestamp")
             if ts:
                 last_run_str = ts
 

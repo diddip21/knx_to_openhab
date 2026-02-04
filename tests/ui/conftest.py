@@ -1,10 +1,11 @@
-import pytest
-import sys
 import os
+import sys
 import threading
 import time
-import requests
 from multiprocessing import Process
+
+import pytest
+import requests
 
 # Add project root to sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))

@@ -11,7 +11,7 @@ These utilities are critical for correctly mapping KNX datapoints to
 OpenHAB items in the code generator.
 """
 
-from typing import Dict, Optional, Any
+from typing import Any, Dict, Optional
 
 
 def get_co_flags(co: Dict[str, Any]) -> Optional[Dict[str, bool]]:

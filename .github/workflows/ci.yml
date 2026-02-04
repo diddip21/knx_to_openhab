@@ -50,7 +50,7 @@ jobs:
           pytest -q --cov=. --cov-report=xml
 
   lint:
-    name: Lint (hard errors only)
+    name: Lint (format + hard errors)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -74,6 +74,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
+
+      - name: Black (check)
+        run: |
+          black --check .
+
+      - name: Isort (check)
+        run: |
+          isort --check-only .
 
       - name: Flake8 (fatal syntax/errors only)
         run: |

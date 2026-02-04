@@ -1,14 +1,16 @@
 """Module for reading a knx file and generating a house structure for transfer to ets_to_openhab"""
 
+import argparse
+import json
 import logging
 import re
-import json
-import argparse
 from pathlib import Path
+
 from xknxproject.models.knxproject import KNXProject
 from xknxproject.xknxproj import XKNXProj
-from config import config, normalize_string
+
 import ets_to_openhab
+from config import config, normalize_string
 
 logger = logging.getLogger(__name__)
 
@@ -95,10 +97,7 @@ def create_building(project: KNXProject):
                         room, floor_data
                     )
                     room_description = (
-                        room["description"]
-                        or room_name_plain
-                        or room["usage_text"]
-                        or room["name"]
+                        room["description"] or room_name_plain or room["usage_text"] or room["name"]
                     )
                     room_data = {
                         "Description": room_description,
@@ -111,12 +110,8 @@ def create_building(project: KNXProject):
                     floor_data["rooms"].append(room_data)
                     logger.debug("Added room: %s %s", room_description, room["name"])
 
-            floor_data["name_long"] = (
-                floor_data["name_long"] or floor_data["name_short"]
-            )
-            floor_data["Group name"] = (
-                floor_data["Group name"] or floor_data["name_short"]
-            )
+            floor_data["name_long"] = floor_data["name_long"] or floor_data["name_short"]
+            floor_data["Group name"] = floor_data["Group name"] or floor_data["name_short"]
             logger.debug("Processed floor: %s", floor_data["Description"])
 
     return buildings
@@ -162,9 +157,7 @@ def get_room_name(room, floor_data):
             ITEM_FLOOR_NAME_SHORT_PREFIX + room["name"],
         ):
             floor_data["name_short"] = res_floor.group(0)
-            floor_data["Description"] = (
-                room["name"].replace(res_floor.group(0), "").strip()
-            )
+            floor_data["Description"] = room["name"].replace(res_floor.group(0), "").strip()
 
     if res_room:
         room_long_name += floor_data["name_long"] + res_room.group(0)
@@ -235,9 +228,7 @@ def find_floor_in_address(address, group_ranges):
     if not res_floor:
         address_split = address["address"].split("/")
         gr_top = group_ranges.get(address_split[0])
-        gr_middle = gr_top["group_ranges"].get(
-            address_split[0] + "/" + address_split[1]
-        )
+        gr_middle = gr_top["group_ranges"].get(address_split[0] + "/" + address_split[1])
         res_floor = (
             RE_ITEM_FLOOR.search(gr_middle["name"])
             or RE_ITEM_FLOOR.search(gr_top["name"])
@@ -263,10 +254,7 @@ def extract_communication_objects(address, communication_objects, devices):
                 for device_co_id in device["communication_object_ids"]:
                     device_co = communication_objects.get(device_co_id)
                     if device_co:
-                        if (
-                            device_co.get("channel")
-                            and co["channel"] == device_co["channel"]
-                        ):
+                        if device_co.get("channel") and co["channel"] == device_co["channel"]:
                             matching_device_comms.append(device_co)
                         elif device_co.get("text") and co["text"] == device_co["text"]:
                             matching_device_comms.append(device_co)
@@ -286,8 +274,7 @@ def get_short_floor_name(res_floor):
         floor_name = res_floor.group(0)
         return (
             floor_name
-            if floor_name.startswith(ITEM_FLOOR_NAME_SHORT_PREFIX)
-            and len(floor_name) < 6
+            if floor_name.startswith(ITEM_FLOOR_NAME_SHORT_PREFIX) and len(floor_name) < 6
             else ITEM_FLOOR_NAME_SHORT_PREFIX + floor_name
         )
     return UNKNOWN_FLOOR_NAME
@@ -368,10 +355,7 @@ def place_address_by_device(building, address, read_co, addresses):
         for building_data in building:
             for floor in building_data["floors"]:
                 for room in floor["rooms"]:
-                    if (
-                        "devices" in room
-                        and read_co["device_address"] in room["devices"]
-                    ):
+                    if "devices" in room and read_co["device_address"] in room["devices"]:
                         put_address_to_right_place(
                             address, floor["name_short"], room["name_short"], addresses
                         )
@@ -400,18 +384,13 @@ def put_address_to_right_place(address, floor_name, room_name, addresses):
                     ]
     if item_subaddress:
         for item in item_subaddress:
-            if (
-                item["Floor"] != UNKNOWN_FLOOR_NAME
-                and item["Room"] != UNKNOWN_ROOM_NAME
-            ):
+            if item["Floor"] != UNKNOWN_FLOOR_NAME and item["Room"] != UNKNOWN_ROOM_NAME:
                 continue
             item["Floor"] = floor_name
             item["Room"] = room_name
         logger.debug("here u can put all sub addreses to te right place to")
 
     return True
-
-
 
 
 # Heuristic: create missing floor/room nodes if names are known but not yet in structure
@@ -468,6 +447,7 @@ def create_floor_room_if_missing(building, address):
 
     return False
 
+
 def auto_place_unknowns(building, unknown_addresses, all_addresses, cabinet_devices):
     """Heuristisch unbekannte Adressen zuordnen (opt-in per config.general.auto_place_unknown)."""
     placed = 0
@@ -484,7 +464,9 @@ def auto_place_unknowns(building, unknown_addresses, all_addresses, cabinet_devi
         addr["Floor"] = floor
         addr["Room"] = room
         placed += 1
-        report.append({"Address": addr.get("Address"), "Floor": floor, "Room": room, "reason": reason})
+        report.append(
+            {"Address": addr.get("Address"), "Floor": floor, "Room": room, "reason": reason}
+        )
         try:
             unknown_addresses.remove(addr)
         except ValueError:
@@ -506,7 +488,10 @@ def auto_place_unknowns(building, unknown_addresses, all_addresses, cabinet_devi
         for other in all_addresses:
             if other is addr:
                 continue
-            if other.get("Floor") in (UNKNOWN_FLOOR_NAME, None) or other.get("Room") in (UNKNOWN_ROOM_NAME, None):
+            if other.get("Floor") in (UNKNOWN_FLOOR_NAME, None) or other.get("Room") in (
+                UNKNOWN_ROOM_NAME,
+                None,
+            ):
                 continue
             for co in other.get("communication_object", []):
                 if co.get("device_address") in device_ids:
@@ -517,6 +502,7 @@ def auto_place_unknowns(building, unknown_addresses, all_addresses, cabinet_devi
 
     # 2) Namensheuristik aus Group name ("=Floor +Room ...")
     import re
+
     floor_rx = re.compile(r"%s([A-Za-z0-9\.]+)" % re.escape(floor_pref))
     room_rx = re.compile(r"%s([A-Za-z0-9_\-\.]+)" % re.escape(room_pref))
     for addr in list(unknown_addresses):
@@ -548,6 +534,7 @@ def add_unknown_addresses(building, unknown_addresses):
         try:
             import json
             from pathlib import Path
+
             report = {
                 "total": len(unknown_addresses),
                 "addresses": [
@@ -618,10 +605,7 @@ def get_gateway_ip(project: KNXProject):
         raise ValueError("'devices' is empty.")
 
     for device in devices.values():
-        if (
-            device["hardware_name"].strip()
-            in config["devices"]["gateway"]["hardware_name"]
-        ):
+        if device["hardware_name"].strip() in config["devices"]["gateway"]["hardware_name"]:
             description = device["description"].strip()
             ip_match = re.search(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", description)
             if ip_match:
@@ -688,12 +672,8 @@ def main():
         description="Reads KNX project file and creates an OpenHAB output for things/items/sitemap"
     )
     parser.add_argument("--file_path", type=Path, help="Path to the input KNX project.")
-    parser.add_argument(
-        "--knxPW", type=str, help="Password for KNX project file if protected"
-    )
-    parser.add_argument(
-        "--readDump", action="store_true", help="Read KNX project from JSON dump"
-    )
+    parser.add_argument("--knxPW", type=str, help="Password for KNX project file if protected")
+    parser.add_argument("--readDump", action="store_true", help="Read KNX project from JSON dump")
     args = parser.parse_args()
 
     if not args.file_path:
@@ -747,5 +727,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

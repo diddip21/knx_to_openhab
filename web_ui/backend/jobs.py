@@ -1,17 +1,18 @@
-import os
-import sys
-import json
-import uuid
-import tarfile
-import shutil
-import threading
-import queue
-import subprocess
-import traceback
 import io
+import json
 import logging
+import os
+import queue
+import shutil
+import subprocess
+import sys
+import tarfile
+import threading
+import traceback
+import uuid
 from concurrent.futures import ThreadPoolExecutor
-from .storage import save_job, load_jobs, save_jobs, ensure_dirs
+
+from .storage import ensure_dirs, load_jobs, save_job, save_jobs
 
 logger = logging.getLogger(__name__)
 
@@ -145,9 +146,7 @@ class JobManager:
             if os.path.exists(openhab_path):
                 with tarfile.open(backup_path, "w:gz") as tar:
                     tar.add(openhab_path, arcname=os.path.basename(openhab_path))
-                job["backups"].append(
-                    {"name": backup_name, "path": backup_path, "ts": ts}
-                )
+                job["backups"].append({"name": backup_name, "path": backup_path, "ts": ts})
                 save_jobs(self.jobs_dir, self._jobs)
                 self._log_to_queue(
                     job_id,
@@ -198,8 +197,8 @@ class JobManager:
                     "message": "start in-process generation",
                 },
             )
-            import importlib
             import copy
+            import importlib
 
             knxmod = importlib.import_module("knxproject_to_openhab")
             etsmod = importlib.import_module("ets_to_openhab")
@@ -219,7 +218,7 @@ class JobManager:
 
             # Create a copy of the config dict to modify
             staged_config = copy.copy(global_config_module.config)
-            staged_config['openhab_path'] = os.path.join(staging_dir, 'openhab')
+            staged_config["openhab_path"] = os.path.join(staging_dir, "openhab")
 
             # Define output keys to override
             output_keys = [
@@ -303,9 +302,7 @@ class JobManager:
                     )
                     sys.stdout = captured_output
                     pwd = job.get("password")
-                    knxproj = XKNXProj(
-                        path=job["input"], password=pwd, language="de-DE"
-                    )
+                    knxproj = XKNXProj(path=job["input"], password=pwd, language="de-DE")
                     project = knxproj.parse()
                     sys.stdout = old_stdout
                     self._log_to_queue(
@@ -360,8 +357,8 @@ class JobManager:
                 etsmod.main(configuration=staged_config)
 
                 # Add reports to stage mapping if present
-                for report in ['unknown_report.json', 'partial_report.json']:
-                    staged_report = os.path.join(staged_config.get('openhab_path', ''), report)
+                for report in ["unknown_report.json", "partial_report.json"]:
+                    staged_report = os.path.join(staged_config.get("openhab_path", ""), report)
                     if staged_report and os.path.exists(staged_report):
                         real_report = os.path.join(openhab_path, report)
                         stage_mapping[staged_report] = real_report
@@ -442,13 +439,9 @@ class JobManager:
             job["status"] = "failed"
             err_msg = str(e)
             tb = traceback.format_exc()
-            self._log_to_queue(
-                job_id, q, {"type": "error", "level": "error", "message": err_msg}
-            )
+            self._log_to_queue(job_id, q, {"type": "error", "level": "error", "message": err_msg})
             # TB might be long, but we need it for debugging
-            self._log_to_queue(
-                job_id, q, {"type": "error", "level": "error", "message": tb}
-            )
+            self._log_to_queue(job_id, q, {"type": "error", "level": "error", "message": tb})
         finally:
             save_jobs(self.jobs_dir, self._jobs)
             q.put(None)
@@ -496,14 +489,10 @@ class JobManager:
                     ):
                         fpath = os.path.join(root, fname)
                         try:
-                            with open(
-                                fpath, "r", encoding="utf8", errors="ignore"
-                            ) as f:
+                            with open(fpath, "r", encoding="utf8", errors="ignore") as f:
                                 lines = f.readlines()
                                 # Store with relative path for proper comparison
-                                rel_path = os.path.relpath(fpath, openhab_path).replace(
-                                    "\\", "/"
-                                )
+                                rel_path = os.path.relpath(fpath, openhab_path).replace("\\", "/")
                                 current_files[rel_path] = lines
                         except Exception as e:
                             logger.warning(f"Could not read current file {fpath}: {e}")
@@ -586,9 +575,7 @@ class JobManager:
                 full_path = os.path.join(openhab_path, expected_file)
                 if os.path.exists(full_path):
                     try:
-                        with open(
-                            full_path, "r", encoding="utf-8", errors="ignore"
-                        ) as f:
+                        with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
                             lines = len(f.readlines())
                         stats[expected_file] = {
                             "before": 0,  # No backup existed before
@@ -626,9 +613,7 @@ class JobManager:
             orig_lines = []
             if os.path.exists(abs_real_path):
                 try:
-                    with open(
-                        abs_real_path, "r", encoding="utf-8", errors="ignore"
-                    ) as f:
+                    with open(abs_real_path, "r", encoding="utf-8", errors="ignore") as f:
                         orig_lines = f.readlines()
                 except Exception as e:
                     logger.warning(f"Could not read live file {abs_real_path}: {e}")
@@ -649,9 +634,7 @@ class JobManager:
             # Relative path for display (key in stats dict)
             # Ensure it's relative to openhab_path to avoid double-prefix bugs in the UI
             if abs_real_path.startswith(abs_openhab):
-                rel_display = os.path.relpath(abs_real_path, abs_openhab).replace(
-                    "\\", "/"
-                )
+                rel_display = os.path.relpath(abs_real_path, abs_openhab).replace("\\", "/")
             else:
                 # Fallback to basename or relative to project root
                 rel_display = (
@@ -798,9 +781,7 @@ class JobManager:
             if os.path.isabs(config_path):
                 full_path = config_path
             else:
-                full_path = os.path.join(
-                    self.cfg.get("openhab_path", "openhab"), config_path
-                )
+                full_path = os.path.join(self.cfg.get("openhab_path", "openhab"), config_path)
                 # If the config path already includes the openhab directory, use it as is
                 if not os.path.exists(full_path):
                     full_path = config_path
@@ -846,9 +827,7 @@ class JobManager:
                         ):
                             full_path = os.path.join(root, file)
                             try:
-                                with open(
-                                    full_path, "r", encoding="utf-8", errors="ignore"
-                                ) as f:
+                                with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
                                     lines = len(f.readlines())
                                 # Create relative path for display
                                 rel_path = os.path.relpath(full_path, openhab_path)
@@ -893,9 +872,7 @@ class JobManager:
             staged_path = job["stats"][rel_path].get("staged_path")
 
         # Fallback: construct from staging_dir
-        if (
-            not staged_path or not os.path.exists(staged_path)
-        ) and "staging_dir" in job:
+        if (not staged_path or not os.path.exists(staged_path)) and "staging_dir" in job:
             staged_path = os.path.join(job["staging_dir"], "openhab", rel_path)
 
         if staged_path and os.path.isfile(staged_path):
@@ -1013,9 +990,7 @@ class JobManager:
             if os.path.exists(openhab_path):
                 with tarfile.open(backup_path, "w:gz") as tar:
                     tar.add(openhab_path, arcname=os.path.basename(openhab_path))
-                job["backups"].append(
-                    {"name": backup_name, "path": backup_path, "ts": ts}
-                )
+                job["backups"].append({"name": backup_name, "path": backup_path, "ts": ts})
                 save_jobs(self.jobs_dir, self._jobs)
         except Exception as e:
             logger.error(f"Failed to create pre-deploy backup: {e}")
@@ -1062,9 +1037,7 @@ class JobManager:
                 continue
             fp = os.path.join(self.backups_dir, fn)
             st = os.stat(fp)
-            backups.append(
-                {"name": fn, "path": fp, "mtime": st.st_mtime, "size": st.st_size}
-            )
+            backups.append({"name": fn, "path": fp, "mtime": st.st_mtime, "size": st.st_size})
         # by age
         cutoff = now - days * 86400
         for b in backups:

@@ -13,12 +13,14 @@ the generated_openhab_files fixture. This fixture must be available
 and run BEFORE these tests execute.
 """
 
-import pytest
-import re
-import os
-from pathlib import Path
-from config import config
 import logging
+import os
+import re
+from pathlib import Path
+
+import pytest
+
+from config import config
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +37,7 @@ class TestItemsFileSyntax:
         fixture which generates all files from the ETS project.
         """
         # Verify items file exists
-        assert os.path.exists(
-            config["items_path"]
-        ), f"Items file not found: {config['items_path']}"
+        assert os.path.exists(config["items_path"]), f"Items file not found: {config['items_path']}"
         yield
 
     def test_items_file_not_empty(self):
@@ -109,17 +109,10 @@ class TestItemsFileSyntax:
                     for parent in parents:
                         parent = parent.strip()
                         if parent and parent not in defined_groups:
-                            orphaned.append(
-                                {"line": line.strip(), "missing_group": parent}
-                            )
+                            orphaned.append({"line": line.strip(), "missing_group": parent})
 
-        assert (
-            len(orphaned) == 0
-        ), f"Found {len(orphaned)} orphaned items:\n" + "\n".join(
-            [
-                f"  - {o['line'][:60]}... -> missing '{o['missing_group']}'"
-                for o in orphaned[:5]
-            ]
+        assert len(orphaned) == 0, f"Found {len(orphaned)} orphaned items:\n" + "\n".join(
+            [f"  - {o['line'][:60]}... -> missing '{o['missing_group']}'" for o in orphaned[:5]]
         )
 
     def test_items_no_duplicate_names(self):
@@ -152,9 +145,7 @@ class TestItemsFileSyntax:
                 else:
                     item_names[item_name] = line_num
 
-        assert (
-            len(duplicates) == 0
-        ), f"Found {len(duplicates)} duplicate item names: " + ", ".join(
+        assert len(duplicates) == 0, f"Found {len(duplicates)} duplicate item names: " + ", ".join(
             [d["name"] for d in duplicates[:5]]
         )
 
@@ -280,10 +271,7 @@ class TestItemsFileSyntax:
         assert (
             len(malformed_lines) == 0
         ), f"Found {len(malformed_lines)} malformed item lines:\n" + "\n".join(
-            [
-                f"  Line {m['line_num']}: '{m['line'][:50]}...'"
-                for m in malformed_lines[:5]
-            ]
+            [f"  Line {m['line_num']}: '{m['line'][:50]}...'" for m in malformed_lines[:5]]
         )
 
 
@@ -322,18 +310,14 @@ class TestThingsFileSyntax:
 
         # Skip if file doesn't have expected content structure
         if "Type" not in content:
-            pytest.skip(
-                "Things file doesn't contain Type definitions - format may differ"
-            )
+            pytest.skip("Things file doesn't contain Type definitions - format may differ")
 
         # OpenHAB Things syntax pattern
         type_pattern = r"^Type\s+\w+\s+:\s+\w+"
         matches = re.findall(type_pattern, content, re.MULTILINE)
         # If we have alternative format, just skip
         if len(matches) == 0:
-            pytest.skip(
-                "Things file format doesn't match expected Type definition pattern"
-            )
+            pytest.skip("Things file format doesn't match expected Type definition pattern")
 
     def test_things_has_knx_group_addresses(self):
         """All things must have KNX group address configuration (ga=).
@@ -447,9 +431,7 @@ class TestThingsFileSyntax:
 
         # Only warn if many invalid configs found
         if len(invalid_configs) > len(config_matches) // 2:
-            logger.warning(
-                f"Found {len(invalid_configs)} potentially invalid config sections"
-            )
+            logger.warning(f"Found {len(invalid_configs)} potentially invalid config sections")
 
 
 class TestSitemapFileSyntax:
@@ -569,9 +551,7 @@ class TestSitemapFileSyntax:
 
         # Only warn if there are many empty labels
         if empty_labels > len(matches) // 2:
-            logger.warning(
-                f"Found {empty_labels} empty labels out of {len(matches)} total"
-            )
+            logger.warning(f"Found {empty_labels} empty labels out of {len(matches)} total")
 
     def test_sitemap_valid_item_references(self):
         """Validate that sitemap item references are properly formatted."""
@@ -649,9 +629,7 @@ def test_file_encoding_issues():
 
                 # Look for problematic characters that might indicate encoding issues
                 if "\ufffd" in content:  # Unicode replacement character
-                    problematic_chars.append(
-                        f"{file_path}: Contains replacement characters"
-                    )
+                    problematic_chars.append(f"{file_path}: Contains replacement characters")
 
             except UnicodeDecodeError as e:
                 pytest.fail(f"Encoding error in {file_path}: {e}")

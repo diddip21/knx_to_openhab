@@ -1,8 +1,8 @@
 import json
-import re
 import logging
-import subprocess
 import os
+import re
+import subprocess
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -49,13 +49,10 @@ def main():
                 if "suffix" in xidef:
                     if isinstance(cfg["defines"][idef][xidef], list):
                         cfg["defines"][idef][xidef] = [
-                            normalize_string(element)
-                            for element in cfg["defines"][idef][xidef]
+                            normalize_string(element) for element in cfg["defines"][idef][xidef]
                         ]
                         # remove duplicates
-                        cfg["defines"][idef][xidef] = list(
-                            set(cfg["defines"][idef][xidef])
-                        )
+                        cfg["defines"][idef][xidef] = list(set(cfg["defines"][idef][xidef]))
     global config
     config = cfg
 

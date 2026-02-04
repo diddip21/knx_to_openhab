@@ -6,9 +6,7 @@ def generate_openhab_tests(project_json, test_output_py):
     base = os.path.dirname(os.path.abspath(__file__))
     venv_python = os.path.join(base, ".venv", "Scripts", "python.exe")
     script = os.path.join(base, "knxproject_to_openhab.py")
-    subprocess.run(
-        [venv_python, script, "--file_path", project_json, "--readDump"], check=True
-    )
+    subprocess.run([venv_python, script, "--file_path", project_json, "--readDump"], check=True)
 
     files = {
         "items": os.path.join(base, "openhab", "items", "knx.items"),
@@ -22,9 +20,7 @@ def generate_openhab_tests(project_json, test_output_py):
         out.write("import unittest\nimport os\n\n")
         out.write("class TestKNXProjectToOpenHAB_Auto(unittest.TestCase):\n")
         out.write("    @classmethod\n    def setUpClass(cls):\n")
-        out.write(
-            f"        # Automatisch generiert für {os.path.basename(project_json)}\n"
-        )
+        out.write(f"        # Automatisch generiert für {os.path.basename(project_json)}\n")
         out.write("        pass  # Output-Dateien müssen vorab generiert sein\n\n")
         for key, path in files.items():
             if not os.path.isfile(path):

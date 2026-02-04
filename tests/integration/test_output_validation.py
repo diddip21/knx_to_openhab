@@ -5,20 +5,21 @@ These tests verify that the OpenHAB file generation produces consistent,
 expected output by comparing generated files with reference "Golden Files".
 """
 
-import sys
-import os
-import pytest
-import json
-import filecmp
 import difflib
+import filecmp
+import json
+import os
+import sys
 from pathlib import Path
+
+import pytest
 
 # Add project root to sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(PROJECT_ROOT)
 
-import knxproject_to_openhab
 import ets_to_openhab
+import knxproject_to_openhab
 from config import config
 
 # Paths
@@ -57,9 +58,7 @@ class TestOutputValidation:
         # Generate building structure and addresses
         building = knxproject_to_openhab.create_building(project)
         addresses = knxproject_to_openhab.get_addresses(project)
-        house = knxproject_to_openhab.put_addresses_in_building(
-            building, addresses, project
-        )
+        house = knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
 
         # Set module variables for ets_to_openhab
         ets_to_openhab.floors = house[0]["floors"]

@@ -12,17 +12,17 @@ Usage:
 
 import argparse
 import json
+import os
 import shutil
 import sys
-import os
 from pathlib import Path
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-import knxproject_to_openhab
 import ets_to_openhab
+import knxproject_to_openhab
 from config import config
 
 
@@ -76,9 +76,7 @@ def generate_golden_files(project_path: Path, golden_name: str, force: bool = Fa
     print("[*] Generating building structure...")
     building = knxproject_to_openhab.create_building(project)
     addresses = knxproject_to_openhab.get_addresses(project)
-    house = knxproject_to_openhab.put_addresses_in_building(
-        building, addresses, project
-    )
+    house = knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
 
     # Set module variables
     ets_to_openhab.floors = house[0]["floors"]
@@ -178,9 +176,7 @@ def main():
         required=True,
         help='Name for the golden file set (e.g., "Charne", "MyProject")',
     )
-    parser.add_argument(
-        "--force", action="store_true", help="Overwrite existing golden files"
-    )
+    parser.add_argument("--force", action="store_true", help="Overwrite existing golden files")
 
     args = parser.parse_args()
 

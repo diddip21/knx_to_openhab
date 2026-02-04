@@ -1,8 +1,9 @@
 """UI tests for the knx_to_openhab web interface using Playwright."""
 
+import time
+
 import pytest
 from playwright.sync_api import Page, expect
-import time
 
 BASE_URL = "http://localhost:8085"
 DEFAULT_USERNAME = "admin"
@@ -25,10 +26,7 @@ def authenticated_page(page: Page):
     page.goto(BASE_URL)
 
     # Check if already logged in, if not, login
-    if (
-        "login" in page.url.lower()
-        or page.locator("input[name='username']").count() > 0
-    ):
+    if "login" in page.url.lower() or page.locator("input[name='username']").count() > 0:
         page.fill("input[name='username']", DEFAULT_USERNAME)
         page.fill("input[name='password']", DEFAULT_PASSWORD)
         page.click("button[type='submit']")
@@ -72,8 +70,7 @@ class TestAuthentication:
         # Should show error message or stay on login page
         time.sleep(1)  # Give time for error to display
         assert (
-            page.locator("text=/error|invalid|wrong/i").count() > 0
-            or "login" in page.url.lower()
+            page.locator("text=/error|invalid|wrong/i").count() > 0 or "login" in page.url.lower()
         )
 
 
@@ -87,9 +84,7 @@ class TestProjectUpload:
             authenticated_page.click("text=/upload|project/i")
 
         # Check for file input element
-        expect(authenticated_page.locator("input[type='file']")).to_be_visible(
-            timeout=5000
-        )
+        expect(authenticated_page.locator("input[type='file']")).to_be_visible(timeout=5000)
 
     def test_upload_interface_elements(self, authenticated_page: Page):
         """Test that all upload interface elements are present."""

@@ -1,19 +1,19 @@
+import json
 import os
 import sys
-import json
-import uuid
-import time
 import tarfile
+import time
+import uuid
 
 try:
     from flask import (
         Flask,
-        request,
-        jsonify,
-        send_from_directory,
-        render_template,
-        stream_with_context,
         Response,
+        jsonify,
+        render_template,
+        request,
+        send_from_directory,
+        stream_with_context,
     )
     from werkzeug.utils import secure_filename
 
@@ -30,7 +30,7 @@ except Exception:
     FLASK_AVAILABLE = False
 
 from .jobs import JobManager
-from .service_manager import restart_service, get_service_status
+from .service_manager import get_service_status, restart_service
 from .storage import load_config
 from .updater import Updater
 
@@ -61,9 +61,9 @@ if FLASK_AVAILABLE:
     updater = Updater(base_path=project_root)
 
     # Session-based authentication -------------------------------------------------
-    from base64 import b64decode
     import secrets
     import time
+    from base64 import b64decode
 
     # In-memory session store (simple implementation)
     # Key: session_token, Value: {'user': username, 'created': timestamp}
@@ -103,11 +103,7 @@ if FLASK_AVAILABLE:
         """Create a new session and return the token."""
         # Clean up old sessions periodically
         now = time.time()
-        expired = [
-            k
-            for k, v in _sessions.items()
-            if now - v.get("created", 0) > SESSION_MAX_AGE
-        ]
+        expired = [k for k, v in _sessions.items() if now - v.get("created", 0) > SESSION_MAX_AGE]
         for k in expired:
             del _sessions[k]
         # Create new session
@@ -171,9 +167,7 @@ if FLASK_AVAILABLE:
             return jsonify({"error": "no selected file"}), 400
         fn = secure_filename(f.filename)
         os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
-        saved_path = os.path.join(
-            app.config["UPLOAD_FOLDER"], f"{uuid.uuid4().hex}-{fn}"
-        )
+        saved_path = os.path.join(app.config["UPLOAD_FOLDER"], f"{uuid.uuid4().hex}-{fn}")
         f.save(saved_path)
         password = request.form.get("password") or None
         job = job_mgr.create_job(saved_path, original_name=fn, password=password)
@@ -198,7 +192,9 @@ if FLASK_AVAILABLE:
         stats = job.get("stats", {}) or {}
         if not stats:
             return jsonify({"error": "no stats available"}), 400
-        diffs = {rel_path: job_mgr.get_file_diff(job_id, rel_path) or [] for rel_path in stats.keys()}
+        diffs = {
+            rel_path: job_mgr.get_file_diff(job_id, rel_path) or [] for rel_path in stats.keys()
+        }
         return jsonify(diffs)
 
     @app.route("/api/job/<job_id>", methods=["PATCH"])
@@ -273,15 +269,11 @@ if FLASK_AVAILABLE:
             while True:
                 msg = q.get()
                 if msg is None:
-                    yield "event: done\ndata: {}\n\n".format(
-                        json.dumps({"status": "done"})
-                    )
+                    yield "event: done\ndata: {}\n\n".format(json.dumps({"status": "done"}))
                     break
                 yield "data: {}\n\n".format(json.dumps(msg))
 
-        return Response(
-            stream_with_context(event_stream()), mimetype="text/event-stream"
-        )
+        return Response(stream_with_context(event_stream()), mimetype="text/event-stream")
 
     @app.route("/api/job/<job_id>/rollback", methods=["POST"])
     def rollback(job_id):
@@ -324,15 +316,13 @@ if FLASK_AVAILABLE:
     @app.route("/api/debug/stats", methods=["GET"])
     def debug_stats():
         """Debug endpoint to check stats generation for the latest job."""
-        import os
         import json
+        import os
         from pathlib import Path
 
         # Get the latest completed job
         all_jobs = job_mgr._jobs
-        completed_jobs = [
-            job for job in all_jobs.values() if job.get("status") == "completed"
-        ]
+        completed_jobs = [job for job in all_jobs.values() if job.get("status") == "completed"]
         if not completed_jobs:
             return jsonify({"error": "No completed jobs found"})
 
@@ -380,9 +370,7 @@ if FLASK_AVAILABLE:
                     "config_path": config_path,
                     "full_path": full_path,
                     "exists": os.path.exists(full_path),
-                    "size": (
-                        os.path.getsize(full_path) if os.path.exists(full_path) else 0
-                    ),
+                    "size": (os.path.getsize(full_path) if os.path.exists(full_path) else 0),
                 }
             )
 
@@ -442,27 +430,19 @@ if FLASK_AVAILABLE:
                 "backend_config": {
                     "openhab_path": job_mgr.cfg.get("openhab_path", "openhab"),
                     "jobs_dir": job_mgr.cfg.get("jobs_dir", "./var/lib/knx_to_openhab"),
-                    "backups_dir": job_mgr.cfg.get(
-                        "backups_dir", "./var/backups/knx_to_openhab"
-                    ),
+                    "backups_dir": job_mgr.cfg.get("backups_dir", "./var/backups/knx_to_openhab"),
                     "retention": job_mgr.cfg.get("retention", {}),
                 },
                 "main_config_paths": {
-                    "items_path": main_config.get(
-                        "items_path", "openhab/items/knx.items"
-                    ),
-                    "things_path": main_config.get(
-                        "things_path", "openhab/things/knx.things"
-                    ),
+                    "items_path": main_config.get("items_path", "openhab/items/knx.items"),
+                    "things_path": main_config.get("things_path", "openhab/things/knx.things"),
                     "sitemaps_path": main_config.get(
                         "sitemaps_path", "openhab/sitemaps/knx.sitemap"
                     ),
                     "influx_path": main_config.get(
                         "influx_path", "openhab/persistence/influxdb.persist"
                     ),
-                    "fenster_path": main_config.get(
-                        "fenster_path", "openhab/rules/fenster.rules"
-                    ),
+                    "fenster_path": main_config.get("fenster_path", "openhab/rules/fenster.rules"),
                 },
                 "project_root": project_root,
                 "main_config_exists": os.path.exists(main_config_path),
@@ -524,16 +504,12 @@ if FLASK_AVAILABLE:
             return jsonify({"error": "path parameter required"}), 400
 
         # Security: Allow files within openhab directory OR jobs directory
-        openhab_base = os.path.normpath(
-            os.path.abspath(cfg.get("openhab_path", "openhab"))
-        )
+        openhab_base = os.path.normpath(os.path.abspath(cfg.get("openhab_path", "openhab")))
         jobs_base = os.path.normpath(os.path.abspath(cfg.get("jobs_dir", "jobs")))
         requested_path = os.path.normpath(os.path.abspath(file_path))
 
         # Check if requested path is safe (within allowed directories)
-        is_safe = requested_path.startswith(openhab_base) or requested_path.startswith(
-            jobs_base
-        )
+        is_safe = requested_path.startswith(openhab_base) or requested_path.startswith(jobs_base)
 
         # Enhanced security: If job_id is provided, whitelist paths from job stats
         if not is_safe and job_id:
@@ -543,16 +519,10 @@ if FLASK_AVAILABLE:
                     # Check both staged and real paths
                     staged = stat.get("staged_path")
                     real = stat.get("real_path")
-                    if (
-                        staged
-                        and os.path.normpath(os.path.abspath(staged)) == requested_path
-                    ):
+                    if staged and os.path.normpath(os.path.abspath(staged)) == requested_path:
                         is_safe = True
                         break
-                    if (
-                        real
-                        and os.path.normpath(os.path.abspath(real)) == requested_path
-                    ):
+                    if real and os.path.normpath(os.path.abspath(real)) == requested_path:
                         is_safe = True
                         break
 
@@ -566,9 +536,7 @@ if FLASK_AVAILABLE:
         if job_id:
             job = job_mgr.get_job(job_id)
             if job:
-                rel_path = os.path.relpath(requested_path, openhab_base).replace(
-                    "\\", "/"
-                )
+                rel_path = os.path.relpath(requested_path, openhab_base).replace("\\", "/")
                 staged_path = None
 
                 # 1. Try to get from stats (new jobs)
@@ -576,16 +544,12 @@ if FLASK_AVAILABLE:
                     staged_path = job["stats"][rel_path].get("staged_path")
 
                 # 2. Fallback: construct from staging_dir (supports older jobs on remote)
-                if (
-                    not staged_path or not os.path.exists(staged_path)
-                ) and "staging_dir" in job:
+                if (not staged_path or not os.path.exists(staged_path)) and "staging_dir" in job:
                     staged_path = os.path.join(job["staging_dir"], "openhab", rel_path)
 
                 if staged_path and os.path.isfile(staged_path):
                     try:
-                        with open(
-                            staged_path, "r", encoding="utf-8", errors="replace"
-                        ) as f:
+                        with open(staged_path, "r", encoding="utf-8", errors="replace") as f:
                             content = f.read()
 
                         if len(content) > 1024 * 1024:
@@ -674,10 +638,7 @@ if FLASK_AVAILABLE:
 
             # Limit content size to prevent memory issues (max 1MB)
             if len(content) > 1024 * 1024:
-                content = (
-                    content[: 1024 * 1024]
-                    + "\n\n... [Content truncated, file too large]"
-                )
+                content = content[: 1024 * 1024] + "\n\n... [Content truncated, file too large]"
 
             return jsonify(
                 {
@@ -751,9 +712,7 @@ if FLASK_AVAILABLE:
 
         # Save to temporary location
         fn = secure_filename(f.filename)
-        temp_path = os.path.join(
-            app.config["UPLOAD_FOLDER"], f"temp_{uuid.uuid4().hex}_{fn}"
-        )
+        temp_path = os.path.join(app.config["UPLOAD_FOLDER"], f"temp_{uuid.uuid4().hex}_{fn}")
         f.save(temp_path)
 
         try:
@@ -851,9 +810,7 @@ if FLASK_AVAILABLE:
                                         "Group name",
                                         addr.get("name", "Unknown Address"),
                                     ),
-                                    "Address": addr.get(
-                                        "Address", addr.get("address", "N/A")
-                                    ),
+                                    "Address": addr.get("Address", addr.get("address", "N/A")),
                                 }
                                 formatted_addresses.append(formatted_addr)
 
@@ -1002,9 +959,7 @@ if FLASK_AVAILABLE:
                                         "Group name",
                                         addr.get("name", "Unknown Address"),
                                     ),
-                                    "Address": addr.get(
-                                        "Address", addr.get("address", "N/A")
-                                    ),
+                                    "Address": addr.get("Address", addr.get("address", "N/A")),
                                 }
                                 formatted_addresses.append(formatted_addr)
 

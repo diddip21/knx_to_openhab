@@ -108,9 +108,8 @@ class TestOutputValidation:
         with open(golden_file, "r", encoding="utf-8") as f:
             golden_lines = f.readlines()
 
-        # Compare - skip if files differ slightly (formatting)
+        # Compare - fail on any diff to catch behavioral changes
         if generated_lines != golden_lines:
-            # Generate diff for debugging
             diff = list(
                 difflib.unified_diff(
                     golden_lines,
@@ -120,9 +119,10 @@ class TestOutputValidation:
                     lineterm="",
                 )
             )
-            # Log diff but don't fail - files are functionally equivalent
-            if len(diff) > 0:
-                pytest.skip(f"Files differ in formatting (OK): {len(diff)} diff lines")
+            diff_text = "\n".join(diff[:200])
+            pytest.fail(
+                f"Generated output differs from golden for {golden_file.name} (showing first 200 lines):\n{diff_text}"
+            )
 
     def test_generate_items_file(self, tmp_path):
         """Test that generated items file matches golden file"""

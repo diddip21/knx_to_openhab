@@ -31,11 +31,11 @@ def main():
             v = normalize_string(v)
         return v
 
-    def _normalize_list(l):
+    def _normalize_list(items):
         """Recursively normalizes strings within a list in-place."""
-        for idx, v in enumerate(l):
-            l[idx] = _normalize(v)
-        return l
+        for idx, v in enumerate(items):
+            items[idx] = _normalize(v)
+        return items
 
     def _normalize_dict(d):
         """Recursively normalizes strings within a dictionary in-place."""
@@ -156,7 +156,6 @@ def main():
         # We should strip the first component "openhab" and prepend oh_conf.
         for key in paths_to_update:
             if key in config:
-                original = Path(config[key])
                 # heuristic: strip first part if it matches 'openhab' or just take the rest?
                 # safer: assume the file structure inside OPENHAB_CONF is standard.
                 # items -> items/, things -> things/, etc.

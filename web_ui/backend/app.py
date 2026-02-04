@@ -2,7 +2,6 @@ import json
 import os
 import sys
 import tarfile
-import time
 import uuid
 
 try:
@@ -12,7 +11,6 @@ try:
         jsonify,
         render_template,
         request,
-        send_from_directory,
         stream_with_context,
     )
     from werkzeug.utils import secure_filename
@@ -46,7 +44,6 @@ if FLASK_AVAILABLE:
     app.config["UPLOAD_FOLDER"] = cfg.get("jobs_dir", "./var/lib/knx_to_openhab")
 
     # Fix openhab_path to be absolute if it's relative and based on project root
-    import os
 
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     if "openhab_path" in cfg:
@@ -318,7 +315,6 @@ if FLASK_AVAILABLE:
         """Debug endpoint to check stats generation for the latest job."""
         import json
         import os
-        from pathlib import Path
 
         # Get the latest completed job
         all_jobs = job_mgr._jobs

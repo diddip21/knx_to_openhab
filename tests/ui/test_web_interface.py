@@ -1,9 +1,8 @@
 """UI tests for the knx_to_openhab web interface using Playwright."""
 
-import time
-
 import os
 import re
+import time
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -82,8 +81,7 @@ class TestAuthentication:
         # Should show error message or stay on login page
         time.sleep(1)  # Give time for error to display
         assert (
-            page.locator("text=/error|invalid|wrong/i").count() > 0
-            or "login" in page.url.lower()
+            page.locator("text=/error|invalid|wrong/i").count() > 0 or "login" in page.url.lower()
         )
 
 

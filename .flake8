@@ -2,3 +2,17 @@
 max-line-length = 100
 extend-ignore = E203,W503,E501
 exclude = .git,__pycache__,.venv,build,dist
+
+# Allow looser rules in tests and generated scripts
+per-file-ignores =
+    tests/*: F401,F841,E402,F811,F541,E741
+    tests/ui/*: F401,F841,E402,F811,F541,E741
+    tests/integration/*: F401,F841,E402,F811,F541,E741
+    scripts/*: F401,E402,F541,E741
+    test_config_*.py: F401,E402,F811,F541,E741
+    web_ui/backend/app.py: E731,E722
+    web_ui/backend/jobs.py: F401
+    web_ui/backend/service_manager.py: F401
+    web_ui/backend/storage.py: F401,E722,F841
+    web_ui/backend/gunicorn_conf.py: F401
+    web_ui/backend/updater.py: F841

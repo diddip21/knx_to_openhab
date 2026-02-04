@@ -50,7 +50,7 @@ jobs:
           pytest -q --cov=. --cov-report=xml
 
   lint:
-    name: Lint (format + hard errors)
+    name: Lint (format + flake8)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -83,9 +83,9 @@ jobs:
         run: |
           isort --check-only .
 
-      - name: Flake8 (fatal syntax/errors only)
+      - name: Flake8
         run: |
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 .
 
   ui-tests:
     name: UI Tests (Playwright)

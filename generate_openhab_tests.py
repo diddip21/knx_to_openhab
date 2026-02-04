@@ -26,7 +26,7 @@ def generate_openhab_tests(project_json, test_output_py):
             if not os.path.isfile(path):
                 continue
             with open(path, encoding="utf-8") as f:
-                lines = [l.strip() for l in f if l.strip()]
+                lines = [line.strip() for line in f if line.strip()]
             out.write(f"    def test_{key}_file_exists_and_content(self):\n")
             out.write(f"        self.assertTrue(os.path.isfile(r'{path}'))\n")
             out.write(f"        with open(r'{path}', encoding='utf-8') as f:\n")

@@ -6,7 +6,6 @@ import re
 import shutil
 
 from config import config, datapoint_mappings, normalize_string
-from ets_helpers import flags_match, get_co_flags, get_dpt_from_dco
 from utils import get_datapoint_type
 
 logger = logging.getLogger(__name__)
@@ -321,7 +320,7 @@ def gen_building():
         floor_configuration += f"Group   map{floor_nr}   \"{floor_variables['name']}\" {floor_variables['icon']} (Base) {floor_variables['semantic']} {floor_variables['synonyms']}\n"
         # floor_configuration += f"Group:Rollershutter:AVG        map{floor_nr}_Blinds         \"{floor_variables['name']} Jalousie/Rollo\"                      <rollershutter>    (map{floor_nr})                  [\"Blinds\"]         {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
         # floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Lights         \"{floor_variables['name']} Beleuchtung\"                         <light>            (map{floor_nr})                  [\"Light\"] \n"
-        ##floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Presence       \"{floor_variables['name']} Präsenz [MAP(presence.map):%s]\"      <presence>         (map{floor_nr},Base)                  [\"Presence\"] \n"
+        # floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Presence       \"{floor_variables['name']} Präsenz [MAP(presence.map):%s]\"      <presence>         (map{floor_nr},Base)                  [\"Presence\"] \n"
         # floor_configuration += f"Group:Contact:OR(OPEN, CLOSED) map{floor_nr}_Contacts       \"{floor_variables['name']} Öffnungsmelder\"                      <contact>          (map{floor_nr})                [\"OpenState\"] \n"
         # floor_configuration += f"Group:Number:Temperature:AVG   map{floor_nr}_Temperature    \"{floor_variables['name']} Ø Temperatur\"                        <temperature>      (map{floor_nr})             [\"Measurement\", \"Temperature\"]        {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
         return floor_configuration, floor_name
@@ -557,7 +556,7 @@ def gen_building():
 
                                 auto_add = True
                                 item_type = "Rollershutter"
-                                thing_address_info = f"upDown=\"{fahren_auf_ab['Address']}\"{option_stop}{option_position }"
+                                thing_address_info = f"upDown=\"{fahren_auf_ab['Address']}\"{option_stop}{option_position}"
                                 equipment = "Blinds"
                                 semantic_info = '["Blinds"]'
                                 item_icon = "rollershutter"
@@ -645,7 +644,7 @@ def gen_building():
                             if B_ALEXA:
                                 meta_alexa = ', alexa = "Switch"'
 
-                    ######## determined only by datapoint
+                    # determined only by datapoint
                     # do this only after items with multiple addresses are processed:
                     # e.g. the state datapoint could be an own thing or the feedback from a switch or so
                     if run > 1:
@@ -787,7 +786,7 @@ def gen_building():
 
                         root = f"map{floor_nr}_{room_nr}"
                         if equipment != "":
-                            if not item_label in equipments:
+                            if item_label not in equipments:
                                 equipments[item_label] = item_name
                                 if equip_homekit:
                                     equip_homekit += f" [Instance={homekit_instance}]"

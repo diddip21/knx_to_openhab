@@ -39,8 +39,8 @@ def main():
 
     def _normalize_dict(d):
         """Recursively normalizes strings within a dictionary in-place."""
-        for v in d.items():
-            v = _normalize(v)
+        for k, v in d.items():
+            d[k] = _normalize(v)
         return d
 
     for idef in cfg["defines"]:

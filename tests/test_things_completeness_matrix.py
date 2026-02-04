@@ -1,10 +1,10 @@
 import json
-import re
 from pathlib import Path
 
 import ets_to_openhab
 import knxproject_to_openhab
 from config import config
+from completeness import check_completeness
 
 TESTS_DIR = Path(__file__).parent
 PROJECTS = [
@@ -12,34 +12,6 @@ PROJECTS = [
     TESTS_DIR / "Charne.knxproj.json",
     TESTS_DIR / "upload.knxprojarchive.json",
 ]
-
-PARAM_KV = re.compile(r"(\w+)=\"([^\"]+)\"")
-
-
-class Rule:
-    def __init__(
-        self,
-        required=None,
-        one_of=None,
-        recommend_one_of=None,
-        recommend_status=False,
-    ):
-        self.required = required or []
-        self.one_of = one_of or []
-        self.recommend_one_of = recommend_one_of or []
-        self.recommend_status = recommend_status
-
-
-RULES = {
-    "dimmer": Rule(required=["position"], recommend_one_of=[["switch", "increaseDecrease"]]),
-    "rollershutter": Rule(
-        required=["upDown"], recommend_one_of=[["stopMove", "position"]]
-    ),
-    "switch": Rule(required=["ga"], recommend_status=True),
-    "number": Rule(required=["ga"], recommend_status=True),
-    "string": Rule(required=["ga"]),
-    "datetime": Rule(required=["ga"]),
-}
 
 
 def _generate_things(project_path: Path, tmp_path: Path) -> str:
@@ -79,62 +51,9 @@ def _generate_things(project_path: Path, tmp_path: Path) -> str:
     return (tmp_path / "knx.things").read_text(encoding="utf-8")
 
 
-def _iter_thing_lines(things_text: str):
-    for line in things_text.splitlines():
-        if line.strip().startswith("Type ") and "[" in line and "]" in line:
-            yield line.strip()
-
-
-def _parse_params(line: str) -> dict:
-    left = line.rfind("[")
-    right = line.rfind("]")
-    if left == -1 or right == -1 or right < left:
-        return {}
-    params_str = line[left + 1 : right]
-    return {m.group(1): m.group(2) for m in PARAM_KV.finditer(params_str)}
-
-
-def _thing_kind(line: str) -> str:
-    return line.split()[1].strip()
-
-
-def _has_status(ga_value: str) -> bool:
-    return "+<" in ga_value if ga_value else False
-
-
 def _rule_checks_for_project(project_path: Path, tmp_path: Path):
     things_text = _generate_things(project_path, tmp_path)
-    missing_required = []
-    recommended_missing = []
-
-    for line in _iter_thing_lines(things_text):
-        kind = _thing_kind(line)
-        rule = RULES.get(kind)
-        if not rule:
-            continue
-
-        params = _parse_params(line)
-
-        for key in rule.required:
-            if key not in params:
-                missing_required.append((kind, key, line))
-
-        for group in rule.one_of:
-            if not any(key in params for key in group):
-                missing_required.append((kind, "one_of:" + "/".join(group), line))
-
-        for group in rule.recommend_one_of:
-            if not any(key in params for key in group):
-                recommended_missing.append((kind, "one_of:" + "/".join(group), line))
-
-        if rule.recommend_status and "ga" in params and not _has_status(params["ga"]):
-            recommended_missing.append((kind, "status_feedback", line))
-
-        if kind == "number" and "ga" in params and "20.102" in params["ga"]:
-            if not _has_status(params["ga"]):
-                recommended_missing.append((kind, "status_feedback", line))
-
-    return missing_required, recommended_missing
+    return check_completeness(things_text)
 
 
 def test_things_completeness_matrix_all_projects(tmp_path):

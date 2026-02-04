@@ -13,6 +13,7 @@ import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
+from completeness import check_completeness, iter_thing_lines
 from .storage import ensure_dirs, load_jobs, save_job, save_jobs
 
 logger = logging.getLogger(__name__)
@@ -478,17 +479,6 @@ class JobManager:
             save_jobs(self.jobs_dir, self._jobs)
             q.put(None)
 
-    def _parse_things_params(self, line):
-        params = {}
-        left = line.rfind("[")
-        right = line.rfind("]")
-        if left == -1 or right == -1 or right < left:
-            return params
-        params_str = line[left + 1 : right]
-        for match in re.finditer(r"(\w+)=\"([^\"]+)\"", params_str):
-            params[match.group(1)] = match.group(2)
-        return params
-
     def _extract_thing_info(self, line):
         match = re.search(
             r'^Type\s+(?P<kind>\w+)\s*:\s*(?P<id>\S+)\s+"(?P<label>[^"]*)"',
@@ -507,94 +497,35 @@ class JobManager:
             return None
 
         with open(things_path, "r", encoding="utf-8", errors="ignore") as f:
-            lines = [line.strip() for line in f if line.strip()]
+            things_text = f.read()
 
-        rules = {
-            "dimmer": {
-                "required": ["position"],
-                "recommend_one_of": [["switch", "increaseDecrease"]],
-            },
-            "rollershutter": {
-                "required": ["upDown"],
-                "recommend_one_of": [["stopMove", "position"]],
-            },
-            "switch": {"required": ["ga"], "recommend_status": True},
-            "number": {"required": ["ga"], "recommend_status": True},
-            "string": {"required": ["ga"]},
-            "datetime": {"required": ["ga"]},
-        }
+        missing_required_tuples, recommended_missing_tuples = check_completeness(things_text)
 
-        missing_required = []
-        recommended_missing = []
-
-        for line in lines:
-            if not line.startswith("Type "):
-                continue
-
-            info = self._extract_thing_info(line)
-            if not info:
-                continue
-            kind = info["kind"]
-            rule = rules.get(kind)
-            if not rule:
-                continue
-
-            params = self._parse_things_params(line)
-
-            for key in rule.get("required", []):
-                if key not in params:
-                    missing_required.append(
-                        {
-                            **info,
-                            "reason": key,
-                            "line": line,
-                        }
-                    )
-
-            for group in rule.get("recommend_one_of", []):
-                if not any(key in params for key in group):
-                    recommended_missing.append(
-                        {
-                            **info,
-                            "reason": "one_of:" + "/".join(group),
-                            "line": line,
-                        }
-                    )
-
-            ga_value = params.get("ga", "")
-            has_status = "+<" in ga_value if ga_value else False
-
-            if rule.get("recommend_status") and ga_value:
-                if not has_status:
-                    recommended_missing.append(
-                        {
-                            **info,
-                            "reason": "status_feedback",
-                            "line": line,
-                        }
-                    )
-
-            # Special-case: only add status recommendation for 20.102 if not already covered
-            if (
-                kind == "number"
-                and ga_value
-                and "20.102" in ga_value
-                and not has_status
-                and not rule.get("recommend_status")
-            ):
-                recommended_missing.append(
+        def _map_entries(entries):
+            mapped = []
+            for kind, reason, line in entries:
+                info = self._extract_thing_info(line)
+                if not info:
+                    continue
+                mapped.append(
                     {
                         **info,
-                        "reason": "status_feedback",
+                        "reason": reason,
                         "line": line,
                     }
                 )
+            return mapped
+
+        missing_required = _map_entries(missing_required_tuples)
+        recommended_missing = _map_entries(recommended_missing_tuples)
+
+        total_things_checked = sum(1 for _ in iter_thing_lines(things_text))
 
         report = {
             "summary": {
                 "missing_required": len(missing_required),
                 "recommended_missing": len(recommended_missing),
-                "total_things_checked": len([l for l in lines if l.startswith("Type ")]),
+                "total_things_checked": total_things_checked,
             },
             "missing_required": missing_required,
             "recommended_missing": recommended_missing,

@@ -1,0 +1,194 @@
+{
+  "info": {
+    "name": "Mini",
+    "group_address_style": "ThreeLevel",
+    "schema_version": "20",
+    "language_code": "de-DE"
+  },
+  "locations": {
+    "loc1": {
+      "type": "Building",
+      "name": "House",
+      "description": "House",
+      "spaces": {
+        "floor1": {
+          "type": "Floor",
+          "name": "=EG",
+          "description": "EG",
+          "spaces": {
+            "room1": {
+              "type": "Room",
+              "name": "+RM1",
+              "description": "Living",
+              "usage_text": "Living",
+              "devices": ["1.1.1"]
+            }
+          }
+        }
+      }
+    }
+  },
+  "group_ranges": {
+    "1": {
+      "name": "=EG",
+      "group_ranges": {
+        "1/1": {"name": "+RM1", "group_ranges": {}},
+        "1/2": {"name": "+RM1", "group_ranges": {}},
+        "1/3": {"name": "+RM1", "group_ranges": {}}
+      }
+    }
+  },
+  "devices": {
+    "1.1.1": {
+      "hardware_name": "KNX IP Interface",
+      "description": "192.168.1.1",
+      "communication_object_ids": [
+        "co_dim",
+        "co_shutter",
+        "co_heat"
+      ]
+    }
+  },
+  "communication_objects": {
+    "co_dim": {
+      "name": "Dimmer Control",
+      "number": 1,
+      "text": "Dimmer",
+      "function_text": ":(Dimm Wert)",
+      "description": "",
+      "device_address": "1.1.1",
+      "channel": "CH1",
+      "dpts": [{"main": 5, "sub": 1}],
+      "flags": {"read": false, "write": true, "communication": true, "update": false, "read_on_init": false},
+      "group_address_links": ["1/1/1"],
+      "device_communication_objects": [
+        {
+          "name": "Dimmer Status",
+          "number": 2,
+          "text": "Dimmer",
+          "function_text": "Status Dimmwert",
+          "channel": "CH1",
+          "dpts": [{"main": 5, "sub": 1}],
+          "flags": {"read": true, "write": false, "transmit": true, "update": false},
+          "group_address_links": ["1/1/2"]
+        }
+      ]
+    },
+    "co_shutter": {
+      "name": "Shutter",
+      "number": 10,
+      "text": "Shutter",
+      "function_text": "Jalousie Auf/Ab",
+      "description": "",
+      "device_address": "1.1.1",
+      "channel": "CH2",
+      "dpts": [{"main": 1, "sub": 8}],
+      "flags": {"read": false, "write": true, "communication": true, "update": false, "read_on_init": false},
+      "group_address_links": ["1/2/1"],
+      "device_communication_objects": [
+        {
+          "name": "Shutter Stop",
+          "number": 11,
+          "text": "Shutter",
+          "function_text": "Stop",
+          "channel": "CH2",
+          "dpts": [{"main": 1, "sub": 10}],
+          "flags": {"read": false, "write": true, "transmit": false, "update": false},
+          "group_address_links": ["1/2/2"]
+        },
+        {
+          "name": "Shutter Position",
+          "number": 12,
+          "text": "Shutter",
+          "function_text": "absolute Position",
+          "channel": "CH2",
+          "dpts": [{"main": 5, "sub": 1}],
+          "flags": {"read": false, "write": true, "transmit": false, "update": false},
+          "group_address_links": ["1/2/3"]
+        }
+      ]
+    },
+    "co_heat": {
+      "name": "Heating Mode",
+      "number": 20,
+      "text": "Heating",
+      "function_text": "Betriebsartvorwahl",
+      "description": "",
+      "device_address": "1.1.1",
+      "channel": "CH3",
+      "dpts": [{"main": 20, "sub": 102}],
+      "flags": {"read": false, "write": true, "communication": true, "update": false, "read_on_init": false},
+      "group_address_links": ["1/3/1"],
+      "device_communication_objects": [
+        {
+          "name": "Heating Status",
+          "number": 21,
+          "text": "Heating",
+          "function_text": "Status Betriebsmodus",
+          "channel": "CH3",
+          "dpts": [{"main": 20, "sub": 102}],
+          "flags": {"read": true, "write": false, "transmit": true, "update": false},
+          "group_address_links": ["1/3/2"]
+        }
+      ]
+    }
+  },
+  "group_addresses": {
+    "ga_dim": {
+      "name": "=EG +RM1 Dimmen:(Dimm Wert)",
+      "address": "1/1/1",
+      "description": "",
+      "comment": "",
+      "communication_object_ids": ["co_dim"],
+      "dpt": {"main": 5, "sub": 1}
+    },
+    "ga_dim_status": {
+      "name": "=EG +RM1 Status Dimmwert",
+      "address": "1/1/2",
+      "description": "",
+      "comment": "",
+      "communication_object_ids": ["co_dim"],
+      "dpt": {"main": 5, "sub": 1}
+    },
+    "ga_shutter": {
+      "name": "=EG +RM1 Jalousie:(Jalousie Auf/Ab)",
+      "address": "1/2/1",
+      "description": "",
+      "comment": "",
+      "communication_object_ids": ["co_shutter"],
+      "dpt": {"main": 1, "sub": 8}
+    },
+    "ga_shutter_stop": {
+      "name": "=EG +RM1 Jalousie:(Stop)",
+      "address": "1/2/2",
+      "description": "",
+      "comment": "",
+      "communication_object_ids": ["co_shutter"],
+      "dpt": {"main": 1, "sub": 10}
+    },
+    "ga_shutter_pos": {
+      "name": "=EG +RM1 Jalousie:(absolute Position)",
+      "address": "1/2/3",
+      "description": "",
+      "comment": "",
+      "communication_object_ids": ["co_shutter"],
+      "dpt": {"main": 5, "sub": 1}
+    },
+    "ga_heat": {
+      "name": "=EG +RM1 Heizen:(Betriebsartvorwahl)",
+      "address": "1/3/1",
+      "description": "",
+      "comment": "",
+      "communication_object_ids": ["co_heat"],
+      "dpt": {"main": 20, "sub": 102}
+    },
+    "ga_heat_status": {
+      "name": "=EG +RM1 Heizen:(Status Betriebsmodus)",
+      "address": "1/3/2",
+      "description": "",
+      "comment": "",
+      "communication_object_ids": ["co_heat"],
+      "dpt": {"main": 20, "sub": 102}
+    }
+  }
+}

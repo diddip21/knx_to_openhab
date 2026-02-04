@@ -27,6 +27,7 @@ TESTS_DIR = Path(__file__).parent.parent
 GOLDEN_CASES = [
     ("Charne", TESTS_DIR / "Charne.knxproj.json"),
     ("UploadJson", TESTS_DIR / "upload.knxprojarchive.json"),
+    ("Mini", TESTS_DIR / "fixtures" / "mini_project.json"),
 ]
 
 

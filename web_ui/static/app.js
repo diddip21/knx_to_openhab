@@ -41,6 +41,7 @@ async function refreshJobs() {
       ${j.status === 'completed' && j.staged && !j.deployed ? `<button style="background-color: #28a745; color: white;" onclick="deployJob('${j.id}')">Deploy</button>` : ''}
       ${j.backups && j.backups.length > 0 ? `<button onclick="showRollbackDialog('${j.id}')">Rollback</button>` : ''}
       ${j.status === 'completed' ? `<span class="job-meta">Auto-Place: ${j.auto_place_unknown ? 'ON' : 'OFF'}</span>` : ''}
+      ${j.status === 'completed' ? getReportBadges(j.stats) : ''}
       <button onclick="deleteJob('${j.id}')">Delete</button>
     `
     jobsList.appendChild(li)
@@ -79,6 +80,7 @@ function showJobDetail(jobId) {
       return r.json()
     })
     .then(j => {
+      const reportBadges = getReportBadges(j.stats)
       jobDetailEl.innerHTML = `
         <table class="detail-table">
           <tr><td>ID:</td><td><code>${j.id}</code></td></tr>
@@ -86,6 +88,7 @@ function showJobDetail(jobId) {
           <tr><td>Status:</td><td><span class="badge ${j.status}">${j.status}</span></td></tr>
           <tr><td>Created:</td><td>${new Date(j.created * 1000).toLocaleString()}</td></tr>
           <tr><td>Backups:</td><td>${j.backups.length}</td></tr>
+          ${reportBadges ? `<tr><td>Reports:</td><td>${reportBadges}</td></tr>` : ''}
           ${j.backups.length > 0 ? `<tr><td>Latest Backup:</td><td>${j.backups[j.backups.length - 1].name}</td></tr>` : ''}
           ${j.status === 'completed' && j.staged ? `<tr><td>Diff:</td><td><button onclick="showDiff('${j.id}')">Alle Dateien diffen</button></td></tr>` : ''}
         </table>
@@ -251,6 +254,23 @@ async function restartService(service) {
 }
 
 let currentPreviewData = null  // Store current preview data for view switching
+
+function getReportBadges(stats) {
+  if (!stats || typeof stats !== 'object') return ''
+  const files = Object.keys(stats)
+  if (!files.length) return ''
+
+  const badges = []
+  if (files.includes('unknown_report.json')) {
+    badges.push('<span class="badge info">Unknown report</span>')
+  }
+  if (files.includes('partial_report.json')) {
+    badges.push('<span class="badge info">Partial report</span>')
+  }
+
+  if (!badges.length) return ''
+  return `<span class="job-meta">${badges.join(' ')}</span>`
+}
 
 async function showDiff(jobId) {
   currentJobId = jobId

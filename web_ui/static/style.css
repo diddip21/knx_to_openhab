@@ -302,6 +302,18 @@ input[type="file"] {
   color: #856404;
 }
 
+.badge.info {
+  background: #d1ecf1;
+  color: #0c5460;
+}
+
+.job-meta {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 .log-viewer {
   background: #1e1e1e;
   color: #0f0;

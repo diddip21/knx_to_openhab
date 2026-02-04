@@ -37,6 +37,7 @@ async function refreshJobs() {
       <span class="job-date">${new Date(j.created * 1000).toLocaleString()}</span>
       <button onclick="showJobDetail('${j.id}')">Details</button>
       <button onclick="loadStructureFromJob('${j.id}')">Structure</button>
+      ${j.status === 'completed' && j.staged ? `<button onclick="showDiff('${j.id}')">Diff</button>` : ''}
       ${j.status === 'completed' && j.staged && !j.deployed ? `<button style="background-color: #28a745; color: white;" onclick="deployJob('${j.id}')">Deploy</button>` : ''}
       ${j.backups && j.backups.length > 0 ? `<button onclick="showRollbackDialog('${j.id}')">Rollback</button>` : ''}
       <button onclick="deleteJob('${j.id}')">Delete</button>
@@ -85,6 +86,7 @@ function showJobDetail(jobId) {
           <tr><td>Created:</td><td>${new Date(j.created * 1000).toLocaleString()}</td></tr>
           <tr><td>Backups:</td><td>${j.backups.length}</td></tr>
           ${j.backups.length > 0 ? `<tr><td>Latest Backup:</td><td>${j.backups[j.backups.length - 1].name}</td></tr>` : ''}
+          ${j.status === 'completed' && j.staged ? `<tr><td>Diff:</td><td><button onclick="showDiff('${j.id}')">Alle Dateien diffen</button></td></tr>` : ''}
         </table>
       `
 
@@ -248,6 +250,47 @@ async function restartService(service) {
 }
 
 let currentPreviewData = null  // Store current preview data for view switching
+
+async function showDiff(jobId) {
+  currentJobId = jobId
+  try {
+    const res = await fetch(`/api/job/${jobId}/diff`, { credentials: 'include' })
+    if (!res.ok) throw new Error(`Diff API error ${res.status}`)
+    const diffs = await res.json()
+
+    // Build a simple modal with per-file diff blocks
+    const dialog = document.getElementById('filePreviewDialog')
+    const content = document.getElementById('previewContent')
+    const diffContent = document.getElementById('diffContent')
+    const title = document.getElementById('previewFileName')
+    const finalBtn = document.getElementById('viewModeFinal')
+    const diffBtn = document.getElementById('viewModeDiff')
+    const legend = document.getElementById('diffLegend')
+
+    // Reset
+    finalBtn.classList.remove('active')
+    diffBtn.classList.add('active')
+    legend.style.display = 'flex'
+    content.style.display = 'none'
+    diffContent.style.display = 'block'
+    title.textContent = `Diff für Job ${jobId}`
+
+    let html = ''
+    const fileNames = Object.keys(diffs)
+    if (!fileNames.length) {
+      html = '<div class="muted">Keine Diffs vorhanden.</div>'
+    } else {
+      for (const fn of fileNames) {
+        html += `<h4>${fn}</h4>`
+        html += renderBackendDiff(diffs[fn])
+      }
+    }
+    diffContent.innerHTML = html
+    dialog.showModal()
+  } catch (e) {
+    alert('Diff laden fehlgeschlagen: ' + e.message)
+  }
+}
 
 async function previewFile(filename) {
   try {

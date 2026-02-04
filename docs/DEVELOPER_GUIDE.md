@@ -8,7 +8,7 @@ This guide helps you set up a local development environment to work on the KNX t
 
 ## Prerequisites
 
-- **Python 3.11+** (verify with `python --version` or `python3 --version`)
+- **Python 3.12+** (verify with `python --version` or `python3 --version`)
 - **pip** (Python package manager)
 - **git** (for cloning the repository)
 
@@ -162,17 +162,11 @@ knx_to_openhab/
 │   └── verify-setup.ps1/sh         # Setup verification
 │
 ├── tests/                          # Test files
-│   ├── unit/                       # Unit tests
-│   │   ├── test_knx_parsing.py     # Tests for parsing logic
-│   │   └── test_knxproject_to_openhab_Mayer.py
 │   ├── integration/                # Integration tests
-│   │   └── test_file_import.py     # End-to-end file processing tests
-│   ├── ui/                         # UI tests (Playwright)
-│   │   ├── conftest.py             # Test fixtures and server setup
-│   │   ├── test_smoke.py           # Basic UI smoke tests
-│   │   └── test_upload_flow.py     # File upload functionality tests
+│   ├── ui/                         # UI tests (Playwright, optional)
 │   ├── fixtures/                   # Test data and fixtures
-│   └── *.knxproj, *.json           # Sample KNX project files for testing
+│   ├── conftest.py                 # Shared fixtures
+│   └── test_*.py                   # Unit-style tests
 │
 └── openhab/                        # OpenHAB output directory
     ├── items/
@@ -269,11 +263,9 @@ After changing config, restart the Flask server.
 
 ## Running Tests
 
-The project includes three types of automated tests: **Unit Tests**, **Integration Tests**, and **UI Tests**.
+The test suite is split into **core tests** (default) and optional **UI tests**.
 
 ### Prerequisites
-
-Ensure you have activated your virtual environment and installed all dependencies:
 
 ```bash
 # Activate venv (Windows)
@@ -284,119 +276,51 @@ source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 
-### Unit Tests
+### Core Tests (default)
 
-Unit tests verify individual functions and logic in isolation.
+The default pytest config **ignores UI tests** (`tests/ui`) so CI stays fast and reliable.
 
-**Run all unit tests:**
 ```bash
-python -m pytest tests/unit/ -v
+pytest -q
 ```
 
-**Run a specific test file:**
+**Run integration-only:**
 ```bash
-python -m pytest tests/unit/test_knx_parsing.py -v
+pytest tests/integration -v
 ```
 
-**Coverage:**
-- `test_knx_parsing.py` - Tests for floor/room name extraction and building structure parsing
+### UI Tests (optional)
 
-### Integration Tests
+UI tests use Playwright and start a local Flask server on **8081** with auth disabled.
 
-Integration tests verify end-to-end file processing with real KNX project files.
-
-**Run all integration tests:**
 ```bash
-python -m pytest tests/integration/ -v
-```
-
-**What they test:**
-- Loading `.json` dumps from `tests/` directory
-- Loading `.knxproj` files (skips password-protected files)
-- Verifying building structure generation
-- Verifying address extraction and placement
-
-**Note:** Integration tests use actual test files from the `tests/` directory and may take longer to run.
-
-### UI Tests
-
-UI tests use Playwright to verify the Web UI functionality in a real browser.
-
-**First-time setup:**
-```bash
-# Install Playwright
 pip install pytest-playwright
-
-# Install browser binaries (Chromium)
 python -m playwright install chromium
+
+# Override pytest.ini addopts to include UI tests
+pytest tests/ui -v -o addopts=
 ```
 
-**Run all UI tests:**
+### Running Everything + Coverage
+
 ```bash
-python -m pytest tests/ui/ -v
+pytest -v
+pytest --cov=. --cov-report=html
 ```
-
-**Run specific test files:**
-```bash
-# Smoke tests (homepage, API status)
-python -m pytest tests/ui/test_smoke.py -v
-
-# Upload flow tests
-python -m pytest tests/ui/test_upload_flow.py -v
-```
-
-**What they test:**
-- Homepage loads correctly
-- API endpoints respond
-- File upload functionality
-- Live log streaming (via Server-Sent Events)
-
-**Note:** UI tests automatically start a test Flask server on port 8081 with authentication disabled.
 
 ### Generating Golden Files
 
-Golden files are reference outputs used for regression testing. When you have verified that a project's output is correct, you can generate golden files:
+Golden files are reference outputs used for regression testing.
 
 ```bash
-# Generate golden files from a verified project
 python scripts/generate_golden_files.py --project tests/MyProject.knxproj.json --name MyProject
-
-# Overwrite existing golden files
 python scripts/generate_golden_files.py --project tests/Charne.knxproj.json --name Charne --force
 ```
 
-**What it does:**
-1. Processes the KNX project
-2. Generates all OpenHAB files (items, things, sitemap, persistence)
-3. Saves them to `tests/fixtures/expected_output/[ProjectName]/`
-4. Creates a README documenting the golden files
-
-**When to use:**
-- After manually verifying a project's output is correct
-- When adding a new test project to the test suite
-- After intentional changes to generation logic (update existing golden files)
-
-### Running All Tests
-
-```bash
-# Run everything
-python -m pytest tests/ -v
-
-# Run with coverage report
-python -m pytest tests/ --cov=. --cov-report=html
-```
-
-### Test Output
-
-- **Passed tests:** Green checkmarks ✓
-- **Failed tests:** Red X with error details
-- **Skipped tests:** Yellow S (e.g., password-protected files)
-
 ### Manual Testing Checklist
-
-After automated tests pass, perform these manual checks:
 
 - [ ] Upload a KNX project file via Web UI
 - [ ] Verify live log streaming works
@@ -411,12 +335,12 @@ After automated tests pass, perform these manual checks:
 
 ### Python Version Issues
 
-**Error:** `python: command not found` or version < 3.11
+**Error:** `python: command not found` or version < 3.12
 
 **Solution:**
 - Windows: Install Python from [python.org](https://www.python.org/downloads/)
-- Linux: `sudo apt install python3.11` (Ubuntu/Debian)
-- macOS: `brew install python@3.11`
+- Linux: `sudo apt install python3.12` (Ubuntu/Debian)
+- macOS: `brew install python@3.12`
 
 ### Virtual Environment Not Activating
 

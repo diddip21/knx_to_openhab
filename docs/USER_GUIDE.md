@@ -48,6 +48,10 @@ The `config.json` file controls global settings for the generator.
   - Default is `openhab`.
   - If running on the OpenHAB server, this might point to `/etc/openhab`.
 
+- **`general.auto_place_unknown`**: Automatically creates missing floors/rooms for unknown group addresses.
+  - `false` (default): Unknowns remain in the report so you can fix naming/structure in ETS.
+  - `true`: Unknowns get auto-placed into newly created floor/room nodes.
+
 - **`dimmer`**: Configuration for dimmer detection.
   - `absolut_suffix`: Suffixes in the GA name identifying the absolute dimming value (e.g., "Dimmen absolut", "Helligkeitswert").
   - `status_suffix`: Suffixes identifying the status GA (e.g., "Status Dimmwert", "Rückmeldung Dimmen").
@@ -158,6 +162,12 @@ Some complex items require specific naming conventions to be detected correctly,
 - Combines heating mode GAs:
   - **Mode Control**: "Betriebsmodus", "Betriebsartvorwahl" (DPST-5-010, DPST-20-102)
   - **Mode Status**: "Status Betriebsmodus", "DPT_HVAC Mode: Reglerstatus senden" (DPST-5-010, DPST-20-102)
+
+---
+
+## UI Reports & Auto-Placement
+
+The Web UI shows **reports** for unknown or partially matched items so you can quickly fix ETS naming or structure. If you prefer automatic placement, enable it in **Settings → Auto-place unknown addresses** (or set `general.auto_place_unknown = true` in `config.json`).
 
 ---
 

@@ -56,6 +56,23 @@ curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/uninsta
 
 ---
 
+## UI Reports & Auto-Placement
+
+The UI surfaces **reports** for anything that couldn't be fully placed (unknown or partial items). You can optionally enable **auto-placement** to create missing floors/rooms for unmatched addresses.
+
+- **UI toggle:** Settings → **Auto-place unknown addresses**
+- **Config flag:** `config.json` → `general.auto_place_unknown`
+
+**Home overview**
+
+![UI overview](docs/images/ui-home.png)
+
+**Settings (auto-place toggle)**
+
+![UI settings](docs/images/ui-settings.png)
+
+---
+
 ## License
 
 This project is open-source.

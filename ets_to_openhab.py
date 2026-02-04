@@ -22,6 +22,9 @@ floors = []
 all_addresses = []
 export_to_influx = []
 used_addresses = []
+partial_dimmers = []  # collect incomplete dimmer definitions
+partial_unknowns = []  # collect other partials if needed
+
 equipments = {}
 FENSTERKONTAKTE = []
 PRJ_NAME = "Our Home"
@@ -507,10 +510,17 @@ def gen_building():
                                 if B_ALEXA:
                                     meta_alexa = ', alexa = "Light"'
                             else:
-                                logger.error(
+                                logger.warning(
                                     "incomplete dimmer: %s / %s",
                                     basename,
                                     address["Address"],
+                                )
+                                partial_dimmers.append(
+                                    {
+                                        "name": basename,
+                                        "address": address["Address"],
+                                        "dpt": address.get("DatapointType"),
+                                    }
                                 )
 
                         # rollos / jalousien
@@ -942,10 +952,35 @@ def set_permissions(file_path, configuration=None):
         logger.warning("Failed to set permissions for %s: %s", file_path, e)
 
 
+def write_partial_report(cfg):
+    """Write report for partial/incomplete detections."""
+    if not partial_dimmers and not partial_unknowns:
+        return
+    import json
+    from pathlib import Path
+
+    report = {
+        "partial_dimmers": partial_dimmers,
+        "partial_other": partial_unknowns,
+    }
+    try:
+        out_path = cfg.get("openhab_path", "openhab")
+        Path(out_path).mkdir(parents=True, exist_ok=True)
+        Path(out_path, "partial_report.json").write_text(
+            json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        logger.info("Wrote partial_report.json with %d dimmers", len(partial_dimmers))
+    except Exception as e:
+        logger.warning("Failed to write partial_report.json: %s", e)
+
+
 def export_output(items, sitemap, things, configuration=None):
     """Exports things / items / sitemap / ...  Files"""
     # Use provided configuration or fallback to global config
     cfg = configuration if configuration is not None else config
+
+    # write partial report if any
+    write_partial_report(cfg)
 
     # export things:
     try:

@@ -483,6 +483,30 @@ def auto_place_unknowns(building, unknown_addresses, all_addresses, cabinet_devi
 
 def add_unknown_addresses(building, unknown_addresses):
     """Add unknown addresses to a default floor and room in the building."""
+    # Generate a report for remaining unknowns
+    if unknown_addresses:
+        try:
+            import json
+            from pathlib import Path
+            report = {
+                "total": len(unknown_addresses),
+                "addresses": [
+                    {
+                        "Address": a.get("Address"),
+                        "Group name": a.get("Group name"),
+                        "DPT": a.get("dpt"),
+                        "Floor": a.get("Floor"),
+                        "Room": a.get("Room"),
+                    }
+                    for a in unknown_addresses
+                ],
+            }
+            Path("openhab/unknown_report.json").write_text(
+                json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+        except Exception as e:
+            logger.warning("Failed to write unknown_report.json: %s", e)
+
     default_floor = {
         "Description": UNKNOWN_FLOOR_NAME,
         "Group name": UNKNOWN_FLOOR_NAME,

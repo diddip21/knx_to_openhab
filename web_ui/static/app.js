@@ -40,6 +40,7 @@ async function refreshJobs() {
       ${j.status === 'completed' && j.staged ? `<button onclick="showDiff('${j.id}')">Diff</button>` : ''}
       ${j.status === 'completed' && j.staged && !j.deployed ? `<button style="background-color: #28a745; color: white;" onclick="deployJob('${j.id}')">Deploy</button>` : ''}
       ${j.backups && j.backups.length > 0 ? `<button onclick="showRollbackDialog('${j.id}')">Rollback</button>` : ''}
+      ${j.status === 'completed' ? `<span class="job-meta">Auto-Place: ${j.auto_place_unknown ? 'ON' : 'OFF'}</span>` : ''}
       <button onclick="deleteJob('${j.id}')">Delete</button>
     `
     jobsList.appendChild(li)
@@ -280,7 +281,13 @@ async function showDiff(jobId) {
     if (!fileNames.length) {
       html = '<div class="muted">Keine Diffs vorhanden.</div>'
     } else {
-      for (const fn of fileNames) {
+      // Wenn es einen Unknown-Report gibt, anzeigen
+      if (diffs["unknown_report.json"]) {
+        html += '<h4>unknown_report.json</h4>'
+        html += renderBackendDiff(diffs["unknown_report.json"])
+        delete diffs["unknown_report.json"]
+      }
+      for (const fn of Object.keys(diffs)) {
         html += `<h4>${fn}</h4>`
         html += renderBackendDiff(diffs[fn])
       }

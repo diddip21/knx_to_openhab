@@ -1,0 +1,247 @@
+sitemap knx label="MiCasa"
+{
+    Frame label="=UG" {
+     Group item=map1_1  label="Flur"  {
+        Default item=i_UG_RM1_xxxTreppeUGH1016SchaltenLichtSchalten label="Treppe UG (-H10/16) Schalten" 
+        Default item=i_UG_RM1_xxxSpotsH14SchaltenLichtSchalten label="Spots Flur (-H1/4) Schalten" 
+
+    }
+     Group item=map1_2  label="Technik" 
+     Group item=map1_3  label="Hobby"  {
+        Default item=i_UG_RM3_xxxRechtsM1RolladenRolladenAufAb label="Hobby Rechts (-M1) Rolladen" 
+        Default item=i_UG_RM3_xxxLinksM2RolladenRolladenAufAb label="Hobby Links (-M2) Rolladen" 
+        Default item=i_UG_RM3_xxxM20HeizenBetriebsartvorwahl label="Hobby (-M20) Heizen" 
+        Default item=i_UG_RM3_xxxSpotsH18SchaltenLichtSchalten label="Spots Hobby (-H1/8) Schalten" 
+        Default item=i_UG_RM3_xxxRechtsM1RolladenDiagnose label="Hobby Rechts (-M1) Rolladen" 
+        Default item=i_UG_RM3_xxxLinksM2RolladenDiagnose label="Hobby Links (-M2) Rolladen" 
+        Default item=i_UG_RM3_xxxM20HeizenTemperaturmesswert label="Hobby (-M20) Heizen" 
+        Default item=i_UG_RM3_xxxM20HeizenStatusStellwert label="Hobby (-M20) Heizen" 
+        Default item=i_UG_RM3_xxxM20HeizenSollwertKomfort label="Hobby (-M20) Heizen" 
+        Default item=i_UG_RM3_xxxM20HeizenAktuellerSollwert label="Hobby (-M20) Heizen" 
+        Default item=i_UG_RM3_ZentralZeitenDatumUhrzeit label="Zentral Zeiten-Datum / Uhrzeit" 
+
+    }
+     Group item=map1_4  label="HWR"  {
+        Default item=i_UG_RM4_xxxM20HeizenBetriebsartvorwahl label="HWR (-M20) Heizen" 
+        Default item=i_UG_RM4_xxxSpotsHRWH14SchaltenLichtSchalten label="Spots HRW (-H1/4) Schalten" 
+        Default item=i_UG_RM4_xxxM20HeizenTemperaturmesswert label="HWR (-M20) Heizen" 
+        Default item=i_UG_RM4_xxxM20HeizenStatusStellwert label="HWR (-M20) Heizen" 
+        Default item=i_UG_RM4_xxxM20HeizenSollwertKomfort label="HWR (-M20) Heizen" 
+        Default item=i_UG_RM4_xxxM20HeizenAktuellerSollwert label="HWR (-M20) Heizen" 
+
+    }
+}
+Frame label="=EG" {
+     Group item=map2_1  label="Windfang/Treppe"  {
+        Default item=i_EG_RM1_xxxSpotsFlurH18DimmenDimmWert label="Spots Flur (-H1/8) Dimmen" 
+        Default item=i_EG_RM1_xxxFlurGarderobeWCM20HeizenBetriebsartvorwahl label="Flur/Garderobe/WC (-M20) Heizen" 
+        Default item=i_EG_RM1_xxxTreppeOGH1016SchaltenLichtSchalten label="Treppe OG (-H10/16) Schalten" 
+        Default item=i_EG_RM1_xxxSpotsFlurH18SchaltenLichtSchalten label="Spots Flur (-H1/8) Schalten" 
+        Default item=i_EG_RM1_xxxFlurGarderobeWCM20HeizenTemperaturmesswert label="Flur/Garderobe/WC (-M20) Heizen" 
+        Default item=i_EG_RM1_xxxFlurGarderobeWCM20HeizenStatusStellwert label="Flur/Garderobe/WC (-M20) Heizen" 
+        Default item=i_EG_RM1_xxxFlurGarderobeWCM20HeizenSollwertKomfort label="Flur/Garderobe/WC (-M20) Heizen" 
+        Default item=i_EG_RM1_xxxFlurGarderobeWCM20HeizenAktuellerSollwert label="Flur/Garderobe/WC (-M20) Heizen" 
+        Default item=i_EG_RM1_xxxFlurS1PraesenzmelderFB1AktiverHelligkeitswert label="Flur (-S1) Präsenzmelder" 
+        Default item=i_EG_RM1_xxxFlurS1PraesenzmelderFB1GemessenerHelligkeitswert label="Flur (-S1) Präsenzmelder" 
+
+    }
+     Group item=map2_2  label="Küche"  {
+        Default item=i_EG_RM2_xxxLEDKuecheH1516DimmenDimmWert label="LED Kueche (-H15/16) Dimmen" 
+        Default item=i_EG_RM2_xxxWallwasherKuecheH1011DimmenDimmWert label="Wallwasher Kueche (-H10/11) Dimmen" 
+        Default item=i_EG_RM2_xxxBechterKuecheH2021DimmenDimmWert label="Bechter Kueche (-H20/21) Dimmen" 
+        Default item=i_EG_RM2_xxxHaengelampeEssenH60DimmenDimmWert label="Haengelampe Essen (-H60) Dimmen" 
+        Default item=i_EG_RM2_ZentralZZentralJalousieJalousieAufAb label="Zentral-@Zentral Jalousie" 
+        Default item=i_EG_RM2_ZentralZZentralJalousieAbsoluteLamellenposition label="Zentral-@Zentral Jalousie" 
+        Default item=i_EG_RM2_ZentralZOGZJalousieJalousieAufAb label="Zentral-@OG-Z Jalousie" 
+        Default item=i_EG_RM2_ZentralZOGZJalousieAbsoluteLamellenposition label="Zentral-@OG-Z Jalousie" 
+        Default item=i_EG_RM2_ZentralZEGZJalousieJalousieAufAb label="Zentral-@EG-Z Jalousie" 
+        Default item=i_EG_RM2_ZentralZEGZJalousieAbsoluteLamellenposition label="Zentral-@EG-Z Jalousie" 
+        Default item=i_EG_RM2_ZentralZUGZRolladenRolladenAufAb label="Zentral-@UG-Z Rolladen" 
+        Default item=i_EG_RM2_xxxKuecheM1JalousieJalousieAufAb label="Kueche (-M1) Jalousie" 
+        Default item=i_EG_RM2_xxxKuecheM20HeizenBetriebsartvorwahl label="Kueche (-M20) Heizen" 
+        Default item=i_EG_RM2_ZentralZBE1AussenbeleuchtungH1100SchaltenLichtSchalten label="Zentral-@+BE1 Außenbeleuchtung (-H1/100) Schalten-:Schalten" 
+        Default item=i_EG_RM2_xxxSpotsKuecheH18SchaltenLichtSchalten label="Spots Kueche (-H1/8) Schalten" 
+        Default item=i_EG_RM2_xxxLEDKuechenblockH99SchaltenLichtSchalten label="LED Kuechenblock (-H99) Schalten" 
+        Default item=i_EG_RM2_xxxSteckdoseDunstabzugX10SchaltenSchalten label="Dunstabzug (-X10) Schalten" 
+        Default item=i_EG_RM2_ZentralZOGZJalousieAbsolutePosition label="Zentral-@OG-Z Jalousie" 
+        Default item=i_EG_RM2_ZentralZEGZJalousieAbsolutePosition label="Zentral-@EG-Z Jalousie" 
+        Default item=i_EG_RM2_xxxKuecheM1JalousieAbsolutePosition label="Kueche (-M1) Jalousie" 
+        Default item=i_EG_RM2_xxxKuecheM1JalousieAbsoluteLamellenposition label="Kueche (-M1) Jalousie" 
+        Default item=i_EG_RM2_xxxKuecheM1JalousieDiagnose label="Kueche (-M1) Jalousie" 
+        Default item=i_EG_RM2_xxxKuecheM20HeizenTemperaturmesswert label="Kueche (-M20) Heizen" 
+        Default item=i_EG_RM2_xxxKuecheM20HeizenStatusStellwert label="Kueche (-M20) Heizen" 
+        Default item=i_EG_RM2_xxxKuecheM20HeizenSollwertKomfort label="Kueche (-M20) Heizen" 
+        Default item=i_EG_RM2_xxxKuecheM20HeizenAktuellerSollwert label="Kueche (-M20) Heizen" 
+        Default item=i_EG_RM2_ZentralWetterStandardHelligkeitWest label="Zentral Wetter-Standard" 
+
+    }
+     Group item=map2_3  label="Garderobe/WC"  {
+        Default item=i_EG_RM3_xxxGarderobeM1JalousieJalousieAufAb label="Garderobe (-M1) Jalousie" 
+        Default item=i_EG_RM3_xxxGarderobeM1JalousieAbsoluteLamellenposition label="Garderobe (-M1) Jalousie" 
+        Default item=i_EG_RM3_xxxWCM2JalousieJalousieAufAb label="WC (-M2) Jalousie" 
+        Default item=i_EG_RM3_xxxWCM2JalousieAbsoluteLamellenposition label="WC (-M2) Jalousie" 
+        Default item=i_EG_RM3_xxxSpotsWCH18SchaltenLichtSchalten label="Spots WC (-H1/8) Schalten" 
+        Default item=i_EG_RM3_xxxSpiegellampeWCH3SchaltenLichtSchalten label="Spiegellampe WC (-H3) Schalten" 
+        Default item=i_EG_RM3_xxxSpotsGarderobeH1011SchaltenLichtSchalten label="Spots Garderobe (-H10/11) Schalten" 
+        Default item=i_EG_RM3_xxxGarderobeM1JalousieDiagnose label="Garderobe (-M1) Jalousie" 
+        Default item=i_EG_RM3_xxxWCM2JalousieDiagnose label="WC (-M2) Jalousie" 
+
+    }
+     Group item=map2_4  label="Wohnen/Essen"  {
+        Default item=i_EG_RM4_xxxSpotsWohnenH16DimmenDimmWert label="Spots Wohnen (-H1/6) Dimmen" 
+        Default item=i_EG_RM4_xxxLEDH1617DimmenDimmWert label="LED Wohnen/Essen (-H16/17) Dimmen" 
+        Default item=i_EG_RM4_xxxHaengelampeWohnenH30DimmenDimmWert label="Haengelampe Wohnen (-H30) Dimmen" 
+        Default item=i_EG_RM4_xxxEssenM1JalousieJalousieAufAb label="Essen (-M1) Jalousie" 
+        Default item=i_EG_RM4_xxxEssenM1JalousieAbsoluteLamellenposition label="Essen (-M1) Jalousie" 
+        Default item=i_EG_RM4_xxxEssenTuereM2JalousieJalousieAufAb label="Essen Türe (-M2) Jalousie" 
+        Default item=i_EG_RM4_xxxEssenTuereM2JalousieAbsoluteLamellenposition label="Essen Türe (-M2) Jalousie" 
+        Default item=i_EG_RM4_xxxWohnenLIM3JalousieJalousieAufAb label="Wohnen LI (-M3) Jalousie" 
+        Default item=i_EG_RM4_xxxWohnenLIM3JalousieAbsoluteLamellenposition label="Wohnen LI (-M3) Jalousie" 
+        Default item=i_EG_RM4_xxxWohnenREM4JalousieJalousieAufAb label="Wohnen RE (-M4) Jalousie" 
+        Default item=i_EG_RM4_xxxWohnenREM4JalousieAbsoluteLamellenposition label="Wohnen RE (-M4) Jalousie" 
+        Default item=i_EG_RM4_xxxM20HeizenBetriebsartvorwahl label="Wohnen/Essen (-M20) Heizen" 
+        Default item=i_EG_RM4_xxxEssenM1JalousieAbsolutePosition label="Essen (-M1) Jalousie" 
+        Default item=i_EG_RM4_xxxEssenM1JalousieDiagnose label="Essen (-M1) Jalousie" 
+        Default item=i_EG_RM4_xxxEssenTuereM2JalousieAbsolutePosition label="Essen Türe (-M2) Jalousie" 
+        Default item=i_EG_RM4_xxxEssenTuereM2JalousieDiagnose label="Essen Türe (-M2) Jalousie" 
+        Default item=i_EG_RM4_xxxWohnenLIM3JalousieAbsolutePosition label="Wohnen LI (-M3) Jalousie" 
+        Default item=i_EG_RM4_xxxWohnenLIM3JalousieDiagnose label="Wohnen LI (-M3) Jalousie" 
+        Default item=i_EG_RM4_xxxWohnenREM4JalousieAbsolutePosition label="Wohnen RE (-M4) Jalousie" 
+        Default item=i_EG_RM4_xxxWohnenREM4JalousieDiagnose label="Wohnen RE (-M4) Jalousie" 
+        Default item=i_EG_RM4_xxxM20HeizenTemperaturmesswert label="Wohnen/Essen (-M20) Heizen" 
+        Default item=i_EG_RM4_xxxM20HeizenStatusStellwert label="Wohnen/Essen (-M20) Heizen" 
+        Default item=i_EG_RM4_xxxM20HeizenSollwertKomfort label="Wohnen/Essen (-M20) Heizen" 
+        Default item=i_EG_RM4_xxxM20HeizenAktuellerSollwert label="Wohnen/Essen (-M20) Heizen" 
+
+    }
+}
+Frame label="=OG" {
+     Group item=map3_1  label="Flur"  {
+        Default item=i_OG_RM1_xxxTreppeM1JalousieJalousieAufAb label="Flur/Treppe (-M1) Jalousie" 
+        Default item=i_OG_RM1_xxxSpotsH15SchaltenLichtSchalten label="Spots Flur (-H1/5) Schalten" 
+        Default item=i_OG_RM1_xxxTreppeM1JalousieAbsolutePosition label="Flur/Treppe (-M1) Jalousie" 
+        Default item=i_OG_RM1_xxxTreppeM1JalousieAbsoluteLamellenposition label="Flur/Treppe (-M1) Jalousie" 
+        Default item=i_OG_RM1_xxxTreppeM1JalousieDiagnose label="Flur/Treppe (-M1) Jalousie" 
+
+    }
+     Group item=map3_2  label="WC"  {
+        Default item=i_OG_RM3_xxxM1JalousieJalousieAufAb label="WC (-M1) Jalousie" 
+        Default item=i_OG_RM3_xxxM1JalousieAbsoluteLamellenposition label="WC (-M1) Jalousie" 
+        Default item=i_OG_RM3_xxxM20HeizenBetriebsartvorwahl label="WC (-M20) Heizen" 
+        Default item=i_OG_RM3_xxxSpotsH10SchaltenLichtSchalten label="Spots WC (-H10) Schalten" 
+        Default item=i_OG_RM3_xxxSpotsDuscheH15SchaltenLichtSchalten label="Spots Dusche WC (-H15) Schalten" 
+        Default item=i_OG_RM3_xxxSpiegelH10SchaltenLichtSchalten label="Spiegel WC (-H10) Schalten" 
+        Default item=i_OG_RM3_xxxM1JalousieDiagnose label="WC (-M1) Jalousie" 
+        Default item=i_OG_RM3_xxxM20HeizenTemperaturmesswert label="WC (-M20) Heizen" 
+        Default item=i_OG_RM3_xxxM20HeizenStatusStellwert label="WC (-M20) Heizen" 
+        Default item=i_OG_RM3_xxxM20HeizenSollwertKomfort label="WC (-M20)Heizen" 
+        Default item=i_OG_RM3_xxxM20HeizenAktuellerSollwert label="WC (-M20) Heizen" 
+
+    }
+     Group item=map3_3  label="Schlafen"  {
+        Default item=i_OG_RM5_xxxM1JalousieJalousieAufAb label="Schlafen (-M1) Jalousie" 
+        Default item=i_OG_RM5_xxxM1JalousieAbsoluteLamellenposition label="Schlafen (-M1) Jalousie" 
+        Default item=i_OG_RM5_xxxAnkleideM2JalousieJalousieAufAb label="Ankleide (-M2) Jalousie" 
+        Default item=i_OG_RM5_xxxAnkleideM2JalousieAbsoluteLamellenposition label="Ankleide (-M2) Jalousie" 
+        Default item=i_OG_RM5_xxxM20HeizenBetriebsartvorwahl label="Schlafen (-M20) Heizen" 
+        Default item=i_OG_RM5_xxxSpotsH15DimmenAnAus label="Spots Schlafen (-H1/5) Dimmen" 
+        Default item=i_OG_RM5_xxxSpotsAnkleideH1012DimmenAnAus label="Spots Ankleide (-H10/12) Dimmen" 
+        Default item=i_OG_RM5_xxxSpotsH15DimmenDimmWert label="Spots Schlafen (-H1/5) Dimmen" 
+        Default item=i_OG_RM5_xxxSpotsH15DimmenStatusAnAus label="Spots Schlafen (-H1/5) Dimmen" 
+        Default item=i_OG_RM5_xxxSpotsH15DimmenStatusDimmWert label="Spots Schlafen (-H1/5) Dimmen" 
+        Default item=i_OG_RM5_xxxSpotsAnkleideH1012DimmenDimmWert label="Spots Ankleide (-H10/12) Dimmen" 
+        Default item=i_OG_RM5_xxxSpotsAnkleideH1012DimmenStatusAnAus label="Spots Ankleide (-H10/12) Dimmen" 
+        Default item=i_OG_RM5_xxxSpotsAnkleideH1012DimmenStatusDimmWert label="Spots Ankleide (-H10/12) Dimmen" 
+        Default item=i_OG_RM5_xxxM1JalousieDiagnose label="Schlafen (-M1) Jalousie" 
+        Default item=i_OG_RM5_xxxAnkleideM2JalousieDiagnose label="Ankleide (-M2) Jalousie" 
+        Default item=i_OG_RM5_xxxM20HeizenTemperaturmesswert label="Schlafen (-M20) Heizen" 
+        Default item=i_OG_RM5_xxxM20HeizenStatusStellwert label="Schlafen (-M20) Heizen" 
+        Default item=i_OG_RM5_xxxM20HeizenSollwertKomfort label="Schlafen (-M20) Heizen" 
+        Default item=i_OG_RM5_xxxM20HeizenAktuellerSollwert label="Schlafen (-M20) Heizen" 
+        Default item=i_OG_RM5_ZentralWetterStandardHeizspannungOKUeberwachung label="Zentral Wetter-Standard" 
+
+    }
+     Group item=map3_4  label="Bad"  {
+        Default item=i_OG_RM6_xxxDuscheNiescheH3031DimmenDimmWert label="Dusche/Niesche Bad (-H30/31) Dimmen" 
+        Default item=i_OG_RM6_xxxM1JalousieJalousieAufAb label="Bad (-M1) Jalousie" 
+        Default item=i_OG_RM6_xxxM1JalousieAbsoluteLamellenposition label="Bad (-M1) Jalousie" 
+        Default item=i_OG_RM6_xxxM20HeizenBetriebsartvorwahl label="Bad (-M20) Heizen" 
+        Default item=i_OG_RM6_xxxSpotsDuscheH2031SchaltenLichtSchalten label="Spots Dusche Bad (-H20/31) Schalten" 
+        Default item=i_OG_RM6_xxxSpiegelH15SchaltenLichtSchalten label="Spiegel Bad (-H15) Schalten" 
+        Default item=i_OG_RM6_xxxSpotsH14DimmenAnAus label="Spots Bad (-H1/4) Dimmen" 
+        Default item=i_OG_RM6_xxxSpotsH14DimmenDimmWert label="Spots Bad (-H1/4) Dimmen" 
+        Default item=i_OG_RM6_xxxSpotsH14DimmenStatusAnAus label="Spots Bad (-H1/4) Dimmen" 
+        Default item=i_OG_RM6_xxxSpotsH14DimmenStatusDimmWert label="Spots Bad (-H1/4) Dimmen" 
+        Default item=i_OG_RM6_xxxM1JalousieDiagnose label="Bad (-M1) Jalousie" 
+        Default item=i_OG_RM6_xxxM20HeizenTemperaturmesswert label="Bad (-M20) Heizen" 
+        Default item=i_OG_RM6_xxxM20HeizenStatusStellwert label="Bad (-M20) Heizen" 
+        Default item=i_OG_RM6_xxxM20HeizenSollwertKomfort label="Bad (-M20) Heizen" 
+        Default item=i_OG_RM6_xxxM20HeizenAktuellerSollwert label="Bad (-M20) Heizen" 
+
+    }
+     Group item=map3_5  label="Kind 1"  {
+        Default item=i_OG_RM7_xxxKind1VorgartenM1JalousieJalousieAufAb label="Kind1 Vorgarten (-M1) Jalousie" 
+        Default item=i_OG_RM7_xxxKind1VorgartenM1JalousieAbsoluteLamellenposition label="Kind1 Vorgarten (-M1) Jalousie" 
+        Default item=i_OG_RM7_xxxKind1TerasseM2JalousieJalousieAufAb label="Kind1 Terasse (-M2) Jalousie" 
+        Default item=i_OG_RM7_xxxKind1TerasseM2JalousieAbsoluteLamellenposition label="Kind1 Terasse (-M2) Jalousie" 
+        Default item=i_OG_RM7_xxxKind1M20HeizenBetriebsartvorwahl label="Kind1 (-M20) Heizen" 
+        Default item=i_OG_RM7_xxxSpotsKind1H14SchaltenLichtSchalten label="Spots Kind1 (-H1/4) Schalten" 
+        Default item=i_OG_RM7_xxxKind1VorgartenM1JalousieDiagnose label="Kind1 Vorgarten (-M1) Jalousie" 
+        Default item=i_OG_RM7_xxxKind1TerasseM2JalousieDiagnose label="Kind1 Terasse (-M2) Jalousie" 
+        Default item=i_OG_RM7_xxxKind1M20HeizenTemperaturmesswert label="Kind1 (-M20) Heizen" 
+        Default item=i_OG_RM7_xxxKind1M20HeizenStatusStellwert label="Kind1 (-M20) Heizen" 
+        Default item=i_OG_RM7_xxxKind1M20HeizenSollwertKomfort label="Kind1 (-M20) Heizen" 
+        Default item=i_OG_RM7_xxxKind1M20HeizenAktuellerSollwert label="Kind1 (-M20) Heizen" 
+
+    }
+     Group item=map3_6  label="Kind 2"  {
+        Default item=i_OG_RM8_xxxKind2M1JalousieJalousieAufAb label="Kind2 (-M1) Jalousie" 
+        Default item=i_OG_RM8_xxxKind2M1JalousieAbsoluteLamellenposition label="Kind2 (-M1) Jalousie" 
+        Default item=i_OG_RM8_xxxKind2M20HeizenBetriebsartvorwahl label="Kind2 (-M20) Heizen" 
+        Default item=i_OG_RM8_xxxSpotsKind2H14SchaltenLichtSchalten label="Spots Kind2 (-H1/4) Schalten" 
+        Default item=i_OG_RM8_xxxKind2M1JalousieDiagnose label="Kind2 (-M1) Jalousie" 
+        Default item=i_OG_RM8_xxxKind2M20HeizenTemperaturmesswert label="Kind2 (-M20) Heizen" 
+        Default item=i_OG_RM8_xxxKind2M20HeizenStatusStellwert label="Kind2 (-M20) Heizen" 
+        Default item=i_OG_RM8_xxxKind2M20HeizenSollwertKomfort label="Kind2 (-M20) Heizen" 
+        Default item=i_OG_RM8_xxxKind2M20HeizenAktuellerSollwert label="Kind2 (-M20) Heizen" 
+
+    }
+}
+Frame label="=AU" {
+     Group item=map4_1  label="Haupteingang"  {
+        Default item=i_AU_BE1_xxxH14SchaltenLichtSchalten label="BE1 Haupteingang (-H1/4) Schalten" 
+
+    }
+     Group item=map4_2  label="Vorgarten"  {
+        Default item=i_AU_BE2_xxxH12SchaltenLichtSchalten label="BE2 Vorgarten (-H1/2) Schalten" 
+
+    }
+     Group item=map4_3  label="Terasse"  {
+        Default item=i_AU_BE3_xxxH12SchaltenLichtSchalten label="BE3 Terasse (-H1/2) Schalten" 
+        Default item=i_AU_BE3_xxxSteckdoseX12SchaltenSchalten label="BE3 Terasse (-X1/2) Schalten" 
+        Default item=i_AU_BE3_xxxMarkiseM1SchaltenSchalten label="BE3 Markise (-M1) Schalten" 
+        Default item=i_AU_BE3_ZentralWetterStandardHelligkeitOst label="Zentral Wetter-Standard" 
+        Default item=i_AU_BE3_ZentralWetterStandardHelligkeitSued label="Zentral Wetter-Standard" 
+        Default item=i_AU_BE3_ZentralWetterStandardDaemmerung label="Zentral Wetter-Standard" 
+        Default item=i_AU_BE3_ZentralWetterStandardTemperatur label="Zentral Wetter-Standard" 
+        Default item=i_AU_BE3_ZentralWetterStandardWindgewschwindigkeitms label="Zentral Wetter-Standard" 
+
+    }
+     Group item=map4_4  label="Garten"  {
+        Default item=i_AU_BE4_xxxH12SchaltenLichtSchalten label="BE4 Garten (-H1/2) Schalten" 
+
+    }
+     Group item=map4_5  label="Carport" 
+}
+Frame label="=Z" {
+     Group item=map5_1  label="+RM2"  {
+        Default item=i_Z_RM2_xxxWohnenEssenKuecheM20HeizenBetriebsartvorwahl label="Wohnen/Essen/Küche (-M20) Heizen" 
+        Default item=i_Z_RM2_xxxWohnenEssenKuecheM20HeizenSollwertKomfort label="Wohnen/Essen/Küche (-M20) Heizen" 
+
+    }
+}
+Frame label="unknown" {
+     Group item=map6_1  label="unknown" 
+}
+
+}

@@ -5,7 +5,6 @@ import re
 import subprocess
 from pathlib import Path
 from typing import Any, Dict
-from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 

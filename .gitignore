@@ -2,6 +2,7 @@ openhab/*
 !openhab/icons/
 *.csv
 *.knxproj*
+!tests/upload.knxprojarchive.json
 example.ini
 .vscode/*
 __pycache__/

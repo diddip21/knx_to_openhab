@@ -561,8 +561,11 @@ class JobManager:
                         }
                     )
 
-            if rule.get("recommend_status") and "ga" in params:
-                if "+<" not in params["ga"]:
+            ga_value = params.get("ga", "")
+            has_status = "+<" in ga_value if ga_value else False
+
+            if rule.get("recommend_status") and ga_value:
+                if not has_status:
                     recommended_missing.append(
                         {
                             **info,
@@ -571,15 +574,21 @@ class JobManager:
                         }
                     )
 
-            if kind == "number" and "ga" in params and "20.102" in params["ga"]:
-                if "+<" not in params["ga"]:
-                    recommended_missing.append(
-                        {
-                            **info,
-                            "reason": "status_feedback",
-                            "line": line,
-                        }
-                    )
+            # Special-case: only add status recommendation for 20.102 if not already covered
+            if (
+                kind == "number"
+                and ga_value
+                and "20.102" in ga_value
+                and not has_status
+                and not rule.get("recommend_status")
+            ):
+                recommended_missing.append(
+                    {
+                        **info,
+                        "reason": "status_feedback",
+                        "line": line,
+                    }
+                )
 
         report = {
             "summary": {

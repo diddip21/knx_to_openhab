@@ -4,10 +4,12 @@ import os
 import re
 import subprocess
 from pathlib import Path
+from typing import Any, Dict
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
-config = []
+config: Dict[str, Any] = {}
 
 
 def normalize_string(text: str):

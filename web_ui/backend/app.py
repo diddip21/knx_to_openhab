@@ -3,6 +3,7 @@ import os
 import sys
 import tarfile
 import uuid
+from typing import Any, Callable, TypedDict
 
 try:
     from flask import (
@@ -18,13 +19,17 @@ try:
     FLASK_AVAILABLE = True
 except Exception:
     # allow module import when Flask is not installed (for static analysis/tests)
-    Flask = None
-    request = None
-    jsonify = lambda x: x
-    render_template = lambda n: f"Template {n} not available"
-    stream_with_context = lambda g: g
-    Response = object
-    secure_filename = lambda n: n
+    Flask: Any = None  # type: ignore[no-redef]
+    request: Any = None  # type: ignore[no-redef]
+    jsonify: Callable[..., Any] = (  # type: ignore[no-redef]
+        lambda *args, **kwargs: args[0] if args else None
+    )
+    render_template: Callable[..., str] = (  # type: ignore[no-redef]
+        lambda n, *args, **kwargs: f"Template {n} not available"
+    )
+    stream_with_context: Callable[[Any], Any] = lambda g: g  # type: ignore[no-redef]
+    Response: Any = object  # type: ignore[no-redef]
+    secure_filename: Callable[[str], str] = lambda n: n  # type: ignore[no-redef]
     FLASK_AVAILABLE = False
 
 from .jobs import JobManager
@@ -62,9 +67,13 @@ if FLASK_AVAILABLE:
     import time
     from base64 import b64decode
 
+    class _Session(TypedDict):
+        user: str
+        created: float
+
     # In-memory session store (simple implementation)
     # Key: session_token, Value: {'user': username, 'created': timestamp}
-    _sessions = {}
+    _sessions: dict[str, _Session] = {}
     SESSION_MAX_AGE = 24 * 60 * 60  # 24 hours
 
     def _auth_failed():

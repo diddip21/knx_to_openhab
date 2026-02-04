@@ -6,15 +6,15 @@ Uses Git commits for versioning instead of version.json.
 import os
 import subprocess
 from datetime import datetime
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
-import requests
+import requests  # type: ignore[import]
 
 
 class Updater:
     """Handles version checking and updates from GitHub using Git commits."""
 
-    def __init__(self, base_path: str = None):
+    def __init__(self, base_path: Optional[str] = None):
         """
         Initialize the updater.
 
@@ -27,7 +27,7 @@ class Updater:
         self.repo_url = "https://github.com/diddip21/knx_to_openhab"
         self.branch = "main"
 
-    def _run_git_command(self, args: list) -> Tuple[bool, str]:
+    def _run_git_command(self, args: Sequence[str]) -> Tuple[bool, str]:
         """
         Run a git command and return the result.
 
@@ -39,7 +39,7 @@ class Updater:
         """
         try:
             result = subprocess.run(
-                ["git"] + args,
+                ["git"] + list(args),
                 cwd=self.base_path,
                 capture_output=True,
                 text=True,
@@ -49,7 +49,7 @@ class Updater:
         except Exception as e:
             return False, str(e)
 
-    def get_current_version(self) -> Dict:
+    def get_current_version(self) -> Dict[str, Any]:
         """
         Get the current version information from local git repository.
 
@@ -98,7 +98,7 @@ class Updater:
                 "error": str(e),
             }
 
-    def check_github_version(self) -> Tuple[bool, Optional[Dict]]:
+    def check_github_version(self) -> Tuple[bool, Dict[str, Any]]:
         """
         Check GitHub for the latest commit on the main branch.
 
@@ -138,7 +138,7 @@ class Updater:
         except Exception as e:
             return False, {"error": f"Unexpected error: {str(e)}"}
 
-    def check_for_updates(self) -> Dict:
+    def check_for_updates(self) -> Dict[str, Any]:
         """
         Check if updates are available by comparing local and remote commits.
 

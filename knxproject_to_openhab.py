@@ -318,6 +318,10 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
         if place_address_by_device(building, address, read_co, addresses):
             continue
 
+        # Try to create floor/room dynamically if names exist but not in structure yet
+        if create_floor_room_if_missing(building, address):
+            continue
+
         logger.warning("No Room found for %s", address["Group name"])
         unknown_addresses.append(address)
     # TODO: Loop over unknown_addresses to identify Groups/Channels in the same "level"
@@ -687,3 +691,58 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+def create_floor_room_if_missing(building, address):
+    """If floor/room names exist (not unknown), create them and place address."""
+    floor = address.get("Floor")
+    room = address.get("Room")
+    if not floor or not room:
+        return False
+    if floor == UNKNOWN_FLOOR_NAME or room == UNKNOWN_ROOM_NAME:
+        return False
+
+    for building_data in building:
+        # find or create floor
+        target_floor = None
+        for fl in building_data.get("floors", []):
+            if fl.get("name_short") == floor:
+                target_floor = fl
+                break
+        if target_floor is None:
+            target_floor = {
+                "Description": floor,
+                "Group name": floor,
+                "name_long": floor,
+                "name_short": floor,
+                "rooms": [],
+            }
+            building_data.setdefault("floors", []).append(target_floor)
+
+        # find or create room
+        target_room = None
+        for rm in target_floor.get("rooms", []):
+            if rm.get("name_short") == room:
+                target_room = rm
+                break
+        if target_room is None:
+            target_room = {
+                "Description": room,
+                "Group name": room,
+                "name_long": room,
+                "name_short": room,
+                "Addresses": [],
+            }
+            target_floor.setdefault("rooms", []).append(target_room)
+
+        target_room.setdefault("Addresses", []).append(address)
+        logger.debug(
+            "Created floor/room on-the-fly and placed %s in %s/%s",
+            address.get("Address"),
+            floor,
+            room,
+        )
+        return True
+
+    return False

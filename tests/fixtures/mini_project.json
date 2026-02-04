@@ -71,6 +71,16 @@
           "dpts": [{"main": 5, "sub": 1}],
           "flags": {"read": true, "write": false, "transmit": true, "update": false},
           "group_address_links": ["1/1/2"]
+        },
+        {
+          "name": "Dimmer Switch",
+          "number": 3,
+          "text": "Dimmer",
+          "function_text": "An/Aus",
+          "channel": "CH1",
+          "dpts": [{"main": 1, "sub": 1}],
+          "flags": {"read": false, "write": true, "transmit": false, "update": false},
+          "group_address_links": ["1/1/3"]
         }
       ]
     },
@@ -149,6 +159,14 @@
       "comment": "",
       "communication_object_ids": ["co_dim"],
       "dpt": {"main": 5, "sub": 1}
+    },
+    "ga_dim_switch": {
+      "name": "=EG +RM1 Dimmen:(An/Aus)",
+      "address": "1/1/3",
+      "description": "",
+      "comment": "",
+      "communication_object_ids": ["co_dim"],
+      "dpt": {"main": 1, "sub": 1}
     },
     "ga_shutter": {
       "name": "=EG +RM1 Jalousie:(Jalousie Auf/Ab)",

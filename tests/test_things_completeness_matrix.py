@@ -3,8 +3,8 @@ from pathlib import Path
 
 import ets_to_openhab
 import knxproject_to_openhab
-from config import config
 from completeness import check_completeness
+from config import config
 
 TESTS_DIR = Path(__file__).parent
 PROJECTS = [
@@ -61,9 +61,7 @@ def test_things_completeness_matrix_all_projects(tmp_path):
     recommended_missing = []
 
     for project_path in PROJECTS:
-        project_missing, project_recommended = _rule_checks_for_project(
-            project_path, tmp_path
-        )
+        project_missing, project_recommended = _rule_checks_for_project(project_path, tmp_path)
         missing_required.extend(project_missing)
         recommended_missing.extend(project_recommended)
 

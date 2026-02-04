@@ -14,6 +14,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 from completeness import check_completeness, iter_thing_lines
+
 from .storage import ensure_dirs, load_jobs, save_job, save_jobs
 
 logger = logging.getLogger(__name__)

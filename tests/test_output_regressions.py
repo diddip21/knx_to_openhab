@@ -81,7 +81,7 @@ def test_things_contains_expected_patterns(tmp_path, needle):
 @pytest.mark.parametrize(
     "needle",
     [
-        "sitemap knx label=\"MiCasa\"",
+        'sitemap knx label="MiCasa"',
         "Default item=i_UG_RM3_xxxRechtsM1RolladenRolladenAufAb",
         "Default item=i_EG_RM1_xxxSpotsFlurH18DimmenDimmWert",
     ],

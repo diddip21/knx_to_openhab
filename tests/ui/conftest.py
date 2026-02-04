@@ -2,7 +2,6 @@ import os
 import sys
 import threading
 import time
-from multiprocessing import Process
 
 import pytest
 import requests
@@ -16,6 +15,10 @@ BACKEND_DIR = os.path.join(PROJECT_ROOT, "web_ui", "backend")
 sys.path.append(BACKEND_DIR)
 
 from web_ui.backend.app import app, cfg
+
+
+def _safe_artifact_name(name: str) -> str:
+    return "".join(c if c.isalnum() or c in "-_" else "_" for c in name)
 
 
 def run_server():
@@ -45,7 +48,7 @@ def server(base_url):
 
     # Wait for server to be ready
     max_retries = 20
-    for i in range(max_retries):
+    for _ in range(max_retries):
         try:
             response = requests.get(f"{base_url}/api/status")
             if response.status_code == 200:
@@ -60,3 +63,23 @@ def server(base_url):
     yield
 
     # Thread will be killed when main process exits (daemon=True)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    if report.when != "call" or report.passed:
+        return
+
+    page = item.funcargs.get("page")
+    if not page:
+        return
+
+    os.makedirs("test-artifacts", exist_ok=True)
+    safe_name = _safe_artifact_name(item.nodeid.replace("::", "-"))
+    screenshot_path = os.path.join("test-artifacts", f"{safe_name}.png")
+    try:
+        page.screenshot(path=screenshot_path, full_page=True)
+    except Exception:
+        pass

@@ -121,3 +121,11 @@ jobs:
       - name: Run UI tests
         run: |
           pytest tests/ui -v -o addopts=
+
+      - name: Upload UI test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-artifacts
+          path: test-artifacts/
+          if-no-files-found: ignore

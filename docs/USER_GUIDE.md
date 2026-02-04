@@ -36,12 +36,13 @@ The CLI uses the same `config.json` and generates the same output as the Web UI.
 
 ## Web UI vs CLI
 
-- **Web UI**: Best for interactive uploads, quick config edits, and report review (unknown/partial items).
+- **Web UI**: Best for interactive uploads, quick config edits, and report review (unknown/partial/completeness).
 - **CLI**: Best for automation or headless environments.
 
 The Web UI exposes **reports** in the *Generated Files* table (Preview / Download / Copy):
 - `unknown_report.json`
 - `partial_report.json`
+- `completeness_report.json` (checks for missing required channels and recommended feedback)
 
 ## First-Run (Recommended Flow)
 
@@ -184,7 +185,7 @@ Some complex items require specific naming conventions to be detected correctly,
 
 ## UI Reports & Auto-Placement
 
-The Web UI shows **reports** for unknown or partially matched items so you can quickly fix ETS naming or structure. If you prefer automatic placement, enable it in **Settings → Auto-place unknown addresses** (or set `general.auto_place_unknown = true` in `config.json`).
+The Web UI shows **reports** for unknown, partial, and completeness checks so you can quickly fix ETS naming or structure. If you prefer automatic placement, enable it in **Settings → Auto-place unknown addresses** (or set `general.auto_place_unknown = true` in `config.json`).
 
 ---
 

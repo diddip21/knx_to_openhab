@@ -267,6 +267,9 @@ function getReportBadges(stats) {
   if (files.includes('partial_report.json')) {
     badges.push('<span class="badge info">Partial report</span>')
   }
+  if (files.includes('completeness_report.json')) {
+    badges.push('<span class="badge info">Completeness report</span>')
+  }
 
   if (!badges.length) return ''
   return `<span class="job-meta">${badges.join(' ')}</span>`
@@ -823,7 +826,7 @@ function updateStatisticsDisplay(stats) {
 
         // Escape backslashes for HTML onclick attribute (double escape needed)
         const escapedFname = fname.replace(/\\/g, '\\\\')
-        const isReport = fname.endsWith('unknown_report.json') || fname.endsWith('partial_report.json')
+        const isReport = fname.endsWith('unknown_report.json') || fname.endsWith('partial_report.json') || fname.endsWith('completeness_report.json')
         const actions = [
           `<button onclick="previewFile('${escapedFname}')">Preview</button>`
         ]

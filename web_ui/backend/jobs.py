@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import queue
+import re
 import shutil
 import subprocess
 import sys
@@ -356,8 +357,39 @@ class JobManager:
                 # ets_to_openhab.main() writes output files to STAGING via injected config
                 etsmod.main(configuration=staged_config)
 
+                # Generate completeness report from staged knx.things
+                try:
+                    report_path = self._write_completeness_report(
+                        staged_config.get("things_path"),
+                        staged_config.get("openhab_path", ""),
+                    )
+                    if report_path:
+                        self._log_to_queue(
+                            job_id,
+                            q,
+                            {
+                                "type": "info",
+                                "level": "info",
+                                "message": f"completeness report written: {report_path}",
+                            },
+                        )
+                except Exception as report_err:
+                    self._log_to_queue(
+                        job_id,
+                        q,
+                        {
+                            "type": "error",
+                            "level": "warning",
+                            "message": f"completeness report failed: {report_err}",
+                        },
+                    )
+
                 # Add reports to stage mapping if present
-                for report in ["unknown_report.json", "partial_report.json"]:
+                for report in [
+                    "unknown_report.json",
+                    "partial_report.json",
+                    "completeness_report.json",
+                ]:
                     staged_report = os.path.join(staged_config.get("openhab_path", ""), report)
                     if staged_report and os.path.exists(staged_report):
                         real_report = os.path.join(openhab_path, report)
@@ -445,6 +477,127 @@ class JobManager:
         finally:
             save_jobs(self.jobs_dir, self._jobs)
             q.put(None)
+
+    def _parse_things_params(self, line):
+        params = {}
+        left = line.rfind("[")
+        right = line.rfind("]")
+        if left == -1 or right == -1 or right < left:
+            return params
+        params_str = line[left + 1 : right]
+        for match in re.finditer(r"(\w+)=\"([^\"]+)\"", params_str):
+            params[match.group(1)] = match.group(2)
+        return params
+
+    def _extract_thing_info(self, line):
+        match = re.search(
+            r'^Type\s+(?P<kind>\w+)\s*:\s*(?P<id>\S+)\s+"(?P<label>[^"]*)"',
+            line,
+        )
+        if not match:
+            return None
+        return {
+            "kind": match.group("kind"),
+            "id": match.group("id"),
+            "label": match.group("label"),
+        }
+
+    def _write_completeness_report(self, things_path, openhab_path):
+        if not things_path or not os.path.exists(things_path):
+            return None
+
+        with open(things_path, "r", encoding="utf-8", errors="ignore") as f:
+            lines = [line.strip() for line in f if line.strip()]
+
+        rules = {
+            "dimmer": {
+                "required": ["position"],
+                "recommend_one_of": [["switch", "increaseDecrease"]],
+            },
+            "rollershutter": {
+                "required": ["upDown"],
+                "recommend_one_of": [["stopMove", "position"]],
+            },
+            "switch": {"required": ["ga"], "recommend_status": True},
+            "number": {"required": ["ga"], "recommend_status": True},
+            "string": {"required": ["ga"]},
+            "datetime": {"required": ["ga"]},
+        }
+
+        missing_required = []
+        recommended_missing = []
+
+        for line in lines:
+            if not line.startswith("Type "):
+                continue
+
+            info = self._extract_thing_info(line)
+            if not info:
+                continue
+            kind = info["kind"]
+            rule = rules.get(kind)
+            if not rule:
+                continue
+
+            params = self._parse_things_params(line)
+
+            for key in rule.get("required", []):
+                if key not in params:
+                    missing_required.append(
+                        {
+                            **info,
+                            "reason": key,
+                            "line": line,
+                        }
+                    )
+
+            for group in rule.get("recommend_one_of", []):
+                if not any(key in params for key in group):
+                    recommended_missing.append(
+                        {
+                            **info,
+                            "reason": "one_of:" + "/".join(group),
+                            "line": line,
+                        }
+                    )
+
+            if rule.get("recommend_status") and "ga" in params:
+                if "+<" not in params["ga"]:
+                    recommended_missing.append(
+                        {
+                            **info,
+                            "reason": "status_feedback",
+                            "line": line,
+                        }
+                    )
+
+            if kind == "number" and "ga" in params and "20.102" in params["ga"]:
+                if "+<" not in params["ga"]:
+                    recommended_missing.append(
+                        {
+                            **info,
+                            "reason": "status_feedback",
+                            "line": line,
+                        }
+                    )
+
+        report = {
+            "summary": {
+                "missing_required": len(missing_required),
+                "recommended_missing": len(recommended_missing),
+                "total_things_checked": len([l for l in lines if l.startswith("Type ")]),
+            },
+            "missing_required": missing_required,
+            "recommended_missing": recommended_missing,
+        }
+
+        if not openhab_path:
+            openhab_path = os.path.dirname(things_path)
+        report_path = os.path.join(openhab_path, "completeness_report.json")
+        with open(report_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+
+        return report_path
 
     def _compute_detailed_stats(self, openhab_path, backup_path):
         """Compute detailed diff stats (added, removed) by comparing current files with backup."""

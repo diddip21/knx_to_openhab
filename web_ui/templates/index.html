@@ -108,10 +108,7 @@
         <div id="config-forms" class="config-forms">
           <!-- General Tab -->
           <div id="tab-general" class="tab-content active">
-            <div class="form-group">
-              <label>ETS Export Path</label>
-              <input type="text" id="conf-ets-export" class="form-control">
-            </div>
+            <!-- ETS Export Path removed -->
             <div class="form-group">
               <label>Items Path</label>
               <input type="text" id="conf-items-path" class="form-control">
@@ -144,7 +141,7 @@
                 <label><input type="checkbox" id="conf-auto-place"> Auto-place unknown addresses</label>
               </div>
               <div class="info-box">
-                Naming heuristics control how floors/rooms are inferred from ETS. Enable auto-place to create missing floors/rooms for unknown addresses and reduce “Unknown” reports.
+                Naming heuristics control how floors/rooms are inferred from ETS. “As Is” uses the ETS name, while “From Description” uses the ETS description. “Add Missing Items” creates OpenHAB items for GAs without explicit mappings. Enable auto-place to create missing floors/rooms for unknown addresses and reduce “Unknown” reports.
               </div>
             </fieldset>
             <div class="form-group">

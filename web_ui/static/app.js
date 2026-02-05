@@ -1022,7 +1022,7 @@ async function loadConfig() {
     if (!currentConfig.regexpattern) currentConfig.regexpattern = {}
 
     // Populate General Tab
-    document.getElementById('conf-ets-export').value = currentConfig.ets_export || ''
+    // ETS export path removed
     document.getElementById('conf-items-path').value = currentConfig.items_path || ''
     document.getElementById('conf-things-path').value = currentConfig.things_path || ''
     document.getElementById('conf-sitemaps-path').value = currentConfig.sitemaps_path || ''
@@ -1169,7 +1169,7 @@ async function saveConfig(reprocess = false) {
     const newConfig = { ...currentConfig }
 
     // General
-    newConfig.ets_export = document.getElementById('conf-ets-export').value
+    // ETS export path removed
     newConfig.items_path = document.getElementById('conf-items-path').value
     newConfig.things_path = document.getElementById('conf-things-path').value
     newConfig.sitemaps_path = document.getElementById('conf-sitemaps-path').value

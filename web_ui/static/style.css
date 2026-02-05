@@ -95,16 +95,27 @@ h2 {
 }
 
 .expert-toggle {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--text-light);
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--lighter-gray);
+  font-size: 12px;
+  color: var(--text-medium);
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.expert-toggle:hover {
+  background: var(--card-bg);
+  box-shadow: var(--hover-shadow);
 }
 
 .expert-toggle input {
   margin: 0;
+  accent-color: var(--primary-blue);
 }
 
 h3 {

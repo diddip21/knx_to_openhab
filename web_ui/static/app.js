@@ -41,14 +41,15 @@ let statsUpdateInProgress = false  // prevent race conditions
 const EXPERT_TOGGLE_KEY = 'showExpertCompleteness'
 
 function applyExpertToggle() {
-  if (!completenessSummaryEl) return
   const enabled = !!(expertToggleEl && expertToggleEl.checked)
-  completenessSummaryEl.style.display = enabled ? 'block' : 'none'
+  if (completenessSummaryEl) {
+    completenessSummaryEl.style.display = enabled ? 'block' : 'none'
+  }
   if (expertPanelEl) {
     expertPanelEl.style.display = enabled ? 'block' : 'none'
   }
   if (!enabled) {
-    completenessSummaryEl.innerHTML = ''
+    if (completenessSummaryEl) completenessSummaryEl.innerHTML = ''
     if (expertPanelEl) expertPanelEl.innerHTML = ''
   } else if (currentStatsData) {
     renderExpertPanel(currentStatsData)
@@ -71,6 +72,7 @@ function renderExpertPanel(stats) {
         return `<div class="expert-report-row">
               <span class="expert-report-name">${escapeHtml(fname)}</span>
               <div class="expert-report-actions">
+                <button onclick="showReportDialog('${escaped}')">View</button>
                 <button onclick="downloadReport('${escaped}')">Download</button>
                 <button onclick="copyReport('${escaped}')">Copy</button>
               </div>
@@ -94,8 +96,8 @@ if (expertToggleEl) {
   expertToggleEl.addEventListener('change', () => {
     localStorage.setItem(EXPERT_TOGGLE_KEY, expertToggleEl.checked)
     applyExpertToggle()
-    if (expertToggleEl.checked && currentJobId && currentStatsData) {
-      renderCompletenessSummary(currentJobId, currentStatsData)
+    if (expertToggleEl.checked && currentStatsData) {
+      renderExpertPanel(currentStatsData)
     }
   })
 }
@@ -174,9 +176,9 @@ function showJobDetail(jobId) {
       updateStatisticsDisplay(j.stats)
       updateExpertToggleVisibility(j.stats)
       if (expertToggleEl && expertToggleEl.checked) {
-        renderCompletenessSummary(j.id, j.stats)
-      } else if (completenessSummaryEl) {
-        completenessSummaryEl.innerHTML = ''
+        renderExpertPanel(j.stats)
+      } else if (expertPanelEl) {
+        expertPanelEl.innerHTML = ''
       }
 
       // Load stored log entries from job.log
@@ -1076,6 +1078,64 @@ function updateStatisticsDisplay(stats) {
     }, 0)
   }
 }
+
+function showReportDialog(reportKey) {
+  const dialog = document.getElementById('summaryDialog')
+  const content = document.getElementById('summaryDialogContent')
+  if (!dialog || !content) return
+  if (!currentStatsData) {
+    content.innerHTML = '<div class="muted">No report data available.</div>'
+    dialog.showModal()
+    return
+  }
+  const reportStat = currentStatsData[reportKey]
+  const reportPath = (reportStat && (reportStat.staged_path || reportStat.real_path)) || resolvePreviewPath(reportKey)
+  content.innerHTML = '<div class="muted">Loading report...</div>'
+  dialog.showModal()
+
+  fetch(`/api/file/preview?path=${encodeURIComponent(reportPath)}&job_id=${currentJobId}`, { credentials: 'include' })
+    .then((res) => {
+      if (!res.ok) throw new Error(`Preview API error ${res.status}`)
+      return res.json()
+    })
+    .then((data) => {
+      let report = null
+      try {
+        report = JSON.parse(data.content || '{}')
+      } catch (e) {
+        content.innerHTML = '<div class="error">Report is not valid JSON.</div>'
+        return
+      }
+
+      const req = report.missing_required || []
+      const rec = report.recommended_missing || []
+      if (req.length || rec.length) {
+        const renderList = (items, title) => {
+          if (!items.length) return ''
+          const rows = items.map(entry => {
+            const line = escapeHtml(entry.line || '')
+            return `<li><code>${escapeHtml(entry.kind || '')}</code> ${escapeHtml(entry.reason || '')} — ${line}</li>`
+          }).join('')
+          return `<div class="summary-block"><strong>${title}</strong><ul>${rows}</ul></div>`
+        }
+        content.innerHTML = `
+          <div class="summary-counts">
+            <span class="badge ${req.length ? 'error' : 'success'}">Required missing: ${req.length}</span>
+            <span class="badge ${rec.length ? 'warning' : 'success'}">Recommended missing: ${rec.length}</span>
+          </div>
+          ${renderList(req, 'Missing required')}
+          ${renderList(rec, 'Recommended')}
+        `
+        return
+      }
+
+      content.innerHTML = `<pre class="preview-content">${escapeHtml(JSON.stringify(report, null, 2))}</pre>`
+    })
+    .catch((e) => {
+      content.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`
+    })
+}
+
 
 // Configuration Management
 let currentConfig = {}

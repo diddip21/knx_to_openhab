@@ -1,10 +1,11 @@
-import pytest
-import sys
 import os
+import sys
 import threading
 import time
+from urllib.parse import urlparse
+
+import pytest
 import requests
-from multiprocessing import Process
 
 # Add project root to sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
@@ -17,7 +18,11 @@ sys.path.append(BACKEND_DIR)
 from web_ui.backend.app import app, cfg
 
 
-def run_server():
+def _safe_artifact_name(name: str) -> str:
+    return "".join(c if c.isalnum() or c in "-_" else "_" for c in name)
+
+
+def run_server(host: str, port: int):
     """Run the Flask app."""
     # Disable auth for testing
     if "auth" not in cfg:
@@ -25,12 +30,12 @@ def run_server():
     cfg["auth"]["enabled"] = False
 
     # Disable reloader to avoid main thread issues
-    app.run(host="127.0.0.1", port=8081, use_reloader=False)
+    app.run(host=host, port=port, use_reloader=False)
 
 
 @pytest.fixture(scope="session")
 def base_url():
-    return "http://127.0.0.1:8081"
+    return os.getenv("UI_BASE_URL", "http://127.0.0.1:8081")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -38,13 +43,17 @@ def server(base_url):
     """Start the Flask server in a separate thread."""
     # Use a different port than default 8080 to avoid conflicts
 
+    parsed = urlparse(base_url)
+    host = parsed.hostname or "127.0.0.1"
+    port = parsed.port or 8081
+
     # Start server thread
-    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread = threading.Thread(target=run_server, args=(host, port), daemon=True)
     server_thread.start()
 
     # Wait for server to be ready
     max_retries = 20
-    for i in range(max_retries):
+    for _ in range(max_retries):
         try:
             response = requests.get(f"{base_url}/api/status")
             if response.status_code == 200:
@@ -59,3 +68,23 @@ def server(base_url):
     yield
 
     # Thread will be killed when main process exits (daemon=True)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    if report.when != "call" or report.passed:
+        return
+
+    page = item.funcargs.get("page")
+    if not page:
+        return
+
+    os.makedirs("test-artifacts", exist_ok=True)
+    safe_name = _safe_artifact_name(item.nodeid.replace("::", "-"))
+    screenshot_path = os.path.join("test-artifacts", f"{safe_name}.png")
+    try:
+        page.screenshot(path=screenshot_path, full_page=True)
+    except Exception:
+        pass

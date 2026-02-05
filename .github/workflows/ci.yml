@@ -1,541 +1,131 @@
-name: Python 3.12+ Exclusive CI Pipeline
+name: CI
 
 on:
   push:
-    branches: [ '**' ]
+    branches: ["**"]
   pull_request:
-    branches: [ '**' ]
+    branches: ["**"]
   workflow_dispatch:
 
-# Security: Restrict permissions to minimum required
 permissions:
   contents: read
-  actions: read
-  checks: write
-  pull-requests: write
 
-# Concurrency control to prevent workflow conflicts
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Environment variables for consistent configuration
-  # NOTE: This project exclusively supports Python 3.12+ - all matrix configurations and tests limited to 3.12+
-  PYTHON_VERSION: '3.12'
-  PIP_CACHE_DIR: ~/.cache/pip
-  PYTEST_ADDOPTS: "--tb=short --strict-markers --disable-warnings"
-
 jobs:
-  # Job 1: Dependency caching and setup
-  setup-and-cache:
-    name: Setup & Cache Dependencies (Python 3.12+)
+  core-tests:
+    name: Core Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    
-    outputs:
-      cache-hit: ${{ steps.cache-deps.outputs.cache-hit }}
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      - name: Get pip cache dir
-        id: pip-cache
-        run: |
-          echo "dir=$(pip cache dir)" >> $GITHUB_OUTPUT
-      
-      - name: Cache dependencies
-        id: cache-deps
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.pip-cache.outputs.dir }}
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-      
-      - name: Install dependencies with retry
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
-        if: steps.cache-deps.outputs.cache-hit != 'true'
-        
-      - name: Verify dependencies
-        run: |
-          python --version
-          pip list --format=freeze > installed_packages.txt
-          echo "Dependencies verified successfully"
-
-  # Job 2: Matrix strategy for Python 3.12+ compatibility testing
-  compatibility-test:
-    name: Compatibility Test - ${{ matrix.os }} - Python ${{ matrix.python-version }}
-    needs: setup-and-cache
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    
     strategy:
-      fail-fast: false  # Continue running other matrix jobs if one fails
+      fail-fast: false
       matrix:
-          # Only test Python 3.12+ as per project requirements
-          os: [ubuntu-latest, windows-latest, macos-latest]
-          python-version: ['3.12', '3.13']
-          exclude:
-            # Exclude known problematic combinations
-            - os: windows-latest
-              python-version: '3.12'  # Exclude if there are known issues
-    
+        python-version: ["3.12", "3.13"]
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
-      
-      - name: Set up Python ${{ matrix.python-version }}
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      
-      - name: Get pip cache dir
-        id: pip-cache
-        shell: bash
-        run: |
-          echo "dir=$(pip cache dir)" >> $GITHUB_OUTPUT
-      
-      - name: Cache dependencies
+
+      - name: Cache pip
         uses: actions/cache@v4
         with:
-          path: |
-            ${{ steps.pip-cache.outputs.dir }}
-            ~\AppData\Local\pip\Cache
+          path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
-      
+
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
-        shell: bash  # Use bash for both Windows and Unix for consistency
-      
-      - name: Verify basic functionality
-        run: |
-          python --version
-          python -c "import flask, xknxproject, requests; print('All core modules imported successfully')"
-      
-      - name: Run basic import tests
-        run: |
-          python -c "import ets_to_openhab; print('✓ ets_to_openhab OK')"
-          python -c "import knxproject_to_openhab; print('✓ knxproject_to_openhab OK')"
-          python -c "import config; print('✓ config OK')"
-          python -c "import utils; print('✓ utils OK')"
 
-  # Job 3: Parallel execution with strategic test grouping
-  unit-tests:
-    name: Unit Tests - ${{ matrix.os }}
-    needs: setup-and-cache
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    
+      - name: Run core tests
+        run: |
+          pytest -q --cov=. --cov-report=xml
+
+  lint:
+    name: Lint (format + flake8)
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
-      
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      - name: Cache dependencies
+          python-version: "3.12"
+
+      - name: Cache pip
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
-      
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
-      
-      - name: Run unit tests with retry
-        run: |
-          pytest tests/ -v -k "unit or test_address_selection or test_output_syntax_validation" --timeout=60 --tb=short
-        continue-on-error: true
-        id: unit-tests-step
-      
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: unit-test-results-${{ matrix.os }}
-          path: |
-            **/test-reports/
-            **/coverage.xml
-            **/*.xml
-          retention-days: 7
 
-  # Job 4: Integration tests in parallel
-  integration-tests:
-    name: Integration Tests - ${{ matrix.test-type }}
-    needs: setup-and-cache
+      - name: Black (check)
+        run: |
+          black --check .
+
+      - name: Isort (check)
+        run: |
+          isort --check-only .
+
+      - name: Flake8
+        run: |
+          flake8 .
+
+  ui-tests:
+    name: UI Tests (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        test-type: [file-import, business-logic, installer, output-validation]
-    
+    needs: core-tests
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
-      
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      - name: Cache dependencies
+          python-version: "3.12"
+
+      - name: Cache pip
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
-      
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
-      
-      - name: Run specific integration test suite
+
+      - name: Install Playwright browser
         run: |
-          case "${{ matrix.test-type }}" in
-            "file-import")
-              pytest tests/integration/test_file_import.py -v --cov=. --cov-report=xml:coverage-integration-${{ matrix.test-type }}.xml --tb=short
-              ;;
-            "business-logic")
-              pytest tests/integration/test_business_logic.py -v --cov=. --cov-report=xml:coverage-integration-${{ matrix.test-type }}.xml --tb=short
-              ;;
-            "installer")
-              pytest tests/integration/test_installer.py -v --cov=. --cov-report=xml:coverage-integration-${{ matrix.test-type }}.xml --tb=short
-              ;;
-            "output-validation")
-              pytest tests/integration/test_output_validation.py -v --cov=. --cov-report=xml:coverage-integration-${{ matrix.test-type }}.xml --tb=short
-              ;;
-          esac
-      
-      - name: Upload integration test results
-        uses: actions/upload-artifact@v4
+          python -m playwright install chromium
+
+      - name: Run UI tests
+        run: |
+          pytest tests/ui -v -o addopts=
+
+      - name: Upload UI test artifacts
         if: always()
-        with:
-          name: integration-test-results-${{ matrix.test-type }}
-          path: |
-            coverage-integration-${{ matrix.test-type }}.xml
-            **/test-reports/
-          retention-days: 7
-
-  # Job 5: Core functionality tests
-  core-functional-tests:
-    name: Core Functionality Tests (Python 3.12+)
-    needs: setup-and-cache
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
-      
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
-          pip install pytest-xdist  # For parallel test execution
-      
-      - name: Run core functionality tests with coverage
-        run: |
-          pytest tests/test_core_functionality.py tests/test_full_generation.py tests/test_output_config.py -v --cov=. --cov-report=xml:coverage-core.xml --tb=short --timeout=120
-        continue-on-error: true
-        id: core-tests
-      
-      - name: Upload core test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: core-test-results
-          path: |
-            coverage-core.xml
-            **/test-reports/
-          retention-days: 7
-
-  # Job 6: Code quality and linting
-  code-quality:
-    name: Code Quality Checks (Python 3.12+)
-    needs: setup-and-cache
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
-      
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
-      
-      - name: Run code quality checks
-        run: |
-          # Syntax checking
-          python -m py_compile *.py
-          
-          # Black formatting check
-          black --check --diff . || echo "Black formatting issues detected"
-          
-          # Flake8 linting
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          
-          # Pylint (basic check)
-          pylint $(find . -name "*.py" -not -path "./tests/*" -not -path "./venv/*") --errors-only || echo "Pylint errors found"
-      
-      - name: Upload quality reports
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: code-quality-reports
-          path: |
-            **/reports/
-            **/lint-reports/
-          retention-days: 7
-
-  # Job 7: ETS helpers specific tests
-  ets-helpers-tests:
-    name: ETS Helpers Tests (Python 3.12+)
-    needs: setup-and-cache
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
-      
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
-      
-      - name: Run ETS helpers tests
-        run: |
-          pytest tests/test_ets_helpers.py tests/test_ets_helpers_functionality.py -v --cov=./ets_helpers.py --cov-report=xml:coverage-ets.xml --tb=short
-        continue-on-error: true
-      
-      - name: Upload ETS helper test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ets-helpers-test-results
-          path: |
-            coverage-ets.xml
-            **/test-reports/
-          retention-days: 7
-
-  # Job 8: External dependencies mocking tests
-  external-deps-mocking-tests:
-    name: External Dependencies Mocking Tests (Python 3.12+)
-    needs: setup-and-cache
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
-      
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
-      
-      - name: Run external dependencies mocking tests
-        run: |
-          pytest tests/test_external_dependencies_mocking.py tests/test_external_deps_mocking.py -v --cov=. --cov-report=xml:coverage-mocking.xml --tb=short
-        continue-on-error: true
-      
-      - name: Upload mocking test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mocking-test-results
-          path: |
-            coverage-mocking.xml
-            **/test-reports/
-          retention-days: 7
-
-  # Job 9: Final coverage aggregation and summary
-  aggregate-coverage:
-    name: Aggregate Test Coverage
-    needs: 
-      - core-functional-tests
-      - integration-tests
-      - ets-helpers-tests
-      - external-deps-mocking-tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Download all coverage artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: ./artifacts
-      
-      - name: Display downloaded artifacts
-        run: |
-          find ./artifacts -name "*.xml" -type f
-          ls -la ./artifacts/
-      
-      - name: Combine coverage reports
-        run: |
-          pip install coverage[toml]
-          mkdir -p combined-coverage
-          
-          # Find and combine all coverage XML files
-          for xml_file in $(find ./artifacts -name "coverage-*.xml" -type f); do
-            echo "Processing: $xml_file"
-            cp "$xml_file" "./combined-coverage/$(basename "$xml_file" | sed 's/^coverage-/coverage-'${{ github.run_number }}'-/')"
-          done
-          
-          # List combined files
-          ls -la ./combined-coverage/
-      
-      - name: Upload combined coverage
         uses: actions/upload-artifact@v4
         with:
-          name: combined-coverage-reports
-          path: combined-coverage/
-          retention-days: 14
-
-  # Job 10: Installation script validation
-  install-script-validation:
-    name: Installation Script Validation
-    needs: setup-and-cache
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Validate installation script
-        run: |
-          test -f install.sh && echo "✓ install.sh exists"
-          chmod +x install.sh
-          head -20 install.sh
-          
-          # Check for essential components
-          grep -q "python" install.sh && echo "✓ Contains Python references"
-          grep -q "pip" install.sh && echo "✓ Contains pip references"
-          grep -q "requirements.txt" install.sh && echo "✓ References requirements"
-          
-          echo "Installation script validation passed"
-      
-      - name: Validate configuration files
-        run: |
-          test -f config.json && echo "✓ config.json exists"
-          test -f requirements.txt && echo "✓ requirements.txt exists"
-          test -f requirements-dev.txt && echo "✓ requirements-dev.txt exists"
-          
-          # Validate JSON format
-          python -c "import json; json.load(open('config.json'))" && echo "✓ config.json is valid JSON"
-          
-          echo "Configuration validation passed"
-
-  # Final job: Summary and notification
-  summary:
-    name: Pipeline Summary
-    needs: 
-      - compatibility-test
-      - unit-tests
-      - integration-tests
-      - core-functional-tests
-      - code-quality
-      - ets-helpers-tests
-      - external-deps-mocking-tests
-      - aggregate-coverage
-      - install-script-validation
-    runs-on: ubuntu-latest
-    if: always()  # Always run to provide summary
-    
-    steps:
-      - name: Pipeline execution summary
-        run: |
-          echo "Pipeline execution completed"
-          echo "All jobs have finished running"
-          echo "Check individual job results for details"
-          
-          # Exit with success/failure based on dependencies
-          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
-            echo "Some jobs failed"
-            exit 1
-          else
-            echo "All jobs completed successfully"
-            exit 0
-          fi
+          name: ui-test-artifacts
+          path: test-artifacts/
+          if-no-files-found: ignore

@@ -3,9 +3,9 @@
 
 import os
 import platform
+import shutil
 import subprocess
 import tempfile
-import shutil
 import unittest
 from pathlib import Path
 
@@ -129,9 +129,7 @@ class TestInstallerScript(unittest.TestCase):
             content = f.read()
 
         # Check for set -e or set -euo pipefail
-        has_error_handling = (
-            "set -e" in content or "set -u" in content or "pipefail" in content
-        )
+        has_error_handling = "set -e" in content or "set -u" in content or "pipefail" in content
 
         self.assertTrue(
             has_error_handling,

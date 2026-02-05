@@ -1,8 +1,9 @@
-import sys
-import os
-import pytest
 import json
+import os
+import sys
 from pathlib import Path
+
+import pytest
 from xknxproject.xknxproj import XKNXProj
 
 # Add project root to sys.path
@@ -81,9 +82,7 @@ class TestFileImport:
         # 3. Put Addresses in Building
         # This modifies 'building' in place
         try:
-            knxproject_to_openhab.put_addresses_in_building(
-                building, addresses, project
-            )
+            knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
         except Exception as e:
             pytest.fail(f"Failed to put addresses in building: {e}")
 

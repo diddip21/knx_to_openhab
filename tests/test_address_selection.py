@@ -5,15 +5,16 @@ responsible for correctly mapping KNX datapoints to OpenHAB items based on
 configurable flags and datapoint types.
 """
 
-import pytest
-import sys
 import os
-from unittest.mock import Mock, MagicMock
+import sys
+from unittest.mock import MagicMock, Mock
+
+import pytest
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ets_helpers import get_co_flags, flags_match
+from ets_helpers import flags_match, get_co_flags
 
 
 class TestCoFlags:
@@ -21,9 +22,7 @@ class TestCoFlags:
 
     def test_extract_all_flags_present(self):
         """Should extract all 4 flag types when all are present."""
-        co = {
-            "flags": {"read": True, "write": False, "transmit": True, "update": False}
-        }
+        co = {"flags": {"read": True, "write": False, "transmit": True, "update": False}}
 
         flags = get_co_flags(co)
         assert flags is not None
@@ -59,9 +58,7 @@ class TestCoFlags:
 
     def test_extract_flags_with_all_false(self):
         """Should correctly handle all flags set to False."""
-        co = {
-            "flags": {"read": False, "write": False, "transmit": False, "update": False}
-        }
+        co = {"flags": {"read": False, "write": False, "transmit": False, "update": False}}
 
         flags = get_co_flags(co)
         assert flags["read"] is False
@@ -389,6 +386,4 @@ class TestEdgeCases:
         flags = get_co_flags(large_co)
         # Implementation preserves original values, doesn't convert them
         assert flags["read"] == 999999999999999999999  # Large number stays as number
-        assert (
-            flags["write"] == -999999999999999999999
-        )  # Negative number stays as number
+        assert flags["write"] == -999999999999999999999  # Negative number stays as number

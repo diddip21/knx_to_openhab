@@ -83,6 +83,84 @@ h2 {
   font-weight: 600;
 }
 
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-header h2 {
+  margin: 0;
+}
+
+.expert-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--lighter-gray);
+  font-size: 12px;
+  color: var(--text-medium);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.expert-toggle:hover {
+  background: var(--card-bg);
+  box-shadow: var(--hover-shadow);
+}
+
+.expert-toggle input {
+  margin: 0;
+  accent-color: var(--primary-blue);
+}
+
+.expert-help {
+  font-size: 11px;
+  color: var(--text-light);
+}
+
+.expert-panel {
+  margin: 12px 0 20px;
+  padding: 12px;
+  border: 1px dashed var(--border-color);
+  border-radius: 12px;
+  background: var(--lighter-gray);
+}
+
+.expert-panel-header {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text-medium);
+}
+
+.expert-report-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.expert-report-row:first-of-type {
+  border-top: none;
+}
+
+.expert-report-name {
+  font-size: 12px;
+  color: var(--text-dark);
+}
+
+.expert-report-actions button {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
 h3 {
   color: var(--medium-gray);
   margin-top: 20px;
@@ -300,6 +378,18 @@ input[type="file"] {
 .badge.running {
   background: #fff3cd;
   color: #856404;
+}
+
+.badge.info {
+  background: #d1ecf1;
+  color: #0c5460;
+}
+
+.job-meta {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 6px;
+  vertical-align: middle;
 }
 
 .log-viewer {
@@ -938,6 +1028,22 @@ dialog:not([open]) {
   font-size: 12px;
 }
 
+.checkbox-group {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.checkbox-item label {
+  font-weight: 500;
+}
+
+.checkbox-help {
+  margin-left: 24px;
+  font-size: 12px;
+  color: var(--text-light);
+}
+
 .form-group.checkbox-group {
   display: flex;
   align-items: center;
@@ -1571,6 +1677,32 @@ legend {
   background: var(--lighter-gray);
  }
 
+.report-summary {
+  margin: 12px 0 16px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: #fff;
+ }
+
+.report-summary .summary-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+ }
+
+.report-summary .summary-counts {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+ }
+
+.report-summary ul {
+  margin: 6px 0 0 18px;
+ }
+
  .map-input {
   width: 100%;
   padding: 6px;
@@ -1663,6 +1795,17 @@ legend {
  .btn-outline:hover {
   background: var(--primary-blue);
   color: white;
+ }
+
+ .info-box {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--primary-blue);
+  background: rgba(0, 122, 204, 0.06);
+  color: var(--text-color);
+  border-radius: 6px;
+  font-size: 0.92rem;
  }
 
  /* Responsive adjustments */

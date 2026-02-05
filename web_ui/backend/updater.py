@@ -5,15 +5,16 @@ Uses Git commits for versioning instead of version.json.
 
 import os
 import subprocess
-import requests
-from typing import Dict, Optional, Tuple
 from datetime import datetime
+from typing import Any, Dict, Optional, Sequence, Tuple
+
+import requests  # type: ignore[import]
 
 
 class Updater:
     """Handles version checking and updates from GitHub using Git commits."""
 
-    def __init__(self, base_path: str = None):
+    def __init__(self, base_path: Optional[str] = None):
         """
         Initialize the updater.
 
@@ -26,7 +27,7 @@ class Updater:
         self.repo_url = "https://github.com/diddip21/knx_to_openhab"
         self.branch = "main"
 
-    def _run_git_command(self, args: list) -> Tuple[bool, str]:
+    def _run_git_command(self, args: Sequence[str]) -> Tuple[bool, str]:
         """
         Run a git command and return the result.
 
@@ -38,7 +39,7 @@ class Updater:
         """
         try:
             result = subprocess.run(
-                ["git"] + args,
+                ["git"] + list(args),
                 cwd=self.base_path,
                 capture_output=True,
                 text=True,
@@ -48,7 +49,7 @@ class Updater:
         except Exception as e:
             return False, str(e)
 
-    def get_current_version(self) -> Dict:
+    def get_current_version(self) -> Dict[str, Any]:
         """
         Get the current version information from local git repository.
 
@@ -70,25 +71,17 @@ class Updater:
                 }
 
             # Get commit date
-            success, commit_date = self._run_git_command(
-                ["show", "-s", "--format=%ci", "HEAD"]
-            )
+            success, commit_date = self._run_git_command(["show", "-s", "--format=%ci", "HEAD"])
 
             # Get commit message (first line)
-            success, commit_message = self._run_git_command(
-                ["show", "-s", "--format=%s", "HEAD"]
-            )
+            success, commit_message = self._run_git_command(["show", "-s", "--format=%s", "HEAD"])
 
             # Get current branch
-            success, current_branch = self._run_git_command(
-                ["rev-parse", "--abbrev-ref", "HEAD"]
-            )
+            success, current_branch = self._run_git_command(["rev-parse", "--abbrev-ref", "HEAD"])
 
             return {
                 "commit_hash": commit_hash,
-                "commit_short": (
-                    commit_hash[:7] if commit_hash != "unknown" else "unknown"
-                ),
+                "commit_short": (commit_hash[:7] if commit_hash != "unknown" else "unknown"),
                 "commit_date": commit_date if commit_date else "unknown",
                 "commit_message": commit_message if commit_message else "No message",
                 "branch": current_branch if current_branch else self.branch,
@@ -105,7 +98,7 @@ class Updater:
                 "error": str(e),
             }
 
-    def check_github_version(self) -> Tuple[bool, Optional[Dict]]:
+    def check_github_version(self) -> Tuple[bool, Dict[str, Any]]:
         """
         Check GitHub for the latest commit on the main branch.
 
@@ -120,15 +113,11 @@ class Updater:
             repo = parts[-1].replace(".git", "")
 
             # Get latest commit from GitHub API
-            api_url = (
-                f"https://api.github.com/repos/{owner}/{repo}/commits/{self.branch}"
-            )
+            api_url = f"https://api.github.com/repos/{owner}/{repo}/commits/{self.branch}"
             response = requests.get(api_url, timeout=10)
 
             if response.status_code != 200:
-                return False, {
-                    "error": f"GitHub API returned status {response.status_code}"
-                }
+                return False, {"error": f"GitHub API returned status {response.status_code}"}
 
             commit_data = response.json()
 
@@ -149,7 +138,7 @@ class Updater:
         except Exception as e:
             return False, {"error": f"Unexpected error: {str(e)}"}
 
-    def check_for_updates(self) -> Dict:
+    def check_for_updates(self) -> Dict[str, Any]:
         """
         Check if updates are available by comparing local and remote commits.
 
@@ -171,9 +160,7 @@ class Updater:
         current_commit = current.get("commit_hash", "")
         remote_commit = remote.get("commit_hash", "")
 
-        update_available = (
-            current_commit != remote_commit and current_commit != "unknown"
-        )
+        update_available = current_commit != remote_commit and current_commit != "unknown"
 
         return {
             "update_available": update_available,

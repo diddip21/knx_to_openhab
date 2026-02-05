@@ -5,6 +5,7 @@ Test script to verify the configuration API endpoints
 
 import json
 import os
+
 from web_ui.backend.app import app
 
 
@@ -25,9 +26,7 @@ def test_config_endpoints():
             print(f"Response keys: {list(data.keys())}")
             print("PASS: /api/config endpoint working")
         else:
-            print(
-                f"FAIL: /api/config endpoint failed with status {response.status_code}"
-            )
+            print(f"FAIL: /api/config endpoint failed with status {response.status_code}")
 
         print("\nTesting /api/config/schema endpoint...")
         response = client.get("/api/config/schema", headers=headers)
@@ -37,9 +36,7 @@ def test_config_endpoints():
             print(f"Schema has title: {data.get('title', 'N/A')}")
             print("PASS: /api/config/schema endpoint working")
         else:
-            print(
-                f"FAIL: /api/config/schema endpoint failed with status {response.status_code}"
-            )
+            print(f"FAIL: /api/config/schema endpoint failed with status {response.status_code}")
             print(f"Response: {response.data.decode('utf-8')}")
 
 

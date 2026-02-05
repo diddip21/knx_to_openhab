@@ -1,10 +1,12 @@
 """UI tests for the knx_to_openhab web interface using Playwright."""
 
-import pytest
-from playwright.sync_api import Page, expect
+import json
+import re
 import time
 
-BASE_URL = "http://localhost:8085"
+import pytest
+from playwright.sync_api import Page, expect
+
 DEFAULT_USERNAME = "admin"
 DEFAULT_PASSWORD = "logihome"
 
@@ -20,19 +22,16 @@ def browser_context_args(browser_context_args):
 
 
 @pytest.fixture
-def authenticated_page(page: Page):
+def authenticated_page(page: Page, base_url):
     """Provide an authenticated page session."""
-    page.goto(BASE_URL)
+    page.goto(base_url)
 
     # Check if already logged in, if not, login
-    if (
-        "login" in page.url.lower()
-        or page.locator("input[name='username']").count() > 0
-    ):
+    if "login" in page.url.lower() or page.locator("input[name='username']").count() > 0:
         page.fill("input[name='username']", DEFAULT_USERNAME)
         page.fill("input[name='password']", DEFAULT_PASSWORD)
         page.click("button[type='submit']")
-        page.wait_for_load_state("networkidle")
+        expect(page.locator("#upload-section")).to_be_visible(timeout=10000)
 
     return page
 
@@ -40,31 +39,39 @@ def authenticated_page(page: Page):
 class TestAuthentication:
     """Test authentication and login functionality."""
 
-    def test_login_page_loads(self, page: Page):
+    def test_login_page_loads(self, page: Page, base_url):
         """Test that login page loads correctly."""
-        page.goto(BASE_URL)
-        expect(page).to_have_title(
-            lambda title: "knx" in title.lower() or "openhab" in title.lower()
-        )
+        page.goto(base_url)
+        expect(page).to_have_title(re.compile(r"knx|openhab", re.IGNORECASE))
+        # If auth is disabled in test server, login fields won't exist
+        if page.locator("input[name='username']").count() == 0:
+            return
         expect(page.locator("input[name='username']")).to_be_visible()
         expect(page.locator("input[name='password']")).to_be_visible()
 
-    def test_successful_login(self, page: Page):
+    def test_successful_login(self, page: Page, base_url):
         """Test successful login with correct credentials."""
-        page.goto(BASE_URL)
+        page.goto(base_url)
+        if page.locator("input[name='username']").count() == 0:
+            # Auth disabled in test server
+            assert "login" not in page.url.lower()
+            return
+
         page.fill("input[name='username']", DEFAULT_USERNAME)
         page.fill("input[name='password']", DEFAULT_PASSWORD)
         page.click("button[type='submit']")
 
-        # Wait for navigation
-        page.wait_for_load_state("networkidle")
+        expect(page.locator("#upload-section")).to_be_visible(timeout=10000)
 
         # Should be redirected to main page
         assert "login" not in page.url.lower()
 
-    def test_failed_login(self, page: Page):
+    def test_failed_login(self, page: Page, base_url):
         """Test login failure with incorrect credentials."""
-        page.goto(BASE_URL)
+        page.goto(base_url)
+        if page.locator("input[name='username']").count() == 0:
+            pytest.skip("Auth disabled in test server")
+
         page.fill("input[name='username']", "wrong_user")
         page.fill("input[name='password']", "wrong_password")
         page.click("button[type='submit']")
@@ -72,8 +79,7 @@ class TestAuthentication:
         # Should show error message or stay on login page
         time.sleep(1)  # Give time for error to display
         assert (
-            page.locator("text=/error|invalid|wrong/i").count() > 0
-            or "login" in page.url.lower()
+            page.locator("text=/error|invalid|wrong/i").count() > 0 or "login" in page.url.lower()
         )
 
 
@@ -87,9 +93,7 @@ class TestProjectUpload:
             authenticated_page.click("text=/upload|project/i")
 
         # Check for file input element
-        expect(authenticated_page.locator("input[type='file']")).to_be_visible(
-            timeout=5000
-        )
+        expect(authenticated_page.locator("input[type='file']")).to_be_visible(timeout=5000)
 
     def test_upload_interface_elements(self, authenticated_page: Page):
         """Test that all upload interface elements are present."""
@@ -121,7 +125,7 @@ class TestSettings:
 
         if settings_link.count() > 0:
             settings_link.first.click()
-            page.wait_for_load_state("networkidle")
+            expect(page.locator("#settings-content")).to_be_visible(timeout=5000)
 
             # Verify we're on settings page
             assert (
@@ -139,7 +143,7 @@ class TestSettings:
         )
         if settings_link.count() > 0:
             settings_link.first.click()
-            page.wait_for_load_state("networkidle")
+            expect(page.locator("#settings-content")).to_be_visible(timeout=5000)
 
             # Look for password fields
             password_fields = page.locator("input[type='password']")
@@ -150,10 +154,10 @@ class TestSettings:
 class TestGeneration:
     """Test OpenHAB configuration generation."""
 
-    def test_generation_status_visible(self, authenticated_page: Page):
+    def test_generation_status_visible(self, authenticated_page: Page, base_url):
         """Test that generation status is visible on main page."""
         page = authenticated_page
-        page.goto(BASE_URL)
+        page.goto(base_url)
 
         # Look for status indicators or generation buttons
         status_indicators = page.locator("text=/status|generate|processing/i")
@@ -171,7 +175,7 @@ class TestGeneration:
         # At least some preview capability should exist
         if preview_links.count() > 0:
             preview_links.first.click()
-            page.wait_for_load_state("networkidle")
+            expect(page.locator("body")).not_to_be_empty(timeout=5000)
             # Should show some content
             assert len(page.content()) > 1000
 
@@ -187,35 +191,109 @@ class TestResponsiveness:
             {"width": 375, "height": 667},  # Mobile
         ],
     )
-    def test_responsive_layout(self, page: Page, viewport):
+    def test_responsive_layout(self, page: Page, viewport, base_url):
         """Test that UI works on different screen sizes."""
         page.set_viewport_size(viewport)
-        page.goto(BASE_URL)
+        page.goto(base_url)
 
         # Page should load without errors
-        expect(page).to_have_url(lambda url: BASE_URL in url)
+        expect(page).to_have_url(re.compile(re.escape(base_url)))
 
-        # Basic navigation should be visible
-        # (Adjust selectors based on your actual UI)
-        assert page.locator("nav, header, .navbar, #nav").count() > 0
+        # Basic header should be visible
+        assert page.locator(".header-container, h1").count() > 0
 
 
 class TestVersionCheck:
     """Test version check and update functionality."""
 
-    def test_version_badge_visible(self, authenticated_page: Page):
+    def test_version_badge_visible(self, authenticated_page: Page, base_url):
         """Test that version information is displayed."""
         page = authenticated_page
-        page.goto(BASE_URL)
+        page.goto(base_url)
 
         # Look for version badge mentioned in README
-        version_elements = page.locator(
-            "text=/version|v\d+\.\d+/i, [class*='version'], [id*='version']"
-        )
+        version_elements = page.locator("#versionBadge, [class*='version'], [id*='version']")
 
         # Version should be displayed somewhere
-        if version_elements.count() > 0:
-            assert version_elements.first.is_visible()
+        assert version_elements.count() > 0
+        assert version_elements.first.is_visible()
+
+
+class TestReports:
+    """Test report summary rendering."""
+
+    def test_expert_report_view(self, authenticated_page: Page, base_url):
+        """Expert panel renders report actions and view dialog."""
+        page = authenticated_page
+        page.goto(base_url)
+        expect(page.locator("#expertPanel")).to_have_count(1)
+
+        report_payload = {
+            "summary": {
+                "missing_required": 1,
+                "recommended_missing": 2,
+                "total_things_checked": 42,
+            },
+            "missing_required": [
+                {
+                    "kind": "Switch",
+                    "reason": "Missing channel",
+                    "line": "Switch testSwitch",
+                }
+            ],
+            "recommended_missing": [
+                {
+                    "kind": "Dimmer",
+                    "reason": "No label",
+                    "line": "Dimmer testDimmer",
+                }
+            ],
+        }
+
+        def handle_preview(route):
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps({"content": json.dumps(report_payload)}),
+            )
+
+        page.route(re.compile(r".*/api/file/preview.*"), handle_preview)
+
+        stats = {
+            "completeness_report.json": {
+                "staged_path": "openhab/completeness_report.json",
+            },
+            "unknown_report.json": {
+                "staged_path": "openhab/unknown_report.json",
+            },
+        }
+
+        page.wait_for_function(
+            "window.updateStatisticsDisplay !== undefined && window.showReportDialog !== undefined"
+        )
+        page.evaluate(
+            """
+            (stats) => {
+                const toggle = document.getElementById('expertToggle')
+                if (toggle) {
+                    toggle.checked = true
+                    localStorage.setItem('showExpertCompleteness', 'true')
+                }
+                if (window.applyExpertToggle) window.applyExpertToggle()
+                if (window.updateStatisticsDisplay) window.updateStatisticsDisplay(stats)
+            }
+            """,
+            stats,
+        )
+
+        panel = page.locator("#expertPanel")
+        expect(panel).to_contain_text("Expert Reports")
+        expect(panel).to_contain_text("completeness_report.json")
+
+        page.evaluate("window.showReportDialog('completeness_report.json')")
+        expect(page.locator("#summaryDialog[open] #summaryDialogContent")).to_contain_text(
+            "Missing required"
+        )
 
 
 if __name__ == "__main__":

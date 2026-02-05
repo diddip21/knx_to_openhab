@@ -78,7 +78,16 @@
 
     <!-- Stats Section -->
     <section id="stats-section" class="card" style="display:none;">
-      <h2>📈 Generated Files Statistics</h2>
+      <div class="section-header">
+        <h2>📈 Generated Files Statistics</h2>
+        <label class="expert-toggle" title="Show completeness summary">
+          <input type="checkbox" id="expertToggle">
+          Expert
+          <span class="expert-help">Completeness summary</span>
+        </label>
+      </div>
+      <p class="muted">Tip: Reports like <code>unknown_report.json</code> and <code>partial_report.json</code> can be previewed, downloaded, or copied from the table.</p>
+      <div id="expertPanel" class="expert-panel" style="display:none;"></div>
       <div id="stats"></div>
     </section>
 
@@ -100,10 +109,7 @@
         <div id="config-forms" class="config-forms">
           <!-- General Tab -->
           <div id="tab-general" class="tab-content active">
-            <div class="form-group">
-              <label>ETS Export Path</label>
-              <input type="text" id="conf-ets-export" class="form-control">
-            </div>
+            <!-- ETS Export Path removed -->
             <div class="form-group">
               <label>Items Path</label>
               <input type="text" id="conf-items-path" class="form-control">
@@ -126,13 +132,35 @@
             </div>
 
             <fieldset>
-              <legend>Naming Conventions</legend>
+              <legend>Naming & Heuristics</legend>
               <div class="checkbox-group">
-                <label><input type="checkbox" id="conf-floor-asis"> Floor Name As Is</label>
-                <label><input type="checkbox" id="conf-floor-desc"> Floor Name From Description</label>
-                <label><input type="checkbox" id="conf-room-asis"> Room Name As Is</label>
-                <label><input type="checkbox" id="conf-room-desc"> Room Name From Description</label>
-                <label><input type="checkbox" id="conf-add-missing"> Add Missing Items</label>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-floor-asis"> Floor Name As Is</label>
+                  <div class="checkbox-help">Use the floor name exactly as defined in ETS.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-floor-desc"> Floor Name From Description</label>
+                  <div class="checkbox-help">Use the ETS description field as the floor name.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-room-asis"> Room Name As Is</label>
+                  <div class="checkbox-help">Use the room name exactly as defined in ETS.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-room-desc"> Room Name From Description</label>
+                  <div class="checkbox-help">Use the ETS description field as the room name.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-add-missing"> Add Missing Items</label>
+                  <div class="checkbox-help">Create OpenHAB items for GAs that have no explicit mapping.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-auto-place"> Auto-place unknown addresses</label>
+                  <div class="checkbox-help">Create missing floors/rooms for unknown addresses to reduce “Unknown” reports.</div>
+                </div>
+              </div>
+              <div class="info-box">
+                Naming heuristics control how floors/rooms are inferred from ETS. Combine options as needed for your project structure.
               </div>
             </fieldset>
             <div class="form-group">
@@ -282,6 +310,18 @@
     <button onclick="doRollback()">Rollback</button>
     <button onclick="document.getElementById('rollbackDialog').close()">Cancel</button>
     <div id="rollbackStatus"></div>
+  </dialog>
+
+  <!-- Completeness Summary Dialog -->
+  <dialog id="summaryDialog" class="preview-dialog">
+    <div class="preview-header">
+      <h2>Completeness Summary</h2>
+      <button class="close-btn" onclick="document.getElementById('summaryDialog').close()">✕</button>
+    </div>
+    <div id="summaryDialogContent" class="preview-content"></div>
+    <div class="preview-footer">
+      <button onclick="document.getElementById('summaryDialog').close()">Close</button>
+    </div>
   </dialog>
 
   <!-- File Preview Dialog -->

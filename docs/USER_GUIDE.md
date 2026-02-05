@@ -34,6 +34,34 @@ python knxproject_to_openhab.py --file_path "project.knxproj" --knxPW "password"
 
 The CLI uses the same `config.json` and generates the same output as the Web UI.
 
+## Web UI vs CLI
+
+- **Web UI**: Best for interactive uploads, quick config edits, and report review (unknown/partial/completeness).
+- **CLI**: Best for automation or headless environments.
+
+The Web UI exposes **reports** in the *Expert* panel (View / Download / Copy):
+- `unknown_report.json` (generated even when `addMissingItems` is disabled)
+- `partial_report.json`
+- `completeness_report.json` (checks for missing required channels and recommended feedback)
+
+**Expert Reports panel:** enable **Expert** in the *Generated Files Statistics* section to see the reports list and open the full, human‑readable recommendations via **View**.
+
+**Completeness rules (summary):**
+- **Required:** dimmer → `position`; rollershutter → `upDown`; switch/number/string/datetime → `ga`
+- **Recommended:**
+  - dimmer → one of `switch` or `increaseDecrease`
+  - rollershutter → one of `stopMove` or `position`
+  - switch/number → status feedback (`ga` with `+<` status binding)
+  - number with HVAC DPT 20.102 → status feedback if missing
+
+## First-Run (Recommended Flow)
+
+1. **Upload** your `.knxproj` (or JSON dump)
+2. **Preview Structure** to verify floors/rooms
+3. **Process** and check **Generated Files** + **Reports**
+4. **Fix ETS naming** or **enable Auto‑Place** if you want quick placement
+5. **Deploy** when you’re happy with the output
+
 ## Configuration (`config.json`)
 
 The `config.json` file controls global settings for the generator.
@@ -47,6 +75,10 @@ The `config.json` file controls global settings for the generator.
 - **`openhab_path`**: The output directory for generated files.
   - Default is `openhab`.
   - If running on the OpenHAB server, this might point to `/etc/openhab`.
+
+- **`general.auto_place_unknown`**: Automatically creates missing floors/rooms for unknown group addresses.
+  - `false` (default): Unknowns remain in the report so you can fix naming/structure in ETS.
+  - `true`: Unknowns get auto-placed into newly created floor/room nodes.
 
 - **`dimmer`**: Configuration for dimmer detection.
   - `absolut_suffix`: Suffixes in the GA name identifying the absolute dimming value (e.g., "Dimmen absolut", "Helligkeitswert").
@@ -161,7 +193,19 @@ Some complex items require specific naming conventions to be detected correctly,
 
 ---
 
+## UI Reports & Auto-Placement
+
+The Web UI shows **reports** for unknown, partial, and completeness checks so you can quickly fix ETS naming or structure. If you prefer automatic placement, enable it in **Settings → Auto-place unknown addresses** (or set `general.auto_place_unknown = true` in `config.json`).
+
+---
+
 ## Troubleshooting
+
+### "Login/401 in Web UI"
+
+- The Web UI uses **Basic Auth** by default.
+- Default credentials: **admin / logihome** (change in Settings).
+- If you disabled auth in `web_ui/backend/config.json`, restart the UI service.
 
 ### "My device shows as a generic Number"
 

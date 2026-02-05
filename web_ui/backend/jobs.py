@@ -1,17 +1,21 @@
-import os
-import sys
-import json
-import uuid
-import tarfile
-import shutil
-import threading
-import queue
-import subprocess
-import traceback
 import io
+import json
 import logging
+import os
+import queue
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import threading
+import traceback
+import uuid
 from concurrent.futures import ThreadPoolExecutor
-from .storage import save_job, load_jobs, save_jobs, ensure_dirs
+
+from completeness import check_completeness, iter_thing_lines
+
+from .storage import ensure_dirs, load_jobs, save_job, save_jobs
 
 logger = logging.getLogger(__name__)
 
@@ -68,13 +72,18 @@ class JobManager:
 
     def list_jobs(self):
         self._reload_jobs()
-        return list(self._jobs.values())
+        jobs = list(self._jobs.values())
+        for j in jobs:
+            j["auto_place_unknown"] = self.cfg.get("general", {}).get("auto_place_unknown", False)
+        return jobs
 
     def get_job(self, job_id):
         job = self._jobs.get(job_id)
         if not job:
             self._reload_jobs()
             job = self._jobs.get(job_id)
+        if job is not None:
+            job["auto_place_unknown"] = self.cfg.get("general", {}).get("auto_place_unknown", False)
         return job
 
     def get_queue(self, job_id):
@@ -140,9 +149,7 @@ class JobManager:
             if os.path.exists(openhab_path):
                 with tarfile.open(backup_path, "w:gz") as tar:
                     tar.add(openhab_path, arcname=os.path.basename(openhab_path))
-                job["backups"].append(
-                    {"name": backup_name, "path": backup_path, "ts": ts}
-                )
+                job["backups"].append({"name": backup_name, "path": backup_path, "ts": ts})
                 save_jobs(self.jobs_dir, self._jobs)
                 self._log_to_queue(
                     job_id,
@@ -193,8 +200,8 @@ class JobManager:
                     "message": "start in-process generation",
                 },
             )
-            import importlib
             import copy
+            import importlib
 
             knxmod = importlib.import_module("knxproject_to_openhab")
             etsmod = importlib.import_module("ets_to_openhab")
@@ -214,6 +221,7 @@ class JobManager:
 
             # Create a copy of the config dict to modify
             staged_config = copy.copy(global_config_module.config)
+            staged_config["openhab_path"] = os.path.join(staging_dir, "openhab")
 
             # Define output keys to override
             output_keys = [
@@ -297,9 +305,7 @@ class JobManager:
                     )
                     sys.stdout = captured_output
                     pwd = job.get("password")
-                    knxproj = XKNXProj(
-                        path=job["input"], password=pwd, language="de-DE"
-                    )
+                    knxproj = XKNXProj(path=job["input"], password=pwd, language="de-DE")
                     project = knxproj.parse()
                     sys.stdout = old_stdout
                     self._log_to_queue(
@@ -352,6 +358,44 @@ class JobManager:
 
                 # ets_to_openhab.main() writes output files to STAGING via injected config
                 etsmod.main(configuration=staged_config)
+
+                # Generate completeness report from staged knx.things
+                try:
+                    report_path = self._write_completeness_report(
+                        staged_config.get("things_path"),
+                        staged_config.get("openhab_path", ""),
+                    )
+                    if report_path:
+                        self._log_to_queue(
+                            job_id,
+                            q,
+                            {
+                                "type": "info",
+                                "level": "info",
+                                "message": f"completeness report written: {report_path}",
+                            },
+                        )
+                except Exception as report_err:
+                    self._log_to_queue(
+                        job_id,
+                        q,
+                        {
+                            "type": "error",
+                            "level": "warning",
+                            "message": f"completeness report failed: {report_err}",
+                        },
+                    )
+
+                # Add reports to stage mapping if present
+                for report in [
+                    "unknown_report.json",
+                    "partial_report.json",
+                    "completeness_report.json",
+                ]:
+                    staged_report = os.path.join(staged_config.get("openhab_path", ""), report)
+                    if staged_report and os.path.exists(staged_report):
+                        real_report = os.path.join(openhab_path, report)
+                        stage_mapping[staged_report] = real_report
 
             finally:
                 sys.stdout = old_stdout
@@ -429,16 +473,72 @@ class JobManager:
             job["status"] = "failed"
             err_msg = str(e)
             tb = traceback.format_exc()
-            self._log_to_queue(
-                job_id, q, {"type": "error", "level": "error", "message": err_msg}
-            )
+            self._log_to_queue(job_id, q, {"type": "error", "level": "error", "message": err_msg})
             # TB might be long, but we need it for debugging
-            self._log_to_queue(
-                job_id, q, {"type": "error", "level": "error", "message": tb}
-            )
+            self._log_to_queue(job_id, q, {"type": "error", "level": "error", "message": tb})
         finally:
             save_jobs(self.jobs_dir, self._jobs)
             q.put(None)
+
+    def _extract_thing_info(self, line):
+        match = re.search(
+            r'^Type\s+(?P<kind>\w+)\s*:\s*(?P<id>\S+)\s+"(?P<label>[^"]*)"',
+            line,
+        )
+        if not match:
+            return None
+        return {
+            "kind": match.group("kind"),
+            "id": match.group("id"),
+            "label": match.group("label"),
+        }
+
+    def _write_completeness_report(self, things_path, openhab_path):
+        if not things_path or not os.path.exists(things_path):
+            return None
+
+        with open(things_path, "r", encoding="utf-8", errors="ignore") as f:
+            things_text = f.read()
+
+        missing_required_tuples, recommended_missing_tuples = check_completeness(things_text)
+
+        def _map_entries(entries):
+            mapped = []
+            for kind, reason, line in entries:
+                info = self._extract_thing_info(line)
+                if not info:
+                    continue
+                mapped.append(
+                    {
+                        **info,
+                        "reason": reason,
+                        "line": line,
+                    }
+                )
+            return mapped
+
+        missing_required = _map_entries(missing_required_tuples)
+        recommended_missing = _map_entries(recommended_missing_tuples)
+
+        total_things_checked = sum(1 for _ in iter_thing_lines(things_text))
+
+        report = {
+            "summary": {
+                "missing_required": len(missing_required),
+                "recommended_missing": len(recommended_missing),
+                "total_things_checked": total_things_checked,
+            },
+            "missing_required": missing_required,
+            "recommended_missing": recommended_missing,
+        }
+
+        if not openhab_path:
+            openhab_path = os.path.dirname(things_path)
+        report_path = os.path.join(openhab_path, "completeness_report.json")
+        with open(report_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+
+        return report_path
 
     def _compute_detailed_stats(self, openhab_path, backup_path):
         """Compute detailed diff stats (added, removed) by comparing current files with backup."""
@@ -460,6 +560,7 @@ class JobManager:
             ".db",
             ".cfg",
             ".properties",
+            ".json",
         }
 
         # Get list of current files
@@ -482,14 +583,10 @@ class JobManager:
                     ):
                         fpath = os.path.join(root, fname)
                         try:
-                            with open(
-                                fpath, "r", encoding="utf8", errors="ignore"
-                            ) as f:
+                            with open(fpath, "r", encoding="utf8", errors="ignore") as f:
                                 lines = f.readlines()
                                 # Store with relative path for proper comparison
-                                rel_path = os.path.relpath(fpath, openhab_path).replace(
-                                    "\\", "/"
-                                )
+                                rel_path = os.path.relpath(fpath, openhab_path).replace("\\", "/")
                                 current_files[rel_path] = lines
                         except Exception as e:
                             logger.warning(f"Could not read current file {fpath}: {e}")
@@ -572,9 +669,7 @@ class JobManager:
                 full_path = os.path.join(openhab_path, expected_file)
                 if os.path.exists(full_path):
                     try:
-                        with open(
-                            full_path, "r", encoding="utf-8", errors="ignore"
-                        ) as f:
+                        with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
                             lines = len(f.readlines())
                         stats[expected_file] = {
                             "before": 0,  # No backup existed before
@@ -612,9 +707,7 @@ class JobManager:
             orig_lines = []
             if os.path.exists(abs_real_path):
                 try:
-                    with open(
-                        abs_real_path, "r", encoding="utf-8", errors="ignore"
-                    ) as f:
+                    with open(abs_real_path, "r", encoding="utf-8", errors="ignore") as f:
                         orig_lines = f.readlines()
                 except Exception as e:
                     logger.warning(f"Could not read live file {abs_real_path}: {e}")
@@ -635,9 +728,7 @@ class JobManager:
             # Relative path for display (key in stats dict)
             # Ensure it's relative to openhab_path to avoid double-prefix bugs in the UI
             if abs_real_path.startswith(abs_openhab):
-                rel_display = os.path.relpath(abs_real_path, abs_openhab).replace(
-                    "\\", "/"
-                )
+                rel_display = os.path.relpath(abs_real_path, abs_openhab).replace("\\", "/")
             else:
                 # Fallback to basename or relative to project root
                 rel_display = (
@@ -707,6 +798,7 @@ class JobManager:
             ".db",
             ".cfg",
             ".properties",
+            ".json",
         }
 
         # Check file extension
@@ -783,9 +875,7 @@ class JobManager:
             if os.path.isabs(config_path):
                 full_path = config_path
             else:
-                full_path = os.path.join(
-                    self.cfg.get("openhab_path", "openhab"), config_path
-                )
+                full_path = os.path.join(self.cfg.get("openhab_path", "openhab"), config_path)
                 # If the config path already includes the openhab directory, use it as is
                 if not os.path.exists(full_path):
                     full_path = config_path
@@ -831,9 +921,7 @@ class JobManager:
                         ):
                             full_path = os.path.join(root, file)
                             try:
-                                with open(
-                                    full_path, "r", encoding="utf-8", errors="ignore"
-                                ) as f:
+                                with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
                                     lines = len(f.readlines())
                                 # Create relative path for display
                                 rel_path = os.path.relpath(full_path, openhab_path)
@@ -878,9 +966,7 @@ class JobManager:
             staged_path = job["stats"][rel_path].get("staged_path")
 
         # Fallback: construct from staging_dir
-        if (
-            not staged_path or not os.path.exists(staged_path)
-        ) and "staging_dir" in job:
+        if (not staged_path or not os.path.exists(staged_path)) and "staging_dir" in job:
             staged_path = os.path.join(job["staging_dir"], "openhab", rel_path)
 
         if staged_path and os.path.isfile(staged_path):
@@ -998,9 +1084,7 @@ class JobManager:
             if os.path.exists(openhab_path):
                 with tarfile.open(backup_path, "w:gz") as tar:
                     tar.add(openhab_path, arcname=os.path.basename(openhab_path))
-                job["backups"].append(
-                    {"name": backup_name, "path": backup_path, "ts": ts}
-                )
+                job["backups"].append({"name": backup_name, "path": backup_path, "ts": ts})
                 save_jobs(self.jobs_dir, self._jobs)
         except Exception as e:
             logger.error(f"Failed to create pre-deploy backup: {e}")
@@ -1047,9 +1131,7 @@ class JobManager:
                 continue
             fp = os.path.join(self.backups_dir, fn)
             st = os.stat(fp)
-            backups.append(
-                {"name": fn, "path": fp, "mtime": st.st_mtime, "size": st.st_size}
-            )
+            backups.append({"name": fn, "path": fp, "mtime": st.st_mtime, "size": st.st_size})
         # by age
         cutoff = now - days * 86400
         for b in backups:

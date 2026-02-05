@@ -6,15 +6,16 @@ This module tests the helper functions in ets_helpers.py that handle:
 - Address filtering based on flags and DPT types
 """
 
-import pytest
-import sys
 import os
+import sys
 from pathlib import Path
+
+import pytest
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from ets_helpers import get_co_flags, flags_match, get_dpt_from_dco
+from ets_helpers import flags_match, get_co_flags, get_dpt_from_dco
 
 
 class TestGetCoFlags:
@@ -22,9 +23,7 @@ class TestGetCoFlags:
 
     def test_get_co_flags_all_present(self):
         """Test extracting all flag types when all are present."""
-        co = {
-            "flags": {"read": True, "write": False, "transmit": True, "update": False}
-        }
+        co = {"flags": {"read": True, "write": False, "transmit": True, "update": False}}
 
         flags = get_co_flags(co)
         assert flags is not None
@@ -66,9 +65,7 @@ class TestGetCoFlags:
 
     def test_get_co_flags_all_false(self):
         """Test handling of all flags set to False."""
-        co = {
-            "flags": {"read": False, "write": False, "transmit": False, "update": False}
-        }
+        co = {"flags": {"read": False, "write": False, "transmit": False, "update": False}}
 
         flags = get_co_flags(co)
         assert flags["read"] is False
@@ -408,6 +405,4 @@ class TestIntegrationScenarios:
         assert status_flags is not None
         assert status_dpt == "5.001"  # Dimmer position
         assert flags_match(status_flags, {"read": True}) is True  # Should be readable
-        assert (
-            flags_match(status_flags, {"write": True}) is False
-        )  # Should not be writable
+        assert flags_match(status_flags, {"write": True}) is False  # Should not be writable

@@ -1,21 +1,22 @@
-import pytest
-import shutil
-import os
 import json
 import logging
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-import tempfile
+import os
+import shutil
 
 # Import the module to be tested
 # We need to add the parent directory to sys.path if not running as package
 import sys
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import knxproject_to_openhab
-import ets_to_openhab
 import config
+import ets_to_openhab
+import knxproject_to_openhab
 
 # Configure logging to capture output
 logging.basicConfig(level=logging.INFO)
@@ -53,9 +54,7 @@ def mock_config(tmp_path):
     config.config["items_path"] = str(tmp_path / "openhab/items/knx.items")
     config.config["things_path"] = str(tmp_path / "openhab/things/knx.things")
     config.config["sitemaps_path"] = str(tmp_path / "openhab/sitemaps/knx.sitemap")
-    config.config["influx_path"] = str(
-        tmp_path / "openhab/persistence/influxdb.persist"
-    )
+    config.config["influx_path"] = str(tmp_path / "openhab/persistence/influxdb.persist")
     config.config["fenster_path"] = str(tmp_path / "openhab/rules/fenster.rules")
 
     yield config.config
@@ -80,10 +79,10 @@ def test_full_generation(project_file, mock_config, caplog, tmp_path):
     test_args.readDump = project_file.suffix == ".json"
 
     # Patch argparse to return our args
-    with patch("argparse.ArgumentParser.parse_args", return_value=test_args), patch(
-        "sys.argv", ["knxproject_to_openhab.py"]
-    ), patch(
-        "tkinter.Tk", MagicMock()
+    with (
+        patch("argparse.ArgumentParser.parse_args", return_value=test_args),
+        patch("sys.argv", ["knxproject_to_openhab.py"]),
+        patch("tkinter.Tk", MagicMock()),
     ):  # Mock GUI just in case
 
         # We need to capture the `house` object to pass to validation
@@ -101,10 +100,7 @@ def test_full_generation(project_file, mock_config, caplog, tmp_path):
             if e.code != 0:
                 pytest.fail(f"Script exited with code {e.code}")
         except Exception as e:
-            if (
-                "Password required" in str(e)
-                or "InvalidPasswordException" in type(e).__name__
-            ):
+            if "Password required" in str(e) or "InvalidPasswordException" in type(e).__name__:
                 pytest.skip(f"Skipping password protected project: {e}")
             pytest.fail(f"Execution failed with exception: {e}")
 
@@ -125,9 +121,7 @@ def test_full_generation(project_file, mock_config, caplog, tmp_path):
     # 2. File Existence Validation
     assert os.path.exists(config.config["items_path"]), "Items file was not created"
     assert os.path.exists(config.config["things_path"]), "Things file was not created"
-    assert os.path.exists(
-        config.config["sitemaps_path"]
-    ), "Sitemap file was not created"
+    assert os.path.exists(config.config["sitemaps_path"]), "Sitemap file was not created"
 
     assert os.path.getsize(config.config["items_path"]) > 0, "Items file is empty"
 
@@ -162,9 +156,11 @@ def test_full_generation_with_invalid_file(mock_config, tmp_path, caplog):
     test_args.readDump = False
 
     # Patch argparse to return our args
-    with patch("argparse.ArgumentParser.parse_args", return_value=test_args), patch(
-        "sys.argv", ["knxproject_to_openhab.py"]
-    ), patch("tkinter.Tk", MagicMock()):
+    with (
+        patch("argparse.ArgumentParser.parse_args", return_value=test_args),
+        patch("sys.argv", ["knxproject_to_openhab.py"]),
+        patch("tkinter.Tk", MagicMock()),
+    ):
 
         # Reset globals
         ets_to_openhab.floors = []
@@ -179,9 +175,7 @@ def test_full_generation_with_invalid_file(mock_config, tmp_path, caplog):
         except SystemExit as e:
             # Some scripts exit on failure, which is acceptable
             if e.code != 0:
-                logger.info(
-                    f"Script exited with code {e.code} as expected for invalid file"
-                )
+                logger.info(f"Script exited with code {e.code} as expected for invalid file")
         except Exception as e:
             # Other exceptions should be caught and handled appropriately
             logger.info(f"Caught expected exception for invalid file: {e}")
@@ -199,9 +193,11 @@ def test_full_generation_with_nonexistent_file(mock_config, tmp_path, caplog):
     test_args.readDump = False
 
     # Patch argparse to return our args
-    with patch("argparse.ArgumentParser.parse_args", return_value=test_args), patch(
-        "sys.argv", ["knxproject_to_openhab.py"]
-    ), patch("tkinter.Tk", MagicMock()):
+    with (
+        patch("argparse.ArgumentParser.parse_args", return_value=test_args),
+        patch("sys.argv", ["knxproject_to_openhab.py"]),
+        patch("tkinter.Tk", MagicMock()),
+    ):
 
         # Reset globals
         ets_to_openhab.floors = []
@@ -213,9 +209,7 @@ def test_full_generation_with_nonexistent_file(mock_config, tmp_path, caplog):
         except SystemExit as e:
             # Some scripts exit on failure, which is acceptable
             if e.code != 0:
-                logger.info(
-                    f"Script exited with code {e.code} as expected for nonexistent file"
-                )
+                logger.info(f"Script exited with code {e.code} as expected for nonexistent file")
         except Exception as e:
             # Other exceptions should be caught and handled appropriately
             logger.info(f"Caught expected exception for nonexistent file: {e}")
@@ -243,10 +237,11 @@ def test_full_generation_with_permission_error(mock_config, tmp_path):
     test_args.readDump = False
 
     # Patch argparse and file reading to simulate a successful parse but fail on write
-    with patch("argparse.ArgumentParser.parse_args", return_value=test_args), patch(
-        "sys.argv", ["knxproject_to_openhab.py"]
-    ), patch("tkinter.Tk", MagicMock()), patch(
-        "builtins.open", side_effect=PermissionError("Permission denied")
+    with (
+        patch("argparse.ArgumentParser.parse_args", return_value=test_args),
+        patch("sys.argv", ["knxproject_to_openhab.py"]),
+        patch("tkinter.Tk", MagicMock()),
+        patch("builtins.open", side_effect=PermissionError("Permission denied")),
     ):
 
         # Reset globals
@@ -267,9 +262,7 @@ def test_full_generation_with_permission_error(mock_config, tmp_path):
 @pytest.mark.parametrize(
     "project_file", PROJECT_FILES[:1]
 )  # Only test with first file to avoid excessive runs
-def test_full_generation_with_mocked_dependencies(
-    project_file, mock_config, tmp_path, caplog
-):
+def test_full_generation_with_mocked_dependencies(project_file, mock_config, tmp_path, caplog):
     """Test full generation with mocked dependencies to isolate the core functionality."""
     # Setup arguments
     test_args = MagicMock()
@@ -278,11 +271,12 @@ def test_full_generation_with_mocked_dependencies(
     test_args.readDump = project_file.suffix == ".json"
 
     # Mock the core functions to isolate the generation process
-    with patch("argparse.ArgumentParser.parse_args", return_value=test_args), patch(
-        "sys.argv", ["knxproject_to_openhab.py"]
-    ), patch("tkinter.Tk", MagicMock()), patch.object(
-        ets_to_openhab, "export_output"
-    ) as mock_export:
+    with (
+        patch("argparse.ArgumentParser.parse_args", return_value=test_args),
+        patch("sys.argv", ["knxproject_to_openhab.py"]),
+        patch("tkinter.Tk", MagicMock()),
+        patch.object(ets_to_openhab, "export_output") as mock_export,
+    ):
 
         # Reset globals
         ets_to_openhab.floors = []
@@ -294,17 +288,12 @@ def test_full_generation_with_mocked_dependencies(
             if e.code != 0:
                 pytest.fail(f"Script exited with code {e.code}")
         except Exception as e:
-            if (
-                "Password required" in str(e)
-                or "InvalidPasswordException" in type(e).__name__
-            ):
+            if "Password required" in str(e) or "InvalidPasswordException" in type(e).__name__:
                 pytest.skip(f"Skipping password protected project: {e}")
             pytest.fail(f"Execution failed with exception: {e}")
 
         # Verify that export_output was called (indicating successful generation)
-        assert (
-            mock_export.called
-        ), "export_output should have been called during generation"
+        assert mock_export.called, "export_output should have been called during generation"
 
         # Validate the log for any errors
         errors = [r for r in caplog.records if r.levelname in ("ERROR", "CRITICAL")]
@@ -316,9 +305,7 @@ def test_full_generation_with_mocked_dependencies(
 @pytest.mark.parametrize(
     "project_file", PROJECT_FILES[:1]
 )  # Only test with first file to avoid excessive runs
-def test_full_generation_output_content_validation(
-    project_file, mock_config, tmp_path, caplog
-):
+def test_full_generation_output_content_validation(project_file, mock_config, tmp_path, caplog):
     """Test that the generated files have expected content structure."""
     # Setup arguments
     test_args = MagicMock()
@@ -327,9 +314,11 @@ def test_full_generation_output_content_validation(
     test_args.readDump = project_file.suffix == ".json"
 
     # Patch argparse to return our args
-    with patch("argparse.ArgumentParser.parse_args", return_value=test_args), patch(
-        "sys.argv", ["knxproject_to_openhab.py"]
-    ), patch("tkinter.Tk", MagicMock()):
+    with (
+        patch("argparse.ArgumentParser.parse_args", return_value=test_args),
+        patch("sys.argv", ["knxproject_to_openhab.py"]),
+        patch("tkinter.Tk", MagicMock()),
+    ):
 
         # Reset globals
         ets_to_openhab.floors = []
@@ -341,10 +330,7 @@ def test_full_generation_output_content_validation(
             if e.code != 0:
                 pytest.fail(f"Script exited with code {e.code}")
         except Exception as e:
-            if (
-                "Password required" in str(e)
-                or "InvalidPasswordException" in type(e).__name__
-            ):
+            if "Password required" in str(e) or "InvalidPasswordException" in type(e).__name__:
                 pytest.skip(f"Skipping password protected project: {e}")
             pytest.fail(f"Execution failed with exception: {e}")
 
@@ -371,9 +357,7 @@ def test_full_generation_output_content_validation(
         assert len(items_content) > 0, "Items file should not be empty"
         # Check for common OpenHAB items patterns
         assert (
-            "Group" in items_content
-            or "Switch" in items_content
-            or "Dimmer" in items_content
+            "Group" in items_content or "Switch" in items_content or "Dimmer" in items_content
         ), "Items file should contain OpenHAB item types"
 
         # Validate things file structure
@@ -408,9 +392,11 @@ def test_full_generation_error_handling_edge_cases(mock_config, tmp_path, caplog
     test_args.knxPW = None
     test_args.readDump = False
 
-    with patch("argparse.ArgumentParser.parse_args", return_value=test_args), patch(
-        "sys.argv", ["knxproject_to_openhab.py"]
-    ), patch("tkinter.Tk", MagicMock()):
+    with (
+        patch("argparse.ArgumentParser.parse_args", return_value=test_args),
+        patch("sys.argv", ["knxproject_to_openhab.py"]),
+        patch("tkinter.Tk", MagicMock()),
+    ):
 
         ets_to_openhab.floors = []
         ets_to_openhab.all_addresses = []
@@ -428,9 +414,7 @@ def test_full_generation_error_handling_edge_cases(mock_config, tmp_path, caplog
 @pytest.mark.parametrize(
     "project_file", PROJECT_FILES[:1]
 )  # Only test with first file to avoid excessive runs
-def test_full_generation_with_exception_in_processing(
-    project_file, mock_config, tmp_path
-):
+def test_full_generation_with_exception_in_processing(project_file, mock_config, tmp_path):
     """Test how the system handles exceptions during the processing phase."""
     # Setup arguments
     test_args = MagicMock()
@@ -439,10 +423,11 @@ def test_full_generation_with_exception_in_processing(
     test_args.readDump = project_file.suffix == ".json"
 
     # Mock a function that might throw an exception during processing
-    with patch("argparse.ArgumentParser.parse_args", return_value=test_args), patch(
-        "sys.argv", ["knxproject_to_openhab.py"]
-    ), patch("tkinter.Tk", MagicMock()), patch(
-        "ets_to_openhab.gen_building", side_effect=RuntimeError("Processing failed")
+    with (
+        patch("argparse.ArgumentParser.parse_args", return_value=test_args),
+        patch("sys.argv", ["knxproject_to_openhab.py"]),
+        patch("tkinter.Tk", MagicMock()),
+        patch("ets_to_openhab.gen_building", side_effect=RuntimeError("Processing failed")),
     ):
 
         # Reset globals

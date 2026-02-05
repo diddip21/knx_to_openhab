@@ -1,0 +1,15 @@
+sitemap knx label="MiCasa"
+{
+    Frame label="=EG" {
+     Group item=map1_1  label=""  {
+        Default item=i_EG_RM1_DimmenDimmWert label="RM1 Dimmen" 
+        Default item=i_EG_RM1_JalousieJalousieAufAb label="RM1 Jalousie" 
+        Default item=i_EG_RM1_HeizenBetriebsartvorwahl label="RM1 Heizen" 
+
+    }
+}
+Frame label="unknown" {
+     Group item=map2_1  label="unknown" 
+}
+
+}

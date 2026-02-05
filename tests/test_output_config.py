@@ -8,14 +8,15 @@ This module tests the config.py module's ability to:
 - Handle various error conditions gracefully
 """
 
-import pytest
-from unittest.mock import patch, MagicMock, mock_open
-import sys
-import os
 import json
-import tempfile
 import logging
+import os
+import sys
+import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, mock_open, patch
+
+import pytest
 
 logger = logging.getLogger(__name__)
 
@@ -65,26 +66,22 @@ class TestOutputConfig:
         mock_run.return_value = mock_proc
 
         # Execute: Import config with mocked subprocess
-        import config
-
         # Verify: Check that paths and user:group were detected correctly
         from pathlib import Path
+
+        import config
 
         expected_items = str(Path("/etc/openhab") / "items" / "knx.items")
         assert config.config["items_path"] == expected_items
         assert config.config["target_user"] == "openhab"
         assert config.config["target_group"] == "openhab"
-        logger.info(
-            f"✓ OpenHAB CLI detection: items_path={config.config['items_path']}"
-        )
+        logger.info(f"✓ OpenHAB CLI detection: items_path={config.config['items_path']}")
 
     @patch("pathlib.Path.exists")
     @patch("builtins.open", new_callable=mock_open)
     @patch("json.load")
     @patch("subprocess.run")
-    def test_fallback_web_ui(
-        self, mock_run, mock_json_load, mock_file, mock_path_exists
-    ):
+    def test_fallback_web_ui(self, mock_run, mock_json_load, mock_file, mock_path_exists):
         """Test fallback to web UI configuration when openhab-cli not available.
 
         When openhab-cli fails (FileNotFoundError), config should:
@@ -105,10 +102,10 @@ class TestOutputConfig:
         mock_path_exists.return_value = True
 
         # Execute: Import config with mocked filesystem
-        import config
-
         # Verify: Check that paths were set from web UI config
         from pathlib import Path
+
+        import config
 
         expected_items = str(Path("/opt/openhab") / "items" / "knx.items")
         assert config.config["items_path"] == expected_items
@@ -163,9 +160,7 @@ class TestOutputConfig:
         # Verify: Check correct user is detected
         assert config.config["target_user"] == "myopenhab"
         assert config.config["target_group"] == "myopenhab"
-        logger.info(
-            f"✓ Non-standard user detection: user={config.config['target_user']}"
-        )
+        logger.info(f"✓ Non-standard user detection: user={config.config['target_user']}")
 
     @patch("shutil.chown")
     @patch("subprocess.run")
@@ -196,9 +191,7 @@ class TestOutputConfig:
 
         # Verify: Check that chown was called with correct parameters
         mock_chown.assert_called_with(test_file, user="testuser", group="testgroup")
-        logger.info(
-            f"✓ Permission setting: called chown({test_file}, testuser:testgroup)"
-        )
+        logger.info(f"✓ Permission setting: called chown({test_file}, testuser:testgroup)")
 
     @patch("subprocess.run")
     def test_openhab_cli_command_called_correctly(self, mock_run):
@@ -232,9 +225,7 @@ class TestOutputConfig:
 
         # Should have fallen back to local paths
         assert "openhab" in config.config["items_path"]
-        logger.info(
-            f"✓ Error handled gracefully: items_path={config.config['items_path']}"
-        )
+        logger.info(f"✓ Error handled gracefully: items_path={config.config['items_path']}")
 
     def test_openhab_cli_exception_handling(self):
         """Test that config handles exceptions from subprocess.run gracefully."""
@@ -267,9 +258,7 @@ class TestOutputConfig:
     @patch("shutil.chown")
     @patch("os.path.exists")
     @patch("subprocess.run")
-    def test_permission_setting_file_not_exists(
-        self, mock_run, mock_exists, mock_chown
-    ):
+    def test_permission_setting_file_not_exists(self, mock_run, mock_exists, mock_chown):
         """Test that permission setting handles non-existent files gracefully."""
         # Setup: Mock openhab-cli with test user
         mock_proc = MagicMock()

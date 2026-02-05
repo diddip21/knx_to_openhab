@@ -1,0 +1,26 @@
+Group           Base                  "House"               <house>                      ["Location"]
+
+// Zentrale Steuerung
+//Group:Rollershutter:AVG        Base_Blinds         "Gesamt Jalousie/Rollo"                      <rollershutter>    (Base)                  ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]}
+//Group:Switch:OR(ON, OFF)       Base_Lights         "Gesamt Beleuchtung"                         <light>            (Base)                  ["Light"]
+//Group:Switch:OR(ON, OFF)       Base_Presence       "Gesamt Präsenz [MAP(presence.map):%s]"      <presence>         (Base)                  ["Presence"]
+//Group:Contact:OR(OPEN, CLOSED) Base_Contacts       "Gesamt Öffnungsmelder"                      <contact>          (Base)                  ["OpenState"]
+//Group:Number:Temperature:AVG   Base_Temperature    "Gesamt Ø Temperatur"                        <temperature>      (Base)                  ["Measurement", "Temperature"]        {stateDescription=""[pattern="%.1f %unit%"]}
+//Group:Switch:AND(ON, OFF)      Base_Panik          "Panik"                               <siren>            (Base)                  ["Alarm"]
+
+// Beschattung Himmelsrichtung
+//Group:Rollershutter            Base_BlindsNorth    "Jalousie/Rollo Nord"                 <rollershutter>    (Base_Blinds)          ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]}
+//Group:Rollershutter            Base_BlindsEast     "Jalousie/Rollo Ost"                  <rollershutter>    (Base_Blinds)          ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]}
+//Group:Rollershutter            Base_BlindsSouth    "Jalousie/Rollo Süd"                  <rollershutter>    (Base_Blinds)          ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]}
+//Group:Rollershutter            Base_BlindsWest     "Jalousie/Rollo West"                 <rollershutter>    (Base_Blinds)          ["Blinds"]         {stateDescription=""[pattern="%.1f %unit%"]}
+
+Group   map1   "=EG"  (Base) ["Location"] 
+Group   map1_1   ""    (map1)   ["Room", ""] 
+Group   equipment_i_EG_RM1_DimmenDimmWert   "RM1 Dimmen"  <light>  (map1_1)   ["Lightbulb"] 
+Dimmer   i_EG_RM1_DimmenDimmWert   "RM1 Dimmen"   <light>   (equipment_i_EG_RM1_DimmenDimmWert)   ["Light"]    { channel="knx:device:bridge:generic:i_EG_RM1_DimmenDimmWert"  }
+Group   equipment_i_EG_RM1_JalousieJalousieAufAb   "RM1 Jalousie"  <rollershutter>  (map1_1)   ["Blinds"] 
+Rollershutter   i_EG_RM1_JalousieJalousieAufAb   "RM1 Jalousie"   <rollershutter>   (equipment_i_EG_RM1_JalousieJalousieAufAb)   ["Blinds"]    { channel="knx:device:bridge:generic:i_EG_RM1_JalousieJalousieAufAb"  }
+Group   equipment_i_EG_RM1_HeizenBetriebsartvorwahl   "RM1 Heizen"  <heating_mode>  (map1_1)   ["HVAC"] 
+Number   i_EG_RM1_HeizenBetriebsartvorwahl   "RM1 Heizen"   <heating_mode>   (equipment_i_EG_RM1_HeizenBetriebsartvorwahl)   ["HVAC"]    { channel="knx:device:bridge:generic:i_EG_RM1_HeizenBetriebsartvorwahl" , stateDescription=""[options="NULL=unbekannt ...,1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], commandDescription=""[options="1=Komfort,2=Standby,3=Nacht,4=Frostschutz"], listWidget=""[iconUseState="true"] }
+Group   map2   "unknown"  (Base) ["Location"] 
+Group   map2_1   "unknown"    (map2)   ["Room", "unknown"] 

@@ -1,6 +1,6 @@
 import json
-import os
 import multiprocessing
+import os
 
 # Locate config.json relative to this file
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

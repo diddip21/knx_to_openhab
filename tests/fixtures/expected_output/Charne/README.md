@@ -1,7 +1,7 @@
 # Golden Files for Charne
 
 Generated from: `Charne.knxproj.json`
-Date: 2025-11-26 10:35:54
+Date: 2026-02-04 15:33:16
 
 ## Files
 - knx.items
@@ -16,5 +16,5 @@ Tests in `test_output_validation.py` compare newly generated files against these
 ## Updating
 To regenerate these golden files after verified changes:
 ```bash
-python scripts/generate_golden_files.py --project tests\Charne.knxproj.json --name Charne --force
+python scripts/generate_golden_files.py --project tests/Charne.knxproj.json --name Charne --force
 ```

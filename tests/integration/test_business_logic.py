@@ -5,19 +5,20 @@ These tests verify that the business logic produces expected warnings
 and log messages, such as "No Room found" for unplaced addresses.
 """
 
-import sys
-import os
-import pytest
 import json
 import logging
+import os
+import sys
 from pathlib import Path
+
+import pytest
 
 # Add project root to sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(PROJECT_ROOT)
 
-import knxproject_to_openhab
 import ets_to_openhab
+import knxproject_to_openhab
 from config import config
 
 # Paths
@@ -70,9 +71,7 @@ class TestBusinessLogic:
         # For Charne project, we expect some addresses without rooms
         # Based on the command output, we saw warnings for addresses like:
         # "=1.OG +RM6 Wanne_sch_rm", "=UG +RM1 LED Treppe Farbtemperatur relativ", etc.
-        assert (
-            len(no_room_warnings) > 0
-        ), "Expected 'No Room found' warnings but none were logged"
+        assert len(no_room_warnings) > 0, "Expected 'No Room found' warnings but none were logged"
 
         # Verify warning format
         for warning in no_room_warnings:
@@ -90,9 +89,7 @@ class TestBusinessLogic:
         # Generate building structure and addresses
         building = knxproject_to_openhab.create_building(project)
         addresses = knxproject_to_openhab.get_addresses(project)
-        house = knxproject_to_openhab.put_addresses_in_building(
-            building, addresses, project
-        )
+        house = knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
 
         # Set module variables for ets_to_openhab
         ets_to_openhab.floors = house[0]["floors"]
@@ -103,9 +100,7 @@ class TestBusinessLogic:
 
         # Check for incomplete dimmer/rollershutter warnings
         incomplete_warnings = [
-            record
-            for record in caplog.records
-            if "incomplete" in record.message.lower()
+            record for record in caplog.records if "incomplete" in record.message.lower()
         ]
 
         # Note: This test may pass with 0 warnings if all dimmers are complete
@@ -123,9 +118,7 @@ class TestBusinessLogic:
         # Generate building structure and addresses
         building = knxproject_to_openhab.create_building(project)
         addresses = knxproject_to_openhab.get_addresses(project)
-        house = knxproject_to_openhab.put_addresses_in_building(
-            building, addresses, project
-        )
+        house = knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
 
         # Set module variables for ets_to_openhab
         ets_to_openhab.floors = house[0]["floors"]
@@ -151,9 +144,7 @@ class TestBusinessLogic:
         # Generate building structure and addresses
         building = knxproject_to_openhab.create_building(project)
         addresses = knxproject_to_openhab.get_addresses(project)
-        house = knxproject_to_openhab.put_addresses_in_building(
-            building, addresses, project
-        )
+        house = knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
 
         # Set module variables for ets_to_openhab
         ets_to_openhab.floors = house[0]["floors"]
@@ -164,9 +155,7 @@ class TestBusinessLogic:
 
         # Check for scene mapping warnings
         scene_logs = [
-            record
-            for record in caplog.records
-            if "no mapping for scene" in record.message.lower()
+            record for record in caplog.records if "no mapping for scene" in record.message.lower()
         ]
 
         # Based on command output: "no mapping for scene 0/4/0 Szene"
@@ -184,9 +173,7 @@ class TestBusinessLogic:
         # Full processing
         building = knxproject_to_openhab.create_building(project)
         addresses = knxproject_to_openhab.get_addresses(project)
-        house = knxproject_to_openhab.put_addresses_in_building(
-            building, addresses, project
-        )
+        house = knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
 
         ets_to_openhab.floors = house[0]["floors"]
         ets_to_openhab.all_addresses = addresses

@@ -9,11 +9,26 @@ const statsEl = document.getElementById('stats')
 const logSectionEl = document.getElementById('log-section')
 const statsSectionEl = document.getElementById('stats-section')
 const detailSectionEl = document.getElementById('detail-section')
+const expertToggleEl = document.getElementById('expertToggle')
+const expertPanelEl = document.getElementById('expertPanel')
 const rollbackDialog = document.getElementById('rollbackDialog')
 const backupSelect = document.getElementById('backupSelect')
 const rollbackStatusEl = document.getElementById('rollbackStatus')
 const logLevelFilterEl = document.getElementById('logLevelFilter')
 const servicesListEl = document.getElementById('servicesList')
+
+function updateExpertToggleVisibility(stats) {
+  if (!expertToggleEl) return
+  const hasCompleteness = !!(
+    stats && typeof stats === 'object' && Object.keys(stats).some((k) => k.endsWith('completeness_report.json'))
+  )
+  expertToggleEl.style.display = hasCompleteness ? '' : 'none'
+  if (!hasCompleteness) {
+    expertToggleEl.checked = false
+    localStorage.setItem(EXPERT_TOGGLE_KEY, 'false')
+    applyExpertToggle()
+  }
+}
 
 let currentJobId = null
 let lastRunningCount = -1
@@ -22,6 +37,65 @@ let allLogEntries = []  // store all entries for filtering
 let eventSource = null  // track active event stream
 let currentStatsData = null  // store current statistics for consistent display
 let statsUpdateInProgress = false  // prevent race conditions
+const EXPERT_TOGGLE_KEY = 'showExpertCompleteness'
+
+function applyExpertToggle() {
+  const enabled = !!(expertToggleEl && expertToggleEl.checked)
+  if (expertPanelEl) {
+    expertPanelEl.style.display = enabled ? 'block' : 'none'
+  }
+  if (!enabled) {
+    if (expertPanelEl) expertPanelEl.innerHTML = ''
+  } else if (currentStatsData) {
+    renderExpertPanel(currentStatsData)
+  }
+}
+
+function renderExpertPanel(stats) {
+  if (!expertPanelEl) return
+  const reportEntries = Object.entries(stats || {}).filter(
+    ([fname]) => fname.endsWith('_report.json') || fname.endsWith('completeness_report.json')
+  )
+  if (reportEntries.length) {
+    const reportButtons = reportEntries
+      .map(([fname]) => {
+        const escaped = fname.replace(/\\/g, '\\\\')
+        return `<div class="expert-report-row">
+              <span class="expert-report-name">${escapeHtml(fname)}</span>
+              <div class="expert-report-actions">
+                <button onclick="showReportDialog('${escaped}')">View</button>
+                <button onclick="downloadReport('${escaped}')">Download</button>
+                <button onclick="copyReport('${escaped}')">Copy</button>
+              </div>
+            </div>`
+      })
+      .join('')
+    expertPanelEl.innerHTML = `
+            <div class="expert-panel-header">Expert Reports</div>
+            ${reportButtons}
+          `
+  } else {
+    expertPanelEl.innerHTML = '<div class="muted">No reports available.</div>'
+  }
+}
+
+if (expertToggleEl) {
+  const stored = localStorage.getItem(EXPERT_TOGGLE_KEY)
+  if (stored !== null) {
+    expertToggleEl.checked = stored === 'true'
+  }
+  expertToggleEl.addEventListener('change', () => {
+    localStorage.setItem(EXPERT_TOGGLE_KEY, expertToggleEl.checked)
+    applyExpertToggle()
+    if (expertToggleEl.checked && currentStatsData) {
+      renderExpertPanel(currentStatsData)
+    }
+  })
+}
+window.renderExpertPanel = renderExpertPanel
+
+
+applyExpertToggle()
 
 async function refreshJobs() {
   const res = await fetch('/api/jobs', { credentials: 'include' })
@@ -37,8 +111,10 @@ async function refreshJobs() {
       <span class="job-date">${new Date(j.created * 1000).toLocaleString()}</span>
       <button onclick="showJobDetail('${j.id}')">Details</button>
       <button onclick="loadStructureFromJob('${j.id}')">Structure</button>
+      ${j.status === 'completed' && j.staged ? `<button onclick="showDiff('${j.id}')">Diff</button>` : ''}
       ${j.status === 'completed' && j.staged && !j.deployed ? `<button style="background-color: #28a745; color: white;" onclick="deployJob('${j.id}')">Deploy</button>` : ''}
       ${j.backups && j.backups.length > 0 ? `<button onclick="showRollbackDialog('${j.id}')">Rollback</button>` : ''}
+      ${j.status === 'completed' ? getReportBadges(j.stats) : ''}
       <button onclick="deleteJob('${j.id}')">Delete</button>
     `
     jobsList.appendChild(li)
@@ -77,6 +153,7 @@ function showJobDetail(jobId) {
       return r.json()
     })
     .then(j => {
+      const reportBadges = getReportBadges(j.stats)
       jobDetailEl.innerHTML = `
         <table class="detail-table">
           <tr><td>ID:</td><td><code>${j.id}</code></td></tr>
@@ -90,6 +167,12 @@ function showJobDetail(jobId) {
 
       // Display file statistics if available
       updateStatisticsDisplay(j.stats)
+      updateExpertToggleVisibility(j.stats)
+      if (expertToggleEl && expertToggleEl.checked) {
+        renderExpertPanel(j.stats)
+      } else if (expertPanelEl) {
+        expertPanelEl.innerHTML = ''
+      }
 
       // Load stored log entries from job.log
       if (j.log && j.log.length > 0) {
@@ -249,6 +332,81 @@ async function restartService(service) {
 
 let currentPreviewData = null  // Store current preview data for view switching
 
+function getReportBadges(stats) {
+  if (!stats || typeof stats !== 'object') return ''
+  const files = Object.keys(stats)
+  if (!files.length) return ''
+
+  const badges = []
+  if (files.includes('unknown_report.json')) {
+    badges.push('<span class="badge info">Unknown report</span>')
+  }
+
+  if (!badges.length) return ''
+  return `<span class="job-meta">${badges.join(' ')}</span>`
+}
+
+async function showDiff(jobId) {
+  currentJobId = jobId
+  try {
+    const res = await fetch(`/api/job/${jobId}/diff`, { credentials: 'include' })
+    if (!res.ok) throw new Error(`Diff API error ${res.status}`)
+    const diffs = await res.json()
+
+    // Build a simple modal with per-file diff blocks
+    const dialog = document.getElementById('filePreviewDialog')
+    const content = document.getElementById('previewContent')
+    const diffContent = document.getElementById('diffContent')
+    const title = document.getElementById('previewFileName')
+    const finalBtn = document.getElementById('viewModeFinal')
+    const diffBtn = document.getElementById('viewModeDiff')
+    const legend = document.getElementById('diffLegend')
+
+    // Reset
+    finalBtn.classList.remove('active')
+    diffBtn.classList.add('active')
+    legend.style.display = 'flex'
+    content.style.display = 'none'
+    diffContent.style.display = 'block'
+    title.textContent = `Diff für Job ${jobId}`
+
+    let html = ''
+    const fileNames = Object.keys(diffs)
+    if (!fileNames.length) {
+      html = '<div class="muted">Keine Diffs vorhanden.</div>'
+    } else {
+      // Wenn es einen Unknown-Report gibt, anzeigen
+      if (diffs["unknown_report.json"]) {
+        html += '<h4>unknown_report.json</h4>'
+        html += renderBackendDiff(diffs["unknown_report.json"])
+        delete diffs["unknown_report.json"]
+      }
+      for (const fn of Object.keys(diffs)) {
+        html += `<h4>${fn}</h4>`
+        html += renderBackendDiff(diffs[fn])
+      }
+    }
+    diffContent.innerHTML = html
+    dialog.showModal()
+  } catch (e) {
+    alert('Diff laden fehlgeschlagen: ' + e.message)
+  }
+}
+
+function resolvePreviewPath(filename) {
+  const normalizedPath = filename.replace(/\\/g, '/')
+
+  if (currentStatsData && currentStatsData[filename] && currentStatsData[filename].real_path) {
+    return currentStatsData[filename].real_path
+  }
+
+  if (!normalizedPath.startsWith('openhab/') && !normalizedPath.startsWith('/') && !normalizedPath.includes(':')) {
+    return 'openhab/' + normalizedPath
+  }
+
+  return normalizedPath
+}
+
 async function previewFile(filename) {
   try {
     // Normalize path separators (backslash to forward slash) for cross-platform compatibility
@@ -276,13 +434,7 @@ async function previewFile(filename) {
     dialog.showModal()
 
     // Resolve the actual path to fetch
-    let path = normalizedPath
-    if (currentStatsData && currentStatsData[filename] && currentStatsData[filename].real_path) {
-      path = currentStatsData[filename].real_path
-    } else if (!path.startsWith('openhab/') && !path.startsWith('/') && !path.includes(':')) {
-      // Fallback for paths that don't look absolute or already prefixed
-      path = 'openhab/' + path
-    }
+    let path = resolvePreviewPath(filename)
 
     // Fetch current file content
     let url = `/api/file/preview?path=${encodeURIComponent(path)}`
@@ -338,8 +490,70 @@ async function previewFile(filename) {
       title.textContent = `${filename} (${sizeKB} KB)`
     }
   } catch (e) {
-    alert('Error loading file: ' + e.message)
+    const msg = e.message || ''
+    const hint = msg.includes('access denied')
+      ? '\n\nHinweis: Diese Datei ist nicht im erlaubten Pfad.'
+      : msg.includes('file not found')
+        ? '\n\nHinweis: Datei existiert (noch) nicht.'
+        : ''
+    alert('Error loading file: ' + msg + hint)
     document.getElementById('filePreviewDialog').close()
+  }
+}
+
+async function downloadReport(filename) {
+  try {
+    const path = resolvePreviewPath(filename)
+    let url = `/api/file/preview?path=${encodeURIComponent(path)}`
+    if (currentJobId) url += `&job_id=${currentJobId}`
+
+    const res = await fetch(url)
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}))
+      throw new Error(error.error || `HTTP ${res.status}`)
+    }
+    const data = await res.json()
+    const blob = new Blob([data.content || ''], { type: 'application/json' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = filename.split('/').pop()
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(link.href)
+  } catch (e) {
+    const msg = e.message || ''
+    const hint = msg.includes('access denied')
+      ? '\n\nHinweis: Diese Datei ist nicht im erlaubten Pfad.'
+      : msg.includes('file not found')
+        ? '\n\nHinweis: Datei existiert (noch) nicht.'
+        : ''
+    alert('Report-Download fehlgeschlagen: ' + msg + hint)
+  }
+}
+
+async function copyReport(filename) {
+  try {
+    const path = resolvePreviewPath(filename)
+    let url = `/api/file/preview?path=${encodeURIComponent(path)}`
+    if (currentJobId) url += `&job_id=${currentJobId}`
+
+    const res = await fetch(url)
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}))
+      throw new Error(error.error || `HTTP ${res.status}`)
+    }
+    const data = await res.json()
+    await navigator.clipboard.writeText(data.content || '')
+    alert('Report in die Zwischenablage kopiert')
+  } catch (e) {
+    const msg = e.message || ''
+    const hint = msg.includes('access denied')
+      ? '\n\nHinweis: Diese Datei ist nicht im erlaubten Pfad.'
+      : msg.includes('file not found')
+        ? '\n\nHinweis: Datei existiert (noch) nicht.'
+        : ''
+    alert('Kopieren fehlgeschlagen: ' + msg + hint)
   }
 }
 
@@ -640,7 +854,8 @@ function escapeHtml(text) {
   return text.replace(/[&<>"']/g, m => map[m])
 }
 
-// Centralized statistics display function to prevent race conditions
+window.escapeHtml = escapeHtml
+
 function updateStatisticsDisplay(stats) {
   // Prevent concurrent updates
   if (statsUpdateInProgress) {
@@ -662,7 +877,9 @@ function updateStatisticsDisplay(stats) {
       let statsHtml = '<h3>Generated Files</h3><table class="stats-table"><tr><th>File</th><th>Before</th><th>After</th><th>Change</th><th>Diff</th><th>Action</th></tr>'
 
       // Sort files for consistent display order
-      const sortedStats = Object.entries(stats).sort(([a], [b]) => a.localeCompare(b))
+      const sortedStats = Object.entries(stats)
+        .filter(([fname]) => !["completeness_report.json", "partial_report.json"].includes(fname))
+        .sort(([a], [b]) => a.localeCompare(b))
 
       for (const [fname, stat] of sortedStats) {
         // Validate statistics data
@@ -683,13 +900,22 @@ function updateStatisticsDisplay(stats) {
 
         // Escape backslashes for HTML onclick attribute (double escape needed)
         const escapedFname = fname.replace(/\\/g, '\\\\')
+        const isReport = fname.endsWith('unknown_report.json') || fname.endsWith('partial_report.json') || fname.endsWith('completeness_report.json')
+        const actions = [
+          `<button onclick="previewFile('${escapedFname}')">Preview</button>`
+        ]
+        if (isReport) {
+          actions.push(`<button onclick="downloadReport('${escapedFname}')">Download</button>`)
+          actions.push(`<button onclick="copyReport('${escapedFname}')">Copy</button>`)
+        }
+
         statsHtml += `<tr>
           <td>${escapeHtml(fname)}</td>
           <td>${before}</td>
           <td>${after}</td>
           <td class="${deltaClass}">${deltaStr}</td>
           <td>${diffHtml}</td>
-          <td><button onclick="previewFile('${escapedFname}')">Preview</button></td>
+          <td>${actions.join(' ')}</td>
         </tr>`
       }
 
@@ -698,6 +924,10 @@ function updateStatisticsDisplay(stats) {
 
       // Store for consistency checks
       currentStatsData = JSON.parse(JSON.stringify(stats))
+
+      // Render expert panel (reports) when enabled
+      renderExpertPanel(stats)
+
 
     } else {
       if (!stats || (typeof stats === 'object' && Object.keys(stats).length === 0)) {
@@ -721,6 +951,66 @@ function updateStatisticsDisplay(stats) {
   }
 }
 
+function showReportDialog(reportKey) {
+  const dialog = document.getElementById('summaryDialog')
+  const content = document.getElementById('summaryDialogContent')
+  if (!dialog || !content) return
+  if (!currentStatsData) {
+    content.innerHTML = '<div class="muted">No report data available.</div>'
+    dialog.showModal()
+    return
+  }
+  const reportStat = currentStatsData[reportKey]
+  const reportPath = (reportStat && (reportStat.staged_path || reportStat.real_path)) || resolvePreviewPath(reportKey)
+  content.innerHTML = '<div class="muted">Loading report...</div>'
+  dialog.showModal()
+
+  fetch(`/api/file/preview?path=${encodeURIComponent(reportPath)}&job_id=${currentJobId}`, { credentials: 'include' })
+    .then((res) => {
+      if (!res.ok) throw new Error(`Preview API error ${res.status}`)
+      return res.json()
+    })
+    .then((data) => {
+      let report = null
+      try {
+        report = JSON.parse(data.content || '{}')
+      } catch (e) {
+        content.innerHTML = '<div class="error">Report is not valid JSON.</div>'
+        return
+      }
+
+      const req = report.missing_required || []
+      const rec = report.recommended_missing || []
+      if (req.length || rec.length) {
+        const renderList = (items, title) => {
+          if (!items.length) return ''
+          const rows = items.map(entry => {
+            const line = escapeHtml(entry.line || '')
+            return `<li><code>${escapeHtml(entry.kind || '')}</code> ${escapeHtml(entry.reason || '')} — ${line}</li>`
+          }).join('')
+          return `<div class="summary-block"><strong>${title}</strong><ul>${rows}</ul></div>`
+        }
+        content.innerHTML = `
+          <div class="summary-counts">
+            <span class="badge ${req.length ? 'error' : 'success'}">Required missing: ${req.length}</span>
+            <span class="badge ${rec.length ? 'warning' : 'success'}">Recommended missing: ${rec.length}</span>
+          </div>
+          ${renderList(req, 'Missing required')}
+          ${renderList(rec, 'Recommended')}
+        `
+        return
+      }
+
+      content.innerHTML = `<pre class="preview-content">${escapeHtml(JSON.stringify(report, null, 2))}</pre>`
+    })
+    .catch((e) => {
+      content.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`
+    })
+}
+window.updateStatisticsDisplay = updateStatisticsDisplay
+
+
+
 // Configuration Management
 let currentConfig = {}
 
@@ -735,6 +1025,8 @@ function switchTab(tabId) {
   const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.onclick.toString().includes(tabId))
   if (btn) btn.classList.add('active')
 }
+window.showReportDialog = showReportDialog
+
 
 async function loadConfig() {
   const configStatus = document.getElementById('configStatus')
@@ -758,7 +1050,7 @@ async function loadConfig() {
     if (!currentConfig.regexpattern) currentConfig.regexpattern = {}
 
     // Populate General Tab
-    document.getElementById('conf-ets-export').value = currentConfig.ets_export || ''
+    // ETS export path removed
     document.getElementById('conf-items-path').value = currentConfig.items_path || ''
     document.getElementById('conf-things-path').value = currentConfig.things_path || ''
     document.getElementById('conf-sitemaps-path').value = currentConfig.sitemaps_path || ''
@@ -771,6 +1063,7 @@ async function loadConfig() {
     document.getElementById('conf-room-asis').checked = gen.RoomNameAsItIs || false
     document.getElementById('conf-room-desc').checked = gen.RoomNameFromDescription || false
     document.getElementById('conf-add-missing').checked = gen.addMissingItems || false
+    document.getElementById('conf-auto-place').checked = gen.auto_place_unknown || false
     document.getElementById('conf-unknown-floor').value = gen.unknown_floorname || 'unknown'
     document.getElementById('conf-unknown-room').value = gen.unknown_roomname || 'unknown'
 
@@ -788,8 +1081,7 @@ async function loadConfig() {
     // Populate Advanced Tab
     renderRegexSettings(currentConfig.regexpattern || {})
 
-    // Show settings content
-    document.getElementById('settings-content').style.display = 'block'
+    // Keep settings collapsed by default
     configStatus.textContent = '✓ Configuration loaded'
     configStatus.className = 'status-message success'
   } catch (e) {
@@ -905,7 +1197,7 @@ async function saveConfig(reprocess = false) {
     const newConfig = { ...currentConfig }
 
     // General
-    newConfig.ets_export = document.getElementById('conf-ets-export').value
+    // ETS export path removed
     newConfig.items_path = document.getElementById('conf-items-path').value
     newConfig.things_path = document.getElementById('conf-things-path').value
     newConfig.sitemaps_path = document.getElementById('conf-sitemaps-path').value
@@ -918,6 +1210,7 @@ async function saveConfig(reprocess = false) {
       RoomNameAsItIs: document.getElementById('conf-room-asis').checked,
       RoomNameFromDescription: document.getElementById('conf-room-desc').checked,
       addMissingItems: document.getElementById('conf-add-missing').checked,
+      auto_place_unknown: document.getElementById('conf-auto-place').checked,
       unknown_floorname: document.getElementById('conf-unknown-floor').value,
       unknown_roomname: document.getElementById('conf-unknown-room').value,
       item_Floor_nameshort_prefix: currentConfig.general?.item_Floor_nameshort_prefix || "=",

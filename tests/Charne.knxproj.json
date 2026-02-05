@@ -2,14 +2,13 @@
   "info": {
     "project_id": "P-0251",
     "name": "Charne",
-    "comment": "",
     "last_modified": "2023-05-17T08:07:09.9152897Z",
     "group_address_style": "ThreeLevel",
     "guid": "289922c5-08f0-40d7-9ead-02b8170acdba",
     "created_by": "ETS5",
     "schema_version": "20",
     "tool_version": "5.7.1428.39779",
-    "xknxproject_version": "3.8.1",
+    "xknxproject_version": "3.8.2",
     "language_code": "de-DE"
   },
   "communication_objects": {

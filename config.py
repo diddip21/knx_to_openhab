@@ -1,13 +1,14 @@
 import json
-import re
 import logging
-import subprocess
 import os
+import re
+import subprocess
 from pathlib import Path
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
-config = []
+config: Dict[str, Any] = {}
 
 
 def normalize_string(text: str):
@@ -31,16 +32,16 @@ def main():
             v = normalize_string(v)
         return v
 
-    def _normalize_list(l):
+    def _normalize_list(items):
         """Recursively normalizes strings within a list in-place."""
-        for idx, v in enumerate(l):
-            l[idx] = _normalize(v)
-        return l
+        for idx, v in enumerate(items):
+            items[idx] = _normalize(v)
+        return items
 
     def _normalize_dict(d):
         """Recursively normalizes strings within a dictionary in-place."""
-        for v in d.items():
-            v = _normalize(v)
+        for k, v in d.items():
+            d[k] = _normalize(v)
         return d
 
     for idef in cfg["defines"]:
@@ -49,13 +50,10 @@ def main():
                 if "suffix" in xidef:
                     if isinstance(cfg["defines"][idef][xidef], list):
                         cfg["defines"][idef][xidef] = [
-                            normalize_string(element)
-                            for element in cfg["defines"][idef][xidef]
+                            normalize_string(element) for element in cfg["defines"][idef][xidef]
                         ]
                         # remove duplicates
-                        cfg["defines"][idef][xidef] = list(
-                            set(cfg["defines"][idef][xidef])
-                        )
+                        cfg["defines"][idef][xidef] = list(set(cfg["defines"][idef][xidef]))
     global config
     config = cfg
 
@@ -159,7 +157,6 @@ def main():
         # We should strip the first component "openhab" and prepend oh_conf.
         for key in paths_to_update:
             if key in config:
-                original = Path(config[key])
                 # heuristic: strip first part if it matches 'openhab' or just take the rest?
                 # safer: assume the file structure inside OPENHAB_CONF is standard.
                 # items -> items/, things -> things/, etc.
@@ -198,6 +195,7 @@ def main():
 
     config["target_user"] = oh_user
     config["target_group"] = oh_group
+    config["openhab_path"] = oh_conf
 
 
 # if __name__ == "__main__":

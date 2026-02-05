@@ -26,6 +26,8 @@ It includes a **Web UI** for easy management, file uploads, and monitoring, as w
 ### One-Command Installer (Linux / Raspberry Pi)
 Ideally use a fresh install of Raspberry Pi OS (Lite) or DietPi.
 
+**Prereqs (apt):** `python3-venv python3-tk build-essential`
+
 ```bash
 curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install.sh | bash
 ```
@@ -51,6 +53,24 @@ curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/uninsta
 3.  **Configure**: Go to **Settings** to map DPTs or adjust naming rules.
 4.  **Generate**: The system automatically generates Items, Things, and Sitemaps.
 5.  **Update**: Click the Version badge in the header to check for and apply updates.
+
+---
+
+## UI Reports & Auto-Placement
+
+The UI surfaces **reports** for anything that couldn't be fully placed (unknown or partial items). You can optionally enable **auto-placement** to create missing floors/rooms for unmatched addresses.
+
+- **UI toggle:** Settings → **Auto-place unknown addresses**
+- **Config flag:** `config.json` → `general.auto_place_unknown`
+- **Report export:** In the *Generated Files* table you can **Preview / Download / Copy** `unknown_report.json`, `partial_report.json`, and `completeness_report.json` (unknown report is generated even when `addMissingItems` is disabled)
+
+**Home overview**
+
+![UI overview](docs/images/ui-home.png)
+
+**Settings (auto-place toggle)**
+
+![UI settings](docs/images/ui-settings.png)
 
 ---
 

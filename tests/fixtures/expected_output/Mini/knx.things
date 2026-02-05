@@ -1,0 +1,14 @@
+Bridge knx:ip:bridge [ 
+    type="TUNNEL",
+    ipAddress="192.168.1.1",
+    portNumber=3671, 
+	autoReconnectPeriod=30
+] {
+    Thing device generic [
+    ] {
+Type dimmer    :   i_EG_RM1_DimmenDimmWert   "=EG +RM1 Dimmen:(Dimm Wert)"   [ position="1/1/1+<1/1/2", switch="1/1/3" ]
+Type rollershutter    :   i_EG_RM1_JalousieJalousieAufAb   "=EG +RM1 Jalousie:(Jalousie Auf/Ab)"   [ upDown="1/2/1", stopMove="1/2/2", position="1/2/3" ]
+Type number    :   i_EG_RM1_HeizenBetriebsartvorwahl   "=EG +RM1 Heizen:(Betriebsartvorwahl)"   [ ga="20.102:1/3/1+<1/3/2" ]
+
+  }
+}

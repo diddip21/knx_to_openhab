@@ -1,14 +1,17 @@
 """Module for reading a knx file and generating a house structure for transfer to ets_to_openhab"""
 
+import argparse
+import json
 import logging
 import re
-import json
-import argparse
 from pathlib import Path
+from typing import Any
+
 from xknxproject.models.knxproject import KNXProject
 from xknxproject.xknxproj import XKNXProj
-from config import config, normalize_string
+
 import ets_to_openhab
+from config import config, normalize_string
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +53,7 @@ def find_floors(spaces: dict) -> list:
     return floors
 
 
-def create_building(project: KNXProject):
+def create_building(project: KNXProject) -> list[dict[str, Any]]:
     """Create a building with all floors and rooms."""
     # get name / description from knxproj object
     # extract Groupname = "Erdgeschoss"
@@ -62,9 +65,9 @@ def create_building(project: KNXProject):
         logger.error("'locations' is empty.")
         raise ValueError("'locations' is empty.")
 
-    buildings = []
+    buildings: list[dict[str, Any]] = []
     for loc in locations.values():
-        building = {"floors": []}
+        building: dict[str, Any] = {"floors": []}
         if loc["type"] in ("Building", "BuildingPart"):
             building = {
                 "Description": loc["description"],
@@ -95,10 +98,7 @@ def create_building(project: KNXProject):
                         room, floor_data
                     )
                     room_description = (
-                        room["description"]
-                        or room_name_plain
-                        or room["usage_text"]
-                        or room["name"]
+                        room["description"] or room_name_plain or room["usage_text"] or room["name"]
                     )
                     room_data = {
                         "Description": room_description,
@@ -111,12 +111,8 @@ def create_building(project: KNXProject):
                     floor_data["rooms"].append(room_data)
                     logger.debug("Added room: %s %s", room_description, room["name"])
 
-            floor_data["name_long"] = (
-                floor_data["name_long"] or floor_data["name_short"]
-            )
-            floor_data["Group name"] = (
-                floor_data["Group name"] or floor_data["name_short"]
-            )
+            floor_data["name_long"] = floor_data["name_long"] or floor_data["name_short"]
+            floor_data["Group name"] = floor_data["Group name"] or floor_data["name_short"]
             logger.debug("Processed floor: %s", floor_data["Description"])
 
     return buildings
@@ -162,9 +158,7 @@ def get_room_name(room, floor_data):
             ITEM_FLOOR_NAME_SHORT_PREFIX + room["name"],
         ):
             floor_data["name_short"] = res_floor.group(0)
-            floor_data["Description"] = (
-                room["name"].replace(res_floor.group(0), "").strip()
-            )
+            floor_data["Description"] = room["name"].replace(res_floor.group(0), "").strip()
 
     if res_room:
         room_long_name += floor_data["name_long"] + res_room.group(0)
@@ -235,9 +229,7 @@ def find_floor_in_address(address, group_ranges):
     if not res_floor:
         address_split = address["address"].split("/")
         gr_top = group_ranges.get(address_split[0])
-        gr_middle = gr_top["group_ranges"].get(
-            address_split[0] + "/" + address_split[1]
-        )
+        gr_middle = gr_top["group_ranges"].get(address_split[0] + "/" + address_split[1])
         res_floor = (
             RE_ITEM_FLOOR.search(gr_middle["name"])
             or RE_ITEM_FLOOR.search(gr_top["name"])
@@ -263,10 +255,7 @@ def extract_communication_objects(address, communication_objects, devices):
                 for device_co_id in device["communication_object_ids"]:
                     device_co = communication_objects.get(device_co_id)
                     if device_co:
-                        if (
-                            device_co.get("channel")
-                            and co["channel"] == device_co["channel"]
-                        ):
+                        if device_co.get("channel") and co["channel"] == device_co["channel"]:
                             matching_device_comms.append(device_co)
                         elif device_co.get("text") and co["text"] == device_co["text"]:
                             matching_device_comms.append(device_co)
@@ -286,8 +275,7 @@ def get_short_floor_name(res_floor):
         floor_name = res_floor.group(0)
         return (
             floor_name
-            if floor_name.startswith(ITEM_FLOOR_NAME_SHORT_PREFIX)
-            and len(floor_name) < 6
+            if floor_name.startswith(ITEM_FLOOR_NAME_SHORT_PREFIX) and len(floor_name) < 6
             else ITEM_FLOOR_NAME_SHORT_PREFIX + floor_name
         )
     return UNKNOWN_FLOOR_NAME
@@ -318,16 +306,26 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
         if place_address_by_device(building, address, read_co, addresses):
             continue
 
+        # Try to create floor/room dynamically if names exist but not in structure yet
+        if create_floor_room_if_missing(building, address):
+            continue
+
         logger.warning("No Room found for %s", address["Group name"])
         unknown_addresses.append(address)
     # TODO: Loop over unknown_addresses to identify Groups/Channels in the same "level"
+
+    # Optional auto-placement for unknown addresses
+    if config.get("general", {}).get("auto_place_unknown"):
+        auto_place_unknowns(building, unknown_addresses, addresses, cabinet_devices)
+
+    # Always write report for remaining unknowns (for UI/CLI visibility)
+    write_unknown_report(unknown_addresses)
 
     if ADD_MISSING_ITEMS:
         add_unknown_addresses(building, unknown_addresses)
     else:
         logger.info("Unknown addresses: %s", unknown_addresses)
         logger.info("Total unknown addresses: %d", len(unknown_addresses))
-
     return building
 
 
@@ -361,10 +359,7 @@ def place_address_by_device(building, address, read_co, addresses):
         for building_data in building:
             for floor in building_data["floors"]:
                 for room in floor["rooms"]:
-                    if (
-                        "devices" in room
-                        and read_co["device_address"] in room["devices"]
-                    ):
+                    if "devices" in room and read_co["device_address"] in room["devices"]:
                         put_address_to_right_place(
                             address, floor["name_short"], room["name_short"], addresses
                         )
@@ -393,16 +388,177 @@ def put_address_to_right_place(address, floor_name, room_name, addresses):
                     ]
     if item_subaddress:
         for item in item_subaddress:
-            if (
-                item["Floor"] != UNKNOWN_FLOOR_NAME
-                and item["Room"] != UNKNOWN_ROOM_NAME
-            ):
+            if item["Floor"] != UNKNOWN_FLOOR_NAME and item["Room"] != UNKNOWN_ROOM_NAME:
                 continue
             item["Floor"] = floor_name
             item["Room"] = room_name
         logger.debug("here u can put all sub addreses to te right place to")
 
     return True
+
+
+# Heuristic: create missing floor/room nodes if names are known but not yet in structure
+def create_floor_room_if_missing(building, address):
+    """If floor/room names exist (not unknown), create them and place address."""
+    floor = address.get("Floor")
+    room = address.get("Room")
+    if not floor or not room:
+        return False
+    if floor == UNKNOWN_FLOOR_NAME or room == UNKNOWN_ROOM_NAME:
+        return False
+
+    for building_data in building:
+        # find or create floor
+        target_floor = None
+        for fl in building_data.get("floors", []):
+            if fl.get("name_short") == floor:
+                target_floor = fl
+                break
+        if target_floor is None:
+            target_floor = {
+                "Description": floor,
+                "Group name": floor,
+                "name_long": floor,
+                "name_short": floor,
+                "rooms": [],
+            }
+            building_data.setdefault("floors", []).append(target_floor)
+
+        # find or create room
+        target_room = None
+        for rm in target_floor.get("rooms", []):
+            if rm.get("name_short") == room:
+                target_room = rm
+                break
+        if target_room is None:
+            target_room = {
+                "Description": room,
+                "Group name": room,
+                "name_long": room,
+                "name_short": room,
+                "Addresses": [],
+            }
+            target_floor.setdefault("rooms", []).append(target_room)
+
+        target_room.setdefault("Addresses", []).append(address)
+        logger.debug(
+            "Created floor/room on-the-fly and placed %s in %s/%s",
+            address.get("Address"),
+            floor,
+            room,
+        )
+        return True
+
+    return False
+
+
+def auto_place_unknowns(building, unknown_addresses, all_addresses, cabinet_devices):
+    """Heuristisch unbekannte Adressen zuordnen (opt-in per config.general.auto_place_unknown)."""
+    placed = 0
+    report = []
+    floor_pref = config.get("general", {}).get("item_Floor_nameshort_prefix", "=")
+    room_pref = config.get("general", {}).get("item_Room_nameshort_prefix", "+")
+
+    def try_assign(addr, floor, room, reason):
+        nonlocal placed
+        if not floor or not room:
+            return False
+        if floor == UNKNOWN_FLOOR_NAME or room == UNKNOWN_ROOM_NAME:
+            return False
+        addr["Floor"] = floor
+        addr["Room"] = room
+        placed += 1
+        report.append(
+            {"Address": addr.get("Address"), "Floor": floor, "Room": room, "reason": reason}
+        )
+        try:
+            unknown_addresses.remove(addr)
+        except ValueError:
+            pass
+        # Auch Subadressen übernehmen
+        put_address_to_right_place(addr, floor, room, all_addresses)
+        return True
+
+    # 1) Device-basierte Vererbung: gleiche device_address wie bekannte Adresse
+    for addr in list(unknown_addresses):
+        device_ids = set()
+        for co in addr.get("communication_object", []):
+            dev = co.get("device_address")
+            if dev and dev not in cabinet_devices:
+                device_ids.add(dev)
+        if not device_ids:
+            continue
+        candidates = set()
+        for other in all_addresses:
+            if other is addr:
+                continue
+            if other.get("Floor") in (UNKNOWN_FLOOR_NAME, None) or other.get("Room") in (
+                UNKNOWN_ROOM_NAME,
+                None,
+            ):
+                continue
+            for co in other.get("communication_object", []):
+                if co.get("device_address") in device_ids:
+                    candidates.add((other["Floor"], other["Room"]))
+        if len(candidates) == 1:
+            floor, room = next(iter(candidates))
+            try_assign(addr, floor, room, "device-match")
+
+    # 2) Namensheuristik aus Group name ("=Floor +Room ...")
+    import re
+
+    floor_rx = re.compile(r"%s([A-Za-z0-9\.]+)" % re.escape(floor_pref))
+    room_rx = re.compile(r"%s([A-Za-z0-9_\-\.]+)" % re.escape(room_pref))
+    for addr in list(unknown_addresses):
+        gname = addr.get("Group name", "")
+        floor = room = None
+        m_f = floor_rx.search(gname)
+        m_r = room_rx.search(gname)
+        if m_f:
+            floor = m_f.group(1)
+            if not floor.startswith(floor_pref):
+                floor = floor_pref + floor
+        if m_r:
+            room = m_r.group(1)
+            if not room.startswith(room_pref):
+                room = room_pref + room
+        if floor and room:
+            try_assign(addr, floor, room, "name-heuristic")
+
+    if report:
+        logger.info("auto_place_unknown: placed=%d details=%s", placed, report)
+    else:
+        logger.info("auto_place_unknown: nothing placed")
+
+
+def write_unknown_report(unknown_addresses):
+    """Write report for remaining unknown addresses."""
+    if not unknown_addresses:
+        return
+    try:
+        import json
+        from pathlib import Path
+
+        report = {
+            "total": len(unknown_addresses),
+            "addresses": [
+                {
+                    "Address": a.get("Address"),
+                    "Group name": a.get("Group name"),
+                    "DPT": a.get("dpt"),
+                    "Floor": a.get("Floor"),
+                    "Room": a.get("Room"),
+                }
+                for a in unknown_addresses
+            ],
+        }
+        base = config.get("openhab_path", "openhab")
+        Path(base).mkdir(parents=True, exist_ok=True)
+        Path(base, "unknown_report.json").write_text(
+            json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+    except Exception as e:
+        logger.warning("Failed to write unknown_report.json: %s", e)
 
 
 def add_unknown_addresses(building, unknown_addresses):
@@ -456,10 +612,7 @@ def get_gateway_ip(project: KNXProject):
         raise ValueError("'devices' is empty.")
 
     for device in devices.values():
-        if (
-            device["hardware_name"].strip()
-            in config["devices"]["gateway"]["hardware_name"]
-        ):
+        if device["hardware_name"].strip() in config["devices"]["gateway"]["hardware_name"]:
             description = device["description"].strip()
             ip_match = re.search(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", description)
             if ip_match:
@@ -488,7 +641,7 @@ def is_homekit_enabled(project: KNXProject):
     """Determine if HomeKit is enabled for the project."""
     # TODO: Read project info or some other method to get Homekit enabled status
     comment_value = project["info"].get("comment")
-    if comment_value:
+    if isinstance(comment_value, str) and comment_value:
         comments = comment_value.casefold().split(";")
         for comment in comments:
             if comment.startswith("homekit="):
@@ -501,7 +654,7 @@ def is_homekit_enabled(project: KNXProject):
 def is_alexa_enabled(project: KNXProject):
     """Determine if Alexa is enabled for the project."""
     comment_value = project["info"].get("comment")
-    if comment_value:
+    if isinstance(comment_value, str) and comment_value:
         comments = comment_value.casefold().split(";")
         for comment in comments:
             if comment.startswith("alexa="):
@@ -526,27 +679,30 @@ def main():
         description="Reads KNX project file and creates an OpenHAB output for things/items/sitemap"
     )
     parser.add_argument("--file_path", type=Path, help="Path to the input KNX project.")
-    parser.add_argument(
-        "--knxPW", type=str, help="Password for KNX project file if protected"
-    )
-    parser.add_argument(
-        "--readDump", action="store_true", help="Read KNX project from JSON dump"
-    )
+    parser.add_argument("--knxPW", type=str, help="Password for KNX project file if protected")
+    parser.add_argument("--readDump", action="store_true", help="Read KNX project from JSON dump")
     args = parser.parse_args()
 
     if not args.file_path:
-        import tkinter as tk
-        from tkinter import filedialog
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
 
-        root = tk.Tk()
-        root.withdraw()
-        root.wm_attributes("-topmost", 1)
-        file_path = filedialog.askopenfilename()
-        if not file_path:
-            raise SystemExit
-        args.file_path = Path(file_path)
-        if args.file_path.suffix == ".json":
-            args.readDump = True
+            root = tk.Tk()
+            root.withdraw()
+            root.wm_attributes("-topmost", 1)
+            file_path = filedialog.askopenfilename()
+            if not file_path:
+                raise SystemExit
+            args.file_path = Path(file_path)
+            if args.file_path.suffix == ".json":
+                args.readDump = True
+        except Exception:
+            # Headless or tkinter not available: bail with a helpful message
+            raise SystemExit(
+                "No --file_path provided and tkinter GUI unavailable. "
+                "Run with --file_path <path> or install python3-tk."
+            )
 
     if args.readDump:
         with open(args.file_path, encoding="utf-8") as f:

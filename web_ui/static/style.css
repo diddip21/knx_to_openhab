@@ -118,6 +118,11 @@ h2 {
   accent-color: var(--primary-blue);
 }
 
+.expert-help {
+  font-size: 11px;
+  color: var(--text-light);
+}
+
 h3 {
   color: var(--medium-gray);
   margin-top: 20px;

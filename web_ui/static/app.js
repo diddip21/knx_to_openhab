@@ -17,6 +17,19 @@ const rollbackStatusEl = document.getElementById('rollbackStatus')
 const logLevelFilterEl = document.getElementById('logLevelFilter')
 const servicesListEl = document.getElementById('servicesList')
 
+function updateExpertToggleVisibility(stats) {
+  if (!expertToggleEl) return
+  const hasCompleteness = !!(
+    stats && typeof stats === 'object' && Object.keys(stats).some((k) => k.endsWith('completeness_report.json'))
+  )
+  expertToggleEl.style.display = hasCompleteness ? '' : 'none'
+  if (!hasCompleteness) {
+    expertToggleEl.checked = false
+    localStorage.setItem(EXPERT_TOGGLE_KEY, 'false')
+    applyExpertToggle()
+  }
+}
+
 let currentJobId = null
 let lastRunningCount = -1
 let logLevelFilter = 'all'  // all, debug, info, warning, error
@@ -123,6 +136,7 @@ function showJobDetail(jobId) {
 
       // Display file statistics if available
       updateStatisticsDisplay(j.stats)
+      updateExpertToggleVisibility(j.stats)
       if (expertToggleEl && expertToggleEl.checked) {
         renderCompletenessSummary(j.id, j.stats)
       } else if (completenessSummaryEl) {

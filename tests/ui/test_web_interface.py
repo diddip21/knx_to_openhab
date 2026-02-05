@@ -269,7 +269,7 @@ class TestReports:
         )
 
         summary = page.locator("#completenessSummary")
-        expect(summary).to_contain_text("Completeness report", timeout=5000)
+        expect(summary).to_contain_text("Summary", timeout=5000)
         expect(summary).to_contain_text("Required missing: 1")
         expect(summary).to_contain_text("Recommended missing: 2")
         expect(summary).to_contain_text("Things checked: 42")

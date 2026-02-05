@@ -1,5 +1,6 @@
 """UI tests for the knx_to_openhab web interface using Playwright."""
 
+import json
 import re
 import time
 
@@ -216,6 +217,62 @@ class TestVersionCheck:
         # Version should be displayed somewhere
         assert version_elements.count() > 0
         assert version_elements.first.is_visible()
+
+
+class TestReports:
+    """Test report summary rendering."""
+
+    def test_completeness_summary_render(self, authenticated_page: Page):
+        """Test completeness summary renders from report payload."""
+        page = authenticated_page
+
+        report_payload = {
+            "summary": {
+                "missing_required": 1,
+                "recommended_missing": 2,
+                "total_things_checked": 42,
+            },
+            "missing_required": [
+                {
+                    "kind": "Switch",
+                    "reason": "Missing channel",
+                    "line": "Switch testSwitch",
+                }
+            ],
+            "recommended_missing": [
+                {
+                    "kind": "Dimmer",
+                    "reason": "No label",
+                    "line": "Dimmer testDimmer",
+                }
+            ],
+        }
+
+        def handle_preview(route):
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps({"content": json.dumps(report_payload)}),
+            )
+
+        page.route(re.compile(r".*/api/file/preview.*"), handle_preview)
+
+        stats = {
+            "completeness_report.json": {
+                "staged_path": "openhab/completeness_report.json",
+            }
+        }
+
+        page.evaluate(
+            "([jobId, stats]) => renderCompletenessSummary(jobId, stats)",
+            ["job-123", stats],
+        )
+
+        summary = page.locator("#completenessSummary")
+        expect(summary).to_contain_text("Completeness report", timeout=5000)
+        expect(summary).to_contain_text("Required missing: 1")
+        expect(summary).to_contain_text("Recommended missing: 2")
+        expect(summary).to_contain_text("Things checked: 42")
 
 
 if __name__ == "__main__":

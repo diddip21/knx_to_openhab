@@ -1,4 +1,5 @@
 import os
+import re
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -31,18 +32,20 @@ def test_upload_knx_project(page: Page, base_url):
     status_div = page.locator("#status")
     expect(status_div).to_be_visible()
 
-    # Wait for some success message or job creation
-    # We might need to wait for the text to change from empty/uploading to something else
-    # Or check if a new job appears in #jobs-list
+    # Wait for the UI to confirm the upload/job creation and show details
+    expect(status_div).to_contain_text(
+        re.compile(r"Processing started|File uploaded, job started"),
+        timeout=20000,
+    )
 
-    # For now, let's just assert that the status div contains some text after click
-    # or that the form doesn't show an error immediately.
-    # Since it's a real file, it might take time to process.
-    # We can wait for a specific success indicator if we knew what it was.
-    # Based on app.js (which I haven't read), it probably updates #status.
+    # Job details section should become visible once a job is created
+    expect(page.locator("#detail-section")).to_be_visible(timeout=20000)
 
-    # Let's wait for the status to not be empty
-    expect(status_div).not_to_be_empty(timeout=10000)
+    # Status badge should indicate job state
+    expect(page.locator("#jobDetail .badge")).to_contain_text(
+        re.compile(r"running|completed|failed"),
+        timeout=20000,
+    )
 
 
 def test_upload_invalid_file(page: Page, base_url):

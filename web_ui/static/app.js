@@ -9,6 +9,8 @@ const statsEl = document.getElementById('stats')
 const logSectionEl = document.getElementById('log-section')
 const statsSectionEl = document.getElementById('stats-section')
 const detailSectionEl = document.getElementById('detail-section')
+const expertToggleEl = document.getElementById('expertToggle')
+const completenessSummaryEl = document.getElementById('completenessSummary')
 const rollbackDialog = document.getElementById('rollbackDialog')
 const backupSelect = document.getElementById('backupSelect')
 const rollbackStatusEl = document.getElementById('rollbackStatus')
@@ -22,6 +24,32 @@ let allLogEntries = []  // store all entries for filtering
 let eventSource = null  // track active event stream
 let currentStatsData = null  // store current statistics for consistent display
 let statsUpdateInProgress = false  // prevent race conditions
+const EXPERT_TOGGLE_KEY = 'showExpertCompleteness'
+
+function applyExpertToggle() {
+  if (!completenessSummaryEl) return
+  const enabled = !!(expertToggleEl && expertToggleEl.checked)
+  completenessSummaryEl.style.display = enabled ? 'block' : 'none'
+  if (!enabled) {
+    completenessSummaryEl.innerHTML = ''
+  }
+}
+
+if (expertToggleEl) {
+  const stored = localStorage.getItem(EXPERT_TOGGLE_KEY)
+  if (stored !== null) {
+    expertToggleEl.checked = stored === 'true'
+  }
+  expertToggleEl.addEventListener('change', () => {
+    localStorage.setItem(EXPERT_TOGGLE_KEY, expertToggleEl.checked)
+    applyExpertToggle()
+    if (expertToggleEl.checked && currentJobId && currentStatsData) {
+      renderCompletenessSummary(currentJobId, currentStatsData)
+    }
+  })
+}
+
+applyExpertToggle()
 
 async function refreshJobs() {
   const res = await fetch('/api/jobs', { credentials: 'include' })
@@ -40,7 +68,6 @@ async function refreshJobs() {
       ${j.status === 'completed' && j.staged ? `<button onclick="showDiff('${j.id}')">Diff</button>` : ''}
       ${j.status === 'completed' && j.staged && !j.deployed ? `<button style="background-color: #28a745; color: white;" onclick="deployJob('${j.id}')">Deploy</button>` : ''}
       ${j.backups && j.backups.length > 0 ? `<button onclick="showRollbackDialog('${j.id}')">Rollback</button>` : ''}
-      ${j.status === 'completed' ? `<span class="job-meta">Auto-Place: ${j.auto_place_unknown ? 'ON' : 'OFF'}</span>` : ''}
       ${j.status === 'completed' ? getReportBadges(j.stats) : ''}
       <button onclick="deleteJob('${j.id}')">Delete</button>
     `
@@ -96,7 +123,11 @@ function showJobDetail(jobId) {
 
       // Display file statistics if available
       updateStatisticsDisplay(j.stats)
-      renderCompletenessSummary(j.id, j.stats)
+      if (expertToggleEl && expertToggleEl.checked) {
+        renderCompletenessSummary(j.id, j.stats)
+      } else if (completenessSummaryEl) {
+        completenessSummaryEl.innerHTML = ''
+      }
 
       // Load stored log entries from job.log
       if (j.log && j.log.length > 0) {
@@ -267,9 +298,6 @@ function getReportBadges(stats) {
   }
   if (files.includes('partial_report.json')) {
     badges.push('<span class="badge info">Partial report</span>')
-  }
-  if (files.includes('completeness_report.json')) {
-    badges.push('<span class="badge info">Completeness report</span>')
   }
 
   if (!badges.length) return ''
@@ -851,8 +879,8 @@ async function renderCompletenessSummary(jobId, stats) {
     summaryEl.innerHTML = `
       <div class="summary-header">
         <span class="badge ${statusClass}">${statusText}</span>
-        <span class="muted">Completeness report</span>
-        <button onclick="previewFile('${escapedKey}')">Preview report</button>
+        <span class="muted">Summary</span>
+        <button onclick="previewFile('${escapedKey}')">Preview</button>
       </div>
       <div class="summary-counts">
         <span class="badge ${missingRequired > 0 ? 'error' : 'success'}">Required missing: ${missingRequired}</span>
@@ -1025,8 +1053,7 @@ async function loadConfig() {
     // Populate Advanced Tab
     renderRegexSettings(currentConfig.regexpattern || {})
 
-    // Show settings content
-    document.getElementById('settings-content').style.display = 'block'
+    // Keep settings collapsed by default
     configStatus.textContent = '✓ Configuration loaded'
     configStatus.className = 'status-message success'
   } catch (e) {

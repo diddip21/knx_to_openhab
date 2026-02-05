@@ -83,6 +83,30 @@ h2 {
   font-weight: 600;
 }
 
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-header h2 {
+  margin: 0;
+}
+
+.expert-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-light);
+  cursor: pointer;
+}
+
+.expert-toggle input {
+  margin: 0;
+}
+
 h3 {
   color: var(--medium-gray);
   margin-top: 20px;

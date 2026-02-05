@@ -78,8 +78,14 @@
 
     <!-- Stats Section -->
     <section id="stats-section" class="card" style="display:none;">
-      <h2>📈 Generated Files Statistics</h2>
-      <p class="muted">Tip: Reports like <code>unknown_report.json</code>, <code>partial_report.json</code> and <code>completeness_report.json</code> can be previewed, downloaded, or copied from the table.</p>
+      <div class="section-header">
+        <h2>📈 Generated Files Statistics</h2>
+        <label class="expert-toggle" title="Show completeness summary">
+          <input type="checkbox" id="expertToggle">
+          Expert
+        </label>
+      </div>
+      <p class="muted">Tip: Reports like <code>unknown_report.json</code> and <code>partial_report.json</code> can be previewed, downloaded, or copied from the table.</p>
       <div id="completenessSummary" class="report-summary"></div>
       <div id="stats"></div>
     </section>
@@ -138,7 +144,7 @@
                 <label><input type="checkbox" id="conf-auto-place"> Auto-place unknown addresses</label>
               </div>
               <div class="info-box">
-                Creates missing floors/rooms for unknown addresses. Use this to reduce "Unknown" reports if your ETS structure is incomplete.
+                Naming heuristics control how floors/rooms are inferred from ETS. Enable auto-place to create missing floors/rooms for unknown addresses and reduce “Unknown” reports.
               </div>
             </fieldset>
             <div class="form-group">

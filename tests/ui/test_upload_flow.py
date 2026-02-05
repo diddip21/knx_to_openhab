@@ -25,14 +25,18 @@ def test_upload_knx_project(page: Page, base_url):
     # 2. Upload file
     file_input.set_input_files(TEST_FILE_PATH)
 
-    # 3. Submit
+    # 3. Ensure app script is loaded
+    page.wait_for_function("document.readyState === 'complete'")
+
+    # 4. Submit
     submit_btn = page.locator("button[type='submit']")
     submit_btn.click()
 
-    # 4. Verify upload started/finished
+    # 5. Verify upload started/finished
     # The UI shows status in #status div
     status_div = page.locator("#status")
     expect(status_div).to_be_visible()
+    expect(status_div).not_to_be_empty(timeout=20000)
 
     # Wait for the UI to confirm the upload/job creation and show details
     expect(status_div).to_contain_text(

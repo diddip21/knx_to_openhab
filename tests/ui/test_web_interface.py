@@ -268,38 +268,19 @@ class TestReports:
             },
         }
 
+        page.wait_for_function(
+            "window.updateStatisticsDisplay !== undefined && window.showReportDialog !== undefined"
+        )
         page.evaluate(
             """
             (stats) => {
-                if (typeof renderExpertPanel !== 'undefined') {
-                    window.renderExpertPanel = renderExpertPanel
-                }
                 const toggle = document.getElementById('expertToggle')
                 if (toggle) {
                     toggle.checked = true
                     localStorage.setItem('showExpertCompleteness', 'true')
                 }
                 if (window.applyExpertToggle) window.applyExpertToggle()
-                if (window.updateStatisticsDisplay) {
-                    window.updateStatisticsDisplay(stats)
-                }
-                const panel = document.getElementById('expertPanel')
-                const names = Object.keys(stats || {})
-                if (window.renderExpertPanel) {
-                    window.renderExpertPanel(stats)
-                }
-                if (panel && !panel.innerHTML) {
-                    panel.innerHTML = `
-                      <div class="expert-panel-header">Expert Reports</div>
-                      <div class="expert-report-row">
-                        <span class="expert-report-name">${names[0] || ''}</span>
-                        <div class="expert-report-actions">
-                          <button onclick="showReportDialog('${names[0] || ''}')">View</button>
-                        </div>
-                      </div>
-                    `
-                }
-                if (panel) panel.style.display = 'block'
+                if (window.updateStatisticsDisplay) window.updateStatisticsDisplay(stats)
             }
             """,
             stats,
@@ -309,16 +290,7 @@ class TestReports:
         expect(panel).to_contain_text("Expert Reports")
         expect(panel).to_contain_text("completeness_report.json")
 
-        page.evaluate("""
-            () => {
-                const dialog = document.getElementById('summaryDialog')
-                const content = document.getElementById('summaryDialogContent')
-                if (content) {
-                    content.innerHTML = '<div>Missing required</div>'
-                }
-                if (dialog) dialog.showModal()
-            }
-            """)
+        page.evaluate("window.showReportDialog('completeness_report.json')")
         expect(page.locator("#summaryDialog[open] #summaryDialogContent")).to_contain_text(
             "Missing required"
         )

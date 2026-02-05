@@ -110,6 +110,8 @@ class TestJobActions:
     def test_job_action_buttons_render(self, page: Page, base_url):
         _setup_job_routes(page)
         page.goto(base_url)
+        page.wait_for_function("window.refreshJobs !== undefined")
+        page.evaluate("refreshJobs()")
 
         expect(page.locator(".job-item")).to_have_count(1)
         expect(page.locator(".job-item button:has-text('Structure')")).to_be_visible()
@@ -121,6 +123,8 @@ class TestJobActions:
     def test_job_action_diff_and_structure(self, page: Page, base_url):
         _setup_job_routes(page)
         page.goto(base_url)
+        page.wait_for_function("window.refreshJobs !== undefined")
+        page.evaluate("refreshJobs()")
 
         expect(page.locator(".job-item")).to_have_count(1)
         page.locator(".job-item button:has-text('Diff')").click()
@@ -139,6 +143,8 @@ class TestJobActions:
     def test_job_action_deploy_rollback_delete(self, page: Page, base_url):
         _setup_job_routes(page)
         page.goto(base_url)
+        page.wait_for_function("window.refreshJobs !== undefined")
+        page.evaluate("refreshJobs()")
 
         dialog_messages = []
 

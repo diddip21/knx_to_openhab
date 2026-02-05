@@ -134,7 +134,6 @@ function showJobDetail(jobId) {
           <tr><td>Created:</td><td>${new Date(j.created * 1000).toLocaleString()}</td></tr>
           <tr><td>Backups:</td><td>${j.backups.length}</td></tr>
           ${j.backups.length > 0 ? `<tr><td>Latest Backup:</td><td>${j.backups[j.backups.length - 1].name}</td></tr>` : ''}
-          ${j.status === 'completed' && j.staged ? `<tr><td>Diff:</td><td><button onclick="showDiff('${j.id}')">Alle Dateien diffen</button></td></tr>` : ''}
         </table>
       `
 

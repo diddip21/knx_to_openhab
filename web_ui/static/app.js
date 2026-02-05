@@ -917,7 +917,9 @@ function updateStatisticsDisplay(stats) {
       let statsHtml = '<h3>Generated Files</h3><table class="stats-table"><tr><th>File</th><th>Before</th><th>After</th><th>Change</th><th>Diff</th><th>Action</th></tr>'
 
       // Sort files for consistent display order
-      const sortedStats = Object.entries(stats).sort(([a], [b]) => a.localeCompare(b))
+      const sortedStats = Object.entries(stats)
+        .filter(([fname]) => fname !== "completeness_report.json")
+        .sort(([a], [b]) => a.localeCompare(b))
 
       for (const [fname, stat] of sortedStats) {
         // Validate statistics data

@@ -271,8 +271,7 @@ class TestReports:
             }
         }
 
-        page.evaluate(
-            """
+        page.evaluate("""
             () => {
                 const toggle = document.getElementById('expertToggle')
                 if (toggle) {
@@ -281,8 +280,7 @@ class TestReports:
                 }
                 if (window.applyExpertToggle) window.applyExpertToggle()
             }
-            """
-        )
+            """)
 
         page.evaluate(
             "([jobId, stats]) => renderCompletenessSummary(jobId, stats)",

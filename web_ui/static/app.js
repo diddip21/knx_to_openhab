@@ -993,7 +993,6 @@ function updateStatisticsDisplay(stats) {
             return `<div class="expert-report-row">
               <span class="expert-report-name">${escapeHtml(fname)}</span>
               <div class="expert-report-actions">
-                <button onclick="previewFile('${escaped}')">Preview</button>
                 <button onclick="downloadReport('${escaped}')">Download</button>
                 <button onclick="copyReport('${escaped}')">Copy</button>
               </div>

@@ -39,6 +39,26 @@ from .updater import Updater
 
 cfg = load_config()
 
+
+def _password_error_message(error):
+    msg = str(error).lower()
+    password_markers = [
+        "bad password",
+        "wrong password",
+        "password required",
+        "password-protected",
+        "password protected",
+        "encrypted",
+        "decrypt",
+        "decryption",
+    ]
+    if any(marker in msg for marker in password_markers):
+        return (
+            "This KNX project appears to be password-protected or the password is incorrect. "
+            "Please enter the correct password and try again."
+        )
+    return None
+
 if FLASK_AVAILABLE:
     app = Flask(
         __name__,
@@ -838,6 +858,9 @@ if FLASK_AVAILABLE:
             return jsonify(preview_data)
 
         except Exception as e:
+            friendly_msg = _password_error_message(e)
+            if friendly_msg:
+                return jsonify({"error": friendly_msg}), 400
             return jsonify({"error": str(e)}), 500
         finally:
             # Clean up temp file
@@ -987,6 +1010,9 @@ if FLASK_AVAILABLE:
             return jsonify(preview_data)
 
         except Exception as e:
+            friendly_msg = _password_error_message(e)
+            if friendly_msg:
+                return jsonify({"error": friendly_msg}), 400
             return jsonify({"error": str(e)}), 500
 
     if __name__ == "__main__":

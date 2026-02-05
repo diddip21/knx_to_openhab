@@ -5,7 +5,9 @@
 set -euo pipefail
 
 # Configuration
-INSTALL_DIR="/opt/knx_to_openhab"
+# Resolve installation directory dynamically (can be overridden via INSTALL_DIR env var)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_DIR="${INSTALL_DIR:-$SCRIPT_DIR}"
 LOG_FILE="${LOG_FILE:-/var/log/knx_to_openhab_update.log}"
 SERVICE_NAME="knxohui.service"
 

@@ -313,6 +313,18 @@
     <div id="rollbackStatus"></div>
   </dialog>
 
+  <!-- Completeness Summary Dialog -->
+  <dialog id="summaryDialog" class="preview-dialog">
+    <div class="preview-header">
+      <h2>Completeness Summary</h2>
+      <button class="close-btn" onclick="document.getElementById('summaryDialog').close()">✕</button>
+    </div>
+    <div id="summaryDialogContent" class="preview-content"></div>
+    <div class="preview-footer">
+      <button onclick="document.getElementById('summaryDialog').close()">Close</button>
+    </div>
+  </dialog>
+
   <!-- File Preview Dialog -->
   <dialog id="filePreviewDialog" class="preview-dialog">
     <div class="preview-header">

@@ -305,6 +305,8 @@ async function restartService(service) {
 }
 
 let currentPreviewData = null  // Store current preview data for view switching
+let lastCompletenessReport = null
+let lastCompletenessKey = null
 
 function getReportBadges(stats) {
   if (!stats || typeof stats !== 'object') return ''
@@ -868,6 +870,9 @@ async function renderCompletenessSummary(jobId, stats) {
     const recommendedMissing = summary.recommended_missing ?? 0
     const totalChecked = summary.total_things_checked ?? 0
 
+    lastCompletenessReport = report
+    lastCompletenessKey = reportKey
+
     const statusClass = missingRequired > 0 ? 'error' : recommendedMissing > 0 ? 'warning' : 'success'
     const statusText = missingRequired > 0
       ? 'Issues found'
@@ -899,7 +904,7 @@ async function renderCompletenessSummary(jobId, stats) {
       <div class="summary-header">
         <span class="badge ${statusClass}">${statusText}</span>
         <span class="muted">Summary</span>
-        <button onclick="previewFile('${escapedKey}')">Preview</button>
+        <button onclick="showCompletenessSummaryDialog()">Full summary</button>
       </div>
       <div class="summary-counts">
         <span class="badge ${missingRequired > 0 ? 'error' : 'success'}">Required missing: ${missingRequired}</span>
@@ -912,6 +917,40 @@ async function renderCompletenessSummary(jobId, stats) {
   } catch (e) {
     summaryEl.innerHTML = `<div class="error">Completeness summary failed: ${escapeHtml(e.message)}</div>`
   }
+}
+
+function showCompletenessSummaryDialog() {
+  const dialog = document.getElementById('summaryDialog')
+  const content = document.getElementById('summaryDialogContent')
+  if (!dialog || !content) return
+  if (!lastCompletenessReport) {
+    content.innerHTML = '<div class="muted">No completeness report available.</div>'
+    dialog.showModal()
+    return
+  }
+
+  const req = lastCompletenessReport.missing_required || []
+  const rec = lastCompletenessReport.recommended_missing || []
+
+  const renderList = (items, title) => {
+    if (!items.length) return ''
+    const rows = items.map(entry => {
+      const line = escapeHtml(entry.line || '')
+      return `<li><code>${escapeHtml(entry.kind || '')}</code> ${escapeHtml(entry.reason || '')} — ${line}</li>`
+    }).join('')
+    return `<div class="summary-block"><strong>${title}</strong><ul>${rows}</ul></div>`
+  }
+
+  content.innerHTML = `
+    <div class="summary-counts">
+      <span class="badge ${req.length ? 'error' : 'success'}">Required missing: ${req.length}</span>
+      <span class="badge ${rec.length ? 'warning' : 'success'}">Recommended missing: ${rec.length}</span>
+    </div>
+    ${renderList(req, 'Missing required')}
+    ${renderList(rec, 'Recommended')}
+  `
+
+  dialog.showModal()
 }
 
 // Centralized statistics display function to prevent race conditions

@@ -1,5 +1,5 @@
-import json
 import importlib
+import json
 from types import SimpleNamespace
 from unittest.mock import Mock, mock_open
 

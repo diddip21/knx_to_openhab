@@ -113,6 +113,25 @@ class JobManager:
         self.executor.submit(self._run_job, job_id)
         return job
 
+    def _password_error_message(self, error):
+        msg = str(error).lower()
+        password_markers = [
+            "bad password",
+            "wrong password",
+            "password required",
+            "password-protected",
+            "password protected",
+            "encrypted",
+            "decrypt",
+            "decryption",
+        ]
+        if any(marker in msg for marker in password_markers):
+            return (
+                "This KNX project appears to be password-protected or the password is incorrect. "
+                "Please enter the correct password in the upload form and try again."
+            )
+        return None
+
     def _log_to_queue(self, job_id, q, msg):
         """Helper to both send to queue and persist in job log."""
         job = self._jobs.get(job_id)
@@ -190,6 +209,7 @@ class JobManager:
             )
 
         # Process logic
+        original_openhab_path = None
         try:
             self._log_to_queue(
                 job_id,
@@ -222,6 +242,11 @@ class JobManager:
             # Create a copy of the config dict to modify
             staged_config = copy.copy(global_config_module.config)
             staged_config["openhab_path"] = os.path.join(staging_dir, "openhab")
+
+            # Ensure knxproject_to_openhab uses staged openhab_path for reports
+            original_openhab_path = global_config_module.config.get("openhab_path")
+            global_config_module.config["openhab_path"] = staged_config["openhab_path"]
+            knxmod.config["openhab_path"] = staged_config["openhab_path"]
 
             # Define output keys to override
             output_keys = [
@@ -472,11 +497,30 @@ class JobManager:
         except Exception as e:
             job["status"] = "failed"
             err_msg = str(e)
+            friendly_msg = self._password_error_message(e)
+            if friendly_msg:
+                job["error"] = friendly_msg
+                self._log_to_queue(
+                    job_id,
+                    q,
+                    {"type": "error", "level": "error", "message": friendly_msg},
+                )
+            else:
+                job["error"] = err_msg
             tb = traceback.format_exc()
             self._log_to_queue(job_id, q, {"type": "error", "level": "error", "message": err_msg})
             # TB might be long, but we need it for debugging
             self._log_to_queue(job_id, q, {"type": "error", "level": "error", "message": tb})
         finally:
+            if original_openhab_path is not None:
+                try:
+                    import config as global_config_module
+                    import knxproject_to_openhab as knxmod
+
+                    global_config_module.config["openhab_path"] = original_openhab_path
+                    knxmod.config["openhab_path"] = original_openhab_path
+                except Exception:
+                    pass
             save_jobs(self.jobs_dir, self._jobs)
             q.put(None)
 

@@ -272,6 +272,19 @@ class TestReports:
         }
 
         page.evaluate(
+            """
+            () => {
+                const toggle = document.getElementById('expertToggle')
+                if (toggle) {
+                    toggle.checked = true
+                    localStorage.setItem('showExpertCompleteness', 'true')
+                }
+                if (window.applyExpertToggle) window.applyExpertToggle()
+            }
+            """
+        )
+
+        page.evaluate(
             "([jobId, stats]) => renderCompletenessSummary(jobId, stats)",
             ["job-123", stats],
         )

@@ -10,7 +10,6 @@ const logSectionEl = document.getElementById('log-section')
 const statsSectionEl = document.getElementById('stats-section')
 const detailSectionEl = document.getElementById('detail-section')
 const expertToggleEl = document.getElementById('expertToggle')
-const completenessSummaryEl = document.getElementById('completenessSummary')
 const expertPanelEl = document.getElementById('expertPanel')
 const rollbackDialog = document.getElementById('rollbackDialog')
 const backupSelect = document.getElementById('backupSelect')
@@ -42,14 +41,10 @@ const EXPERT_TOGGLE_KEY = 'showExpertCompleteness'
 
 function applyExpertToggle() {
   const enabled = !!(expertToggleEl && expertToggleEl.checked)
-  if (completenessSummaryEl) {
-    completenessSummaryEl.style.display = enabled ? 'block' : 'none'
-  }
   if (expertPanelEl) {
     expertPanelEl.style.display = enabled ? 'block' : 'none'
   }
   if (!enabled) {
-    if (completenessSummaryEl) completenessSummaryEl.innerHTML = ''
     if (expertPanelEl) expertPanelEl.innerHTML = ''
   } else if (currentStatsData) {
     renderExpertPanel(currentStatsData)
@@ -58,10 +53,6 @@ function applyExpertToggle() {
 
 function renderExpertPanel(stats) {
   if (!expertPanelEl) return
-  if (!(expertToggleEl && expertToggleEl.checked)) {
-    expertPanelEl.innerHTML = ''
-    return
-  }
   const reportEntries = Object.entries(stats || {}).filter(
     ([fname]) => fname.endsWith('_report.json') || fname.endsWith('completeness_report.json')
   )
@@ -101,6 +92,8 @@ if (expertToggleEl) {
     }
   })
 }
+window.renderExpertPanel = renderExpertPanel
+
 
 applyExpertToggle()
 
@@ -338,8 +331,6 @@ async function restartService(service) {
 }
 
 let currentPreviewData = null  // Store current preview data for view switching
-let lastCompletenessReport = null
-let lastCompletenessKey = null
 
 function getReportBadges(stats) {
   if (!stats || typeof stats !== 'object') return ''
@@ -863,15 +854,6 @@ function escapeHtml(text) {
   return text.replace(/[&<>"']/g, m => map[m])
 }
 
-async function renderCompletenessSummary(jobId, stats) {
-  const summaryEl = document.getElementById('completenessSummary')
-  if (!summaryEl) return
-
-  if (!stats || typeof stats !== 'object') {
-    summaryEl.innerHTML = ''
-    return
-  }
-
   const reportEntry = Object.entries(stats).find(([fname]) => fname.endsWith('completeness_report.json'))
   if (!reportEntry) {
     summaryEl.innerHTML = ''
@@ -948,16 +930,8 @@ async function renderCompletenessSummary(jobId, stats) {
     summaryEl.innerHTML = `<div class="error">Completeness summary failed: ${escapeHtml(e.message)}</div>`
   }
 }
+window.escapeHtml = escapeHtml
 
-function showCompletenessSummaryDialog() {
-  const dialog = document.getElementById('summaryDialog')
-  const content = document.getElementById('summaryDialogContent')
-  if (!dialog || !content) return
-  if (!lastCompletenessReport) {
-    content.innerHTML = '<div class="muted">No completeness report available.</div>'
-    dialog.showModal()
-    return
-  }
 
   const req = lastCompletenessReport.missing_required || []
   const rec = lastCompletenessReport.recommended_missing || []
@@ -1135,6 +1109,8 @@ function showReportDialog(reportKey) {
       content.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`
     })
 }
+window.updateStatisticsDisplay = updateStatisticsDisplay
+
 
 
 // Configuration Management
@@ -1151,6 +1127,8 @@ function switchTab(tabId) {
   const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.onclick.toString().includes(tabId))
   if (btn) btn.classList.add('active')
 }
+window.showReportDialog = showReportDialog
+
 
 async function loadConfig() {
   const configStatus = document.getElementById('configStatus')

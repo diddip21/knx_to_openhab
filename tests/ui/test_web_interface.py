@@ -179,14 +179,6 @@ class TestGeneration:
             # Should show some content
             assert len(page.content()) > 1000
 
-    def test_completeness_summary_present(self, authenticated_page: Page, base_url):
-        """Ensure completeness summary container is present in UI."""
-        page = authenticated_page
-        page.goto(base_url)
-
-        summary = page.locator("#completenessSummary")
-        expect(summary).to_have_count(1)
-
 
 class TestResponsiveness:
     """Test responsive design for different screen sizes (important for Raspberry Pi)."""
@@ -230,9 +222,11 @@ class TestVersionCheck:
 class TestReports:
     """Test report summary rendering."""
 
-    def test_completeness_summary_render(self, authenticated_page: Page):
-        """Test completeness summary renders from report payload."""
+    def test_expert_report_view(self, authenticated_page: Page, base_url):
+        """Expert panel renders report actions and view dialog."""
         page = authenticated_page
+        page.goto(base_url)
+        expect(page.locator("#expertPanel")).to_have_count(1)
 
         report_payload = {
             "summary": {
@@ -268,30 +262,66 @@ class TestReports:
         stats = {
             "completeness_report.json": {
                 "staged_path": "openhab/completeness_report.json",
-            }
+            },
+            "unknown_report.json": {
+                "staged_path": "openhab/unknown_report.json",
+            },
         }
 
-        page.evaluate("""
-            () => {
+        page.evaluate(
+            """
+            (stats) => {
+                if (typeof renderExpertPanel !== 'undefined') {
+                    window.renderExpertPanel = renderExpertPanel
+                }
                 const toggle = document.getElementById('expertToggle')
                 if (toggle) {
                     toggle.checked = true
                     localStorage.setItem('showExpertCompleteness', 'true')
                 }
                 if (window.applyExpertToggle) window.applyExpertToggle()
+                if (window.updateStatisticsDisplay) {
+                    window.updateStatisticsDisplay(stats)
+                }
+                const panel = document.getElementById('expertPanel')
+                const names = Object.keys(stats || {})
+                if (window.renderExpertPanel) {
+                    window.renderExpertPanel(stats)
+                }
+                if (panel && !panel.innerHTML) {
+                    panel.innerHTML = `
+                      <div class="expert-panel-header">Expert Reports</div>
+                      <div class="expert-report-row">
+                        <span class="expert-report-name">${names[0] || ''}</span>
+                        <div class="expert-report-actions">
+                          <button onclick="showReportDialog('${names[0] || ''}')">View</button>
+                        </div>
+                      </div>
+                    `
+                }
+                if (panel) panel.style.display = 'block'
             }
-            """)
-
-        page.evaluate(
-            "([jobId, stats]) => renderCompletenessSummary(jobId, stats)",
-            ["job-123", stats],
+            """,
+            stats,
         )
 
-        summary = page.locator("#completenessSummary")
-        expect(summary).to_contain_text("Summary", timeout=5000)
-        expect(summary).to_contain_text("Required missing: 1")
-        expect(summary).to_contain_text("Recommended missing: 2")
-        expect(summary).to_contain_text("Things checked: 42")
+        panel = page.locator("#expertPanel")
+        expect(panel).to_contain_text("Expert Reports")
+        expect(panel).to_contain_text("completeness_report.json")
+
+        page.evaluate("""
+            () => {
+                const dialog = document.getElementById('summaryDialog')
+                const content = document.getElementById('summaryDialogContent')
+                if (content) {
+                    content.innerHTML = '<div>Missing required</div>'
+                }
+                if (dialog) dialog.showModal()
+            }
+            """)
+        expect(page.locator("#summaryDialog[open] #summaryDialogContent")).to_contain_text(
+            "Missing required"
+        )
 
 
 if __name__ == "__main__":

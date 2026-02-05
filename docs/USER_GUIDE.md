@@ -39,10 +39,12 @@ The CLI uses the same `config.json` and generates the same output as the Web UI.
 - **Web UI**: Best for interactive uploads, quick config edits, and report review (unknown/partial/completeness).
 - **CLI**: Best for automation or headless environments.
 
-The Web UI exposes **reports** in the *Generated Files* table (Preview / Download / Copy):
+The Web UI exposes **reports** in the *Expert* panel (View / Download / Copy):
 - `unknown_report.json` (generated even when `addMissingItems` is disabled)
 - `partial_report.json`
 - `completeness_report.json` (checks for missing required channels and recommended feedback)
+
+**Expert Reports panel:** enable **Expert** in the *Generated Files Statistics* section to see the reports list and open the full, human‑readable recommendations via **View**.
 
 **Completeness rules (summary):**
 - **Required:** dimmer → `position`; rollershutter → `upDown`; switch/number/string/datetime → `ga`

@@ -133,15 +133,33 @@
             <fieldset>
               <legend>Naming & Heuristics</legend>
               <div class="checkbox-group">
-                <label><input type="checkbox" id="conf-floor-asis"> Floor Name As Is</label>
-                <label><input type="checkbox" id="conf-floor-desc"> Floor Name From Description</label>
-                <label><input type="checkbox" id="conf-room-asis"> Room Name As Is</label>
-                <label><input type="checkbox" id="conf-room-desc"> Room Name From Description</label>
-                <label><input type="checkbox" id="conf-add-missing"> Add Missing Items</label>
-                <label><input type="checkbox" id="conf-auto-place"> Auto-place unknown addresses</label>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-floor-asis"> Floor Name As Is</label>
+                  <div class="checkbox-help">Use the floor name exactly as defined in ETS.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-floor-desc"> Floor Name From Description</label>
+                  <div class="checkbox-help">Use the ETS description field as the floor name.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-room-asis"> Room Name As Is</label>
+                  <div class="checkbox-help">Use the room name exactly as defined in ETS.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-room-desc"> Room Name From Description</label>
+                  <div class="checkbox-help">Use the ETS description field as the room name.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-add-missing"> Add Missing Items</label>
+                  <div class="checkbox-help">Create OpenHAB items for GAs that have no explicit mapping.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-auto-place"> Auto-place unknown addresses</label>
+                  <div class="checkbox-help">Create missing floors/rooms for unknown addresses to reduce “Unknown” reports.</div>
+                </div>
               </div>
               <div class="info-box">
-                Naming heuristics control how floors/rooms are inferred from ETS. “As Is” uses the ETS name, while “From Description” uses the ETS description. “Add Missing Items” creates OpenHAB items for GAs without explicit mappings. Enable auto-place to create missing floors/rooms for unknown addresses and reduce “Unknown” reports.
+                Naming heuristics control how floors/rooms are inferred from ETS. Combine options as needed for your project structure.
               </div>
             </fieldset>
             <div class="form-group">

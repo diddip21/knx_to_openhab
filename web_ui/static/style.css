@@ -974,6 +974,22 @@ dialog:not([open]) {
   font-size: 12px;
 }
 
+.checkbox-group {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.checkbox-item label {
+  font-weight: 500;
+}
+
+.checkbox-help {
+  margin-left: 24px;
+  font-size: 12px;
+  color: var(--text-light);
+}
+
 .form-group.checkbox-group {
   display: flex;
   align-items: center;

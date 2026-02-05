@@ -50,6 +50,39 @@ function applyExpertToggle() {
   if (!enabled) {
     completenessSummaryEl.innerHTML = ''
     if (expertPanelEl) expertPanelEl.innerHTML = ''
+  } else if (currentStatsData) {
+    renderExpertPanel(currentStatsData)
+  }
+}
+
+function renderExpertPanel(stats) {
+  if (!expertPanelEl) return
+  if (!(expertToggleEl && expertToggleEl.checked)) {
+    expertPanelEl.innerHTML = ''
+    return
+  }
+  const reportEntries = Object.entries(stats || {}).filter(
+    ([fname]) => fname.endsWith('_report.json') || fname.endsWith('completeness_report.json')
+  )
+  if (reportEntries.length) {
+    const reportButtons = reportEntries
+      .map(([fname]) => {
+        const escaped = fname.replace(/\\/g, '\\\\')
+        return `<div class="expert-report-row">
+              <span class="expert-report-name">${escapeHtml(fname)}</span>
+              <div class="expert-report-actions">
+                <button onclick="downloadReport('${escaped}')">Download</button>
+                <button onclick="copyReport('${escaped}')">Copy</button>
+              </div>
+            </div>`
+      })
+      .join('')
+    expertPanelEl.innerHTML = `
+            <div class="expert-panel-header">Expert Reports</div>
+            ${reportButtons}
+          `
+  } else {
+    expertPanelEl.innerHTML = '<div class="muted">No reports available.</div>'
   }
 }
 
@@ -1019,29 +1052,8 @@ function updateStatisticsDisplay(stats) {
       currentStatsData = JSON.parse(JSON.stringify(stats))
 
       // Render expert panel (reports) when enabled
-      if (expertToggleEl && expertToggleEl.checked && expertPanelEl) {
-        const reportEntries = Object.entries(stats).filter(([fname]) => fname.endsWith('_report.json') || fname.endsWith('completeness_report.json'))
-        if (reportEntries.length) {
-          const reportButtons = reportEntries.map(([fname]) => {
-            const escaped = fname.replace(/\\/g, '\\\\')
-            return `<div class="expert-report-row">
-              <span class="expert-report-name">${escapeHtml(fname)}</span>
-              <div class="expert-report-actions">
-                <button onclick="downloadReport('${escaped}')">Download</button>
-                <button onclick="copyReport('${escaped}')">Copy</button>
-              </div>
-            </div>`
-          }).join('')
-          expertPanelEl.innerHTML = `
-            <div class="expert-panel-header">Expert Reports</div>
-            ${reportButtons}
-          `
-        } else {
-          expertPanelEl.innerHTML = '<div class="muted">No reports available.</div>'
-        }
-      } else if (expertPanelEl) {
-        expertPanelEl.innerHTML = ''
-      }
+      renderExpertPanel(stats)
+
 
     } else {
       if (!stats || (typeof stats === 'object' && Object.keys(stats).length === 0)) {

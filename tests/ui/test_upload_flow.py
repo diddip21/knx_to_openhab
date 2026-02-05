@@ -5,7 +5,9 @@ import pytest
 from playwright.sync_api import Page, expect
 
 # Path to a real KNX project file for testing
-TEST_FILE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Charne.knxproj"))
+TEST_FILE_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "fixtures", "Charne.knxproj")
+)
 
 
 def test_upload_knx_project(page: Page, base_url):

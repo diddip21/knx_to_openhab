@@ -932,7 +932,7 @@ function updateStatisticsDisplay(stats) {
 
       // Sort files for consistent display order
       const sortedStats = Object.entries(stats)
-        .filter(([fname]) => fname !== "completeness_report.json")
+        .filter(([fname]) => !["completeness_report.json", "partial_report.json"].includes(fname))
         .sort(([a], [b]) => a.localeCompare(b))
 
       for (const [fname, stat] of sortedStats) {

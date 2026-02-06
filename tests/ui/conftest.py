@@ -12,7 +12,7 @@ import requests
 @pytest.fixture(scope="session")
 def base_url():
     """Base URL for the web UI."""
-    return "http://127.0.0.1:8080"
+    return os.getenv("UI_BASE_URL", "http://127.0.0.1:8085")
 
 
 @pytest.fixture(scope="session")

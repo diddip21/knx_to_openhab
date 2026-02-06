@@ -114,7 +114,6 @@ async function refreshJobs() {
       ${j.status === 'completed' && j.staged ? `<button onclick="showDiff('${j.id}')">Diff</button>` : ''}
       ${j.status === 'completed' && j.staged && !j.deployed ? `<button style="background-color: #28a745; color: white;" onclick="deployJob('${j.id}')">Deploy</button>` : ''}
       ${j.backups && j.backups.length > 0 ? `<button onclick="showRollbackDialog('${j.id}')">Rollback</button>` : ''}
-      ${j.status === 'completed' ? getReportBadges(j.stats) : ''}
       <button onclick="deleteJob('${j.id}')">Delete</button>
     `
     jobsList.appendChild(li)
@@ -153,7 +152,6 @@ function showJobDetail(jobId) {
       return r.json()
     })
     .then(j => {
-      const reportBadges = getReportBadges(j.stats)
       jobDetailEl.innerHTML = `
         <table class="detail-table">
           <tr><td>ID:</td><td><code>${j.id}</code></td></tr>
@@ -331,20 +329,6 @@ async function restartService(service) {
 }
 
 let currentPreviewData = null  // Store current preview data for view switching
-
-function getReportBadges(stats) {
-  if (!stats || typeof stats !== 'object') return ''
-  const files = Object.keys(stats)
-  if (!files.length) return ''
-
-  const badges = []
-  if (files.includes('unknown_report.json')) {
-    badges.push('<span class="badge info">Unknown report</span>')
-  }
-
-  if (!badges.length) return ''
-  return `<span class="job-meta">${badges.join(' ')}</span>`
-}
 
 async function showDiff(jobId) {
   currentJobId = jobId

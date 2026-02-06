@@ -1,4 +1,5 @@
 """Pytest fixtures for UI tests."""
+
 import os
 import subprocess
 import sys
@@ -28,7 +29,7 @@ def flask_server(base_url):
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,  # Merge stderr into stdout for easier debugging
         text=True,
-        bufsize=1  # Line buffered
+        bufsize=1,  # Line buffered
     )
 
     # Wait for server to be ready
@@ -40,11 +41,7 @@ def flask_server(base_url):
         # Check if process crashed
         if server_process.poll() is not None:
             # Server crashed, get error output
-            output = (
-                server_process.stdout.read()
-                if server_process.stdout
-                else "No output"
-            )
+            output = server_process.stdout.read() if server_process.stdout else "No output"
             raise RuntimeError(
                 "Flask server crashed during startup "
                 f"(exit code: {server_process.returncode}).\n"
@@ -64,11 +61,7 @@ def flask_server(base_url):
     if not server_ready:
         server_process.terminate()
         try:
-            output = (
-                server_process.stdout.read()
-                if server_process.stdout
-                else "No output"
-            )
+            output = server_process.stdout.read() if server_process.stdout else "No output"
             server_process.wait(timeout=2)
         except subprocess.TimeoutExpired:
             server_process.kill()

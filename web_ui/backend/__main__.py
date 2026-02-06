@@ -2,7 +2,8 @@
 
 Usage: python -m web_ui.backend
 """
-from .app import app, cfg, FLASK_AVAILABLE
+
+from .app import FLASK_AVAILABLE, app, cfg
 
 if __name__ == "__main__":
     if not FLASK_AVAILABLE:

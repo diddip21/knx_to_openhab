@@ -5,6 +5,7 @@ These tests verify basic UI functionality without deep interaction:
 - Critical UI elements are present
 - Basic navigation works
 """
+
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -43,7 +44,7 @@ def test_navigation_elements(page: Page, flask_server):
     page.wait_for_load_state("networkidle")
 
     # Check for main container
-    main_content = page.locator('.container')
+    main_content = page.locator(".container")
     expect(main_content).to_be_attached()
 
 
@@ -55,9 +56,7 @@ def test_api_status_endpoint(page: Page, flask_server):
 
     assert response.ok, f"Status endpoint failed with {response.status}"
     data = response.json()
-    assert "version" in data or "status" in data, (
-        "Status response missing expected fields"
-    )
+    assert "version" in data or "status" in data, "Status response missing expected fields"
 
 
 @pytest.mark.ui

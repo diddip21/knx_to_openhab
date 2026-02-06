@@ -1476,6 +1476,10 @@ uploadForm.addEventListener('submit', async (e) => {
     statusEl.textContent = `File uploaded, job started: ${job.id.substring(0, 8)}...`
     statusEl.className = 'status-message'
 
+    // Update status to indicate processing has started
+    statusEl.textContent = `Processing started: ${job.id.substring(0, 8)}... Check job details below.`
+    statusEl.className = 'status-message'
+
     // Refresh jobs list to show the new job
     await refreshJobs()
 
@@ -1487,10 +1491,6 @@ uploadForm.addEventListener('submit', async (e) => {
 
     // Start listening for events
     startEvents(job.id)
-
-    // Update status to indicate processing has started
-    statusEl.textContent = `Processing started: ${job.id.substring(0, 8)}... Check job details below.`
-    statusEl.className = 'status-message'
 
   } catch (e) {
     statusEl.textContent = `Upload Error: ${e.message}`

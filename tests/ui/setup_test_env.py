@@ -4,6 +4,7 @@ import json
 import sys
 from pathlib import Path
 
+
 def main():
     """Disable auth in backend config for tests."""
     config_path = Path('web_ui/backend/config.json')
@@ -24,6 +25,7 @@ def main():
         json.dump(config, f, indent=2)
     
     print(f"✓ Auth disabled in {config_path}")
+
 
 if __name__ == '__main__':
     main()

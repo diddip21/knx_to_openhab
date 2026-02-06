@@ -114,6 +114,35 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
+      - name: Setup test environment
+        run: |
+          # Create required directories
+          mkdir -p var/lib/knx_to_openhab
+          mkdir -p var/backups/knx_to_openhab
+          mkdir -p openhab
+          
+          # Create test-friendly config (auth disabled)
+          cat > web_ui/backend/config.json << 'EOF'
+          {
+            "openhab_path": "openhab",
+            "jobs_dir": "var/lib/knx_to_openhab",
+            "backups_dir": "var/backups/knx_to_openhab",
+            "bind_host": "127.0.0.1",
+            "port": 8080,
+            "auth": {
+              "enabled": false
+            },
+            "retention": {
+              "days": 14,
+              "max_backups": 50,
+              "max_backups_size_mb": 500
+            },
+            "general": {
+              "auto_place_unknown": false
+            }
+          }
+          EOF
+
       - name: Install Playwright browsers
         run: |
           python -m playwright install --with-deps chromium

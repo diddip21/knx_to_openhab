@@ -1,90 +1,49 @@
-import os
-import sys
-import threading
+"""Pytest fixtures for UI tests."""
+import multiprocessing
 import time
-from urllib.parse import urlparse
-
 import pytest
 import requests
-
-# Add project root to sys.path
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
-sys.path.append(PROJECT_ROOT)
-
-# Add backend to sys.path so we can import app
-BACKEND_DIR = os.path.join(PROJECT_ROOT, "web_ui", "backend")
-sys.path.append(BACKEND_DIR)
-
-from web_ui.backend.app import app, cfg
-
-
-def _safe_artifact_name(name: str) -> str:
-    return "".join(c if c.isalnum() or c in "-_" else "_" for c in name)
-
-
-def run_server(host: str, port: int):
-    """Run the Flask app."""
-    # Disable auth for testing
-    if "auth" not in cfg:
-        cfg["auth"] = {}
-    cfg["auth"]["enabled"] = False
-
-    # Disable reloader to avoid main thread issues
-    app.run(host=host, port=port, use_reloader=False)
+from web_ui.backend import app as flask_app
 
 
 @pytest.fixture(scope="session")
 def base_url():
-    return os.getenv("UI_BASE_URL", "http://127.0.0.1:8081")
+    """Base URL for the web UI."""
+    return "http://127.0.0.1:8080"
 
 
-@pytest.fixture(scope="session", autouse=True)
-def server(base_url):
-    """Start the Flask server in a separate thread."""
-    # Use a different port than default 8080 to avoid conflicts
-
-    parsed = urlparse(base_url)
-    host = parsed.hostname or "127.0.0.1"
-    port = parsed.port or 8081
-
-    # Start server thread
-    server_thread = threading.Thread(target=run_server, args=(host, port), daemon=True)
-    server_thread.start()
-
+@pytest.fixture(scope="session")
+def flask_server(base_url):
+    """Start Flask server in a separate process for UI tests."""
+    # Get the Flask app from web_ui.backend.app
+    app_instance = flask_app.app
+    
+    def run_server():
+        """Run Flask server."""
+        app_instance.run(host="127.0.0.1", port=8080, debug=False, use_reloader=False)
+    
+    # Start server in separate process
+    server_process = multiprocessing.Process(target=run_server)
+    server_process.start()
+    
     # Wait for server to be ready
-    max_retries = 20
-    for _ in range(max_retries):
+    max_retries = 30
+    for i in range(max_retries):
         try:
-            response = requests.get(f"{base_url}/api/status")
+            response = requests.get(f"{base_url}/api/status", timeout=1)
             if response.status_code == 200:
-                print("Server is ready!")
                 break
-        except requests.ConnectionError:
-            pass
-        time.sleep(0.5)
-    else:
-        pytest.fail("Server failed to start within timeout")
-
-    yield
-
-    # Thread will be killed when main process exits (daemon=True)
-
-
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_makereport(item, call):
-    outcome = yield
-    report = outcome.get_result()
-    if report.when != "call" or report.passed:
-        return
-
-    page = item.funcargs.get("page")
-    if not page:
-        return
-
-    os.makedirs("test-artifacts", exist_ok=True)
-    safe_name = _safe_artifact_name(item.nodeid.replace("::", "-"))
-    screenshot_path = os.path.join("test-artifacts", f"{safe_name}.png")
-    try:
-        page.screenshot(path=screenshot_path, full_page=True)
-    except Exception:
-        pass
+        except requests.exceptions.RequestException:
+            if i == max_retries - 1:
+                server_process.terminate()
+                server_process.join()
+                raise RuntimeError(f"Flask server did not start within {max_retries} seconds")
+            time.sleep(1)
+    
+    yield base_url
+    
+    # Cleanup: terminate server
+    server_process.terminate()
+    server_process.join(timeout=5)
+    if server_process.is_alive():
+        server_process.kill()

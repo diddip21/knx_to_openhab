@@ -1,8 +1,9 @@
 """Pytest fixtures for UI tests."""
-import subprocess
-import time
-import sys
 import os
+import subprocess
+import sys
+import time
+
 import pytest
 import requests
 

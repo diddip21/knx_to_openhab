@@ -1564,6 +1564,18 @@ function startEvents(jobId) {
                   statusBadge.textContent = j.status;
                 }
 
+                // Update top status banner for final state
+                const banner = document.getElementById('status');
+                if (banner && currentJobId === j.id && j.status !== 'running') {
+                  if (j.status === 'completed') {
+                    banner.textContent = 'Job completed successfully.';
+                    banner.className = 'status-message success';
+                  } else if (j.status === 'failed') {
+                    banner.textContent = `Job failed${j.error ? `: ${j.error}` : ''}. Check logs below.`;
+                    banner.className = 'status-message error';
+                  }
+                }
+
                 // Update statistics table
                 updateStatisticsDisplay(j.stats);
               })

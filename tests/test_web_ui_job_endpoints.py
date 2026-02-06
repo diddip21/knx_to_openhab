@@ -142,5 +142,3 @@ def test_job_preview_success(client, monkeypatch):
     assert payload["metadata"]["homekit_enabled"] is True
     assert payload["metadata"]["alexa_enabled"] is False
     assert payload["metadata"]["unknown_items"]
-
-

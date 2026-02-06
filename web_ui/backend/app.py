@@ -59,6 +59,7 @@ def _password_error_message(error):
         )
     return None
 
+
 if FLASK_AVAILABLE:
     app = Flask(
         __name__,

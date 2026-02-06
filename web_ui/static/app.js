@@ -37,6 +37,7 @@ let allLogEntries = []  // store all entries for filtering
 let eventSource = null  // track active event stream
 let currentStatsData = null  // store current statistics for consistent display
 let statsUpdateInProgress = false  // prevent race conditions
+let autoStructureJobId = null  // track auto-loaded structure
 const EXPERT_TOGGLE_KEY = 'showExpertCompleteness'
 
 function applyExpertToggle() {
@@ -170,6 +171,11 @@ function showJobDetail(jobId) {
         renderExpertPanel(j.stats)
       } else if (expertPanelEl) {
         expertPanelEl.innerHTML = ''
+      }
+
+      if (j.status === 'completed' && currentJobId === j.id && autoStructureJobId !== j.id) {
+        autoStructureJobId = j.id
+        loadStructureFromJob(j.id)
       }
 
       // Load stored log entries from job.log
@@ -1578,6 +1584,11 @@ function startEvents(jobId) {
 
                 // Update statistics table
                 updateStatisticsDisplay(j.stats);
+
+                if (j.status === 'completed' && currentJobId === j.id && autoStructureJobId !== j.id) {
+                  autoStructureJobId = j.id;
+                  loadStructureFromJob(j.id);
+                }
               })
               .catch(err => {
                 console.error('Failed to refresh job details:', err);

@@ -47,7 +47,7 @@ jobs:
 
       - name: Run core tests
         run: |
-          pytest -q --cov=. --cov-report=xml -m "not ui"
+          pytest -q --cov=. --cov-report=xml -m "not ui" --ignore=tests/ui
 
   lint:
     name: Lint (format + flake8)
@@ -120,7 +120,7 @@ jobs:
           mkdir -p var/lib/knx_to_openhab
           mkdir -p var/backups/knx_to_openhab
           mkdir -p openhab/items openhab/things openhab/sitemaps openhab/rules openhab/persistence openhab/transform
-          
+
           # Disable auth for tests using dedicated script
           python tests/ui/setup_test_env.py
 

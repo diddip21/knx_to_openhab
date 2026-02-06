@@ -20,7 +20,7 @@ def flask_server(base_url):
     # Start server using subprocess
     env = os.environ.copy()
     env["FLASK_ENV"] = "testing"
-    
+
     # Use -m to run as module, which triggers __main__.py
     server_process = subprocess.Popen(
         [sys.executable, "-m", "web_ui.backend"],
@@ -30,12 +30,12 @@ def flask_server(base_url):
         text=True,
         bufsize=1  # Line buffered
     )
-    
+
     # Wait for server to be ready
     max_retries = 30
     server_ready = False
     last_error = None
-    
+
     for i in range(max_retries):
         # Check if process crashed
         if server_process.poll() is not None:
@@ -50,7 +50,7 @@ def flask_server(base_url):
                 f"(exit code: {server_process.returncode}).\n"
                 f"Output:\n{output}"
             )
-        
+
         try:
             response = requests.get(f"{base_url}/api/status", timeout=2)
             # 200 ok, 401 means auth but server is up
@@ -60,7 +60,7 @@ def flask_server(base_url):
         except requests.exceptions.RequestException as e:
             last_error = str(e)
             time.sleep(1)
-    
+
     if not server_ready:
         server_process.terminate()
         try:
@@ -78,10 +78,10 @@ def flask_server(base_url):
             f"Last error: {last_error}\n"
             f"Server output:\n{output}"
         )
-    
+
     print(f"Flask server started successfully on {base_url}")
     yield base_url
-    
+
     # Cleanup: terminate server
     server_process.terminate()
     try:

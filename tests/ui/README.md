@@ -14,13 +14,13 @@ Automated browser tests using Playwright and pytest.
    ```bash
    # Run all UI tests
    pytest tests/ui/ -v -m ui
-   
+
    # Run specific test
    pytest tests/ui/test_ui_smoke.py::test_homepage_loads -v
-   
+
    # Run with visible browser (headed mode)
    pytest tests/ui/ -v -m ui --headed
-   
+
    # Run slow tests
    pytest tests/ui/ -v -m "ui and slow"
    ```

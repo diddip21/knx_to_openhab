@@ -193,6 +193,18 @@ function showJobDetail(jobId) {
         }
       }
 
+      // Update top status banner when job is no longer running
+      const banner = document.getElementById('status')
+      if (banner && currentJobId === j.id && j.status !== 'running') {
+        if (j.status === 'completed') {
+          banner.textContent = 'Job completed successfully.'
+          banner.className = 'status-message success'
+        } else if (j.status === 'failed') {
+          banner.textContent = `Job failed${j.error ? `: ${j.error}` : ''}. Check logs below.`
+          banner.className = 'status-message error'
+        }
+      }
+
       // If job is still running, start streaming events
       if (j.status === 'running') {
         startEvents(jobId)
@@ -862,7 +874,7 @@ function updateStatisticsDisplay(stats) {
 
       // Sort files for consistent display order
       const sortedStats = Object.entries(stats)
-        .filter(([fname]) => !["completeness_report.json", "partial_report.json"].includes(fname))
+        .filter(([fname]) => !["completeness_report.json", "partial_report.json", "unknown_report.json"].includes(fname))
         .sort(([a], [b]) => a.localeCompare(b))
 
       for (const [fname, stat] of sortedStats) {

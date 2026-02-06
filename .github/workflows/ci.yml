@@ -47,7 +47,7 @@ jobs:
 
       - name: Run core tests
         run: |
-          pytest -q --cov=. --cov-report=xml
+          pytest -q --cov=. --cov-report=xml -m "not ui"
 
   lint:
     name: Lint (format + flake8)
@@ -114,18 +114,18 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      - name: Install Playwright browser
+      - name: Install Playwright browsers
         run: |
-          python -m playwright install chromium
+          python -m playwright install --with-deps chromium
 
       - name: Run UI tests
         run: |
-          pytest tests/ui -v -o addopts=
+          pytest tests/ui/ -v -m ui --tb=short
 
-      - name: Upload UI test artifacts
-        if: always()
+      - name: Upload Playwright screenshots on failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: ui-test-artifacts
-          path: test-artifacts/
+          name: playwright-screenshots
+          path: test-results/
           if-no-files-found: ignore

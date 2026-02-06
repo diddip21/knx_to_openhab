@@ -15,7 +15,7 @@ def test_homepage_loads(page: Page, flask_server):
     page.goto(flask_server)
 
     # Check that page loaded (title should be present)
-    expect(page).to_have_title("KNX to openHAB")
+    expect(page).to_have_title("KNX → OpenHAB Generator")
 
 
 @pytest.mark.ui
@@ -42,9 +42,8 @@ def test_navigation_elements(page: Page, flask_server):
     page.goto(flask_server)
     page.wait_for_load_state("networkidle")
 
-    # Check for navigation or main heading
-    # Adjust selectors based on actual UI structure
-    main_content = page.locator('main, .main-content, #app')
+    # Check for main container
+    main_content = page.locator('.container')
     expect(main_content).to_be_attached()
 
 

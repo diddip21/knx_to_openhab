@@ -119,29 +119,17 @@ jobs:
           # Create required directories
           mkdir -p var/lib/knx_to_openhab
           mkdir -p var/backups/knx_to_openhab
-          mkdir -p openhab
+          mkdir -p openhab/items openhab/things openhab/sitemaps openhab/rules openhab/persistence openhab/transform
           
-          # Create test-friendly config (auth disabled)
-          cat > web_ui/backend/config.json << 'EOF'
-          {
-            "openhab_path": "openhab",
-            "jobs_dir": "var/lib/knx_to_openhab",
-            "backups_dir": "var/backups/knx_to_openhab",
-            "bind_host": "127.0.0.1",
-            "port": 8080,
-            "auth": {
-              "enabled": false
-            },
-            "retention": {
-              "days": 14,
-              "max_backups": 50,
-              "max_backups_size_mb": 500
-            },
-            "general": {
-              "auto_place_unknown": false
-            }
-          }
-          EOF
+          # Backend config already exists, just disable auth for tests
+          python -c "
+import json
+with open('web_ui/backend/config.json', 'r') as f:
+    config = json.load(f)
+config['auth']['enabled'] = False
+with open('web_ui/backend/config.json', 'w') as f:
+    json.dump(config, f, indent=2)
+"
 
       - name: Install Playwright browsers
         run: |

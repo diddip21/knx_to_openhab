@@ -39,15 +39,21 @@ def flask_server(base_url):
         # Check if process crashed
         if server_process.poll() is not None:
             # Server crashed, get error output
-            output = server_process.stdout.read() if server_process.stdout else "No output"
+            output = (
+                server_process.stdout.read()
+                if server_process.stdout
+                else "No output"
+            )
             raise RuntimeError(
-                f"Flask server crashed during startup (exit code: {server_process.returncode}).\n"
+                "Flask server crashed during startup "
+                f"(exit code: {server_process.returncode}).\n"
                 f"Output:\n{output}"
             )
         
         try:
             response = requests.get(f"{base_url}/api/status", timeout=2)
-            if response.status_code in [200, 401]:  # 200 ok, 401 means auth but server is up
+            # 200 ok, 401 means auth but server is up
+            if response.status_code in (200, 401):
                 server_ready = True
                 break
         except requests.exceptions.RequestException as e:
@@ -57,7 +63,11 @@ def flask_server(base_url):
     if not server_ready:
         server_process.terminate()
         try:
-            output = server_process.stdout.read() if server_process.stdout else "No output"
+            output = (
+                server_process.stdout.read()
+                if server_process.stdout
+                else "No output"
+            )
             server_process.wait(timeout=2)
         except subprocess.TimeoutExpired:
             server_process.kill()

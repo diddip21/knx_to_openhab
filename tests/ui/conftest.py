@@ -1,9 +1,10 @@
 """Pytest fixtures for UI tests."""
-import multiprocessing
+import subprocess
 import time
+import sys
+import os
 import pytest
 import requests
-from web_ui.backend import app as flask_app
 
 
 @pytest.fixture(scope="session")
@@ -14,36 +15,60 @@ def base_url():
 
 @pytest.fixture(scope="session")
 def flask_server(base_url):
-    """Start Flask server in a separate process for UI tests."""
-    # Get the Flask app from web_ui.backend.app
-    app_instance = flask_app.app
+    """Start Flask server as subprocess for UI tests."""
+    # Start server using subprocess instead of multiprocessing
+    # This is more reliable in CI environments
+    env = os.environ.copy()
+    env["FLASK_ENV"] = "testing"
     
-    def run_server():
-        """Run Flask server."""
-        app_instance.run(host="127.0.0.1", port=8080, debug=False, use_reloader=False)
-    
-    # Start server in separate process
-    server_process = multiprocessing.Process(target=run_server)
-    server_process.start()
+    server_process = subprocess.Popen(
+        [sys.executable, "-m", "web_ui.backend.app"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
     
     # Wait for server to be ready
     max_retries = 30
+    server_ready = False
+    
     for i in range(max_retries):
         try:
-            response = requests.get(f"{base_url}/api/status", timeout=1)
-            if response.status_code == 200:
+            response = requests.get(f"{base_url}/api/status", timeout=2)
+            if response.status_code in [200, 401]:  # 200 ok, 401 means auth but server is up
+                server_ready = True
                 break
         except requests.exceptions.RequestException:
-            if i == max_retries - 1:
-                server_process.terminate()
-                server_process.join()
-                raise RuntimeError(f"Flask server did not start within {max_retries} seconds")
+            if server_process.poll() is not None:
+                # Server crashed, get error output
+                stdout, stderr = server_process.communicate(timeout=1)
+                raise RuntimeError(
+                    f"Flask server crashed during startup.\n"
+                    f"Stdout: {stdout}\n"
+                    f"Stderr: {stderr}"
+                )
             time.sleep(1)
+    
+    if not server_ready:
+        server_process.terminate()
+        try:
+            stdout, stderr = server_process.communicate(timeout=2)
+        except subprocess.TimeoutExpired:
+            server_process.kill()
+            stdout, stderr = server_process.communicate()
+        raise RuntimeError(
+            f"Flask server did not start within {max_retries} seconds.\n"
+            f"Stdout: {stdout}\n"
+            f"Stderr: {stderr}"
+        )
     
     yield base_url
     
     # Cleanup: terminate server
     server_process.terminate()
-    server_process.join(timeout=5)
-    if server_process.is_alive():
+    try:
+        server_process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
         server_process.kill()
+        server_process.wait()

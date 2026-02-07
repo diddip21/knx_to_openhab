@@ -317,6 +317,7 @@ if FLASK_AVAILABLE:
     def status():
         s = job_mgr.status()
         s["auto_place_unknown"] = cfg.get("general", {}).get("auto_place_unknown", False)
+        s["status"] = "ok"
         return jsonify(s)
 
     @app.route("/api/debug/stats", methods=["GET"])

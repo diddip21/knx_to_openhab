@@ -21,6 +21,17 @@ def _setup_upload_routes(page: Page):
             "removed": 0,
         }
     }
+    preview_payload = {
+        "metadata": {
+            "project_name": "Demo Project",
+            "gateway_ip": "192.168.1.2",
+            "total_addresses": 1,
+            "homekit_enabled": False,
+            "alexa_enabled": True,
+            "unknown_items": [],
+        },
+        "buildings": [],
+    }
 
     state = {
         "created": False,
@@ -66,9 +77,9 @@ def _setup_upload_routes(page: Page):
             state["stats"] = stats_payload
             sse_body = "\n".join(
                 [
-                    "data: {\"type\": \"status\", \"message\": \"running\"}",
+                    'data: {"type": "status", "message": "running"}',
                     "",
-                    "data: {\"type\": \"status\", \"message\": \"completed\"}",
+                    'data: {"type": "status", "message": "completed"}',
                     "",
                 ]
             )
@@ -78,6 +89,9 @@ def _setup_upload_routes(page: Page):
                 body=sse_body,
             )
             return
+
+        if re.search(r"/api/job/[^/]+/preview$", url):
+            return fulfill(route, preview_payload)
 
         if re.search(r"/api/job/[^/]+$", url) and method == "GET":
             return fulfill(route, job_payload())

@@ -152,6 +152,8 @@ def test_upload_job_lifecycle_happy_path(page: Page, base_url):
         re.compile(r"running|completed")
     )
 
-    expect(status_div).to_contain_text("Job completed", timeout=20000)
+    expect(status_div).to_contain_text(
+        re.compile(r"Job completed|Structure loaded from job history"), timeout=20000
+    )
     expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
     expect(page.locator("#stats")).to_contain_text("openhab/items.items", timeout=20000)

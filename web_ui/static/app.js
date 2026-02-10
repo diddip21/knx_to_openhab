@@ -37,6 +37,7 @@ let allLogEntries = []  // store all entries for filtering
 let eventSource = null  // track active event stream
 let currentStatsData = null  // store current statistics for consistent display
 let statsUpdateInProgress = false  // prevent race conditions
+let autoStructureJobId = null  // track auto-loaded structure
 const EXPERT_TOGGLE_KEY = 'showExpertCompleteness'
 
 function applyExpertToggle() {
@@ -114,7 +115,6 @@ async function refreshJobs() {
       ${j.status === 'completed' && j.staged ? `<button onclick="showDiff('${j.id}')">Diff</button>` : ''}
       ${j.status === 'completed' && j.staged && !j.deployed ? `<button style="background-color: #28a745; color: white;" onclick="deployJob('${j.id}')">Deploy</button>` : ''}
       ${j.backups && j.backups.length > 0 ? `<button onclick="showRollbackDialog('${j.id}')">Rollback</button>` : ''}
-      ${j.status === 'completed' ? getReportBadges(j.stats) : ''}
       <button onclick="deleteJob('${j.id}')">Delete</button>
     `
     jobsList.appendChild(li)
@@ -153,7 +153,6 @@ function showJobDetail(jobId) {
       return r.json()
     })
     .then(j => {
-      const reportBadges = getReportBadges(j.stats)
       jobDetailEl.innerHTML = `
         <table class="detail-table">
           <tr><td>ID:</td><td><code>${j.id}</code></td></tr>
@@ -174,6 +173,11 @@ function showJobDetail(jobId) {
         expertPanelEl.innerHTML = ''
       }
 
+      if (j.status === 'completed' && currentJobId === j.id && autoStructureJobId !== j.id) {
+        autoStructureJobId = j.id
+        loadStructureFromJob(j.id)
+      }
+
       // Load stored log entries from job.log
       if (j.log && j.log.length > 0) {
         // Convert logs to consistent format if needed
@@ -192,6 +196,18 @@ function showJobDetail(jobId) {
         allLogEntries = []
         if (j.status !== 'running') {
           logEl.textContent = 'No logs available'
+        }
+      }
+
+      // Update top status banner when job is no longer running
+      const banner = document.getElementById('status')
+      if (banner && currentJobId === j.id && j.status !== 'running') {
+        if (j.status === 'completed') {
+          banner.textContent = 'Job completed successfully.'
+          banner.className = 'status-message success'
+        } else if (j.status === 'failed') {
+          banner.textContent = `Job failed${j.error ? `: ${j.error}` : ''}. Check logs below.`
+          banner.className = 'status-message error'
         }
       }
 
@@ -331,20 +347,6 @@ async function restartService(service) {
 }
 
 let currentPreviewData = null  // Store current preview data for view switching
-
-function getReportBadges(stats) {
-  if (!stats || typeof stats !== 'object') return ''
-  const files = Object.keys(stats)
-  if (!files.length) return ''
-
-  const badges = []
-  if (files.includes('unknown_report.json')) {
-    badges.push('<span class="badge info">Unknown report</span>')
-  }
-
-  if (!badges.length) return ''
-  return `<span class="job-meta">${badges.join(' ')}</span>`
-}
 
 async function showDiff(jobId) {
   currentJobId = jobId
@@ -878,7 +880,7 @@ function updateStatisticsDisplay(stats) {
 
       // Sort files for consistent display order
       const sortedStats = Object.entries(stats)
-        .filter(([fname]) => !["completeness_report.json", "partial_report.json"].includes(fname))
+        .filter(([fname]) => !["completeness_report.json", "partial_report.json", "unknown_report.json"].includes(fname))
         .sort(([a], [b]) => a.localeCompare(b))
 
       for (const [fname, stat] of sortedStats) {
@@ -1480,6 +1482,10 @@ uploadForm.addEventListener('submit', async (e) => {
     statusEl.textContent = `File uploaded, job started: ${job.id.substring(0, 8)}...`
     statusEl.className = 'status-message'
 
+    // Update status to indicate processing has started
+    statusEl.textContent = `Processing started: ${job.id.substring(0, 8)}... Check job details below.`
+    statusEl.className = 'status-message'
+
     // Refresh jobs list to show the new job
     await refreshJobs()
 
@@ -1491,10 +1497,6 @@ uploadForm.addEventListener('submit', async (e) => {
 
     // Start listening for events
     startEvents(job.id)
-
-    // Update status to indicate processing has started
-    statusEl.textContent = `Processing started: ${job.id.substring(0, 8)}... Check job details below.`
-    statusEl.className = 'status-message'
 
   } catch (e) {
     statusEl.textContent = `Upload Error: ${e.message}`
@@ -1568,8 +1570,25 @@ function startEvents(jobId) {
                   statusBadge.textContent = j.status;
                 }
 
+                // Update top status banner for final state
+                const banner = document.getElementById('status');
+                if (banner && currentJobId === j.id && j.status !== 'running') {
+                  if (j.status === 'completed') {
+                    banner.textContent = 'Job completed successfully.';
+                    banner.className = 'status-message success';
+                  } else if (j.status === 'failed') {
+                    banner.textContent = `Job failed${j.error ? `: ${j.error}` : ''}. Check logs below.`;
+                    banner.className = 'status-message error';
+                  }
+                }
+
                 // Update statistics table
                 updateStatisticsDisplay(j.stats);
+
+                if (j.status === 'completed' && currentJobId === j.id && autoStructureJobId !== j.id) {
+                  autoStructureJobId = j.id;
+                  loadStructureFromJob(j.id);
+                }
               })
               .catch(err => {
                 console.error('Failed to refresh job details:', err);

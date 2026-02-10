@@ -1,6 +1,7 @@
 """UI tests for the knx_to_openhab web interface using Playwright."""
 
 import json
+import os
 import re
 import time
 
@@ -14,10 +15,13 @@ DEFAULT_PASSWORD = "logihome"
 @pytest.fixture(scope="session")
 def browser_context_args(browser_context_args):
     """Configure browser context for testing."""
+    username = os.getenv("UI_AUTH_USER", "admin")
+    password = os.getenv("UI_AUTH_PASSWORD", "logihome")
     return {
         **browser_context_args,
         "viewport": {"width": 1920, "height": 1080},
         "ignore_https_errors": True,
+        "http_credentials": {"username": username, "password": password},
     }
 
 

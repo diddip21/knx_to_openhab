@@ -1,90 +1,114 @@
+"""Pytest fixtures for UI tests."""
+
 import os
+import subprocess
 import sys
-import threading
 import time
-from urllib.parse import urlparse
 
 import pytest
 import requests
-
-# Add project root to sys.path
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
-sys.path.append(PROJECT_ROOT)
-
-# Add backend to sys.path so we can import app
-BACKEND_DIR = os.path.join(PROJECT_ROOT, "web_ui", "backend")
-sys.path.append(BACKEND_DIR)
-
-from web_ui.backend.app import app, cfg
+from playwright.sync_api import expect
 
 
-def _safe_artifact_name(name: str) -> str:
-    return "".join(c if c.isalnum() or c in "-_" else "_" for c in name)
+def pytest_collection_modifyitems(config, items):
+    """Ensure all UI tests in this package are marked with @pytest.mark.ui."""
+    for item in items:
+        item.add_marker(pytest.mark.ui)
 
 
-def run_server(host: str, port: int):
-    """Run the Flask app."""
-    # Disable auth for testing
-    if "auth" not in cfg:
-        cfg["auth"] = {}
-    cfg["auth"]["enabled"] = False
+@pytest.fixture(autouse=True)
+def configure_playwright_timeouts(page):
+    """Set default Playwright timeouts for more reliable CI runs."""
+    default_timeout = int(os.getenv("PLAYWRIGHT_TIMEOUT", "10000"))
+    nav_timeout = int(os.getenv("PLAYWRIGHT_NAV_TIMEOUT", "30000"))
+    expect_timeout = int(os.getenv("PLAYWRIGHT_EXPECT_TIMEOUT", "10000"))
 
-    # Disable reloader to avoid main thread issues
-    app.run(host=host, port=port, use_reloader=False)
+    page.set_default_timeout(default_timeout)
+    page.set_default_navigation_timeout(nav_timeout)
+    expect.set_options(timeout=expect_timeout)
 
 
 @pytest.fixture(scope="session")
 def base_url():
-    return os.getenv("UI_BASE_URL", "http://127.0.0.1:8081")
+    """Base URL for the web UI."""
+    return os.getenv("UI_BASE_URL", "http://127.0.0.1:8085")
 
 
-@pytest.fixture(scope="session", autouse=True)
-def server(base_url):
-    """Start the Flask server in a separate thread."""
-    # Use a different port than default 8080 to avoid conflicts
+@pytest.fixture(scope="session")
+def browser_context_args(browser_context_args):
+    """Configure browser context for testing (basic auth + defaults)."""
+    username = os.getenv("UI_AUTH_USER", "admin")
+    password = os.getenv("UI_AUTH_PASSWORD", "logihome")
+    return {
+        **browser_context_args,
+        "http_credentials": {"username": username, "password": password},
+    }
 
-    parsed = urlparse(base_url)
-    host = parsed.hostname or "127.0.0.1"
-    port = parsed.port or 8081
 
-    # Start server thread
-    server_thread = threading.Thread(target=run_server, args=(host, port), daemon=True)
-    server_thread.start()
+@pytest.fixture(scope="session")
+def flask_server(base_url):
+    """Start Flask server as subprocess for UI tests."""
+    # Start server using subprocess
+    env = os.environ.copy()
+    env["FLASK_ENV"] = "testing"
+
+    # Use -m to run as module, which triggers __main__.py
+    server_process = subprocess.Popen(
+        [sys.executable, "-m", "web_ui.backend"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,  # Merge stderr into stdout for easier debugging
+        text=True,
+        bufsize=1,  # Line buffered
+    )
 
     # Wait for server to be ready
-    max_retries = 20
-    for _ in range(max_retries):
+    max_retries = 30
+    server_ready = False
+    last_error = None
+
+    for i in range(max_retries):
+        # Check if process crashed
+        if server_process.poll() is not None:
+            # Server crashed, get error output
+            output = server_process.stdout.read() if server_process.stdout else "No output"
+            raise RuntimeError(
+                "Flask server crashed during startup "
+                f"(exit code: {server_process.returncode}).\n"
+                f"Output:\n{output}"
+            )
+
         try:
-            response = requests.get(f"{base_url}/api/status")
-            if response.status_code == 200:
-                print("Server is ready!")
+            response = requests.get(f"{base_url}/api/status", timeout=2)
+            # 200 ok, 401 means auth but server is up
+            if response.status_code in (200, 401):
+                server_ready = True
                 break
-        except requests.ConnectionError:
-            pass
-        time.sleep(0.5)
-    else:
-        pytest.fail("Server failed to start within timeout")
+        except requests.exceptions.RequestException as e:
+            last_error = str(e)
+            time.sleep(1)
 
-    yield
+    if not server_ready:
+        server_process.terminate()
+        try:
+            output = server_process.stdout.read() if server_process.stdout else "No output"
+            server_process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            server_process.kill()
+            server_process.wait()
+        raise RuntimeError(
+            f"Flask server did not start within {max_retries} seconds.\n"
+            f"Last error: {last_error}\n"
+            f"Server output:\n{output}"
+        )
 
-    # Thread will be killed when main process exits (daemon=True)
+    print(f"Flask server started successfully on {base_url}")
+    yield base_url
 
-
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_makereport(item, call):
-    outcome = yield
-    report = outcome.get_result()
-    if report.when != "call" or report.passed:
-        return
-
-    page = item.funcargs.get("page")
-    if not page:
-        return
-
-    os.makedirs("test-artifacts", exist_ok=True)
-    safe_name = _safe_artifact_name(item.nodeid.replace("::", "-"))
-    screenshot_path = os.path.join("test-artifacts", f"{safe_name}.png")
+    # Cleanup: terminate server
+    server_process.terminate()
     try:
-        page.screenshot(path=screenshot_path, full_page=True)
-    except Exception:
-        pass
+        server_process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        server_process.kill()
+        server_process.wait()

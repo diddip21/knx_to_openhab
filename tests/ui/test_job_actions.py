@@ -5,6 +5,17 @@ import pytest
 from playwright.sync_api import Page, expect
 
 JOB_ID = "job-1"
+DEFAULT_USERNAME = "admin"
+DEFAULT_PASSWORD = "logihome"
+
+
+def ensure_authenticated(page: Page, base_url: str) -> None:
+    page.goto(base_url)
+    if page.locator("input[name='username']").count() > 0:
+        page.fill("input[name='username']", DEFAULT_USERNAME)
+        page.fill("input[name='password']", DEFAULT_PASSWORD)
+        page.click("button[type='submit']")
+        expect(page.locator("#upload-section")).to_be_visible(timeout=10000)
 
 
 def _setup_job_routes(page: Page):
@@ -105,11 +116,11 @@ def _setup_job_routes(page: Page):
     return jobs
 
 
-@pytest.mark.usefixtures("server")
+@pytest.mark.usefixtures("flask_server")
 class TestJobActions:
     def test_job_action_buttons_render(self, page: Page, base_url):
         _setup_job_routes(page)
-        page.goto(base_url)
+        ensure_authenticated(page, base_url)
         page.wait_for_function("window.refreshJobs !== undefined")
         page.evaluate("refreshJobs()")
 
@@ -122,7 +133,7 @@ class TestJobActions:
 
     def test_job_action_diff_and_structure(self, page: Page, base_url):
         _setup_job_routes(page)
-        page.goto(base_url)
+        ensure_authenticated(page, base_url)
         page.wait_for_function("window.refreshJobs !== undefined")
         page.evaluate("refreshJobs()")
 
@@ -142,7 +153,7 @@ class TestJobActions:
 
     def test_job_action_deploy_rollback_delete(self, page: Page, base_url):
         _setup_job_routes(page)
-        page.goto(base_url)
+        ensure_authenticated(page, base_url)
         page.wait_for_function("window.refreshJobs !== undefined")
         page.evaluate("refreshJobs()")
 

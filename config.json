@@ -371,6 +371,7 @@
         "Status aktuelle Position"
       ],
       "stop_dpts": [
+        "DPST-1-17",
         "DPST-1-10",
         "DPST-1-9",
         "DPST-1-7"
@@ -386,7 +387,8 @@
         ":(Lamellenverstellung/Stop)",
         ":(Stop)",
         "Stopp",
-        "Lamellenverstellung / Stopp"
+        "Lamellenverstellung / Stopp",
+        "Stopp/Lamellen Auf/Zu"
       ],
       "up_down_dpts": [
         "DPST-1-8"
@@ -478,7 +480,7 @@
     "unknown_roomname": "unknown",
     "item_Floor_nameshort_prefix": "=",
     "item_Room_nameshort_prefix": "+",
-    "auto_place_unknown": false
+    "auto_place_unknown": true
   },
   "influx_path": "openhab/persistence/influxdb.persist",
   "items_path": "openhab/items/knx.items",

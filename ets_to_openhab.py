@@ -786,6 +786,12 @@ def gen_building():
                         things += f"Type {thing_type}    :   {item_name}   \"{address['Group name']}\"   [ {thing_address_info} ]\n"
 
                         root = f"map{floor_nr}_{room_nr}"
+                        
+                        # Central function override for OpenHAB group
+                        keyword = config.get("general", {}).get("central_function_keyword", "zentral")
+                        if address["Group name"].casefold().startswith(keyword.casefold()):
+                            root = config.get("general", {}).get("central_function_group", "Base")
+
                         if equipment != "":
                             if item_label not in equipments:
                                 equipments[item_label] = item_name

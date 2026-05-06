@@ -300,6 +300,16 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
         if address["Address"] in ("1/2/25"):
             logger.debug("place specific address")
 
+        # Central functions check
+        keyword = config.get("general", {}).get("central_function_keyword", "zentral")
+        if address["Group name"].casefold().startswith(keyword.casefold()):
+            # Place in a special floor and room so they are grouped in the sitemap
+            # but will be overridden to the configured group in ets_to_openhab.py
+            address["Floor"] = "Zentral"
+            address["Room"] = "Zentral"
+            if create_floor_room_if_missing(building, address):
+                continue
+
         if place_address_in_building(building, address, cabinet_devices):
             continue
         read_co = get_sensor_communication_object(address, cabinet_devices)

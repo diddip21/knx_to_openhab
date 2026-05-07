@@ -1829,3 +1829,64 @@ legend {
     width: 100%;
   }
  }
+ /* openHAB Cloud Credentials Card */
+.cloud-info-card {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--bg-secondary, #f8f9fa);
+  border: 1px solid var(--border-color, #dee2e6);
+  border-radius: 6px;
+}
+.cloud-info-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.cloud-info-title { font-weight: 600; font-size: 0.95rem; }
+.cloud-info-hint  { color: var(--text-light, #888); font-size: 0.8rem; }
+.cloud-info-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+.cloud-info-label {
+  min-width: 60px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-light, #666);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.cloud-info-value {
+  font-family: monospace;
+  font-size: 0.85rem;
+  background: var(--bg-code, #fff);
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 4px;
+  padding: 2px 8px;
+  flex: 1;
+  word-break: break-all;
+}
+.cloud-copy-btn, .cloud-toggle-btn {
+  background: none;
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.cloud-copy-btn:hover, .cloud-toggle-btn:hover {
+  background: var(--bg-hover, #e9ecef);
+}
+.cloud-info-paths {
+  margin-top: 0.5rem;
+  color: var(--text-light, #888);
+  font-size: 0.75rem;
+}
+.cloud-info-not-found {
+  color: var(--text-light, #888);
+  font-size: 0.85rem;
+}

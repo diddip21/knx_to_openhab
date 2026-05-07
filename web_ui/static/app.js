@@ -710,7 +710,7 @@ function computeLineDiff(original, current) {
 }
 
 async function refreshServices() {
-  const services = ['openhab.service']
+  const services = ['openhab.service', 'evcc.service']
   servicesListEl.innerHTML = ''
 
   for (const service of services) {

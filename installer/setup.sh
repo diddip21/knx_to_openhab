@@ -18,7 +18,7 @@ fi
 
 echo "Creating base dir $BASE"
 sudo mkdir -p "$BASE"
-sudo chown "$USER":"$USER" "$BASE"
+sudo chown "$SERVICE_USER":"$SERVICE_USER" "$BASE"
 
 echo "Creating python venv"
 python3 -m venv "$BASE/venv"

@@ -119,7 +119,7 @@ clone_repository() {
         else
             log_info "Updating existing installation..."
             cd "$INSTALL_DIR"
-            sudo -u "$USER" git pull origin "$BRANCH" || {
+            sudo -u knxohui git pull origin "$BRANCH" || {
                 log_error "Failed to update repository"
                 exit 1
             }
@@ -129,7 +129,7 @@ clone_repository() {
     fi
     
     sudo mkdir -p "$INSTALL_DIR"
-    sudo chown "$USER":"$USER" "$INSTALL_DIR"
+    sudo chown knxohui:knxohui "$INSTALL_DIR"
     
     git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR" || {
         log_error "Failed to clone repository"

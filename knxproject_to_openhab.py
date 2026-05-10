@@ -189,6 +189,8 @@ def get_addresses(project: KNXProject):
 
         res_floor = find_floor_in_address(address, group_ranges)
         res_room = RE_ITEM_ROOM.search(address["name"])
+        is_central= check_is_centralFunction(address,group_ranges)
+
 
         # For debugging
         if address["address"] in ("3/1/4", "3/1/43"):
@@ -205,6 +207,7 @@ def get_addresses(project: KNXProject):
                 "Floor": get_short_floor_name(res_floor),
                 "Room": res_room.group(0) if res_room else UNKNOWN_ROOM_NAME,
                 "DatapointType": format_datapoint_type(address),
+                "is_central_function": is_central,
             }
         )
 
@@ -222,6 +225,19 @@ def should_ignore_address(address):
         return True
     return False
 
+def check_is_centralFunction(address, group_ranges):
+    """Check if an address is part of a central function based on its group name and group range."""
+    keyword = config.get("general", {}).get("central_function_keyword", "zentral")
+    if address["name"].casefold().startswith(keyword.casefold()):
+        return True
+    address_split = address["address"].split("/")
+    gr_top = group_ranges.get(address_split[0])
+    gr_middle = gr_top["group_ranges"].get(address_split[0] + "/" + address_split[1])
+    if gr_middle and gr_middle["name"].casefold().startswith(keyword.casefold()):
+        return True
+    if gr_top and gr_top["name"].casefold().startswith(keyword.casefold()):
+        return True
+    return False
 
 def find_floor_in_address(address, group_ranges):
     """Find the floor associated with an address."""
@@ -299,6 +315,15 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
         # For debugging
         if address["Address"] in ("1/2/25"):
             logger.debug("place specific address")
+
+        # Central functions check
+        if address['is_central_function']:
+            # Place in a special floor and room so they are grouped in the sitemap
+            # but will be overridden to the configured group in ets_to_openhab.py
+            address["Floor"] = "Zentral"
+            address["Room"] = "Zentral"
+            if create_floor_room_if_missing(building, address):
+                continue
 
         if place_address_in_building(building, address, cabinet_devices):
             continue

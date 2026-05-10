@@ -60,6 +60,18 @@
           "title": "Room Name Short Prefix",
           "description": "Prefix for short room names",
           "default": "+"
+        },
+        "central_function_keyword": {
+          "type": "string",
+          "title": "Central Function Keyword",
+          "description": "Prefix used to identify central functions (e.g., 'zentral')",
+          "default": "zentral"
+        },
+        "central_function_group": {
+          "type": "string",
+          "title": "Central Function Group",
+          "description": "OpenHAB group name to assign central functions to",
+          "default": "Base"
         }
       }
     },

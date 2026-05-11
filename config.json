@@ -7,7 +7,7 @@
       "item_icon": "temperature",
       "item_type": "Switch",
       "metadata": "",
-      "semantic_info": "[\"Measurement\", \"Status\"]"
+      "semantic_info": "[\"Status\"]"
     },
     "DPST-1-11": {
       "alexa": "",
@@ -16,7 +16,7 @@
       "item_icon": "switch",
       "item_type": "Switch",
       "metadata": "",
-      "semantic_info": "[\"Measurement\", \"Status\"]"
+      "semantic_info": "[\"Status\"]"
     },
     "DPST-1-19": {
       "alexa": ", alexa = \"ContactDetectionState\"",

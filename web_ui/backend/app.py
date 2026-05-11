@@ -1017,6 +1017,45 @@ if FLASK_AVAILABLE:
                 return jsonify({"error": friendly_msg}), 400
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/openhab/cloud-info", methods=["GET"])
+    def openhab_cloud_info():
+        """Read openHAB Cloud UUID and Secret from the local filesystem."""
+        candidate_paths = [
+            ("/var/lib/openhab/uuid", "/var/lib/openhab/openhabcloud/secret"),
+            ("/var/lib/openhab2/uuid", "/var/lib/openhab2/openhabcloud/secret"),
+        ]
+        openhab_userdata = cfg.get("openhab_userdata", None)
+        if openhab_userdata:
+            candidate_paths.insert(0, (
+                os.path.join(openhab_userdata, "uuid"),
+                os.path.join(openhab_userdata, "openhabcloud", "secret"),
+            ))
+
+        uuid_val = secret_val = uuid_path_found = secret_path_found = None
+
+        for uuid_p, secret_p in candidate_paths:
+            if os.path.isfile(uuid_p) and not uuid_val:
+                try:
+                    with open(uuid_p, "r", encoding="utf-8") as f:
+                        uuid_val = f.read().strip()
+                    uuid_path_found = uuid_p
+                except Exception:
+                    pass
+            if os.path.isfile(secret_p) and not secret_val:
+                try:
+                    with open(secret_p, "r", encoding="utf-8") as f:
+                        secret_val = f.read().strip()
+                    secret_path_found = secret_p
+                except Exception:
+                    pass
+
+        return jsonify({
+            "uuid": uuid_val,
+            "secret": secret_val,
+            "uuid_path": uuid_path_found,
+            "secret_path": secret_path_found,
+        })
+
     if __name__ == "__main__":
         host = cfg.get("bind_host", "0.0.0.0")
         port = cfg.get("port", 8080)

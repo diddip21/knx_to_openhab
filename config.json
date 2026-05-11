@@ -303,8 +303,8 @@
     "drop_words": [
       "Fensterkontakt",
       "Licht",
-      "Steckdose",
       "Steckdosen",
+      "Steckdose",
       "Strom",
       "Leistung",
       "AUF/ZU",
@@ -371,6 +371,7 @@
         "Status aktuelle Position"
       ],
       "stop_dpts": [
+        "DPST-1-17",
         "DPST-1-10",
         "DPST-1-9",
         "DPST-1-7"
@@ -386,7 +387,8 @@
         ":(Lamellenverstellung/Stop)",
         ":(Stop)",
         "Stopp",
-        "Lamellenverstellung / Stopp"
+        "Lamellenverstellung / Stopp",
+        "Stopp/Lamellen Auf/Zu"
       ],
       "up_down_dpts": [
         "DPST-1-8"
@@ -462,7 +464,8 @@
     "gateway": {
       "hardware_name": [
         "IP Interface Secure",
-        "KNX IP Interface"
+        "KNX IP Interface",
+        "IP Interface ohne Secure"
       ]
     }
   },
@@ -487,7 +490,7 @@
   "regexpattern": {
     "item_Floor": "^=?[1-9\\.A-Z]{1,5}",
     "item_Floor_nameshort": "^=?[a-zA-Z]{1,5}\\b",
-    "item_Room": "\\++[A-Z].[0-9]+",
+    "item_Room": "\\++[A-Z].[0-9.]+",
     "items_Label": "^\\[\\w*\\]\\@\\s?(\\+RM(\\d+(\\/|\\\\|-)*)*(\\d+))*\\s|:\\(.*\\)\\s?",
     "items_Name": "[^A-Za-z0-9_]+"
   },

@@ -35,8 +35,11 @@ log_error() {
 
 check_root() {
     if [[ $EUID -eq 0 ]]; then
-        log_error "This script should NOT be run as root. Please run as a regular user with sudo privileges."
-        exit 1
+        if [[ "${ALLOW_ROOT:-0}" != "1" ]]; then
+            log_error "This script is running as root. Set ALLOW_ROOT=1 if you really want to allow this."
+            exit 1
+        fi
+        log_warning "Running installer as root because ALLOW_ROOT=1; proceeding with caution."
     fi
 }
 
@@ -116,7 +119,7 @@ clone_repository() {
         else
             log_info "Updating existing installation..."
             cd "$INSTALL_DIR"
-            sudo -u "$USER" git pull origin "$BRANCH" || {
+            sudo git pull origin "$BRANCH" || {
                 log_error "Failed to update repository"
                 exit 1
             }
@@ -126,7 +129,6 @@ clone_repository() {
     fi
     
     sudo mkdir -p "$INSTALL_DIR"
-    sudo chown "$USER":"$USER" "$INSTALL_DIR"
     
     git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR" || {
         log_error "Failed to clone repository"

@@ -710,7 +710,7 @@ function computeLineDiff(original, current) {
 }
 
 async function refreshServices() {
-  const services = ['openhab.service']
+  const services = ['openhab.service', 'evcc.service']
   servicesListEl.innerHTML = ''
 
   for (const service of services) {
@@ -749,6 +749,83 @@ async function refreshServices() {
       console.error('Error fetching service status:', e)
     }
   }
+  await loadCloudInfo()
+}
+
+async function loadCloudInfo() {
+  const existing = document.getElementById('cloud-info-card')
+  if (existing) existing.remove()
+
+  try {
+    const res = await fetch('/api/openhab/cloud-info')
+    const data = await res.json()
+    const card = document.createElement('div')
+    card.id = 'cloud-info-card'
+    card.className = 'cloud-info-card'
+
+    const uuidVal = data.uuid || null
+    const secretVal = data.secret || null
+
+    if (!uuidVal && !secretVal) {
+      card.innerHTML = `
+        <div class="cloud-info-header">
+          <span class="cloud-info-title">☁️ openHAB Cloud Credentials</span>
+        </div>
+        <div class="cloud-info-not-found">
+          UUID / Secret nicht gefunden.<br>
+          <small>Erwartet unter <code>/var/lib/openhab/uuid</code> und <code>/var/lib/openhab/openhabcloud/secret</code></small>
+        </div>`
+    } else {
+      const masked = secretVal
+        ? secretVal.substring(0, 8) + '•'.repeat(Math.max(0, secretVal.length - 8))
+        : '—'
+      card.innerHTML = `
+        <div class="cloud-info-header">
+          <span class="cloud-info-title">☁️ openHAB Cloud Credentials</span>
+          <small class="cloud-info-hint">Für myopenhab.org Einrichtung</small>
+        </div>
+        <div class="cloud-info-row">
+          <span class="cloud-info-label">UUID</span>
+          <span class="cloud-info-value" id="cloud-uuid-val">${uuidVal || '—'}</span>
+          <button class="cloud-copy-btn" onclick="copyCloudValue('cloud-uuid-val', this, false)" title="UUID kopieren">📋</button>
+        </div>
+        <div class="cloud-info-row">
+          <span class="cloud-info-label">Secret</span>
+          <span class="cloud-info-value cloud-secret-masked" id="cloud-secret-val"
+            data-full="${secretVal || ''}" data-masked="${masked}">${masked}</span>
+          <button class="cloud-toggle-btn" onclick="toggleSecret()" title="Secret anzeigen/verbergen">👁</button>
+          <button class="cloud-copy-btn" onclick="copyCloudValue('cloud-secret-val', this, true)" title="Secret kopieren">📋</button>
+        </div>
+        ${data.uuid_path ? `<div class="cloud-info-paths"><small>📁 ${data.uuid_path}</small></div>` : ''}
+      `
+    }
+    servicesListEl.appendChild(card)
+  } catch (e) {
+    console.error('Failed to load cloud info:', e)
+  }
+}
+
+function toggleSecret() {
+  const el = document.getElementById('cloud-secret-val')
+  if (!el) return
+  if (el.classList.contains('cloud-secret-masked')) {
+    el.textContent = el.dataset.full || '—'
+    el.classList.remove('cloud-secret-masked')
+  } else {
+    el.textContent = el.dataset.masked || '—'
+    el.classList.add('cloud-secret-masked')
+  }
+}
+
+function copyCloudValue(elId, btn, useDataFull) {
+  const el = document.getElementById(elId)
+  if (!el) return
+  const val = useDataFull ? (el.dataset.full || el.textContent) : el.textContent
+  navigator.clipboard.writeText(val).then(() => {
+    const orig = btn.textContent
+    btn.textContent = '✅'
+    setTimeout(() => { btn.textContent = orig }, 1500)
+  })
 }
 
 // Log level filtering

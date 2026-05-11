@@ -19,3 +19,4 @@ tests/test_project.json
 web_ui/backend/server.log
 .kilocodemodes
 .kilocode/
+node_modules

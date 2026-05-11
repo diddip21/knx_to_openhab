@@ -189,6 +189,8 @@ def get_addresses(project: KNXProject):
 
         res_floor = find_floor_in_address(address, group_ranges)
         res_room = RE_ITEM_ROOM.search(address["name"])
+        is_central_function= check_is_centralFunction(address,group_ranges)
+        is_notification_sensor = check_is_notification_sensor(address, group_ranges)
 
         # For debugging
         if address["address"] in ("3/1/4", "3/1/43"):
@@ -205,6 +207,8 @@ def get_addresses(project: KNXProject):
                 "Floor": get_short_floor_name(res_floor),
                 "Room": res_room.group(0) if res_room else UNKNOWN_ROOM_NAME,
                 "DatapointType": format_datapoint_type(address),
+                "is_central_function": is_central_function,
+                "is_notification_sensor": is_notification_sensor,
             }
         )
 
@@ -222,6 +226,33 @@ def should_ignore_address(address):
         return True
     return False
 
+def check_is_centralFunction(address, group_ranges):
+    """Check if an address is part of a central function based on its group name and group range."""
+    keyword = config.get("general", {}).get("central_function_keyword", "zentral")
+    if address["name"].casefold().startswith(keyword.casefold()):
+        return True
+    address_split = address["address"].split("/")
+    gr_top = group_ranges.get(address_split[0])
+    gr_middle = gr_top["group_ranges"].get(address_split[0] + "/" + address_split[1])
+    if gr_middle and gr_middle["name"].casefold().startswith(keyword.casefold()):
+        return True
+    if gr_top and gr_top["name"].casefold().startswith(keyword.casefold()):
+        return True
+    return False
+
+def check_is_notification_sensor(address, group_ranges):
+    """Check if an address is a notification sensor based on its group name and group range."""
+    keyword = config.get("general", {}).get("notification_sensor_keyword", "Sensor")
+    if address["name"].casefold().startswith(keyword.casefold()):
+        return True
+    address_split = address["address"].split("/")
+    gr_top = group_ranges.get(address_split[0])
+    gr_middle = gr_top["group_ranges"].get(address_split[0] + "/" + address_split[1])
+    if gr_middle and gr_middle["name"].casefold().startswith(keyword.casefold()):
+        return True
+    if gr_top and gr_top["name"].casefold().startswith(keyword.casefold()):
+        return True
+    return False
 
 def find_floor_in_address(address, group_ranges):
     """Find the floor associated with an address."""
@@ -299,6 +330,22 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
         # For debugging
         if address["Address"] in ("1/2/25"):
             logger.debug("place specific address")
+
+        # Central functions check
+        if address['is_central_function']:
+            # Place in a special floor and room so they are grouped in the sitemap
+            # but will be overridden to the configured group in ets_to_openhab.py
+            address["Floor"] = "Zentral"
+            address["Room"] = "Zentral"
+            if create_floor_room_if_missing(building, address):
+                continue
+        if address['is_notification_sensor']:
+            # Place in a special floor and room so they are grouped in the sitemap
+            # but will be overridden to the configured group in ets_to_openhab.py
+            address["Floor"] = "Zentral"
+            address["Room"] = "Melden/Sensor"
+            if create_floor_room_if_missing(building, address):
+                continue
 
         if place_address_in_building(building, address, cabinet_devices):
             continue
@@ -612,11 +659,14 @@ def get_gateway_ip(project: KNXProject):
         raise ValueError("'devices' is empty.")
 
     for device in devices.values():
-        if device["hardware_name"].strip() in config["devices"]["gateway"]["hardware_name"]:
-            description = device["description"].strip()
-            ip_match = re.search(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", description)
-            if ip_match:
-                return ip_match.group()
+        hw_name_lower = device["hardware_name"].strip().lower()
+        for hw_name in config["devices"]["gateway"]["hardware_name"]:
+            if hw_name.lower() in hw_name_lower:  # Prüft auf Teilstring
+                description = device["description"].strip()
+                ip_match = re.search(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", description)
+                if ip_match:
+                    return ip_match.group()
+            
     return None
 
 

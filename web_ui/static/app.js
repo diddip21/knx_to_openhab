@@ -1068,6 +1068,9 @@ async function loadConfig() {
     document.getElementById('conf-auto-place').checked = gen.auto_place_unknown || false
     document.getElementById('conf-unknown-floor').value = gen.unknown_floorname || 'unknown'
     document.getElementById('conf-unknown-room').value = gen.unknown_roomname || 'unknown'
+    document.getElementById('conf-central-keyword').value = gen.central_function_keyword || 'zentral'
+    document.getElementById('conf-central-group').value = gen.central_function_group || 'Base'
+    document.getElementById('conf-notification-sensor-keyword').value = gen.notification_sensor_keyword || 'Melden/Sensor'
 
     // Populate Devices Tab
     const dev = currentConfig.devices || {}
@@ -1215,6 +1218,9 @@ async function saveConfig(reprocess = false) {
       auto_place_unknown: document.getElementById('conf-auto-place').checked,
       unknown_floorname: document.getElementById('conf-unknown-floor').value,
       unknown_roomname: document.getElementById('conf-unknown-room').value,
+      central_function_keyword: document.getElementById('conf-central-keyword').value,
+      central_function_group: document.getElementById('conf-central-group').value,
+      notification_sensor_keyword: document.getElementById('conf-notification-sensor-keyword').value,
       item_Floor_nameshort_prefix: currentConfig.general?.item_Floor_nameshort_prefix || "=",
       item_Room_nameshort_prefix: currentConfig.general?.item_Room_nameshort_prefix || "+"
     }

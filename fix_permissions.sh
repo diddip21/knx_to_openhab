@@ -70,10 +70,13 @@ if [ ! -f "$SUDOERS_FILE" ]; then
     # Create sudoers entry for required commands
     CMDS="/bin/systemctl restart openhab.service, /usr/bin/systemctl restart openhab.service"
     CMDS="$CMDS, /bin/systemctl restart knxohui.service, /usr/bin/systemctl restart knxohui.service"
+    CMDS="$CMDS, /bin/systemctl restart evcc.service, /usr/bin/systemctl restart evcc.service"
     CMDS="$CMDS, /bin/systemctl is-active openhab.service, /usr/bin/systemctl is-active openhab.service"
     CMDS="$CMDS, /bin/systemctl is-active knxohui.service, /usr/bin/systemctl is-active knxohui.service"
+    CMDS="$CMDS, /bin/systemctl is-active evcc.service, /usr/bin/systemctl is-active evcc.service"
     CMDS="$CMDS, /bin/systemctl show openhab.service *, /usr/bin/systemctl show openhab.service *"
     CMDS="$CMDS, /bin/systemctl show knxohui.service *, /usr/bin/systemctl show knxohui.service *"
+    CMDS="$CMDS, /bin/systemctl show evcc.service *, /usr/bin/systemctl show evcc.service *"
     CMDS="$CMDS, /usr/bin/git *"
     
     echo "$SERVICE_USER ALL=(ALL) NOPASSWD: $CMDS" | sudo tee $SUDOERS_FILE

@@ -1,0 +1,517 @@
+﻿2026-07-23T22:05:08.0101615Z Current runner version: '2.336.0'
+2026-07-23T22:05:08.0128983Z ##[group]Runner Image Provisioner
+2026-07-23T22:05:08.0130328Z Hosted Compute Agent
+2026-07-23T22:05:08.0130920Z Version: 20260707.563
+2026-07-23T22:05:08.0131522Z Commit: 02667638d2b423fbc733a8e32a88b44996a3ba6e
+2026-07-23T22:05:08.0132319Z Build Date: 2026-07-07T19:33:50Z
+2026-07-23T22:05:08.0133029Z Worker ID: {da7d6ebc-40a2-4f21-9d94-60af868fad32}
+2026-07-23T22:05:08.0133764Z Azure Region: westus
+2026-07-23T22:05:08.0134328Z ##[endgroup]
+2026-07-23T22:05:08.0135991Z ##[group]Operating System
+2026-07-23T22:05:08.0136724Z Ubuntu
+2026-07-23T22:05:08.0137339Z 24.04.4
+2026-07-23T22:05:08.0137816Z LTS
+2026-07-23T22:05:08.0138373Z ##[endgroup]
+2026-07-23T22:05:08.0138913Z ##[group]Runner Image
+2026-07-23T22:05:08.0139529Z Image: ubuntu-24.04
+2026-07-23T22:05:08.0140636Z Version: 20260714.240.1
+2026-07-23T22:05:08.0142019Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260714.240/images/ubuntu/Ubuntu2404-Readme.md
+2026-07-23T22:05:08.0143568Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260714.240
+2026-07-23T22:05:08.0144551Z ##[endgroup]
+2026-07-23T22:05:08.0145655Z ##[group]GITHUB_TOKEN Permissions
+2026-07-23T22:05:08.0148069Z Contents: read
+2026-07-23T22:05:08.0148697Z Metadata: read
+2026-07-23T22:05:08.0149240Z ##[endgroup]
+2026-07-23T22:05:08.0151872Z Secret source: Actions
+2026-07-23T22:05:08.0152992Z Prepare workflow directory
+2026-07-23T22:05:08.0509074Z Prepare all required actions
+2026-07-23T22:05:08.0554066Z Getting action download info
+2026-07-23T22:05:08.4227804Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-07-23T22:05:08.8464038Z Download action repository 'actions/setup-python@v5' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+2026-07-23T22:05:08.9351769Z Download action repository 'actions/cache@v4' (SHA:0057852bfaa89a56745cba8c7296529d2fc39830)
+2026-07-23T22:05:09.1706064Z Complete job name: Lint (format + flake8)
+2026-07-23T22:05:09.2595880Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-23T22:05:09.2605139Z ##[group]Run actions/checkout@v4
+2026-07-23T22:05:09.2606014Z with:
+2026-07-23T22:05:09.2606457Z   repository: diddip21/knx_to_openhab
+2026-07-23T22:05:09.2610819Z   token: ***
+2026-07-23T22:05:09.2611270Z   ssh-strict: true
+2026-07-23T22:05:09.2611695Z   ssh-user: git
+2026-07-23T22:05:09.2612125Z   persist-credentials: true
+2026-07-23T22:05:09.2612597Z   clean: true
+2026-07-23T22:05:09.2613024Z   sparse-checkout-cone-mode: true
+2026-07-23T22:05:09.2613531Z   fetch-depth: 1
+2026-07-23T22:05:09.2613932Z   fetch-tags: false
+2026-07-23T22:05:09.2614349Z   show-progress: true
+2026-07-23T22:05:09.2614778Z   lfs: false
+2026-07-23T22:05:09.2615231Z   submodules: false
+2026-07-23T22:05:09.2615672Z   set-safe-directory: true
+2026-07-23T22:05:09.2616162Z   allow-unsafe-pr-checkout: false
+2026-07-23T22:05:09.2616988Z ##[endgroup]
+2026-07-23T22:05:09.3718300Z Syncing repository: diddip21/knx_to_openhab
+2026-07-23T22:05:09.3720755Z ##[group]Getting Git version info
+2026-07-23T22:05:09.3721622Z Working directory is '/home/runner/work/knx_to_openhab/knx_to_openhab'
+2026-07-23T22:05:09.3722730Z [command]/usr/bin/git version
+2026-07-23T22:05:09.3818263Z git version 2.54.0
+2026-07-23T22:05:09.3846736Z ##[endgroup]
+2026-07-23T22:05:09.3864553Z Temporarily overriding HOME='/home/runner/work/_temp/762123ae-090d-4268-ae09-2b1751865b6c' before making global git config changes
+2026-07-23T22:05:09.3865985Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-23T22:05:09.3870967Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/knx_to_openhab/knx_to_openhab
+2026-07-23T22:05:09.3927155Z Deleting the contents of '/home/runner/work/knx_to_openhab/knx_to_openhab'
+2026-07-23T22:05:09.3933381Z ##[group]Initializing the repository
+2026-07-23T22:05:09.3940058Z [command]/usr/bin/git init /home/runner/work/knx_to_openhab/knx_to_openhab
+2026-07-23T22:05:09.4039491Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-07-23T22:05:09.4041509Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-07-23T22:05:09.4043184Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-07-23T22:05:09.4044498Z hint: call:
+2026-07-23T22:05:09.4045273Z hint:
+2026-07-23T22:05:09.4046204Z hint: 	git config --global init.defaultBranch <name>
+2026-07-23T22:05:09.4047311Z hint:
+2026-07-23T22:05:09.4048365Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-07-23T22:05:09.4050261Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-07-23T22:05:09.4051586Z hint:
+2026-07-23T22:05:09.4052369Z hint: 	git branch -m <name>
+2026-07-23T22:05:09.4053162Z hint:
+2026-07-23T22:05:09.4054198Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-07-23T22:05:09.4058805Z Initialized empty Git repository in /home/runner/work/knx_to_openhab/knx_to_openhab/.git/
+2026-07-23T22:05:09.4061997Z [command]/usr/bin/git remote add origin https://github.com/diddip21/knx_to_openhab
+2026-07-23T22:05:09.4107152Z ##[endgroup]
+2026-07-23T22:05:09.4107947Z ##[group]Disabling automatic garbage collection
+2026-07-23T22:05:09.4112692Z [command]/usr/bin/git config --local gc.auto 0
+2026-07-23T22:05:09.4146367Z ##[endgroup]
+2026-07-23T22:05:09.4147532Z ##[group]Setting up auth
+2026-07-23T22:05:09.4155398Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-23T22:05:09.4195212Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-23T22:05:09.4625418Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-23T22:05:09.4665411Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-23T22:05:09.4904586Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-23T22:05:09.4945029Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-23T22:05:09.5182126Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-07-23T22:05:09.5225471Z ##[endgroup]
+2026-07-23T22:05:09.5226283Z ##[group]Fetching the repository
+2026-07-23T22:05:09.5235581Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +12c2853af5f65e1a6f0a23d61142adccadad52c3:refs/remotes/pull/16/merge
+2026-07-23T22:05:10.2505763Z From https://github.com/diddip21/knx_to_openhab
+2026-07-23T22:05:10.2508492Z  * [new ref]         12c2853af5f65e1a6f0a23d61142adccadad52c3 -> pull/16/merge
+2026-07-23T22:05:10.2545535Z ##[endgroup]
+2026-07-23T22:05:10.2547735Z ##[group]Determining the checkout info
+2026-07-23T22:05:10.2550472Z ##[endgroup]
+2026-07-23T22:05:10.2555485Z [command]/usr/bin/git sparse-checkout disable
+2026-07-23T22:05:10.2607829Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-07-23T22:05:10.2641513Z ##[group]Checking out the ref
+2026-07-23T22:05:10.2645587Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/16/merge
+2026-07-23T22:05:10.3109300Z Note: switching to 'refs/remotes/pull/16/merge'.
+2026-07-23T22:05:10.3111094Z 
+2026-07-23T22:05:10.3112268Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-07-23T22:05:10.3115234Z changes and commit them, and you can discard any commits you make in this
+2026-07-23T22:05:10.3117849Z state without impacting any branches by switching back to a branch.
+2026-07-23T22:05:10.3119243Z 
+2026-07-23T22:05:10.3120596Z If you want to create a new branch to retain commits you create, you may
+2026-07-23T22:05:10.3122718Z do so (now or later) by using -c with the switch command. Example:
+2026-07-23T22:05:10.3123916Z 
+2026-07-23T22:05:10.3124374Z   git switch -c <new-branch-name>
+2026-07-23T22:05:10.3125171Z 
+2026-07-23T22:05:10.3125789Z Or undo this operation with:
+2026-07-23T22:05:10.3126581Z 
+2026-07-23T22:05:10.3127021Z   git switch -
+2026-07-23T22:05:10.3127692Z 
+2026-07-23T22:05:10.3128658Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-07-23T22:05:10.3130486Z 
+2026-07-23T22:05:10.3132156Z HEAD is now at 12c2853 Merge 62416a095b93d0c80e85fd5c77b9f3483040591f into dc37576042ba0ad4cd2dc54e4a7ac925c13e6a30
+2026-07-23T22:05:10.3137163Z ##[endgroup]
+2026-07-23T22:05:10.3171602Z [command]/usr/bin/git log -1 --format=%H
+2026-07-23T22:05:10.3204162Z 12c2853af5f65e1a6f0a23d61142adccadad52c3
+2026-07-23T22:05:10.3682616Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-23T22:05:10.3688469Z ##[group]Run actions/setup-python@v5
+2026-07-23T22:05:10.3689617Z with:
+2026-07-23T22:05:10.3690574Z   python-version: 3.12
+2026-07-23T22:05:10.3691484Z   check-latest: false
+2026-07-23T22:05:10.3702421Z   token: ***
+2026-07-23T22:05:10.3703293Z   update-environment: true
+2026-07-23T22:05:10.3704308Z   allow-prereleases: false
+2026-07-23T22:05:10.3705282Z   freethreaded: false
+2026-07-23T22:05:10.3706156Z ##[endgroup]
+2026-07-23T22:05:10.5061230Z ##[group]Installed versions
+2026-07-23T22:05:10.5155764Z (node:2934) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-07-23T22:05:10.5160049Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-07-23T22:05:10.5162721Z Successfully set up CPython (3.12.13)
+2026-07-23T22:05:10.5165707Z ##[endgroup]
+2026-07-23T22:05:10.6318473Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-23T22:05:10.6323701Z ##[group]Run actions/cache@v4
+2026-07-23T22:05:10.6324628Z with:
+2026-07-23T22:05:10.6325342Z   path: ~/.cache/pip
+2026-07-23T22:05:10.6326751Z   key: Linux-pip-894873b39e02c17bf50e70060ddd1e41b86da29d3b4d203c4d06d7a2f488667b
+2026-07-23T22:05:10.6328462Z   restore-keys: Linux-pip-
+
+2026-07-23T22:05:10.6329399Z   enableCrossOsArchive: false
+2026-07-23T22:05:10.6330658Z   fail-on-cache-miss: false
+2026-07-23T22:05:10.6331627Z   lookup-only: false
+2026-07-23T22:05:10.6332473Z   save-always: false
+2026-07-23T22:05:10.6333234Z env:
+2026-07-23T22:05:10.6334160Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.13/x64
+2026-07-23T22:05:10.6335895Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.13/x64/lib/pkgconfig
+2026-07-23T22:05:10.6337580Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.13/x64
+2026-07-23T22:05:10.6339082Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.13/x64
+2026-07-23T22:05:10.6340901Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.13/x64
+2026-07-23T22:05:10.6342442Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.13/x64/lib
+2026-07-23T22:05:10.6343735Z ##[endgroup]
+2026-07-23T22:05:10.7452649Z (node:2956) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-07-23T22:05:10.7456145Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-07-23T22:05:11.0179577Z Cache not found for input keys: Linux-pip-894873b39e02c17bf50e70060ddd1e41b86da29d3b4d203c4d06d7a2f488667b, Linux-pip-
+2026-07-23T22:05:11.0296782Z ##[group]Run python -m pip install --upgrade pip
+2026-07-23T22:05:11.0297582Z [36;1mpython -m pip install --upgrade pip[0m
+2026-07-23T22:05:11.0298194Z [36;1mpip install -r requirements.txt[0m
+2026-07-23T22:05:11.0298784Z [36;1mpip install -r requirements-dev.txt[0m
+2026-07-23T22:05:11.0383292Z shell: /usr/bin/bash -e {0}
+2026-07-23T22:05:11.0383801Z env:
+2026-07-23T22:05:11.0384294Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.13/x64
+2026-07-23T22:05:11.0384996Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.13/x64/lib/pkgconfig
+2026-07-23T22:05:11.0385695Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.13/x64
+2026-07-23T22:05:11.0386337Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.13/x64
+2026-07-23T22:05:11.0386978Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.13/x64
+2026-07-23T22:05:11.0387634Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.13/x64/lib
+2026-07-23T22:05:11.0388233Z ##[endgroup]
+2026-07-23T22:05:11.7762526Z Requirement already satisfied: pip in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (26.1.2)
+2026-07-23T22:05:12.4269546Z Collecting flask>=2.0 (from -r requirements.txt (line 1))
+2026-07-23T22:05:12.4778090Z   Downloading flask-3.1.3-py3-none-any.whl.metadata (3.2 kB)
+2026-07-23T22:05:12.5043302Z Collecting werkzeug (from -r requirements.txt (line 2))
+2026-07-23T22:05:12.5074460Z   Downloading werkzeug-3.1.8-py3-none-any.whl.metadata (4.0 kB)
+2026-07-23T22:05:12.5208332Z Collecting xknxproject (from -r requirements.txt (line 3))
+2026-07-23T22:05:12.5248690Z   Downloading xknxproject-3.9.0-py3-none-any.whl.metadata (3.0 kB)
+2026-07-23T22:05:12.5488516Z Collecting requests (from -r requirements.txt (line 4))
+2026-07-23T22:05:12.5521022Z   Downloading requests-2.34.2-py3-none-any.whl.metadata (4.8 kB)
+2026-07-23T22:05:12.5705439Z Collecting gunicorn (from -r requirements.txt (line 5))
+2026-07-23T22:05:12.5737620Z   Downloading gunicorn-26.0.0-py3-none-any.whl.metadata (5.4 kB)
+2026-07-23T22:05:12.5872515Z Collecting pytest-dependency>=0.5.1 (from -r requirements.txt (line 6))
+2026-07-23T22:05:12.5924645Z   Downloading pytest_dependency-0.6.1.tar.gz (20 kB)
+2026-07-23T22:05:12.6088123Z   Installing build dependencies: started
+2026-07-23T22:05:13.3786284Z   Installing build dependencies: finished with status 'done'
+2026-07-23T22:05:13.3794050Z   Getting requirements to build wheel: started
+2026-07-23T22:05:13.7648120Z   Getting requirements to build wheel: finished with status 'done'
+2026-07-23T22:05:13.7667245Z   Preparing metadata (pyproject.toml): started
+2026-07-23T22:05:13.9604945Z   Preparing metadata (pyproject.toml): finished with status 'done'
+2026-07-23T22:05:13.9702536Z Collecting blinker>=1.9.0 (from flask>=2.0->-r requirements.txt (line 1))
+2026-07-23T22:05:13.9737853Z   Downloading blinker-1.9.0-py3-none-any.whl.metadata (1.6 kB)
+2026-07-23T22:05:13.9898202Z Collecting click>=8.1.3 (from flask>=2.0->-r requirements.txt (line 1))
+2026-07-23T22:05:13.9938225Z   Downloading click-8.4.2-py3-none-any.whl.metadata (2.6 kB)
+2026-07-23T22:05:14.0066942Z Collecting itsdangerous>=2.2.0 (from flask>=2.0->-r requirements.txt (line 1))
+2026-07-23T22:05:14.0112066Z   Downloading itsdangerous-2.2.0-py3-none-any.whl.metadata (1.9 kB)
+2026-07-23T22:05:14.0254777Z Collecting jinja2>=3.1.2 (from flask>=2.0->-r requirements.txt (line 1))
+2026-07-23T22:05:14.0284028Z   Downloading jinja2-3.1.6-py3-none-any.whl.metadata (2.9 kB)
+2026-07-23T22:05:14.0912976Z Collecting markupsafe>=2.1.1 (from flask>=2.0->-r requirements.txt (line 1))
+2026-07-23T22:05:14.0946090Z   Downloading markupsafe-3.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.7 kB)
+2026-07-23T22:05:14.1077497Z Collecting pyzipper>=0.3.6 (from xknxproject->-r requirements.txt (line 3))
+2026-07-23T22:05:14.1116121Z   Downloading pyzipper-0.4.0-py3-none-any.whl.metadata (6.0 kB)
+2026-07-23T22:05:14.1251000Z Collecting striprtf>=0.0.26 (from xknxproject->-r requirements.txt (line 3))
+2026-07-23T22:05:14.1291827Z   Downloading striprtf-0.0.32-py3-none-any.whl.metadata (2.4 kB)
+2026-07-23T22:05:14.2374385Z Collecting charset_normalizer<4,>=2 (from requests->-r requirements.txt (line 4))
+2026-07-23T22:05:14.2411316Z   Downloading charset_normalizer-3.4.9-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (41 kB)
+2026-07-23T22:05:14.2611619Z Collecting idna<4,>=2.5 (from requests->-r requirements.txt (line 4))
+2026-07-23T22:05:14.2639235Z   Downloading idna-3.18-py3-none-any.whl.metadata (6.1 kB)
+2026-07-23T22:05:14.2843800Z Collecting urllib3<3,>=1.26 (from requests->-r requirements.txt (line 4))
+2026-07-23T22:05:14.2875097Z   Downloading urllib3-2.7.0-py3-none-any.whl.metadata (6.9 kB)
+2026-07-23T22:05:14.3046566Z Collecting certifi>=2023.5.7 (from requests->-r requirements.txt (line 4))
+2026-07-23T22:05:14.3074375Z   Downloading certifi-2026.7.22-py3-none-any.whl.metadata (2.5 kB)
+2026-07-23T22:05:14.3253049Z Collecting packaging (from gunicorn->-r requirements.txt (line 5))
+2026-07-23T22:05:14.3285355Z   Downloading packaging-26.2-py3-none-any.whl.metadata (3.5 kB)
+2026-07-23T22:05:14.4216928Z Collecting setuptools (from pytest-dependency>=0.5.1->-r requirements.txt (line 6))
+2026-07-23T22:05:14.4231091Z   Using cached setuptools-83.0.0-py3-none-any.whl.metadata (6.6 kB)
+2026-07-23T22:05:14.4556704Z Collecting pytest>=3.7.0 (from pytest-dependency>=0.5.1->-r requirements.txt (line 6))
+2026-07-23T22:05:14.4623561Z   Downloading pytest-9.1.1-py3-none-any.whl.metadata (7.6 kB)
+2026-07-23T22:05:14.4768531Z Collecting iniconfig>=1.0.1 (from pytest>=3.7.0->pytest-dependency>=0.5.1->-r requirements.txt (line 6))
+2026-07-23T22:05:14.4798089Z   Downloading iniconfig-2.3.0-py3-none-any.whl.metadata (2.5 kB)
+2026-07-23T22:05:14.4924218Z Collecting pluggy<2,>=1.5 (from pytest>=3.7.0->pytest-dependency>=0.5.1->-r requirements.txt (line 6))
+2026-07-23T22:05:14.4956594Z   Downloading pluggy-1.6.0-py3-none-any.whl.metadata (4.8 kB)
+2026-07-23T22:05:14.5151643Z Collecting pygments>=2.7.2 (from pytest>=3.7.0->pytest-dependency>=0.5.1->-r requirements.txt (line 6))
+2026-07-23T22:05:14.5193736Z   Downloading pygments-2.20.0-py3-none-any.whl.metadata (2.5 kB)
+2026-07-23T22:05:14.5920505Z Collecting pycryptodomex (from pyzipper>=0.3.6->xknxproject->-r requirements.txt (line 3))
+2026-07-23T22:05:14.5960207Z   Downloading pycryptodomex-3.23.0-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (3.4 kB)
+2026-07-23T22:05:14.6049634Z Downloading flask-3.1.3-py3-none-any.whl (103 kB)
+2026-07-23T22:05:14.6139794Z Downloading werkzeug-3.1.8-py3-none-any.whl (226 kB)
+2026-07-23T22:05:14.6242390Z Downloading xknxproject-3.9.0-py3-none-any.whl (42 kB)
+2026-07-23T22:05:14.6293712Z Downloading requests-2.34.2-py3-none-any.whl (73 kB)
+2026-07-23T22:05:14.6344953Z Downloading charset_normalizer-3.4.9-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (224 kB)
+2026-07-23T22:05:14.6399900Z Downloading idna-3.18-py3-none-any.whl (65 kB)
+2026-07-23T22:05:14.6454039Z Downloading urllib3-2.7.0-py3-none-any.whl (131 kB)
+2026-07-23T22:05:14.6507995Z Downloading gunicorn-26.0.0-py3-none-any.whl (212 kB)
+2026-07-23T22:05:14.6570006Z Downloading blinker-1.9.0-py3-none-any.whl (8.5 kB)
+2026-07-23T22:05:14.6618125Z Downloading certifi-2026.7.22-py3-none-any.whl (136 kB)
+2026-07-23T22:05:14.6679084Z Downloading click-8.4.2-py3-none-any.whl (119 kB)
+2026-07-23T22:05:14.6730748Z Downloading itsdangerous-2.2.0-py3-none-any.whl (16 kB)
+2026-07-23T22:05:14.6777936Z Downloading jinja2-3.1.6-py3-none-any.whl (134 kB)
+2026-07-23T22:05:14.6849547Z Downloading markupsafe-3.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (22 kB)
+2026-07-23T22:05:14.6900571Z Downloading pytest-9.1.1-py3-none-any.whl (386 kB)
+2026-07-23T22:05:14.6957164Z Downloading pluggy-1.6.0-py3-none-any.whl (20 kB)
+2026-07-23T22:05:14.7006066Z Downloading iniconfig-2.3.0-py3-none-any.whl (7.5 kB)
+2026-07-23T22:05:14.7072921Z Downloading packaging-26.2-py3-none-any.whl (100 kB)
+2026-07-23T22:05:14.7123130Z Downloading pygments-2.20.0-py3-none-any.whl (1.2 MB)
+2026-07-23T22:05:14.7227648Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 126.7 MB/s  0:00:00
+2026-07-23T22:05:14.7257814Z Downloading pyzipper-0.4.0-py3-none-any.whl (36 kB)
+2026-07-23T22:05:14.7317790Z Downloading striprtf-0.0.32-py3-none-any.whl (8.0 kB)
+2026-07-23T22:05:14.7372535Z Downloading pycryptodomex-3.23.0-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.3 MB)
+2026-07-23T22:05:14.7476681Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.3/2.3 MB 248.8 MB/s  0:00:00
+2026-07-23T22:05:14.7488679Z Using cached setuptools-83.0.0-py3-none-any.whl (1.0 MB)
+2026-07-23T22:05:14.7777370Z Building wheels for collected packages: pytest-dependency
+2026-07-23T22:05:14.7786314Z   Building wheel for pytest-dependency (pyproject.toml): started
+2026-07-23T22:05:15.0077630Z   Building wheel for pytest-dependency (pyproject.toml): finished with status 'done'
+2026-07-23T22:05:15.0084650Z   Created wheel for pytest-dependency: filename=pytest_dependency-0.6.1-py3-none-any.whl size=9074 sha256=7c09e81aaf76374ffa70cb829828185031b691235a7b425ab9e6787bf575e03e
+2026-07-23T22:05:15.0086439Z   Stored in directory: /home/runner/.cache/pip/wheels/de/63/5f/6afba0a6b082d1248c7df8c3457bfca52ba59809ee63e9e5d5
+2026-07-23T22:05:15.0107492Z Successfully built pytest-dependency
+2026-07-23T22:05:15.0508354Z Installing collected packages: urllib3, striprtf, setuptools, pygments, pycryptodomex, pluggy, packaging, markupsafe, itsdangerous, iniconfig, idna, click, charset_normalizer, certifi, blinker, werkzeug, requests, pyzipper, pytest, jinja2, gunicorn, xknxproject, pytest-dependency, flask
+2026-07-23T22:05:18.0965505Z 
+2026-07-23T22:05:18.0992603Z Successfully installed blinker-1.9.0 certifi-2026.7.22 charset_normalizer-3.4.9 click-8.4.2 flask-3.1.3 gunicorn-26.0.0 idna-3.18 iniconfig-2.3.0 itsdangerous-2.2.0 jinja2-3.1.6 markupsafe-3.0.3 packaging-26.2 pluggy-1.6.0 pycryptodomex-3.23.0 pygments-2.20.0 pytest-9.1.1 pytest-dependency-0.6.1 pyzipper-0.4.0 requests-2.34.2 setuptools-83.0.0 striprtf-0.0.32 urllib3-2.7.0 werkzeug-3.1.8 xknxproject-3.9.0
+2026-07-23T22:05:18.5322005Z Requirement already satisfied: flask>=2.0 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from -r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 1)) (3.1.3)
+2026-07-23T22:05:18.5327452Z Requirement already satisfied: werkzeug in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from -r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 2)) (3.1.8)
+2026-07-23T22:05:18.5333381Z Requirement already satisfied: xknxproject in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from -r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 3)) (3.9.0)
+2026-07-23T22:05:18.5338015Z Requirement already satisfied: requests in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from -r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 4)) (2.34.2)
+2026-07-23T22:05:18.5343911Z Requirement already satisfied: gunicorn in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from -r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 5)) (26.0.0)
+2026-07-23T22:05:18.5350075Z Requirement already satisfied: pytest-dependency>=0.5.1 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from -r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 6)) (0.6.1)
+2026-07-23T22:05:18.5355495Z Requirement already satisfied: pytest>=7.4.0 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from -r requirements-dev.txt (line 8)) (9.1.1)
+2026-07-23T22:05:18.5993355Z Collecting pytest-cov>=4.1.0 (from -r requirements-dev.txt (line 9))
+2026-07-23T22:05:18.6491575Z   Downloading pytest_cov-7.1.0-py3-none-any.whl.metadata (32 kB)
+2026-07-23T22:05:18.6738873Z Collecting pytest-flask>=1.2.0 (from -r requirements-dev.txt (line 10))
+2026-07-23T22:05:18.6779010Z   Downloading pytest_flask-1.3.0-py3-none-any.whl.metadata (14 kB)
+2026-07-23T22:05:18.6937693Z Collecting pytest-mock>=3.11.0 (from -r requirements-dev.txt (line 11))
+2026-07-23T22:05:18.6963133Z   Downloading pytest_mock-3.15.1-py3-none-any.whl.metadata (3.9 kB)
+2026-07-23T22:05:18.7089862Z Collecting pytest-playwright>=0.4.3 (from -r requirements-dev.txt (line 12))
+2026-07-23T22:05:18.7117749Z   Downloading pytest_playwright-0.8.0-py3-none-any.whl.metadata (14 kB)
+2026-07-23T22:05:18.7245267Z Collecting pytest-timeout>=2.1.0 (from -r requirements-dev.txt (line 13))
+2026-07-23T22:05:18.7274939Z   Downloading pytest_timeout-2.4.0-py3-none-any.whl.metadata (20 kB)
+2026-07-23T22:05:18.7428055Z Collecting pytest-xdist>=3.3.1 (from -r requirements-dev.txt (line 14))
+2026-07-23T22:05:18.7453140Z   Downloading pytest_xdist-3.8.0-py3-none-any.whl.metadata (3.0 kB)
+2026-07-23T22:05:18.7755121Z Collecting pylint>=2.17.0 (from -r requirements-dev.txt (line 17))
+2026-07-23T22:05:18.7782520Z   Downloading pylint-4.0.6-py3-none-any.whl.metadata (12 kB)
+2026-07-23T22:05:18.7963725Z Collecting flake8>=6.0.0 (from -r requirements-dev.txt (line 18))
+2026-07-23T22:05:18.7988059Z   Downloading flake8-7.3.0-py2.py3-none-any.whl.metadata (3.8 kB)
+2026-07-23T22:05:18.8630272Z Collecting black>=23.7.0 (from -r requirements-dev.txt (line 19))
+2026-07-23T22:05:18.8666653Z   Downloading black-26.5.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (95 kB)
+2026-07-23T22:05:18.8990799Z Collecting isort>=5.12.0 (from -r requirements-dev.txt (line 20))
+2026-07-23T22:05:18.9015731Z   Downloading isort-8.0.1-py3-none-any.whl.metadata (11 kB)
+2026-07-23T22:05:19.0053729Z Collecting mypy>=1.4.0 (from -r requirements-dev.txt (line 21))
+2026-07-23T22:05:19.0081167Z   Downloading mypy-2.3.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.4 kB)
+2026-07-23T22:05:19.0424815Z Collecting playwright>=1.40.0 (from -r requirements-dev.txt (line 24))
+2026-07-23T22:05:19.0453811Z   Downloading playwright-1.61.0-py3-none-manylinux1_x86_64.whl.metadata (3.3 kB)
+2026-07-23T22:05:19.0706560Z Collecting selenium>=4.12.0 (from -r requirements-dev.txt (line 25))
+2026-07-23T22:05:19.0736598Z   Downloading selenium-4.46.0-py3-none-any.whl.metadata (7.4 kB)
+2026-07-23T22:05:19.4557886Z Collecting coverage>=7.2.0 (from coverage[toml]>=7.2.0->-r requirements-dev.txt (line 28))
+2026-07-23T22:05:19.4586623Z   Downloading coverage-7.15.2-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (8.6 kB)
+2026-07-23T22:05:19.4808720Z Collecting types-requests>=2.31.0.20240406 (from -r requirements-dev.txt (line 31))
+2026-07-23T22:05:19.4835914Z   Downloading types_requests-2.33.0.20260712-py3-none-any.whl.metadata (2.2 kB)
+2026-07-23T22:05:19.5135137Z Collecting ipython>=8.14.0 (from -r requirements-dev.txt (line 34))
+2026-07-23T22:05:19.5160899Z   Downloading ipython-9.15.0-py3-none-any.whl.metadata (4.7 kB)
+2026-07-23T22:05:19.5326330Z Collecting ipdb>=0.13.13 (from -r requirements-dev.txt (line 35))
+2026-07-23T22:05:19.5364173Z   Downloading ipdb-0.13.13-py3-none-any.whl.metadata (14 kB)
+2026-07-23T22:05:19.5437421Z Requirement already satisfied: blinker>=1.9.0 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from flask>=2.0->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 1)) (1.9.0)
+2026-07-23T22:05:19.5444081Z Requirement already satisfied: click>=8.1.3 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from flask>=2.0->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 1)) (8.4.2)
+2026-07-23T22:05:19.5451263Z Requirement already satisfied: itsdangerous>=2.2.0 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from flask>=2.0->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 1)) (2.2.0)
+2026-07-23T22:05:19.5457772Z Requirement already satisfied: jinja2>=3.1.2 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from flask>=2.0->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 1)) (3.1.6)
+2026-07-23T22:05:19.5464390Z Requirement already satisfied: markupsafe>=2.1.1 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from flask>=2.0->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 1)) (3.0.3)
+2026-07-23T22:05:19.5486553Z Requirement already satisfied: pyzipper>=0.3.6 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from xknxproject->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 3)) (0.4.0)
+2026-07-23T22:05:19.5492988Z Requirement already satisfied: striprtf>=0.0.26 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from xknxproject->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 3)) (0.0.32)
+2026-07-23T22:05:19.5507017Z Requirement already satisfied: charset_normalizer<4,>=2 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from requests->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 4)) (3.4.9)
+2026-07-23T22:05:19.5513662Z Requirement already satisfied: idna<4,>=2.5 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from requests->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 4)) (3.18)
+2026-07-23T22:05:19.5520314Z Requirement already satisfied: urllib3<3,>=1.26 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from requests->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 4)) (2.7.0)
+2026-07-23T22:05:19.5526505Z Requirement already satisfied: certifi>=2023.5.7 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from requests->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 4)) (2026.7.22)
+2026-07-23T22:05:19.5574454Z Requirement already satisfied: packaging in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from gunicorn->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 5)) (26.2)
+2026-07-23T22:05:19.5594587Z Requirement already satisfied: setuptools in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from pytest-dependency>=0.5.1->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 6)) (83.0.0)
+2026-07-23T22:05:19.5611491Z Requirement already satisfied: iniconfig>=1.0.1 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from pytest>=7.4.0->-r requirements-dev.txt (line 8)) (2.3.0)
+2026-07-23T22:05:19.5618719Z Requirement already satisfied: pluggy<2,>=1.5 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from pytest>=7.4.0->-r requirements-dev.txt (line 8)) (1.6.0)
+2026-07-23T22:05:19.5625112Z Requirement already satisfied: pygments>=2.7.2 in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from pytest>=7.4.0->-r requirements-dev.txt (line 8)) (2.20.0)
+2026-07-23T22:05:19.5812898Z Collecting pytest-base-url<3.0.0,>=1.0.0 (from pytest-playwright>=0.4.3->-r requirements-dev.txt (line 12))
+2026-07-23T22:05:19.5838835Z   Downloading pytest_base_url-2.1.0-py3-none-any.whl.metadata (6.6 kB)
+2026-07-23T22:05:19.5977071Z Collecting python-slugify<9.0.0,>=6.0.0 (from pytest-playwright>=0.4.3->-r requirements-dev.txt (line 12))
+2026-07-23T22:05:19.6006856Z   Downloading python_slugify-8.0.4-py2.py3-none-any.whl.metadata (8.5 kB)
+2026-07-23T22:05:19.6123410Z Collecting text-unidecode>=1.3 (from python-slugify<9.0.0,>=6.0.0->pytest-playwright>=0.4.3->-r requirements-dev.txt (line 12))
+2026-07-23T22:05:19.6153565Z   Downloading text_unidecode-1.3-py2.py3-none-any.whl.metadata (2.4 kB)
+2026-07-23T22:05:19.6284069Z Collecting execnet>=2.1 (from pytest-xdist>=3.3.1->-r requirements-dev.txt (line 14))
+2026-07-23T22:05:19.6310226Z   Downloading execnet-2.1.2-py3-none-any.whl.metadata (2.9 kB)
+2026-07-23T22:05:19.6841312Z Collecting astroid<=4.1.dev0,>=4.0.2 (from pylint>=2.17.0->-r requirements-dev.txt (line 17))
+2026-07-23T22:05:19.6867020Z   Downloading astroid-4.0.4-py3-none-any.whl.metadata (4.4 kB)
+2026-07-23T22:05:19.6985990Z Collecting dill>=0.3.6 (from pylint>=2.17.0->-r requirements-dev.txt (line 17))
+2026-07-23T22:05:19.7012198Z   Downloading dill-0.4.1-py3-none-any.whl.metadata (10 kB)
+2026-07-23T22:05:19.7151154Z Collecting mccabe<0.8,>=0.6 (from pylint>=2.17.0->-r requirements-dev.txt (line 17))
+2026-07-23T22:05:19.7193928Z   Downloading mccabe-0.7.0-py2.py3-none-any.whl.metadata (5.0 kB)
+2026-07-23T22:05:19.7367698Z Collecting platformdirs>=2.2 (from pylint>=2.17.0->-r requirements-dev.txt (line 17))
+2026-07-23T22:05:19.7396319Z   Downloading platformdirs-4.11.0-py3-none-any.whl.metadata (5.5 kB)
+2026-07-23T22:05:19.7545322Z Collecting tomlkit>=0.10.1 (from pylint>=2.17.0->-r requirements-dev.txt (line 17))
+2026-07-23T22:05:19.7569988Z   Downloading tomlkit-0.15.1-py3-none-any.whl.metadata (3.3 kB)
+2026-07-23T22:05:19.7714294Z Collecting pycodestyle<2.15.0,>=2.14.0 (from flake8>=6.0.0->-r requirements-dev.txt (line 18))
+2026-07-23T22:05:19.7742738Z   Downloading pycodestyle-2.14.0-py2.py3-none-any.whl.metadata (4.5 kB)
+2026-07-23T22:05:19.7858705Z Collecting pyflakes<3.5.0,>=3.4.0 (from flake8>=6.0.0->-r requirements-dev.txt (line 18))
+2026-07-23T22:05:19.7884157Z   Downloading pyflakes-3.4.0-py2.py3-none-any.whl.metadata (3.5 kB)
+2026-07-23T22:05:19.8001490Z Collecting mypy-extensions>=0.4.3 (from black>=23.7.0->-r requirements-dev.txt (line 19))
+2026-07-23T22:05:19.8026345Z   Downloading mypy_extensions-1.1.0-py3-none-any.whl.metadata (1.1 kB)
+2026-07-23T22:05:19.8142805Z Collecting pathspec>=1.0.0 (from black>=23.7.0->-r requirements-dev.txt (line 19))
+2026-07-23T22:05:19.8167811Z   Downloading pathspec-1.1.1-py3-none-any.whl.metadata (14 kB)
+2026-07-23T22:05:19.8379393Z Collecting pytokens~=0.4.0 (from black>=23.7.0->-r requirements-dev.txt (line 19))
+2026-07-23T22:05:19.8427385Z   Downloading pytokens-0.4.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (3.8 kB)
+2026-07-23T22:05:19.8622657Z Collecting typing_extensions>=4.6.0 (from mypy>=1.4.0->-r requirements-dev.txt (line 21))
+2026-07-23T22:05:19.8649697Z   Downloading typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+2026-07-23T22:05:19.9802650Z Collecting librt>=0.13.0 (from mypy>=1.4.0->-r requirements-dev.txt (line 21))
+2026-07-23T22:05:19.9832497Z   Downloading librt-0.13.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (1.3 kB)
+2026-07-23T22:05:20.0080314Z Collecting ast-serialize<1.0.0,>=0.6.0 (from mypy>=1.4.0->-r requirements-dev.txt (line 21))
+2026-07-23T22:05:20.0131584Z   Downloading ast_serialize-0.6.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (1.3 kB)
+2026-07-23T22:05:20.0286280Z Collecting pyee<14,>=13 (from playwright>=1.40.0->-r requirements-dev.txt (line 24))
+2026-07-23T22:05:20.0316250Z   Downloading pyee-13.0.1-py3-none-any.whl.metadata (3.0 kB)
+2026-07-23T22:05:20.1698563Z Collecting greenlet<4.0.0,>=3.1.1 (from playwright>=1.40.0->-r requirements-dev.txt (line 24))
+2026-07-23T22:05:20.1727615Z   Downloading greenlet-3.5.4-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (3.8 kB)
+2026-07-23T22:05:20.1894955Z Collecting trio<1.0,>=0.31.0 (from selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:05:20.1923658Z   Downloading trio-0.33.0-py3-none-any.whl.metadata (8.5 kB)
+2026-07-23T22:05:20.2032707Z Collecting trio-websocket<1.0,>=0.12.2 (from selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:05:20.2061611Z   Downloading trio_websocket-0.12.2-py3-none-any.whl.metadata (5.1 kB)
+2026-07-23T22:05:20.2229781Z Collecting websocket-client<2.0,>=1.8.0 (from selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:05:20.2264332Z   Downloading websocket_client-1.9.0-py3-none-any.whl.metadata (8.3 kB)
+2026-07-23T22:05:20.2412693Z Collecting attrs>=23.2.0 (from trio<1.0,>=0.31.0->selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:05:20.2441460Z   Downloading attrs-26.1.0-py3-none-any.whl.metadata (8.8 kB)
+2026-07-23T22:05:20.2566379Z Collecting sortedcontainers (from trio<1.0,>=0.31.0->selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:05:20.2593667Z   Downloading sortedcontainers-2.4.0-py2.py3-none-any.whl.metadata (10 kB)
+2026-07-23T22:05:20.2691939Z Collecting outcome (from trio<1.0,>=0.31.0->selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:05:20.2727567Z   Downloading outcome-1.3.0.post0-py2.py3-none-any.whl.metadata (2.6 kB)
+2026-07-23T22:05:20.2822582Z Collecting sniffio>=1.3.0 (from trio<1.0,>=0.31.0->selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:05:20.2849177Z   Downloading sniffio-1.3.1-py3-none-any.whl.metadata (3.9 kB)
+2026-07-23T22:05:20.2976790Z Collecting wsproto>=0.14 (from trio-websocket<1.0,>=0.12.2->selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:05:20.3010984Z   Downloading wsproto-1.3.2-py3-none-any.whl.metadata (5.2 kB)
+2026-07-23T22:05:20.3133984Z Collecting pysocks!=1.5.7,<2.0,>=1.5.6 (from urllib3[socks]<3.0,>=2.6.3->selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:05:20.3158807Z   Downloading PySocks-1.7.1-py3-none-any.whl.metadata (13 kB)
+2026-07-23T22:05:20.3332550Z Collecting decorator>=5.1.0 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:05:20.3357242Z   Downloading decorator-5.3.1-py3-none-any.whl.metadata (3.9 kB)
+2026-07-23T22:05:20.3448041Z Collecting ipython-pygments-lexers>=1.0.0 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:05:20.3473846Z   Downloading ipython_pygments_lexers-1.1.1-py3-none-any.whl.metadata (1.1 kB)
+2026-07-23T22:05:20.3588207Z Collecting jedi>=0.18.2 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:05:20.3614823Z   Downloading jedi-0.20.0-py2.py3-none-any.whl.metadata (23 kB)
+2026-07-23T22:05:20.3753539Z Collecting matplotlib-inline>=0.1.6 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:05:20.3783587Z   Downloading matplotlib_inline-0.2.2-py3-none-any.whl.metadata (2.4 kB)
+2026-07-23T22:05:20.3891227Z Collecting pexpect>4.6 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:05:20.3918872Z   Downloading pexpect-4.9.0-py2.py3-none-any.whl.metadata (2.5 kB)
+2026-07-23T22:05:20.4153951Z Collecting prompt_toolkit<3.1.0,>=3.0.41 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:05:20.4181004Z   Downloading prompt_toolkit-3.0.52-py3-none-any.whl.metadata (6.4 kB)
+2026-07-23T22:05:20.4828077Z Collecting psutil>=7 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:05:20.4864193Z   Downloading psutil-7.2.2-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl.metadata (22 kB)
+2026-07-23T22:05:20.5016299Z Collecting stack_data>=0.6.0 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:05:20.5046329Z   Downloading stack_data-0.6.3-py3-none-any.whl.metadata (18 kB)
+2026-07-23T22:05:20.5198327Z Collecting traitlets>=5.13.0 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:05:20.5223576Z   Downloading traitlets-5.15.1-py3-none-any.whl.metadata (10 kB)
+2026-07-23T22:05:20.5387974Z Collecting wcwidth (from prompt_toolkit<3.1.0,>=3.0.41->ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:05:20.5416408Z   Downloading wcwidth-0.8.2-py3-none-any.whl.metadata (43 kB)
+2026-07-23T22:05:20.5749208Z Collecting parso<0.9.0,>=0.8.6 (from jedi>=0.18.2->ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:05:20.5775344Z   Downloading parso-0.8.7-py2.py3-none-any.whl.metadata (8.2 kB)
+2026-07-23T22:05:20.5998090Z Collecting ptyprocess>=0.5 (from pexpect>4.6->ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:05:20.6027608Z   Downloading ptyprocess-0.7.0-py2.py3-none-any.whl.metadata (1.3 kB)
+2026-07-23T22:05:20.6124664Z Requirement already satisfied: pycryptodomex in /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages (from pyzipper>=0.3.6->xknxproject->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 3)) (3.23.0)
+2026-07-23T22:05:20.6224360Z Collecting executing>=1.2.0 (from stack_data>=0.6.0->ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:05:20.6258418Z   Downloading executing-2.2.1-py2.py3-none-any.whl.metadata (8.9 kB)
+2026-07-23T22:05:20.6389485Z Collecting asttokens>=2.1.0 (from stack_data>=0.6.0->ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:05:20.6418167Z   Downloading asttokens-3.0.2-py3-none-any.whl.metadata (5.7 kB)
+2026-07-23T22:05:20.6521766Z Collecting pure-eval (from stack_data>=0.6.0->ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:05:20.6553053Z   Downloading pure_eval-0.2.3-py3-none-any.whl.metadata (6.3 kB)
+2026-07-23T22:05:20.6733244Z Collecting h11<1,>=0.16.0 (from wsproto>=0.14->trio-websocket<1.0,>=0.12.2->selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:05:20.6757951Z   Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+2026-07-23T22:05:20.6924022Z Downloading pytest_cov-7.1.0-py3-none-any.whl (22 kB)
+2026-07-23T22:05:20.6967083Z Downloading pytest_flask-1.3.0-py3-none-any.whl (13 kB)
+2026-07-23T22:05:20.7013457Z Downloading pytest_mock-3.15.1-py3-none-any.whl (10 kB)
+2026-07-23T22:05:20.7055547Z Downloading pytest_playwright-0.8.0-py3-none-any.whl (17 kB)
+2026-07-23T22:05:20.7098306Z Downloading pytest_base_url-2.1.0-py3-none-any.whl (5.3 kB)
+2026-07-23T22:05:20.7144150Z Downloading python_slugify-8.0.4-py2.py3-none-any.whl (10 kB)
+2026-07-23T22:05:20.7184348Z Downloading pytest_timeout-2.4.0-py3-none-any.whl (14 kB)
+2026-07-23T22:05:20.7227654Z Downloading pytest_xdist-3.8.0-py3-none-any.whl (46 kB)
+2026-07-23T22:05:20.7268608Z Downloading pylint-4.0.6-py3-none-any.whl (538 kB)
+2026-07-23T22:05:20.7346553Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 538.4/538.4 kB 85.5 MB/s  0:00:00
+2026-07-23T22:05:20.7369351Z Downloading isort-8.0.1-py3-none-any.whl (89 kB)
+2026-07-23T22:05:20.7468156Z Downloading astroid-4.0.4-py3-none-any.whl (276 kB)
+2026-07-23T22:05:20.7523292Z Downloading mccabe-0.7.0-py2.py3-none-any.whl (7.3 kB)
+2026-07-23T22:05:20.7571011Z Downloading flake8-7.3.0-py2.py3-none-any.whl (57 kB)
+2026-07-23T22:05:20.7615958Z Downloading pycodestyle-2.14.0-py2.py3-none-any.whl (31 kB)
+2026-07-23T22:05:20.7659689Z Downloading pyflakes-3.4.0-py2.py3-none-any.whl (63 kB)
+2026-07-23T22:05:20.7707094Z Downloading black-26.5.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (1.9 MB)
+2026-07-23T22:05:20.7924205Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.9/1.9 MB 116.4 MB/s  0:00:00
+2026-07-23T22:05:20.7933670Z Downloading pytokens-0.4.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (269 kB)
+2026-07-23T22:05:20.7989876Z Downloading mypy-2.3.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (15.3 MB)
+2026-07-23T22:05:20.8538865Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 15.3/15.3 MB 290.5 MB/s  0:00:00
+2026-07-23T22:05:20.8569404Z Downloading ast_serialize-0.6.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (1.3 MB)
+2026-07-23T22:05:20.8642689Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.3/1.3 MB 207.5 MB/s  0:00:00
+2026-07-23T22:05:20.8674392Z Downloading playwright-1.61.0-py3-none-manylinux1_x86_64.whl (47.4 MB)
+2026-07-23T22:05:21.0240630Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 47.4/47.4 MB 306.0 MB/s  0:00:00
+2026-07-23T22:05:21.0279467Z Downloading greenlet-3.5.4-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (621 kB)
+2026-07-23T22:05:21.0333894Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 621.5/621.5 kB 118.4 MB/s  0:00:00
+2026-07-23T22:05:21.0358357Z Downloading pyee-13.0.1-py3-none-any.whl (15 kB)
+2026-07-23T22:05:21.0403361Z Downloading selenium-4.46.0-py3-none-any.whl (9.4 MB)
+2026-07-23T22:05:21.0888315Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 9.4/9.4 MB 208.4 MB/s  0:00:00
+2026-07-23T22:05:21.0915871Z Downloading trio-0.33.0-py3-none-any.whl (510 kB)
+2026-07-23T22:05:21.0975777Z Downloading trio_websocket-0.12.2-py3-none-any.whl (21 kB)
+2026-07-23T22:05:21.1021983Z Downloading typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+2026-07-23T22:05:21.1065080Z Downloading PySocks-1.7.1-py3-none-any.whl (16 kB)
+2026-07-23T22:05:21.1113279Z Downloading websocket_client-1.9.0-py3-none-any.whl (82 kB)
+2026-07-23T22:05:21.1180256Z Downloading coverage-7.15.2-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (256 kB)
+2026-07-23T22:05:21.1234068Z Downloading types_requests-2.33.0.20260712-py3-none-any.whl (21 kB)
+2026-07-23T22:05:21.1281312Z Downloading ipython-9.15.0-py3-none-any.whl (630 kB)
+2026-07-23T22:05:21.1338817Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 630.9/630.9 kB 120.5 MB/s  0:00:00
+2026-07-23T22:05:21.1364942Z Downloading prompt_toolkit-3.0.52-py3-none-any.whl (391 kB)
+2026-07-23T22:05:21.1418214Z Downloading ipdb-0.13.13-py3-none-any.whl (12 kB)
+2026-07-23T22:05:21.1463714Z Downloading attrs-26.1.0-py3-none-any.whl (67 kB)
+2026-07-23T22:05:21.1509364Z Downloading decorator-5.3.1-py3-none-any.whl (10 kB)
+2026-07-23T22:05:21.1552099Z Downloading dill-0.4.1-py3-none-any.whl (120 kB)
+2026-07-23T22:05:21.1599345Z Downloading execnet-2.1.2-py3-none-any.whl (40 kB)
+2026-07-23T22:05:21.1650605Z Downloading ipython_pygments_lexers-1.1.1-py3-none-any.whl (8.1 kB)
+2026-07-23T22:05:21.1700907Z Downloading jedi-0.20.0-py2.py3-none-any.whl (4.9 MB)
+2026-07-23T22:05:21.1875236Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.9/4.9 MB 308.9 MB/s  0:00:00
+2026-07-23T22:05:21.1903915Z Downloading parso-0.8.7-py2.py3-none-any.whl (107 kB)
+2026-07-23T22:05:21.1956385Z Downloading librt-0.13.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (531 kB)
+2026-07-23T22:05:21.2009600Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 531.8/531.8 kB 88.8 MB/s  0:00:00
+2026-07-23T22:05:21.2036354Z Downloading matplotlib_inline-0.2.2-py3-none-any.whl (9.5 kB)
+2026-07-23T22:05:21.2085621Z Downloading mypy_extensions-1.1.0-py3-none-any.whl (5.0 kB)
+2026-07-23T22:05:21.2126872Z Downloading outcome-1.3.0.post0-py2.py3-none-any.whl (10 kB)
+2026-07-23T22:05:21.2169520Z Downloading pathspec-1.1.1-py3-none-any.whl (57 kB)
+2026-07-23T22:05:21.2215340Z Downloading pexpect-4.9.0-py2.py3-none-any.whl (63 kB)
+2026-07-23T22:05:21.2271026Z Downloading platformdirs-4.11.0-py3-none-any.whl (23 kB)
+2026-07-23T22:05:21.2317809Z Downloading psutil-7.2.2-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl (155 kB)
+2026-07-23T22:05:21.2366382Z Downloading ptyprocess-0.7.0-py2.py3-none-any.whl (13 kB)
+2026-07-23T22:05:21.2410209Z Downloading sniffio-1.3.1-py3-none-any.whl (10 kB)
+2026-07-23T22:05:21.2455190Z Downloading stack_data-0.6.3-py3-none-any.whl (24 kB)
+2026-07-23T22:05:21.2503001Z Downloading asttokens-3.0.2-py3-none-any.whl (28 kB)
+2026-07-23T22:05:21.2556197Z Downloading executing-2.2.1-py2.py3-none-any.whl (28 kB)
+2026-07-23T22:05:21.2605050Z Downloading text_unidecode-1.3-py2.py3-none-any.whl (78 kB)
+2026-07-23T22:05:21.2650709Z Downloading tomlkit-0.15.1-py3-none-any.whl (49 kB)
+2026-07-23T22:05:21.2704899Z Downloading traitlets-5.15.1-py3-none-any.whl (85 kB)
+2026-07-23T22:05:21.2764590Z Downloading wsproto-1.3.2-py3-none-any.whl (24 kB)
+2026-07-23T22:05:21.2814310Z Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+2026-07-23T22:05:21.2857266Z Downloading pure_eval-0.2.3-py3-none-any.whl (11 kB)
+2026-07-23T22:05:21.2899569Z Downloading sortedcontainers-2.4.0-py2.py3-none-any.whl (29 kB)
+2026-07-23T22:05:21.2954097Z Downloading wcwidth-0.8.2-py3-none-any.whl (323 kB)
+2026-07-23T22:05:21.6191325Z Installing collected packages: text-unidecode, sortedcontainers, pure-eval, ptyprocess, websocket-client, wcwidth, typing_extensions, types-requests, traitlets, tomlkit, sniffio, pytokens, python-slugify, pysocks, pyflakes, pycodestyle, psutil, platformdirs, pexpect, pathspec, parso, mypy-extensions, mccabe, librt, isort, ipython-pygments-lexers, h11, greenlet, executing, execnet, dill, decorator, coverage, attrs, asttokens, astroid, ast-serialize, wsproto, stack_data, pytest-xdist, pytest-timeout, pytest-mock, pytest-base-url, pylint, pyee, prompt_toolkit, outcome, mypy, matplotlib-inline, jedi, flake8, black, trio, pytest-flask, pytest-cov, playwright, ipython, trio-websocket, pytest-playwright, ipdb, selenium
+2026-07-23T22:05:29.4679757Z 
+2026-07-23T22:05:29.4748607Z Successfully installed ast-serialize-0.6.0 astroid-4.0.4 asttokens-3.0.2 attrs-26.1.0 black-26.5.1 coverage-7.15.2 decorator-5.3.1 dill-0.4.1 execnet-2.1.2 executing-2.2.1 flake8-7.3.0 greenlet-3.5.4 h11-0.16.0 ipdb-0.13.13 ipython-9.15.0 ipython-pygments-lexers-1.1.1 isort-8.0.1 jedi-0.20.0 librt-0.13.0 matplotlib-inline-0.2.2 mccabe-0.7.0 mypy-2.3.0 mypy-extensions-1.1.0 outcome-1.3.0.post0 parso-0.8.7 pathspec-1.1.1 pexpect-4.9.0 platformdirs-4.11.0 playwright-1.61.0 prompt_toolkit-3.0.52 psutil-7.2.2 ptyprocess-0.7.0 pure-eval-0.2.3 pycodestyle-2.14.0 pyee-13.0.1 pyflakes-3.4.0 pylint-4.0.6 pysocks-1.7.1 pytest-base-url-2.1.0 pytest-cov-7.1.0 pytest-flask-1.3.0 pytest-mock-3.15.1 pytest-playwright-0.8.0 pytest-timeout-2.4.0 pytest-xdist-3.8.0 python-slugify-8.0.4 pytokens-0.4.1 selenium-4.46.0 sniffio-1.3.1 sortedcontainers-2.4.0 stack_data-0.6.3 text-unidecode-1.3 tomlkit-0.15.1 traitlets-5.15.1 trio-0.33.0 trio-websocket-0.12.2 types-requests-2.33.0.20260712 typing_extensions-4.16.0 wcwidth-0.8.2 websocket-client-1.9.0 wsproto-1.3.2
+2026-07-23T22:05:29.6140335Z ##[group]Run black --check .
+2026-07-23T22:05:29.6140731Z [36;1mblack --check .[0m
+2026-07-23T22:05:29.6202499Z shell: /usr/bin/bash -e {0}
+2026-07-23T22:05:29.6202768Z env:
+2026-07-23T22:05:29.6203042Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.13/x64
+2026-07-23T22:05:29.6203491Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.13/x64/lib/pkgconfig
+2026-07-23T22:05:29.6203921Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.13/x64
+2026-07-23T22:05:29.6204297Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.13/x64
+2026-07-23T22:05:29.6204683Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.13/x64
+2026-07-23T22:05:29.6205088Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.13/x64/lib
+2026-07-23T22:05:29.6205412Z ##[endgroup]
+2026-07-23T22:05:30.2361301Z would reformat /home/runner/work/knx_to_openhab/knx_to_openhab/scripts/regenerate_golden.py
+2026-07-23T22:05:31.0951289Z would reformat /home/runner/work/knx_to_openhab/knx_to_openhab/knxproject_to_openhab.py
+2026-07-23T22:05:31.1951225Z would reformat /home/runner/work/knx_to_openhab/knx_to_openhab/ets_to_openhab.py
+2026-07-23T22:05:32.1260361Z would reformat /home/runner/work/knx_to_openhab/knx_to_openhab/web_ui/backend/app.py
+2026-07-23T22:05:32.1380203Z 
+2026-07-23T22:05:32.1380955Z Oh no! 💥 💔 💥
+2026-07-23T22:05:32.1381447Z 4 files would be reformatted, 50 files would be left unchanged.
+2026-07-23T22:05:32.1670334Z ##[error]Process completed with exit code 1.
+2026-07-23T22:05:32.1829487Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-23T22:05:32.1830962Z Post job cleanup.
+2026-07-23T22:05:32.2752963Z [command]/usr/bin/git version
+2026-07-23T22:05:32.2805926Z git version 2.54.0
+2026-07-23T22:05:32.2883961Z Temporarily overriding HOME='/home/runner/work/_temp/7258858e-d913-46e0-bcdb-0131e87f1e66' before making global git config changes
+2026-07-23T22:05:32.2885282Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-23T22:05:32.2890528Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/knx_to_openhab/knx_to_openhab
+2026-07-23T22:05:32.2941242Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-23T22:05:32.2985923Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-23T22:05:32.3258811Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-23T22:05:32.3292616Z http.https://github.com/.extraheader
+2026-07-23T22:05:32.3313629Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-07-23T22:05:32.3355714Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-23T22:05:32.3625373Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-23T22:05:32.3702043Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-23T22:05:32.4081926Z Cleaning up orphan processes
+2026-07-23T22:05:32.4411905Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/cache@v4, actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

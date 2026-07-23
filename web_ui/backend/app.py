@@ -1026,10 +1026,13 @@ if FLASK_AVAILABLE:
         ]
         openhab_userdata = cfg.get("openhab_userdata", None)
         if openhab_userdata:
-            candidate_paths.insert(0, (
-                os.path.join(openhab_userdata, "uuid"),
-                os.path.join(openhab_userdata, "openhabcloud", "secret"),
-            ))
+            candidate_paths.insert(
+                0,
+                (
+                    os.path.join(openhab_userdata, "uuid"),
+                    os.path.join(openhab_userdata, "openhabcloud", "secret"),
+                ),
+            )
 
         uuid_val = secret_val = uuid_path_found = secret_path_found = None
 
@@ -1049,12 +1052,14 @@ if FLASK_AVAILABLE:
                 except Exception:
                     pass
 
-        return jsonify({
-            "uuid": uuid_val,
-            "secret": secret_val,
-            "uuid_path": uuid_path_found,
-            "secret_path": secret_path_found,
-        })
+        return jsonify(
+            {
+                "uuid": uuid_val,
+                "secret": secret_val,
+                "uuid_path": uuid_path_found,
+                "secret_path": secret_path_found,
+            }
+        )
 
     if __name__ == "__main__":
         host = cfg.get("bind_host", "0.0.0.0")

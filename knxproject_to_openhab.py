@@ -189,7 +189,7 @@ def get_addresses(project: KNXProject):
 
         res_floor = find_floor_in_address(address, group_ranges)
         res_room = RE_ITEM_ROOM.search(address["name"])
-        is_central_function= check_is_centralFunction(address,group_ranges)
+        is_central_function = check_is_centralFunction(address, group_ranges)
         is_notification_sensor = check_is_notification_sensor(address, group_ranges)
 
         # For debugging
@@ -226,6 +226,7 @@ def should_ignore_address(address):
         return True
     return False
 
+
 def check_is_centralFunction(address, group_ranges):
     """Check if an address is part of a central function based on its group name and group range."""
     keyword = config.get("general", {}).get("central_function_keyword", "zentral")
@@ -240,6 +241,7 @@ def check_is_centralFunction(address, group_ranges):
         return True
     return False
 
+
 def check_is_notification_sensor(address, group_ranges):
     """Check if an address is a notification sensor based on its group name and group range."""
     keyword = config.get("general", {}).get("notification_sensor_keyword", "Sensor")
@@ -253,6 +255,7 @@ def check_is_notification_sensor(address, group_ranges):
     if gr_top and gr_top["name"].casefold().startswith(keyword.casefold()):
         return True
     return False
+
 
 def find_floor_in_address(address, group_ranges):
     """Find the floor associated with an address."""
@@ -332,14 +335,14 @@ def put_addresses_in_building(building, addresses, project: KNXProject):
             logger.debug("place specific address")
 
         # Central functions check
-        if address['is_central_function']:
+        if address["is_central_function"]:
             # Place in a special floor and room so they are grouped in the sitemap
             # but will be overridden to the configured group in ets_to_openhab.py
             address["Floor"] = "Zentral"
             address["Room"] = "Zentral"
             if create_floor_room_if_missing(building, address):
                 continue
-        if address['is_notification_sensor']:
+        if address["is_notification_sensor"]:
             # Place in a special floor and room so they are grouped in the sitemap
             # but will be overridden to the configured group in ets_to_openhab.py
             address["Floor"] = "Zentral"
@@ -666,7 +669,7 @@ def get_gateway_ip(project: KNXProject):
                 ip_match = re.search(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", description)
                 if ip_match:
                     return ip_match.group()
-            
+
     return None
 
 

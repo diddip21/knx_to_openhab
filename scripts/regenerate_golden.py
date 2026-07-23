@@ -82,7 +82,9 @@ def generate(case_name, project_path):
     with open(os.path.join(golden_dir, "influxdb.persist"), "w", encoding="utf-8") as f:
         f.write(persist_content)
 
-    print(f"{case_name}: items={len(items)}b things={len(things)}b sitemap={len(sitemap)}b persist={len(persist_content)}b")
+    print(
+        f"{case_name}: items={len(items)}b things={len(things)}b sitemap={len(sitemap)}b persist={len(persist_content)}b"
+    )
 
 
 if __name__ == "__main__":

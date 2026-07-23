@@ -18,7 +18,6 @@ sitemap knx label="MiCasa"
         Default item=i_UG_RM3_xxxM20HeizenStatusStellwert label="Hobby (-M20) Heizen" 
         Default item=i_UG_RM3_xxxM20HeizenSollwertKomfort label="Hobby (-M20) Heizen" 
         Default item=i_UG_RM3_xxxM20HeizenAktuellerSollwert label="Hobby (-M20) Heizen" 
-        Default item=i_UG_RM3_ZentralZeitenDatumUhrzeit label="Zentral Zeiten-Datum / Uhrzeit" 
 
     }
      Group item=map1_4  label="HWR"  {
@@ -41,8 +40,6 @@ Frame label="=EG" {
         Default item=i_EG_RM1_xxxFlurGarderobeWCM20HeizenStatusStellwert label="Flur/Garderobe/WC (-M20) Heizen" 
         Default item=i_EG_RM1_xxxFlurGarderobeWCM20HeizenSollwertKomfort label="Flur/Garderobe/WC (-M20) Heizen" 
         Default item=i_EG_RM1_xxxFlurGarderobeWCM20HeizenAktuellerSollwert label="Flur/Garderobe/WC (-M20) Heizen" 
-        Default item=i_EG_RM1_xxxFlurS1PraesenzmelderFB1AktiverHelligkeitswert label="Flur (-S1) Präsenzmelder" 
-        Default item=i_EG_RM1_xxxFlurS1PraesenzmelderFB1GemessenerHelligkeitswert label="Flur (-S1) Präsenzmelder" 
 
     }
      Group item=map2_2  label="Küche"  {
@@ -50,29 +47,18 @@ Frame label="=EG" {
         Default item=i_EG_RM2_xxxWallwasherKuecheH1011DimmenDimmWert label="Wallwasher Kueche (-H10/11) Dimmen" 
         Default item=i_EG_RM2_xxxBechterKuecheH2021DimmenDimmWert label="Bechter Kueche (-H20/21) Dimmen" 
         Default item=i_EG_RM2_xxxHaengelampeEssenH60DimmenDimmWert label="Haengelampe Essen (-H60) Dimmen" 
-        Default item=i_EG_RM2_ZentralZZentralJalousieJalousieAufAb label="Zentral-@Zentral Jalousie" 
-        Default item=i_EG_RM2_ZentralZZentralJalousieAbsoluteLamellenposition label="Zentral-@Zentral Jalousie" 
-        Default item=i_EG_RM2_ZentralZOGZJalousieJalousieAufAb label="Zentral-@OG-Z Jalousie" 
-        Default item=i_EG_RM2_ZentralZOGZJalousieAbsoluteLamellenposition label="Zentral-@OG-Z Jalousie" 
-        Default item=i_EG_RM2_ZentralZEGZJalousieJalousieAufAb label="Zentral-@EG-Z Jalousie" 
-        Default item=i_EG_RM2_ZentralZEGZJalousieAbsoluteLamellenposition label="Zentral-@EG-Z Jalousie" 
-        Default item=i_EG_RM2_ZentralZUGZRolladenRolladenAufAb label="Zentral-@UG-Z Rolladen" 
         Default item=i_EG_RM2_xxxKuecheM1JalousieJalousieAufAb label="Kueche (-M1) Jalousie" 
+        Default item=i_EG_RM2_xxxKuecheM1JalousieAbsoluteLamellenposition label="Kueche (-M1) Jalousie" 
         Default item=i_EG_RM2_xxxKuecheM20HeizenBetriebsartvorwahl label="Kueche (-M20) Heizen" 
-        Default item=i_EG_RM2_ZentralZBE1AussenbeleuchtungH1100SchaltenLichtSchalten label="Zentral-@+BE1 Außenbeleuchtung (-H1/100) Schalten-:Schalten" 
         Default item=i_EG_RM2_xxxSpotsKuecheH18SchaltenLichtSchalten label="Spots Kueche (-H1/8) Schalten" 
         Default item=i_EG_RM2_xxxLEDKuechenblockH99SchaltenLichtSchalten label="LED Kuechenblock (-H99) Schalten" 
         Default item=i_EG_RM2_xxxSteckdoseDunstabzugX10SchaltenSchalten label="Dunstabzug (-X10) Schalten" 
-        Default item=i_EG_RM2_ZentralZOGZJalousieAbsolutePosition label="Zentral-@OG-Z Jalousie" 
-        Default item=i_EG_RM2_ZentralZEGZJalousieAbsolutePosition label="Zentral-@EG-Z Jalousie" 
         Default item=i_EG_RM2_xxxKuecheM1JalousieAbsolutePosition label="Kueche (-M1) Jalousie" 
-        Default item=i_EG_RM2_xxxKuecheM1JalousieAbsoluteLamellenposition label="Kueche (-M1) Jalousie" 
         Default item=i_EG_RM2_xxxKuecheM1JalousieDiagnose label="Kueche (-M1) Jalousie" 
         Default item=i_EG_RM2_xxxKuecheM20HeizenTemperaturmesswert label="Kueche (-M20) Heizen" 
         Default item=i_EG_RM2_xxxKuecheM20HeizenStatusStellwert label="Kueche (-M20) Heizen" 
         Default item=i_EG_RM2_xxxKuecheM20HeizenSollwertKomfort label="Kueche (-M20) Heizen" 
         Default item=i_EG_RM2_xxxKuecheM20HeizenAktuellerSollwert label="Kueche (-M20) Heizen" 
-        Default item=i_EG_RM2_ZentralWetterStandardHelligkeitWest label="Zentral Wetter-Standard" 
 
     }
      Group item=map2_3  label="Garderobe/WC"  {
@@ -118,9 +104,9 @@ Frame label="=EG" {
 Frame label="=OG" {
      Group item=map3_1  label="Flur"  {
         Default item=i_OG_RM1_xxxTreppeM1JalousieJalousieAufAb label="Flur/Treppe (-M1) Jalousie" 
+        Default item=i_OG_RM1_xxxTreppeM1JalousieAbsoluteLamellenposition label="Flur/Treppe (-M1) Jalousie" 
         Default item=i_OG_RM1_xxxSpotsH15SchaltenLichtSchalten label="Spots Flur (-H1/5) Schalten" 
         Default item=i_OG_RM1_xxxTreppeM1JalousieAbsolutePosition label="Flur/Treppe (-M1) Jalousie" 
-        Default item=i_OG_RM1_xxxTreppeM1JalousieAbsoluteLamellenposition label="Flur/Treppe (-M1) Jalousie" 
         Default item=i_OG_RM1_xxxTreppeM1JalousieDiagnose label="Flur/Treppe (-M1) Jalousie" 
 
     }
@@ -158,7 +144,6 @@ Frame label="=OG" {
         Default item=i_OG_RM5_xxxM20HeizenStatusStellwert label="Schlafen (-M20) Heizen" 
         Default item=i_OG_RM5_xxxM20HeizenSollwertKomfort label="Schlafen (-M20) Heizen" 
         Default item=i_OG_RM5_xxxM20HeizenAktuellerSollwert label="Schlafen (-M20) Heizen" 
-        Default item=i_OG_RM5_ZentralWetterStandardHeizspannungOKUeberwachung label="Zentral Wetter-Standard" 
 
     }
      Group item=map3_4  label="Bad"  {
@@ -220,11 +205,6 @@ Frame label="=AU" {
         Default item=i_AU_BE3_xxxH12SchaltenLichtSchalten label="BE3 Terasse (-H1/2) Schalten" 
         Default item=i_AU_BE3_xxxSteckdoseX12SchaltenSchalten label="BE3 Terasse (-X1/2) Schalten" 
         Default item=i_AU_BE3_xxxMarkiseM1SchaltenSchalten label="BE3 Markise (-M1) Schalten" 
-        Default item=i_AU_BE3_ZentralWetterStandardHelligkeitOst label="Zentral Wetter-Standard" 
-        Default item=i_AU_BE3_ZentralWetterStandardHelligkeitSued label="Zentral Wetter-Standard" 
-        Default item=i_AU_BE3_ZentralWetterStandardDaemmerung label="Zentral Wetter-Standard" 
-        Default item=i_AU_BE3_ZentralWetterStandardTemperatur label="Zentral Wetter-Standard" 
-        Default item=i_AU_BE3_ZentralWetterStandardWindgewschwindigkeitms label="Zentral Wetter-Standard" 
 
     }
      Group item=map4_4  label="Garten"  {
@@ -233,10 +213,33 @@ Frame label="=AU" {
     }
      Group item=map4_5  label="Carport" 
 }
-Frame label="=Z" {
-     Group item=map5_1  label="+RM2"  {
-        Default item=i_Z_RM2_xxxWohnenEssenKuecheM20HeizenBetriebsartvorwahl label="Wohnen/Essen/Küche (-M20) Heizen" 
-        Default item=i_Z_RM2_xxxWohnenEssenKuecheM20HeizenSollwertKomfort label="Wohnen/Essen/Küche (-M20) Heizen" 
+Frame label="Zentral" {
+     Group item=map5_1  label="Zentral"  {
+        Default item=i_Zentral_Zentral_ZJalousieJalousieAufAb label="Jalousie" 
+        Default item=i_Zentral_Zentral_ZOGZJalousieJalousieAufAb label="OG-Z Jalousie" 
+        Default item=i_Zentral_Zentral_ZEGZJalousieJalousieAufAb label="EG-Z Jalousie" 
+        Default item=i_Zentral_Zentral_ZUGZRolladenRolladenAufAb label="UG-Z Rolladen" 
+        Default item=i_Zentral_Zentral_xxxRM2WohnenEssenKuecheM20HeizenBetriebsartvorwahl label="Wohnen/Essen/Küche (-M20) Heizen" 
+        Default item=i_Zentral_Zentral_ZBE1AussenbeleuchtungH1100SchaltenLichtSchalten label="BE1 Außenbeleuchtung (-H1/100) Schalten-:Schalten" 
+        Default item=i_Zentral_Zentral_ZJalousieAbsoluteLamellenposition label="Jalousie" 
+        Default item=i_Zentral_Zentral_ZOGZJalousieAbsolutePosition label="OG-Z Jalousie" 
+        Default item=i_Zentral_Zentral_ZOGZJalousieAbsoluteLamellenposition label="OG-Z Jalousie" 
+        Default item=i_Zentral_Zentral_ZEGZJalousieAbsolutePosition label="EG-Z Jalousie" 
+        Default item=i_Zentral_Zentral_ZEGZJalousieAbsoluteLamellenposition label="EG-Z Jalousie" 
+        Default item=i_Zentral_Zentral_xxxRM2WohnenEssenKuecheM20HeizenSollwertKomfort label="Wohnen/Essen/Küche (-M20) Heizen" 
+        Default item=i_Zentral_Zentral_ZeitenDatumUhrzeit label="Zeiten-Datum / Uhrzeit" 
+        Default item=i_Zentral_Zentral_WetterStandardHelligkeitOst label="Wetter-Standard" 
+        Default item=i_Zentral_Zentral_WetterStandardHelligkeitSued label="Wetter-Standard" 
+        Default item=i_Zentral_Zentral_WetterStandardHelligkeitWest label="Wetter-Standard" 
+        Default item=i_Zentral_Zentral_WetterStandardDaemmerung label="Wetter-Standard" 
+        Default item=i_Zentral_Zentral_WetterStandardTemperatur label="Wetter-Standard" 
+        Default item=i_Zentral_Zentral_WetterStandardWindgewschwindigkeitms label="Wetter-Standard" 
+        Default item=i_Zentral_Zentral_WetterStandardHeizspannungOKUeberwachung label="Wetter-Standard" 
+
+    }
+     Group item=map5_2  label="Melden/Sensor"  {
+        Default item=i_Zentral_MeldenSensor_xxxRM1FlurS1PraesenzmelderFB1AktiverHelligkeitswert label="Flur (-S1) Präsenzmelder" 
+        Default item=i_Zentral_MeldenSensor_xxxRM1FlurS1PraesenzmelderFB1GemessenerHelligkeitswert label="Flur (-S1) Präsenzmelder" 
 
     }
 }

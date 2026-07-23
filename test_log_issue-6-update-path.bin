@@ -1,0 +1,548 @@
+﻿2026-07-23T22:11:36.4631534Z Current runner version: '2.336.0'
+2026-07-23T22:11:36.4652604Z ##[group]Runner Image Provisioner
+2026-07-23T22:11:36.4653327Z Hosted Compute Agent
+2026-07-23T22:11:36.4653871Z Version: 20260707.563
+2026-07-23T22:11:36.4654383Z Commit: 02667638d2b423fbc733a8e32a88b44996a3ba6e
+2026-07-23T22:11:36.4654962Z Build Date: 2026-07-07T19:33:50Z
+2026-07-23T22:11:36.4655548Z Worker ID: {a3dbe3f5-922e-45c2-876d-133f1857c174}
+2026-07-23T22:11:36.4656126Z Azure Region: westus3
+2026-07-23T22:11:36.4656564Z ##[endgroup]
+2026-07-23T22:11:36.4658192Z ##[group]Operating System
+2026-07-23T22:11:36.4658707Z Ubuntu
+2026-07-23T22:11:36.4659190Z 24.04.4
+2026-07-23T22:11:36.4659639Z LTS
+2026-07-23T22:11:36.4660079Z ##[endgroup]
+2026-07-23T22:11:36.4660571Z ##[group]Runner Image
+2026-07-23T22:11:36.4661057Z Image: ubuntu-24.04
+2026-07-23T22:11:36.4661491Z Version: 20260714.240.1
+2026-07-23T22:11:36.4662525Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260714.240/images/ubuntu/Ubuntu2404-Readme.md
+2026-07-23T22:11:36.4663767Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260714.240
+2026-07-23T22:11:36.4664541Z ##[endgroup]
+2026-07-23T22:11:36.4665444Z ##[group]GITHUB_TOKEN Permissions
+2026-07-23T22:11:36.4667142Z Contents: read
+2026-07-23T22:11:36.4667879Z Metadata: read
+2026-07-23T22:11:36.4668395Z ##[endgroup]
+2026-07-23T22:11:36.4670072Z Secret source: Actions
+2026-07-23T22:11:36.4670979Z Prepare workflow directory
+2026-07-23T22:11:36.4933458Z Prepare all required actions
+2026-07-23T22:11:36.4969094Z Getting action download info
+2026-07-23T22:11:36.7943548Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-07-23T22:11:37.5100673Z Download action repository 'actions/setup-python@v5' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+2026-07-23T22:11:37.6779504Z Download action repository 'actions/cache@v4' (SHA:0057852bfaa89a56745cba8c7296529d2fc39830)
+2026-07-23T22:11:37.8774715Z Complete job name: Core Tests (Python 3.13)
+2026-07-23T22:11:37.9509998Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-23T22:11:37.9518869Z ##[group]Run actions/checkout@v4
+2026-07-23T22:11:37.9519780Z with:
+2026-07-23T22:11:37.9520419Z   repository: diddip21/knx_to_openhab
+2026-07-23T22:11:37.9526593Z   token: ***
+2026-07-23T22:11:37.9527215Z   ssh-strict: true
+2026-07-23T22:11:37.9527982Z   ssh-user: git
+2026-07-23T22:11:37.9528631Z   persist-credentials: true
+2026-07-23T22:11:37.9529345Z   clean: true
+2026-07-23T22:11:37.9529995Z   sparse-checkout-cone-mode: true
+2026-07-23T22:11:37.9530770Z   fetch-depth: 1
+2026-07-23T22:11:37.9531409Z   fetch-tags: false
+2026-07-23T22:11:37.9532071Z   show-progress: true
+2026-07-23T22:11:37.9532731Z   lfs: false
+2026-07-23T22:11:37.9533421Z   submodules: false
+2026-07-23T22:11:37.9534078Z   set-safe-directory: true
+2026-07-23T22:11:37.9534819Z   allow-unsafe-pr-checkout: false
+2026-07-23T22:11:37.9535798Z ##[endgroup]
+2026-07-23T22:11:38.0404610Z Syncing repository: diddip21/knx_to_openhab
+2026-07-23T22:11:38.0407338Z ##[group]Getting Git version info
+2026-07-23T22:11:38.0409146Z Working directory is '/home/runner/work/knx_to_openhab/knx_to_openhab'
+2026-07-23T22:11:38.0411504Z [command]/usr/bin/git version
+2026-07-23T22:11:38.0910605Z git version 2.54.0
+2026-07-23T22:11:38.0927691Z ##[endgroup]
+2026-07-23T22:11:38.0942646Z Temporarily overriding HOME='/home/runner/work/_temp/c4f7281e-9968-4066-859c-893b655ee561' before making global git config changes
+2026-07-23T22:11:38.0945875Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-23T22:11:38.0948771Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/knx_to_openhab/knx_to_openhab
+2026-07-23T22:11:38.0986647Z Deleting the contents of '/home/runner/work/knx_to_openhab/knx_to_openhab'
+2026-07-23T22:11:38.0990656Z ##[group]Initializing the repository
+2026-07-23T22:11:38.0995293Z [command]/usr/bin/git init /home/runner/work/knx_to_openhab/knx_to_openhab
+2026-07-23T22:11:38.1163150Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-07-23T22:11:38.1165191Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-07-23T22:11:38.1167150Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-07-23T22:11:38.1168415Z hint: call:
+2026-07-23T22:11:38.1168998Z hint:
+2026-07-23T22:11:38.1169734Z hint: 	git config --global init.defaultBranch <name>
+2026-07-23T22:11:38.1170718Z hint:
+2026-07-23T22:11:38.1171765Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-07-23T22:11:38.1173421Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-07-23T22:11:38.1174508Z hint:
+2026-07-23T22:11:38.1175156Z hint: 	git branch -m <name>
+2026-07-23T22:11:38.1175851Z hint:
+2026-07-23T22:11:38.1176750Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-07-23T22:11:38.1178454Z Initialized empty Git repository in /home/runner/work/knx_to_openhab/knx_to_openhab/.git/
+2026-07-23T22:11:38.1181172Z [command]/usr/bin/git remote add origin https://github.com/diddip21/knx_to_openhab
+2026-07-23T22:11:38.1204558Z ##[endgroup]
+2026-07-23T22:11:38.1205682Z ##[group]Disabling automatic garbage collection
+2026-07-23T22:11:38.1207331Z [command]/usr/bin/git config --local gc.auto 0
+2026-07-23T22:11:38.1264015Z ##[endgroup]
+2026-07-23T22:11:38.1265075Z ##[group]Setting up auth
+2026-07-23T22:11:38.1269698Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-23T22:11:38.1300634Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-23T22:11:38.1558047Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-23T22:11:38.1588960Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-23T22:11:38.1779750Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-23T22:11:38.1811233Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-23T22:11:38.2000990Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-07-23T22:11:38.2032926Z ##[endgroup]
+2026-07-23T22:11:38.2034034Z ##[group]Fetching the repository
+2026-07-23T22:11:38.2040943Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +401430bc69fb330725b2ad32f076d342c0620c2d:refs/remotes/pull/16/merge
+2026-07-23T22:11:39.4371691Z From https://github.com/diddip21/knx_to_openhab
+2026-07-23T22:11:39.4373895Z  * [new ref]         401430bc69fb330725b2ad32f076d342c0620c2d -> pull/16/merge
+2026-07-23T22:11:39.4392080Z ##[endgroup]
+2026-07-23T22:11:39.4392879Z ##[group]Determining the checkout info
+2026-07-23T22:11:39.4394529Z ##[endgroup]
+2026-07-23T22:11:39.4400108Z [command]/usr/bin/git sparse-checkout disable
+2026-07-23T22:11:39.4436483Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-07-23T22:11:39.4467369Z ##[group]Checking out the ref
+2026-07-23T22:11:39.4468236Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/16/merge
+2026-07-23T22:11:39.4835675Z Note: switching to 'refs/remotes/pull/16/merge'.
+2026-07-23T22:11:39.4836382Z 
+2026-07-23T22:11:39.4836809Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-07-23T22:11:39.4837938Z changes and commit them, and you can discard any commits you make in this
+2026-07-23T22:11:39.4839158Z state without impacting any branches by switching back to a branch.
+2026-07-23T22:11:39.4839738Z 
+2026-07-23T22:11:39.4840115Z If you want to create a new branch to retain commits you create, you may
+2026-07-23T22:11:39.4841331Z do so (now or later) by using -c with the switch command. Example:
+2026-07-23T22:11:39.4842092Z 
+2026-07-23T22:11:39.4842385Z   git switch -c <new-branch-name>
+2026-07-23T22:11:39.4842857Z 
+2026-07-23T22:11:39.4843140Z Or undo this operation with:
+2026-07-23T22:11:39.4843606Z 
+2026-07-23T22:11:39.4843826Z   git switch -
+2026-07-23T22:11:39.4844126Z 
+2026-07-23T22:11:39.4844703Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-07-23T22:11:39.4845584Z 
+2026-07-23T22:11:39.4846638Z HEAD is now at 401430b Merge 150f5beef22eeb2c0c33767dc54309106fa5d7e1 into 139ccaa40997b3584b08e7558714995743ad3f06
+2026-07-23T22:11:39.4849873Z ##[endgroup]
+2026-07-23T22:11:39.4882936Z [command]/usr/bin/git log -1 --format=%H
+2026-07-23T22:11:39.4905528Z 401430bc69fb330725b2ad32f076d342c0620c2d
+2026-07-23T22:11:39.5229733Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-23T22:11:39.5232616Z ##[group]Run actions/setup-python@v5
+2026-07-23T22:11:39.5233060Z with:
+2026-07-23T22:11:39.5233371Z   python-version: 3.13
+2026-07-23T22:11:39.5233737Z   check-latest: false
+2026-07-23T22:11:39.5238954Z   token: ***
+2026-07-23T22:11:39.5239297Z   update-environment: true
+2026-07-23T22:11:39.5239709Z   allow-prereleases: false
+2026-07-23T22:11:39.5240111Z   freethreaded: false
+2026-07-23T22:11:39.5240464Z ##[endgroup]
+2026-07-23T22:11:39.6326178Z ##[group]Installed versions
+2026-07-23T22:11:39.6477885Z (node:2054) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-07-23T22:11:39.6479792Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-07-23T22:11:39.6480961Z Successfully set up CPython (3.13.14)
+2026-07-23T22:11:39.6481999Z ##[endgroup]
+2026-07-23T22:11:39.7350761Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-23T22:11:39.7353157Z ##[group]Run actions/cache@v4
+2026-07-23T22:11:39.7353550Z with:
+2026-07-23T22:11:39.7353842Z   path: ~/.cache/pip
+2026-07-23T22:11:39.7354514Z   key: Linux-pip-894873b39e02c17bf50e70060ddd1e41b86da29d3b4d203c4d06d7a2f488667b
+2026-07-23T22:11:39.7355315Z   restore-keys: Linux-pip-
+
+2026-07-23T22:11:39.7355731Z   enableCrossOsArchive: false
+2026-07-23T22:11:39.7356151Z   fail-on-cache-miss: false
+2026-07-23T22:11:39.7356559Z   lookup-only: false
+2026-07-23T22:11:39.7356901Z   save-always: false
+2026-07-23T22:11:39.7357221Z env:
+2026-07-23T22:11:39.7357798Z   pythonLocation: /opt/hostedtoolcache/Python/3.13.14/x64
+2026-07-23T22:11:39.7358635Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.13.14/x64/lib/pkgconfig
+2026-07-23T22:11:39.7359419Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.14/x64
+2026-07-23T22:11:39.7360106Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.14/x64
+2026-07-23T22:11:39.7360804Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.14/x64
+2026-07-23T22:11:39.7361507Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.13.14/x64/lib
+2026-07-23T22:11:39.7362071Z ##[endgroup]
+2026-07-23T22:11:39.8205712Z (node:2073) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-07-23T22:11:39.8207991Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-07-23T22:11:40.0198338Z Cache hit for: Linux-pip-894873b39e02c17bf50e70060ddd1e41b86da29d3b4d203c4d06d7a2f488667b
+2026-07-23T22:11:40.0277257Z (node:2073) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-07-23T22:11:41.2714687Z Received 41943040 of 94411749 (44.4%), 40.0 MBs/sec
+2026-07-23T22:11:41.5631987Z Received 94411749 of 94411749 (100.0%), 69.7 MBs/sec
+2026-07-23T22:11:41.5632985Z Cache Size: ~90 MB (94411749 B)
+2026-07-23T22:11:41.5671635Z [command]/usr/bin/tar -xf /home/runner/work/_temp/cb433b2e-6a9d-47d9-8608-c2060fa6e432/cache.tzst -P -C /home/runner/work/knx_to_openhab/knx_to_openhab --use-compress-program unzstd
+2026-07-23T22:11:41.6986002Z Cache restored successfully
+2026-07-23T22:11:41.7089063Z Cache restored from key: Linux-pip-894873b39e02c17bf50e70060ddd1e41b86da29d3b4d203c4d06d7a2f488667b
+2026-07-23T22:11:41.7202051Z ##[group]Run python -m pip install --upgrade pip
+2026-07-23T22:11:41.7202464Z [36;1mpython -m pip install --upgrade pip[0m
+2026-07-23T22:11:41.7202746Z [36;1mpip install -r requirements.txt[0m
+2026-07-23T22:11:41.7202990Z [36;1mpip install -r requirements-dev.txt[0m
+2026-07-23T22:11:41.7280015Z shell: /usr/bin/bash -e {0}
+2026-07-23T22:11:41.7280252Z env:
+2026-07-23T22:11:41.7280489Z   pythonLocation: /opt/hostedtoolcache/Python/3.13.14/x64
+2026-07-23T22:11:41.7280856Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.13.14/x64/lib/pkgconfig
+2026-07-23T22:11:41.7281215Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.14/x64
+2026-07-23T22:11:41.7281550Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.14/x64
+2026-07-23T22:11:41.7281848Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.14/x64
+2026-07-23T22:11:41.7282143Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.13.14/x64/lib
+2026-07-23T22:11:41.7282399Z ##[endgroup]
+2026-07-23T22:11:44.6803019Z Requirement already satisfied: pip in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (26.1.2)
+2026-07-23T22:11:45.1779740Z Collecting flask>=2.0 (from -r requirements.txt (line 1))
+2026-07-23T22:11:45.1790106Z   Using cached flask-3.1.3-py3-none-any.whl.metadata (3.2 kB)
+2026-07-23T22:11:45.1996873Z Collecting werkzeug (from -r requirements.txt (line 2))
+2026-07-23T22:11:45.2006164Z   Using cached werkzeug-3.1.8-py3-none-any.whl.metadata (4.0 kB)
+2026-07-23T22:11:45.3599019Z Collecting xknxproject (from -r requirements.txt (line 3))
+2026-07-23T22:11:45.3608454Z   Using cached xknxproject-3.9.0-py3-none-any.whl.metadata (3.0 kB)
+2026-07-23T22:11:45.3835741Z Collecting requests (from -r requirements.txt (line 4))
+2026-07-23T22:11:45.3844772Z   Using cached requests-2.34.2-py3-none-any.whl.metadata (4.8 kB)
+2026-07-23T22:11:45.4023410Z Collecting gunicorn (from -r requirements.txt (line 5))
+2026-07-23T22:11:45.4032822Z   Using cached gunicorn-26.0.0-py3-none-any.whl.metadata (5.4 kB)
+2026-07-23T22:11:45.5876405Z Collecting pytest-dependency>=0.5.1 (from -r requirements.txt (line 6))
+2026-07-23T22:11:45.5877100Z   Using cached pytest_dependency-0.6.1-py3-none-any.whl
+2026-07-23T22:11:45.6507080Z Collecting blinker>=1.9.0 (from flask>=2.0->-r requirements.txt (line 1))
+2026-07-23T22:11:45.6516166Z   Using cached blinker-1.9.0-py3-none-any.whl.metadata (1.6 kB)
+2026-07-23T22:11:45.6684253Z Collecting click>=8.1.3 (from flask>=2.0->-r requirements.txt (line 1))
+2026-07-23T22:11:45.6693017Z   Using cached click-8.4.2-py3-none-any.whl.metadata (2.6 kB)
+2026-07-23T22:11:45.6832614Z Collecting itsdangerous>=2.2.0 (from flask>=2.0->-r requirements.txt (line 1))
+2026-07-23T22:11:45.6841066Z   Using cached itsdangerous-2.2.0-py3-none-any.whl.metadata (1.9 kB)
+2026-07-23T22:11:45.6988783Z Collecting jinja2>=3.1.2 (from flask>=2.0->-r requirements.txt (line 1))
+2026-07-23T22:11:45.6999582Z   Using cached jinja2-3.1.6-py3-none-any.whl.metadata (2.9 kB)
+2026-07-23T22:11:45.7385043Z Collecting markupsafe>=2.1.1 (from flask>=2.0->-r requirements.txt (line 1))
+2026-07-23T22:11:45.7395565Z   Using cached markupsafe-3.0.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.7 kB)
+2026-07-23T22:11:45.7546651Z Collecting pyzipper>=0.3.6 (from xknxproject->-r requirements.txt (line 3))
+2026-07-23T22:11:45.7555483Z   Using cached pyzipper-0.4.0-py3-none-any.whl.metadata (6.0 kB)
+2026-07-23T22:11:45.7695488Z Collecting striprtf>=0.0.26 (from xknxproject->-r requirements.txt (line 3))
+2026-07-23T22:11:45.7703808Z   Using cached striprtf-0.0.32-py3-none-any.whl.metadata (2.4 kB)
+2026-07-23T22:11:45.8398650Z Collecting charset_normalizer<4,>=2 (from requests->-r requirements.txt (line 4))
+2026-07-23T22:11:45.8409350Z   Using cached charset_normalizer-3.4.9-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (41 kB)
+2026-07-23T22:11:45.8580273Z Collecting idna<4,>=2.5 (from requests->-r requirements.txt (line 4))
+2026-07-23T22:11:45.8589556Z   Using cached idna-3.18-py3-none-any.whl.metadata (6.1 kB)
+2026-07-23T22:11:45.8817136Z Collecting urllib3<3,>=1.26 (from requests->-r requirements.txt (line 4))
+2026-07-23T22:11:45.8826409Z   Using cached urllib3-2.7.0-py3-none-any.whl.metadata (6.9 kB)
+2026-07-23T22:11:45.9205448Z Collecting certifi>=2023.5.7 (from requests->-r requirements.txt (line 4))
+2026-07-23T22:11:45.9214651Z   Using cached certifi-2026.7.22-py3-none-any.whl.metadata (2.5 kB)
+2026-07-23T22:11:45.9388063Z Collecting packaging (from gunicorn->-r requirements.txt (line 5))
+2026-07-23T22:11:45.9396553Z   Using cached packaging-26.2-py3-none-any.whl.metadata (3.5 kB)
+2026-07-23T22:11:46.0062546Z Collecting setuptools (from pytest-dependency>=0.5.1->-r requirements.txt (line 6))
+2026-07-23T22:11:46.0073098Z   Using cached setuptools-83.0.0-py3-none-any.whl.metadata (6.6 kB)
+2026-07-23T22:11:46.0350710Z Collecting pytest>=3.7.0 (from pytest-dependency>=0.5.1->-r requirements.txt (line 6))
+2026-07-23T22:11:46.0360269Z   Using cached pytest-9.1.1-py3-none-any.whl.metadata (7.6 kB)
+2026-07-23T22:11:46.0519666Z Collecting iniconfig>=1.0.1 (from pytest>=3.7.0->pytest-dependency>=0.5.1->-r requirements.txt (line 6))
+2026-07-23T22:11:46.0528028Z   Using cached iniconfig-2.3.0-py3-none-any.whl.metadata (2.5 kB)
+2026-07-23T22:11:46.0796494Z Collecting pluggy<2,>=1.5 (from pytest>=3.7.0->pytest-dependency>=0.5.1->-r requirements.txt (line 6))
+2026-07-23T22:11:46.0818134Z   Using cached pluggy-1.6.0-py3-none-any.whl.metadata (4.8 kB)
+2026-07-23T22:11:46.0982254Z Collecting pygments>=2.7.2 (from pytest>=3.7.0->pytest-dependency>=0.5.1->-r requirements.txt (line 6))
+2026-07-23T22:11:46.0992925Z   Using cached pygments-2.20.0-py3-none-any.whl.metadata (2.5 kB)
+2026-07-23T22:11:46.1556439Z Collecting pycryptodomex (from pyzipper>=0.3.6->xknxproject->-r requirements.txt (line 3))
+2026-07-23T22:11:46.1566127Z   Using cached pycryptodomex-3.23.0-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (3.4 kB)
+2026-07-23T22:11:46.1598587Z Using cached flask-3.1.3-py3-none-any.whl (103 kB)
+2026-07-23T22:11:46.1608010Z Using cached werkzeug-3.1.8-py3-none-any.whl (226 kB)
+2026-07-23T22:11:46.1616752Z Using cached xknxproject-3.9.0-py3-none-any.whl (42 kB)
+2026-07-23T22:11:46.1625226Z Using cached requests-2.34.2-py3-none-any.whl (73 kB)
+2026-07-23T22:11:46.1633916Z Using cached charset_normalizer-3.4.9-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (223 kB)
+2026-07-23T22:11:46.1642217Z Using cached idna-3.18-py3-none-any.whl (65 kB)
+2026-07-23T22:11:46.1650458Z Using cached urllib3-2.7.0-py3-none-any.whl (131 kB)
+2026-07-23T22:11:46.1658523Z Using cached gunicorn-26.0.0-py3-none-any.whl (212 kB)
+2026-07-23T22:11:46.1666855Z Using cached blinker-1.9.0-py3-none-any.whl (8.5 kB)
+2026-07-23T22:11:46.1674827Z Using cached certifi-2026.7.22-py3-none-any.whl (136 kB)
+2026-07-23T22:11:46.1683190Z Using cached click-8.4.2-py3-none-any.whl (119 kB)
+2026-07-23T22:11:46.1691554Z Using cached itsdangerous-2.2.0-py3-none-any.whl (16 kB)
+2026-07-23T22:11:46.1699366Z Using cached jinja2-3.1.6-py3-none-any.whl (134 kB)
+2026-07-23T22:11:46.1707764Z Using cached markupsafe-3.0.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (22 kB)
+2026-07-23T22:11:46.1715349Z Using cached pytest-9.1.1-py3-none-any.whl (386 kB)
+2026-07-23T22:11:46.1724505Z Using cached pluggy-1.6.0-py3-none-any.whl (20 kB)
+2026-07-23T22:11:46.1732356Z Using cached iniconfig-2.3.0-py3-none-any.whl (7.5 kB)
+2026-07-23T22:11:46.1740113Z Using cached packaging-26.2-py3-none-any.whl (100 kB)
+2026-07-23T22:11:46.1748030Z Using cached pygments-2.20.0-py3-none-any.whl (1.2 MB)
+2026-07-23T22:11:46.1759265Z Using cached pyzipper-0.4.0-py3-none-any.whl (36 kB)
+2026-07-23T22:11:46.1766956Z Using cached striprtf-0.0.32-py3-none-any.whl (8.0 kB)
+2026-07-23T22:11:46.1775248Z Using cached pycryptodomex-3.23.0-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.3 MB)
+2026-07-23T22:11:46.1789131Z Using cached setuptools-83.0.0-py3-none-any.whl (1.0 MB)
+2026-07-23T22:11:46.2250567Z Installing collected packages: urllib3, striprtf, setuptools, pygments, pycryptodomex, pluggy, packaging, markupsafe, itsdangerous, iniconfig, idna, click, charset_normalizer, certifi, blinker, werkzeug, requests, pyzipper, pytest, jinja2, gunicorn, xknxproject, pytest-dependency, flask
+2026-07-23T22:11:48.8882980Z 
+2026-07-23T22:11:48.8905802Z Successfully installed blinker-1.9.0 certifi-2026.7.22 charset_normalizer-3.4.9 click-8.4.2 flask-3.1.3 gunicorn-26.0.0 idna-3.18 iniconfig-2.3.0 itsdangerous-2.2.0 jinja2-3.1.6 markupsafe-3.0.3 packaging-26.2 pluggy-1.6.0 pycryptodomex-3.23.0 pygments-2.20.0 pytest-9.1.1 pytest-dependency-0.6.1 pyzipper-0.4.0 requests-2.34.2 setuptools-83.0.0 striprtf-0.0.32 urllib3-2.7.0 werkzeug-3.1.8 xknxproject-3.9.0
+2026-07-23T22:11:49.2249628Z Requirement already satisfied: flask>=2.0 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from -r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 1)) (3.1.3)
+2026-07-23T22:11:49.2252293Z Requirement already satisfied: werkzeug in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from -r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 2)) (3.1.8)
+2026-07-23T22:11:49.2255012Z Requirement already satisfied: xknxproject in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from -r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 3)) (3.9.0)
+2026-07-23T22:11:49.2257607Z Requirement already satisfied: requests in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from -r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 4)) (2.34.2)
+2026-07-23T22:11:49.2260291Z Requirement already satisfied: gunicorn in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from -r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 5)) (26.0.0)
+2026-07-23T22:11:49.2263314Z Requirement already satisfied: pytest-dependency>=0.5.1 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from -r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 6)) (0.6.1)
+2026-07-23T22:11:49.2265834Z Requirement already satisfied: pytest>=7.4.0 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from -r requirements-dev.txt (line 8)) (9.1.1)
+2026-07-23T22:11:49.2943286Z Collecting pytest-cov>=4.1.0 (from -r requirements-dev.txt (line 9))
+2026-07-23T22:11:49.2954023Z   Using cached pytest_cov-7.1.0-py3-none-any.whl.metadata (32 kB)
+2026-07-23T22:11:49.3131687Z Collecting pytest-flask>=1.2.0 (from -r requirements-dev.txt (line 10))
+2026-07-23T22:11:49.3140586Z   Using cached pytest_flask-1.3.0-py3-none-any.whl.metadata (14 kB)
+2026-07-23T22:11:49.3305336Z Collecting pytest-mock>=3.11.0 (from -r requirements-dev.txt (line 11))
+2026-07-23T22:11:49.3314189Z   Using cached pytest_mock-3.15.1-py3-none-any.whl.metadata (3.9 kB)
+2026-07-23T22:11:49.3471088Z Collecting pytest-playwright>=0.4.3 (from -r requirements-dev.txt (line 12))
+2026-07-23T22:11:49.3479744Z   Using cached pytest_playwright-0.8.0-py3-none-any.whl.metadata (14 kB)
+2026-07-23T22:11:49.3632559Z Collecting pytest-timeout>=2.1.0 (from -r requirements-dev.txt (line 13))
+2026-07-23T22:11:49.3641128Z   Using cached pytest_timeout-2.4.0-py3-none-any.whl.metadata (20 kB)
+2026-07-23T22:11:49.3803631Z Collecting pytest-xdist>=3.3.1 (from -r requirements-dev.txt (line 14))
+2026-07-23T22:11:49.3812336Z   Using cached pytest_xdist-3.8.0-py3-none-any.whl.metadata (3.0 kB)
+2026-07-23T22:11:49.4047276Z Collecting pylint>=2.17.0 (from -r requirements-dev.txt (line 17))
+2026-07-23T22:11:49.4055894Z   Using cached pylint-4.0.6-py3-none-any.whl.metadata (12 kB)
+2026-07-23T22:11:49.4243560Z Collecting flake8>=6.0.0 (from -r requirements-dev.txt (line 18))
+2026-07-23T22:11:49.4252007Z   Using cached flake8-7.3.0-py2.py3-none-any.whl.metadata (3.8 kB)
+2026-07-23T22:11:49.4648987Z Collecting black>=23.7.0 (from -r requirements-dev.txt (line 19))
+2026-07-23T22:11:49.4658524Z   Using cached black-26.5.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (95 kB)
+2026-07-23T22:11:49.4947323Z Collecting isort>=5.12.0 (from -r requirements-dev.txt (line 20))
+2026-07-23T22:11:49.4960064Z   Using cached isort-8.0.1-py3-none-any.whl.metadata (11 kB)
+2026-07-23T22:11:49.5685005Z Collecting mypy>=1.4.0 (from -r requirements-dev.txt (line 21))
+2026-07-23T22:11:49.5695402Z   Using cached mypy-2.3.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.4 kB)
+2026-07-23T22:11:49.5974229Z Collecting playwright>=1.40.0 (from -r requirements-dev.txt (line 24))
+2026-07-23T22:11:49.5983545Z   Using cached playwright-1.61.0-py3-none-manylinux1_x86_64.whl.metadata (3.3 kB)
+2026-07-23T22:11:49.6199382Z Collecting selenium>=4.12.0 (from -r requirements-dev.txt (line 25))
+2026-07-23T22:11:49.6208171Z   Using cached selenium-4.46.0-py3-none-any.whl.metadata (7.4 kB)
+2026-07-23T22:11:49.8682883Z Collecting coverage>=7.2.0 (from coverage[toml]>=7.2.0->-r requirements-dev.txt (line 28))
+2026-07-23T22:11:49.8693754Z   Using cached coverage-7.15.2-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (8.6 kB)
+2026-07-23T22:11:49.8902554Z Collecting types-requests>=2.31.0.20240406 (from -r requirements-dev.txt (line 31))
+2026-07-23T22:11:49.8911313Z   Using cached types_requests-2.33.0.20260712-py3-none-any.whl.metadata (2.2 kB)
+2026-07-23T22:11:49.9174080Z Collecting ipython>=8.14.0 (from -r requirements-dev.txt (line 34))
+2026-07-23T22:11:49.9183301Z   Using cached ipython-9.15.0-py3-none-any.whl.metadata (4.7 kB)
+2026-07-23T22:11:49.9336399Z Collecting ipdb>=0.13.13 (from -r requirements-dev.txt (line 35))
+2026-07-23T22:11:49.9344738Z   Using cached ipdb-0.13.13-py3-none-any.whl.metadata (14 kB)
+2026-07-23T22:11:49.9383731Z Requirement already satisfied: blinker>=1.9.0 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from flask>=2.0->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 1)) (1.9.0)
+2026-07-23T22:11:49.9387253Z Requirement already satisfied: click>=8.1.3 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from flask>=2.0->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 1)) (8.4.2)
+2026-07-23T22:11:49.9391485Z Requirement already satisfied: itsdangerous>=2.2.0 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from flask>=2.0->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 1)) (2.2.0)
+2026-07-23T22:11:49.9394740Z Requirement already satisfied: jinja2>=3.1.2 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from flask>=2.0->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 1)) (3.1.6)
+2026-07-23T22:11:49.9398133Z Requirement already satisfied: markupsafe>=2.1.1 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from flask>=2.0->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 1)) (3.0.3)
+2026-07-23T22:11:49.9412756Z Requirement already satisfied: pyzipper>=0.3.6 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from xknxproject->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 3)) (0.4.0)
+2026-07-23T22:11:49.9416182Z Requirement already satisfied: striprtf>=0.0.26 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from xknxproject->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 3)) (0.0.32)
+2026-07-23T22:11:49.9424490Z Requirement already satisfied: charset_normalizer<4,>=2 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from requests->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 4)) (3.4.9)
+2026-07-23T22:11:49.9428067Z Requirement already satisfied: idna<4,>=2.5 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from requests->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 4)) (3.18)
+2026-07-23T22:11:49.9431739Z Requirement already satisfied: urllib3<3,>=1.26 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from requests->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 4)) (2.7.0)
+2026-07-23T22:11:49.9434815Z Requirement already satisfied: certifi>=2023.5.7 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from requests->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 4)) (2026.7.22)
+2026-07-23T22:11:49.9467089Z Requirement already satisfied: packaging in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from gunicorn->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 5)) (26.2)
+2026-07-23T22:11:49.9480001Z Requirement already satisfied: setuptools in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from pytest-dependency>=0.5.1->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 6)) (83.0.0)
+2026-07-23T22:11:49.9492060Z Requirement already satisfied: iniconfig>=1.0.1 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from pytest>=7.4.0->-r requirements-dev.txt (line 8)) (2.3.0)
+2026-07-23T22:11:49.9496351Z Requirement already satisfied: pluggy<2,>=1.5 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from pytest>=7.4.0->-r requirements-dev.txt (line 8)) (1.6.0)
+2026-07-23T22:11:49.9499889Z Requirement already satisfied: pygments>=2.7.2 in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from pytest>=7.4.0->-r requirements-dev.txt (line 8)) (2.20.0)
+2026-07-23T22:11:49.9688503Z Collecting pytest-base-url<3.0.0,>=1.0.0 (from pytest-playwright>=0.4.3->-r requirements-dev.txt (line 12))
+2026-07-23T22:11:49.9696756Z   Using cached pytest_base_url-2.1.0-py3-none-any.whl.metadata (6.6 kB)
+2026-07-23T22:11:49.9842640Z Collecting python-slugify<9.0.0,>=6.0.0 (from pytest-playwright>=0.4.3->-r requirements-dev.txt (line 12))
+2026-07-23T22:11:49.9851388Z   Using cached python_slugify-8.0.4-py2.py3-none-any.whl.metadata (8.5 kB)
+2026-07-23T22:11:49.9991567Z Collecting text-unidecode>=1.3 (from python-slugify<9.0.0,>=6.0.0->pytest-playwright>=0.4.3->-r requirements-dev.txt (line 12))
+2026-07-23T22:11:50.0000060Z   Using cached text_unidecode-1.3-py2.py3-none-any.whl.metadata (2.4 kB)
+2026-07-23T22:11:50.0141948Z Collecting execnet>=2.1 (from pytest-xdist>=3.3.1->-r requirements-dev.txt (line 14))
+2026-07-23T22:11:50.0150506Z   Using cached execnet-2.1.2-py3-none-any.whl.metadata (2.9 kB)
+2026-07-23T22:11:50.0393019Z Collecting astroid<=4.1.dev0,>=4.0.2 (from pylint>=2.17.0->-r requirements-dev.txt (line 17))
+2026-07-23T22:11:50.0401758Z   Using cached astroid-4.0.4-py3-none-any.whl.metadata (4.4 kB)
+2026-07-23T22:11:50.0556241Z Collecting dill>=0.3.6 (from pylint>=2.17.0->-r requirements-dev.txt (line 17))
+2026-07-23T22:11:50.0564662Z   Using cached dill-0.4.1-py3-none-any.whl.metadata (10 kB)
+2026-07-23T22:11:50.0715480Z Collecting mccabe<0.8,>=0.6 (from pylint>=2.17.0->-r requirements-dev.txt (line 17))
+2026-07-23T22:11:50.0723792Z   Using cached mccabe-0.7.0-py2.py3-none-any.whl.metadata (5.0 kB)
+2026-07-23T22:11:50.0900940Z Collecting platformdirs>=2.2 (from pylint>=2.17.0->-r requirements-dev.txt (line 17))
+2026-07-23T22:11:50.0909902Z   Using cached platformdirs-4.11.0-py3-none-any.whl.metadata (5.5 kB)
+2026-07-23T22:11:50.1065931Z Collecting tomlkit>=0.10.1 (from pylint>=2.17.0->-r requirements-dev.txt (line 17))
+2026-07-23T22:11:50.1074609Z   Using cached tomlkit-0.15.1-py3-none-any.whl.metadata (3.3 kB)
+2026-07-23T22:11:50.1231465Z Collecting pycodestyle<2.15.0,>=2.14.0 (from flake8>=6.0.0->-r requirements-dev.txt (line 18))
+2026-07-23T22:11:50.1240087Z   Using cached pycodestyle-2.14.0-py2.py3-none-any.whl.metadata (4.5 kB)
+2026-07-23T22:11:50.1386899Z Collecting pyflakes<3.5.0,>=3.4.0 (from flake8>=6.0.0->-r requirements-dev.txt (line 18))
+2026-07-23T22:11:50.1395442Z   Using cached pyflakes-3.4.0-py2.py3-none-any.whl.metadata (3.5 kB)
+2026-07-23T22:11:50.1536041Z Collecting mypy-extensions>=0.4.3 (from black>=23.7.0->-r requirements-dev.txt (line 19))
+2026-07-23T22:11:50.1544503Z   Using cached mypy_extensions-1.1.0-py3-none-any.whl.metadata (1.1 kB)
+2026-07-23T22:11:50.1684014Z Collecting pathspec>=1.0.0 (from black>=23.7.0->-r requirements-dev.txt (line 19))
+2026-07-23T22:11:50.1692414Z   Using cached pathspec-1.1.1-py3-none-any.whl.metadata (14 kB)
+2026-07-23T22:11:50.1871832Z Collecting pytokens~=0.4.0 (from black>=23.7.0->-r requirements-dev.txt (line 19))
+2026-07-23T22:11:50.1880719Z   Using cached pytokens-0.4.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (3.8 kB)
+2026-07-23T22:11:50.2056934Z Collecting typing_extensions>=4.6.0 (from mypy>=1.4.0->-r requirements-dev.txt (line 21))
+2026-07-23T22:11:50.2065670Z   Using cached typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+2026-07-23T22:11:50.2843900Z Collecting librt>=0.13.0 (from mypy>=1.4.0->-r requirements-dev.txt (line 21))
+2026-07-23T22:11:50.2854500Z   Using cached librt-0.13.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (1.3 kB)
+2026-07-23T22:11:50.3073284Z Collecting ast-serialize<1.0.0,>=0.6.0 (from mypy>=1.4.0->-r requirements-dev.txt (line 21))
+2026-07-23T22:11:50.3082278Z   Using cached ast_serialize-0.6.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (1.3 kB)
+2026-07-23T22:11:50.3236578Z Collecting pyee<14,>=13 (from playwright>=1.40.0->-r requirements-dev.txt (line 24))
+2026-07-23T22:11:50.3245172Z   Using cached pyee-13.0.1-py3-none-any.whl.metadata (3.0 kB)
+2026-07-23T22:11:50.4151128Z Collecting greenlet<4.0.0,>=3.1.1 (from playwright>=1.40.0->-r requirements-dev.txt (line 24))
+2026-07-23T22:11:50.4162385Z   Using cached greenlet-3.5.4-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (3.8 kB)
+2026-07-23T22:11:50.4331726Z Collecting trio<1.0,>=0.31.0 (from selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:11:50.4340682Z   Using cached trio-0.33.0-py3-none-any.whl.metadata (8.5 kB)
+2026-07-23T22:11:50.4477196Z Collecting trio-websocket<1.0,>=0.12.2 (from selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:11:50.4486206Z   Using cached trio_websocket-0.12.2-py3-none-any.whl.metadata (5.1 kB)
+2026-07-23T22:11:50.4665955Z Collecting websocket-client<2.0,>=1.8.0 (from selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:11:50.4674913Z   Using cached websocket_client-1.9.0-py3-none-any.whl.metadata (8.3 kB)
+2026-07-23T22:11:50.4850720Z Collecting attrs>=23.2.0 (from trio<1.0,>=0.31.0->selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:11:50.4859426Z   Using cached attrs-26.1.0-py3-none-any.whl.metadata (8.8 kB)
+2026-07-23T22:11:50.5005699Z Collecting sortedcontainers (from trio<1.0,>=0.31.0->selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:11:50.5014506Z   Using cached sortedcontainers-2.4.0-py2.py3-none-any.whl.metadata (10 kB)
+2026-07-23T22:11:50.5145757Z Collecting outcome (from trio<1.0,>=0.31.0->selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:11:50.5154630Z   Using cached outcome-1.3.0.post0-py2.py3-none-any.whl.metadata (2.6 kB)
+2026-07-23T22:11:50.5279130Z Collecting sniffio>=1.3.0 (from trio<1.0,>=0.31.0->selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:11:50.5287954Z   Using cached sniffio-1.3.1-py3-none-any.whl.metadata (3.9 kB)
+2026-07-23T22:11:50.5437959Z Collecting wsproto>=0.14 (from trio-websocket<1.0,>=0.12.2->selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:11:50.5446633Z   Using cached wsproto-1.3.2-py3-none-any.whl.metadata (5.2 kB)
+2026-07-23T22:11:50.5598186Z Collecting pysocks!=1.5.7,<2.0,>=1.5.6 (from urllib3[socks]<3.0,>=2.6.3->selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:11:50.5606676Z   Using cached PySocks-1.7.1-py3-none-any.whl.metadata (13 kB)
+2026-07-23T22:11:50.5790261Z Collecting decorator>=5.1.0 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:11:50.5799399Z   Using cached decorator-5.3.1-py3-none-any.whl.metadata (3.9 kB)
+2026-07-23T22:11:50.5923533Z Collecting ipython-pygments-lexers>=1.0.0 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:11:50.5931684Z   Using cached ipython_pygments_lexers-1.1.1-py3-none-any.whl.metadata (1.1 kB)
+2026-07-23T22:11:50.6074745Z Collecting jedi>=0.18.2 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:11:50.6083348Z   Using cached jedi-0.20.0-py2.py3-none-any.whl.metadata (23 kB)
+2026-07-23T22:11:50.6244259Z Collecting matplotlib-inline>=0.1.6 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:11:50.6252756Z   Using cached matplotlib_inline-0.2.2-py3-none-any.whl.metadata (2.4 kB)
+2026-07-23T22:11:50.6388434Z Collecting pexpect>4.6 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:11:50.6396766Z   Using cached pexpect-4.9.0-py2.py3-none-any.whl.metadata (2.5 kB)
+2026-07-23T22:11:50.6600726Z Collecting prompt_toolkit<3.1.0,>=3.0.41 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:11:50.6609488Z   Using cached prompt_toolkit-3.0.52-py3-none-any.whl.metadata (6.4 kB)
+2026-07-23T22:11:50.7077007Z Collecting psutil>=7 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:11:50.7086406Z   Using cached psutil-7.2.2-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl.metadata (22 kB)
+2026-07-23T22:11:50.7247216Z Collecting stack_data>=0.6.0 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:11:50.7255524Z   Using cached stack_data-0.6.3-py3-none-any.whl.metadata (18 kB)
+2026-07-23T22:11:50.7429301Z Collecting traitlets>=5.13.0 (from ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:11:50.7437890Z   Using cached traitlets-5.15.1-py3-none-any.whl.metadata (10 kB)
+2026-07-23T22:11:50.7605115Z Collecting wcwidth (from prompt_toolkit<3.1.0,>=3.0.41->ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:11:50.7613538Z   Using cached wcwidth-0.8.2-py3-none-any.whl.metadata (43 kB)
+2026-07-23T22:11:50.7884667Z Collecting parso<0.9.0,>=0.8.6 (from jedi>=0.18.2->ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:11:50.7893080Z   Using cached parso-0.8.7-py2.py3-none-any.whl.metadata (8.2 kB)
+2026-07-23T22:11:50.8099846Z Collecting ptyprocess>=0.5 (from pexpect>4.6->ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:11:50.8108006Z   Using cached ptyprocess-0.7.0-py2.py3-none-any.whl.metadata (1.3 kB)
+2026-07-23T22:11:50.8154387Z Requirement already satisfied: pycryptodomex in /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages (from pyzipper>=0.3.6->xknxproject->-r /home/runner/work/knx_to_openhab/knx_to_openhab/requirements.txt (line 3)) (3.23.0)
+2026-07-23T22:11:50.8293041Z Collecting executing>=1.2.0 (from stack_data>=0.6.0->ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:11:50.8301681Z   Using cached executing-2.2.1-py2.py3-none-any.whl.metadata (8.9 kB)
+2026-07-23T22:11:50.8448544Z Collecting asttokens>=2.1.0 (from stack_data>=0.6.0->ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:11:50.8456759Z   Using cached asttokens-3.0.2-py3-none-any.whl.metadata (5.7 kB)
+2026-07-23T22:11:50.8593393Z Collecting pure-eval (from stack_data>=0.6.0->ipython>=8.14.0->-r requirements-dev.txt (line 34))
+2026-07-23T22:11:50.8601862Z   Using cached pure_eval-0.2.3-py3-none-any.whl.metadata (6.3 kB)
+2026-07-23T22:11:50.8781444Z Collecting h11<1,>=0.16.0 (from wsproto>=0.14->trio-websocket<1.0,>=0.12.2->selenium>=4.12.0->-r requirements-dev.txt (line 25))
+2026-07-23T22:11:50.8789675Z   Using cached h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+2026-07-23T22:11:50.8901487Z Using cached pytest_cov-7.1.0-py3-none-any.whl (22 kB)
+2026-07-23T22:11:50.8910045Z Using cached pytest_flask-1.3.0-py3-none-any.whl (13 kB)
+2026-07-23T22:11:50.8918063Z Using cached pytest_mock-3.15.1-py3-none-any.whl (10 kB)
+2026-07-23T22:11:50.8926074Z Using cached pytest_playwright-0.8.0-py3-none-any.whl (17 kB)
+2026-07-23T22:11:50.8934575Z Using cached pytest_base_url-2.1.0-py3-none-any.whl (5.3 kB)
+2026-07-23T22:11:50.8943297Z Using cached python_slugify-8.0.4-py2.py3-none-any.whl (10 kB)
+2026-07-23T22:11:50.8951431Z Using cached pytest_timeout-2.4.0-py3-none-any.whl (14 kB)
+2026-07-23T22:11:50.8964696Z Using cached pytest_xdist-3.8.0-py3-none-any.whl (46 kB)
+2026-07-23T22:11:50.8973025Z Using cached pylint-4.0.6-py3-none-any.whl (538 kB)
+2026-07-23T22:11:50.8982832Z Using cached isort-8.0.1-py3-none-any.whl (89 kB)
+2026-07-23T22:11:50.8991143Z Using cached astroid-4.0.4-py3-none-any.whl (276 kB)
+2026-07-23T22:11:50.9012448Z Using cached mccabe-0.7.0-py2.py3-none-any.whl (7.3 kB)
+2026-07-23T22:11:50.9012942Z Using cached flake8-7.3.0-py2.py3-none-any.whl (57 kB)
+2026-07-23T22:11:50.9016389Z Using cached pycodestyle-2.14.0-py2.py3-none-any.whl (31 kB)
+2026-07-23T22:11:50.9024503Z Using cached pyflakes-3.4.0-py2.py3-none-any.whl (63 kB)
+2026-07-23T22:11:50.9033361Z Using cached black-26.5.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (1.9 MB)
+2026-07-23T22:11:50.9047392Z Using cached pytokens-0.4.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (268 kB)
+2026-07-23T22:11:50.9056612Z Using cached mypy-2.3.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (15.2 MB)
+2026-07-23T22:11:50.9105285Z Using cached ast_serialize-0.6.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (1.3 MB)
+2026-07-23T22:11:50.9117625Z Using cached playwright-1.61.0-py3-none-manylinux1_x86_64.whl (47.4 MB)
+2026-07-23T22:11:50.9254248Z Using cached greenlet-3.5.4-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (624 kB)
+2026-07-23T22:11:50.9264635Z Using cached pyee-13.0.1-py3-none-any.whl (15 kB)
+2026-07-23T22:11:50.9273049Z Using cached selenium-4.46.0-py3-none-any.whl (9.4 MB)
+2026-07-23T22:11:50.9309230Z Using cached trio-0.33.0-py3-none-any.whl (510 kB)
+2026-07-23T22:11:50.9318708Z Using cached trio_websocket-0.12.2-py3-none-any.whl (21 kB)
+2026-07-23T22:11:50.9326771Z Using cached typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+2026-07-23T22:11:50.9335051Z Using cached PySocks-1.7.1-py3-none-any.whl (16 kB)
+2026-07-23T22:11:50.9360045Z Using cached websocket_client-1.9.0-py3-none-any.whl (82 kB)
+2026-07-23T22:11:50.9360811Z Using cached coverage-7.15.2-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (255 kB)
+2026-07-23T22:11:50.9361987Z Using cached types_requests-2.33.0.20260712-py3-none-any.whl (21 kB)
+2026-07-23T22:11:50.9369530Z Using cached ipython-9.15.0-py3-none-any.whl (630 kB)
+2026-07-23T22:11:50.9379438Z Using cached prompt_toolkit-3.0.52-py3-none-any.whl (391 kB)
+2026-07-23T22:11:50.9388507Z Using cached ipdb-0.13.13-py3-none-any.whl (12 kB)
+2026-07-23T22:11:50.9396331Z Using cached attrs-26.1.0-py3-none-any.whl (67 kB)
+2026-07-23T22:11:50.9404575Z Using cached decorator-5.3.1-py3-none-any.whl (10 kB)
+2026-07-23T22:11:50.9412699Z Using cached dill-0.4.1-py3-none-any.whl (120 kB)
+2026-07-23T22:11:50.9421159Z Using cached execnet-2.1.2-py3-none-any.whl (40 kB)
+2026-07-23T22:11:50.9429188Z Using cached ipython_pygments_lexers-1.1.1-py3-none-any.whl (8.1 kB)
+2026-07-23T22:11:50.9437042Z Using cached jedi-0.20.0-py2.py3-none-any.whl (4.9 MB)
+2026-07-23T22:11:50.9460276Z Using cached parso-0.8.7-py2.py3-none-any.whl (107 kB)
+2026-07-23T22:11:50.9469036Z Using cached librt-0.13.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (531 kB)
+2026-07-23T22:11:50.9478303Z Using cached matplotlib_inline-0.2.2-py3-none-any.whl (9.5 kB)
+2026-07-23T22:11:50.9486252Z Using cached mypy_extensions-1.1.0-py3-none-any.whl (5.0 kB)
+2026-07-23T22:11:50.9494177Z Using cached outcome-1.3.0.post0-py2.py3-none-any.whl (10 kB)
+2026-07-23T22:11:50.9502314Z Using cached pathspec-1.1.1-py3-none-any.whl (57 kB)
+2026-07-23T22:11:50.9510456Z Using cached pexpect-4.9.0-py2.py3-none-any.whl (63 kB)
+2026-07-23T22:11:50.9518826Z Using cached platformdirs-4.11.0-py3-none-any.whl (23 kB)
+2026-07-23T22:11:50.9527378Z Using cached psutil-7.2.2-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl (155 kB)
+2026-07-23T22:11:50.9535480Z Using cached ptyprocess-0.7.0-py2.py3-none-any.whl (13 kB)
+2026-07-23T22:11:50.9543463Z Using cached sniffio-1.3.1-py3-none-any.whl (10 kB)
+2026-07-23T22:11:50.9551521Z Using cached stack_data-0.6.3-py3-none-any.whl (24 kB)
+2026-07-23T22:11:50.9559491Z Using cached asttokens-3.0.2-py3-none-any.whl (28 kB)
+2026-07-23T22:11:50.9567674Z Using cached executing-2.2.1-py2.py3-none-any.whl (28 kB)
+2026-07-23T22:11:50.9575715Z Using cached text_unidecode-1.3-py2.py3-none-any.whl (78 kB)
+2026-07-23T22:11:50.9583955Z Using cached tomlkit-0.15.1-py3-none-any.whl (49 kB)
+2026-07-23T22:11:50.9592174Z Using cached traitlets-5.15.1-py3-none-any.whl (85 kB)
+2026-07-23T22:11:50.9600457Z Using cached wsproto-1.3.2-py3-none-any.whl (24 kB)
+2026-07-23T22:11:50.9608424Z Using cached h11-0.16.0-py3-none-any.whl (37 kB)
+2026-07-23T22:11:50.9616308Z Using cached pure_eval-0.2.3-py3-none-any.whl (11 kB)
+2026-07-23T22:11:50.9624357Z Using cached sortedcontainers-2.4.0-py2.py3-none-any.whl (29 kB)
+2026-07-23T22:11:50.9632426Z Using cached wcwidth-0.8.2-py3-none-any.whl (323 kB)
+2026-07-23T22:11:51.2043075Z Installing collected packages: text-unidecode, sortedcontainers, pure-eval, ptyprocess, websocket-client, wcwidth, typing_extensions, types-requests, traitlets, tomlkit, sniffio, pytokens, python-slugify, pysocks, pyflakes, pycodestyle, psutil, platformdirs, pexpect, pathspec, parso, mypy-extensions, mccabe, librt, isort, ipython-pygments-lexers, h11, greenlet, executing, execnet, dill, decorator, coverage, attrs, asttokens, astroid, ast-serialize, wsproto, stack_data, pytest-xdist, pytest-timeout, pytest-mock, pytest-base-url, pylint, pyee, prompt_toolkit, outcome, mypy, matplotlib-inline, jedi, flake8, black, trio, pytest-flask, pytest-cov, playwright, ipython, trio-websocket, pytest-playwright, ipdb, selenium
+2026-07-23T22:11:58.7032444Z 
+2026-07-23T22:11:58.7093456Z Successfully installed ast-serialize-0.6.0 astroid-4.0.4 asttokens-3.0.2 attrs-26.1.0 black-26.5.1 coverage-7.15.2 decorator-5.3.1 dill-0.4.1 execnet-2.1.2 executing-2.2.1 flake8-7.3.0 greenlet-3.5.4 h11-0.16.0 ipdb-0.13.13 ipython-9.15.0 ipython-pygments-lexers-1.1.1 isort-8.0.1 jedi-0.20.0 librt-0.13.0 matplotlib-inline-0.2.2 mccabe-0.7.0 mypy-2.3.0 mypy-extensions-1.1.0 outcome-1.3.0.post0 parso-0.8.7 pathspec-1.1.1 pexpect-4.9.0 platformdirs-4.11.0 playwright-1.61.0 prompt_toolkit-3.0.52 psutil-7.2.2 ptyprocess-0.7.0 pure-eval-0.2.3 pycodestyle-2.14.0 pyee-13.0.1 pyflakes-3.4.0 pylint-4.0.6 pysocks-1.7.1 pytest-base-url-2.1.0 pytest-cov-7.1.0 pytest-flask-1.3.0 pytest-mock-3.15.1 pytest-playwright-0.8.0 pytest-timeout-2.4.0 pytest-xdist-3.8.0 python-slugify-8.0.4 pytokens-0.4.1 selenium-4.46.0 sniffio-1.3.1 sortedcontainers-2.4.0 stack_data-0.6.3 text-unidecode-1.3 tomlkit-0.15.1 traitlets-5.15.1 trio-0.33.0 trio-websocket-0.12.2 types-requests-2.33.0.20260712 typing_extensions-4.16.0 wcwidth-0.8.2 websocket-client-1.9.0 wsproto-1.3.2
+2026-07-23T22:11:58.8233977Z ##[group]Run pytest -q --cov=. --cov-report=xml -m "not ui" --ignore=tests/ui
+2026-07-23T22:11:58.8234602Z [36;1mpytest -q --cov=. --cov-report=xml -m "not ui" --ignore=tests/ui[0m
+2026-07-23T22:11:58.8287101Z shell: /usr/bin/bash -e {0}
+2026-07-23T22:11:58.8287303Z env:
+2026-07-23T22:11:58.8287624Z   pythonLocation: /opt/hostedtoolcache/Python/3.13.14/x64
+2026-07-23T22:11:58.8287986Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.13.14/x64/lib/pkgconfig
+2026-07-23T22:11:58.8288322Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.14/x64
+2026-07-23T22:11:58.8288630Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.14/x64
+2026-07-23T22:11:58.8288919Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.14/x64
+2026-07-23T22:11:58.8289215Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.13.14/x64/lib
+2026-07-23T22:11:58.8289468Z ##[endgroup]
+2026-07-23T22:12:03.1693635Z .......s................................................................ [ 25%]
+2026-07-23T22:12:03.3691506Z ........................................................................ [ 51%]
+2026-07-23T22:12:04.0620829Z .............................................s...........s.............. [ 76%]
+2026-07-23T22:12:07.4106267Z ..............ssss.......................sss...s.s..............F        [100%]
+2026-07-23T22:12:07.4106851Z =================================== FAILURES ===================================
+2026-07-23T22:12:07.4107328Z ___________________________ test_job_preview_success ___________________________
+2026-07-23T22:12:07.4109730Z /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages/_pytest/monkeypatch.py:95: in annotated_getattr
+2026-07-23T22:12:07.4110363Z     obj = getattr(obj, name)
+2026-07-23T22:12:07.4110644Z           ^^^^^^^^^^^^^^^^^^
+2026-07-23T22:12:07.4111050Z E   AttributeError: 'types.SimpleNamespace' object has no attribute 'open'
+2026-07-23T22:12:07.4111490Z         ann        = 'builtins'
+2026-07-23T22:12:07.4111758Z         name       = 'open'
+2026-07-23T22:12:07.4112843Z         obj        = namespace(create_building=<function test_job_preview_success.<locals>.<lambda> at 0x7fbb1c45bf60>, get_addresses=<func....<lambda> at 0x7fbb1c3bc220>, is_alexa_enabled=<function test_job_preview_success.<locals>.<lambda> at 0x7fbb1c3bc2c0>)
+2026-07-23T22:12:07.4113857Z 
+2026-07-23T22:12:07.4114067Z The above exception was the direct cause of the following exception:
+2026-07-23T22:12:07.4114573Z tests/test_web_ui_job_endpoints.py:134: in test_job_preview_success
+2026-07-23T22:12:07.4115022Z     monkeypatch.setattr("builtins.open", mocked_open)
+2026-07-23T22:12:07.4115429Z         client     = <FlaskClient <Flask 'web_ui.backend.app'>>
+2026-07-23T22:12:07.4115976Z         fake_exists = <function test_job_preview_success.<locals>.fake_exists at 0x7fbb1c45be20>
+2026-07-23T22:12:07.4117264Z         fake_knx_module = namespace(create_building=<function test_job_preview_success.<locals>.<lambda> at 0x7fbb1c45bf60>, get_addresses=<func....<lambda> at 0x7fbb1c3bc220>, is_alexa_enabled=<function test_job_preview_success.<locals>.<lambda> at 0x7fbb1c3bc2c0>)
+2026-07-23T22:12:07.4118557Z         job_mgr    = <Mock id='140441628357504'>
+2026-07-23T22:12:07.4118945Z         mocked_open = <MagicMock name='open' id='140441628356496'>
+2026-07-23T22:12:07.4119442Z         monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fbb1c20acf0>
+2026-07-23T22:12:07.4120178Z /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages/_pytest/monkeypatch.py:109: in derive_importpath
+2026-07-23T22:12:07.4120783Z     annotated_getattr(target, attr, ann=module)
+2026-07-23T22:12:07.4121093Z         attr       = 'open'
+2026-07-23T22:12:07.4121364Z         import_path = 'builtins.open'
+2026-07-23T22:12:07.4121659Z         module     = 'builtins'
+2026-07-23T22:12:07.4121912Z         raising    = True
+2026-07-23T22:12:07.4123378Z         target     = namespace(create_building=<function test_job_preview_success.<locals>.<lambda> at 0x7fbb1c45bf60>, get_addresses=<func....<lambda> at 0x7fbb1c3bc220>, is_alexa_enabled=<function test_job_preview_success.<locals>.<lambda> at 0x7fbb1c3bc2c0>)
+2026-07-23T22:12:07.4124874Z /opt/hostedtoolcache/Python/3.13.14/x64/lib/python3.13/site-packages/_pytest/monkeypatch.py:97: in annotated_getattr
+2026-07-23T22:12:07.4125460Z     raise AttributeError(
+2026-07-23T22:12:07.4125913Z E   AttributeError: 'SimpleNamespace' object at builtins has no attribute 'open'
+2026-07-23T22:12:07.4126355Z         ann        = 'builtins'
+2026-07-23T22:12:07.4126607Z         name       = 'open'
+2026-07-23T22:12:07.4127788Z         obj        = namespace(create_building=<function test_job_preview_success.<locals>.<lambda> at 0x7fbb1c45bf60>, get_addresses=<func....<lambda> at 0x7fbb1c3bc220>, is_alexa_enabled=<function test_job_preview_success.<locals>.<lambda> at 0x7fbb1c3bc2c0>)
+2026-07-23T22:12:07.4128830Z ================================ tests coverage ================================
+2026-07-23T22:12:07.4129313Z _______________ coverage: platform linux, python 3.13.14-final-0 _______________
+2026-07-23T22:12:07.4129615Z 
+2026-07-23T22:12:07.4129744Z Coverage XML written to file coverage.xml
+2026-07-23T22:12:07.4130098Z =========================== short test summary info ============================
+2026-07-23T22:12:07.4130643Z SKIPPED [1] tests/integration/test_file_import.py:99: got empty parameter set for (knxproj_file)
+2026-07-23T22:12:07.4131395Z SKIPPED [1] tests/test_external_dependencies_mocking.py:140: Skipping due to mocked data structure incompatibility
+2026-07-23T22:12:07.4132151Z SKIPPED [1] tests/test_external_deps_mocking.py:152: Skipping due to mocked data structure incompatibility
+2026-07-23T22:12:07.4132872Z SKIPPED [1] tests/test_output_config.py:235: Skipping complex exception handling test during module import
+2026-07-23T22:12:07.4133609Z SKIPPED [1] tests/test_output_config.py:242: Skipping complex JSON parsing error test during module import
+2026-07-23T22:12:07.4134328Z SKIPPED [1] tests/test_output_config.py:249: Skipping complex missing keys test during module import
+2026-07-23T22:12:07.4135005Z SKIPPED [1] tests/test_output_config.py:256: Skipping complex empty values test during module import
+2026-07-23T22:12:07.4135769Z SKIPPED [1] tests/test_output_syntax_validation.py:313: Things file doesn't contain Type definitions - format may differ
+2026-07-23T22:12:07.4136533Z SKIPPED [1] tests/test_output_syntax_validation.py:335: No Type definitions found - format may differ
+2026-07-23T22:12:07.4137229Z SKIPPED [1] tests/test_output_syntax_validation.py:366: No group addresses found - format may differ
+2026-07-23T22:12:07.4138051Z SKIPPED [1] tests/test_output_syntax_validation.py:476: No Frame definitions found - format may differ
+2026-07-23T22:12:07.4138679Z SKIPPED [1] tests/test_output_syntax_validation.py:525: No widget definitions found
+2026-07-23T22:12:07.4139619Z FAILED tests/test_web_ui_job_endpoints.py::test_job_preview_success - AttributeError: 'SimpleNamespace' object at builtins has no attribute 'open'
+2026-07-23T22:12:07.4140305Z 1 failed, 268 passed, 12 skipped in 7.29s
+2026-07-23T22:12:07.5532891Z ##[error]Process completed with exit code 1.
+2026-07-23T22:12:07.5642851Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-23T22:12:07.5643787Z Post job cleanup.
+2026-07-23T22:12:07.6324753Z [command]/usr/bin/git version
+2026-07-23T22:12:07.6359971Z git version 2.54.0
+2026-07-23T22:12:07.6390661Z Temporarily overriding HOME='/home/runner/work/_temp/ae6b77f7-9008-44ea-9e9f-2120195d5483' before making global git config changes
+2026-07-23T22:12:07.6391689Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-23T22:12:07.6395449Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/knx_to_openhab/knx_to_openhab
+2026-07-23T22:12:07.6430253Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-23T22:12:07.6459897Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-23T22:12:07.6676543Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-23T22:12:07.6699076Z http.https://github.com/.extraheader
+2026-07-23T22:12:07.6708877Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-07-23T22:12:07.6738907Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-23T22:12:07.6966946Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-23T22:12:07.7002467Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-23T22:12:07.7331460Z Cleaning up orphan processes
+2026-07-23T22:12:07.7602831Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/cache@v4, actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

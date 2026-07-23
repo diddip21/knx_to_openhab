@@ -128,10 +128,9 @@ def test_job_preview_success(client, monkeypatch):
         is_alexa_enabled=lambda project: False,
     )
 
-    monkeypatch.setattr(importlib, "import_module", lambda name: fake_knx_module)
-
     mocked_open = mock_open(read_data=json.dumps({"project": "data"}))
     monkeypatch.setattr("builtins.open", mocked_open)
+    monkeypatch.setattr(importlib, "import_module", lambda name: fake_knx_module)
 
     resp = client.get("/api/job/abc/preview")
 

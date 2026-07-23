@@ -45,6 +45,17 @@ fatal() {
 
 trap 'fatal "Update failed unexpectedly at line $LINENO."' ERR
 
+on_signal() {
+    log "ERROR: Update interrupted by user."
+    if [[ -n "$BACKUP_PATH" && -f "$BACKUP_PATH" ]]; then
+        log "A backup was created before interruption: $BACKUP_PATH"
+        log "To restore: sudo tar -xzf '$BACKUP_PATH' -C '$INSTALL_DIR'"
+    fi
+    exit 130
+}
+
+trap on_signal INT TERM HUP
+
 log "========================================="
 log "Starting KNX to OpenHAB Generator update"
 log "========================================="
@@ -254,9 +265,19 @@ fi
 
 log "========================================="
 log "Update completed successfully!"
-log "Previous commit: $CURRENT_COMMIT"
-log "New commit: $NEW_COMMIT"
-log "Backup saved to: $BACKUP_PATH"
+log "========================================="
+log ""
+log "Summary:"
+log "  Previous commit: $CURRENT_COMMIT"
+log "  New commit:      $NEW_COMMIT"
+log "  Backup saved to: $BACKUP_PATH"
+log ""
+log "The service '$SERVICE_NAME' has been restarted."
+log ""
+log "Useful commands:"
+log "  Check status:  sudo systemctl status $SERVICE_NAME"
+log "  View logs:     sudo journalctl -u $SERVICE_NAME -f"
+log "  Rollback:      sudo tar -xzf '$BACKUP_PATH' -C '$INSTALL_DIR'"
 log "========================================="
 
 exit 0

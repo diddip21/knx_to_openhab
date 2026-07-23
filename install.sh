@@ -53,7 +53,18 @@ on_error() {
     fi
     log_info "You can re-run the installer after fixing the issue."
 }
+
+on_signal() {
+    log_error "Installation interrupted by user."
+    if [[ "$CREATED_INSTALL_DIR" -eq 1 ]]; then
+        log_warning "Cleaning up partially created installation at $INSTALL_DIR"
+        sudo rm -rf "$INSTALL_DIR" || true
+    fi
+    exit 130
+}
+
 trap on_error ERR
+trap on_signal INT TERM HUP
 
 check_root() {
     if [[ $EUID -eq 0 ]]; then
@@ -274,42 +285,42 @@ display_completion() {
     ip_address=$(hostname -I | awk '{print $1}')
 
     echo ""
-    echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║                                                            ║${NC}"
-    echo -e "${GREEN}║  ✓ KNX to OpenHAB Generator installed successfully!       ║${NC}"
-    echo -e "${GREEN}║                                                            ║${NC}"
-    echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${GREEN}â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—${NC}"
+    echo -e "${GREEN}â•‘                                                            â•‘${NC}"
+    echo -e "${GREEN}â•‘  âœ“ KNX to OpenHAB Generator installed successfully!       â•‘${NC}"
+    echo -e "${GREEN}â•‘                                                            â•‘${NC}"
+    echo -e "${GREEN}â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}"
     echo ""
     echo -e "${BLUE}Installation Details:${NC}"
-    echo -e "  • Installation directory: ${YELLOW}$INSTALL_DIR${NC}"
-    echo -e "  • Service name: ${YELLOW}knxohui.service${NC}"
-    echo -e "  • Web UI URL: ${YELLOW}http://$ip_address:8085${NC}"
+    echo -e "  â€¢ Installation directory: ${YELLOW}$INSTALL_DIR${NC}"
+    echo -e "  â€¢ Service name: ${YELLOW}knxohui.service${NC}"
+    echo -e "  â€¢ Web UI URL: ${YELLOW}http://$ip_address:8085${NC}"
     echo ""
     echo -e "${BLUE}Default Credentials:${NC}"
-    echo -e "  • Username: ${YELLOW}admin${NC}"
-    echo -e "  • Password: ${YELLOW}logihome${NC}"
+    echo -e "  â€¢ Username: ${YELLOW}admin${NC}"
+    echo -e "  â€¢ Password: ${YELLOW}logihome${NC}"
     echo ""
-    echo -e "${RED}⚠ IMPORTANT: Change the default password!${NC}"
+    echo -e "${RED}âš  IMPORTANT: Change the default password!${NC}"
     echo -e "  Edit: ${YELLOW}$INSTALL_DIR/web_ui/backend/config.json${NC}"
     echo -e "  Then run: ${YELLOW}sudo systemctl restart knxohui.service${NC}"
     echo ""
     echo -e "${BLUE}Useful Commands:${NC}"
-    echo -e "  • Check status: ${YELLOW}sudo systemctl status knxohui.service${NC}"
-    echo -e "  • View logs: ${YELLOW}sudo journalctl -u knxohui.service -f${NC}"
-    echo -e "  • Restart service: ${YELLOW}sudo systemctl restart knxohui.service${NC}"
+    echo -e "  â€¢ Check status: ${YELLOW}sudo systemctl status knxohui.service${NC}"
+    echo -e "  â€¢ View logs: ${YELLOW}sudo journalctl -u knxohui.service -f${NC}"
+    echo -e "  â€¢ Restart service: ${YELLOW}sudo systemctl restart knxohui.service${NC}"
     echo ""
-    echo -e "${GREEN}Happy automating! 🏠${NC}"
+    echo -e "${GREEN}Happy automating! ðŸ ${NC}"
     echo ""
 }
 
 # Main installation flow
 main() {
     echo ""
-    echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║                                                            ║${NC}"
-    echo -e "${BLUE}║     KNX to OpenHAB Generator - One-Command Installer       ║${NC}"
-    echo -e "${BLUE}║                                                            ║${NC}"
-    echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${BLUE}â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—${NC}"
+    echo -e "${BLUE}â•‘                                                            â•‘${NC}"
+    echo -e "${BLUE}â•‘     KNX to OpenHAB Generator - One-Command Installer       â•‘${NC}"
+    echo -e "${BLUE}â•‘                                                            â•‘${NC}"
+    echo -e "${BLUE}â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}"
     echo ""
 
     preflight_checks

@@ -17,6 +17,12 @@ log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 log_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+log_step() {
+    local step="$1"
+    local total="$2"
+    local message="$3"
+    echo -e "${BLUE}[${step}/${total}]${NC} $message"
+}
 
 usage() {
     echo "Usage: $0 [--dry-run]"
@@ -43,6 +49,14 @@ if [[ $EUID -eq 0 ]]; then
     log_error "This script should NOT be run as root. Please run as a regular user with sudo privileges."
     exit 1
 fi
+
+on_signal() {
+    log_error "Uninstallation interrupted by user."
+    log_info "Partial removal may have occurred. Re-run the script to complete."
+    exit 130
+}
+
+trap on_signal INT TERM HUP
 
 if [[ ! -d "$INSTALL_DIR" ]]; then
     log_warning "No installation found at $INSTALL_DIR. Nothing to uninstall."
@@ -111,31 +125,31 @@ if [[ "$CONFIRM" != "yes" ]]; then
 fi
 
 # 1. Stop and disable services
-log_info "Stopping services..."
+log_step 1 5 "Stopping services..."
 sudo systemctl stop knxohui.service || true
 sudo systemctl stop knxohui-backup-cleanup.timer || true
 sudo systemctl disable knxohui.service || true
 sudo systemctl disable knxohui-backup-cleanup.timer || true
 
 # 2. Remove systemd units
-log_info "Removing systemd units..."
+log_step 2 5 "Removing systemd units..."
 sudo rm -f /etc/systemd/system/knxohui.service
 sudo rm -f /etc/systemd/system/knxohui-backup-cleanup.service
 sudo rm -f /etc/systemd/system/knxohui-backup-cleanup.timer
 sudo systemctl daemon-reload
 
 # 3. Remove sudoers file
-log_info "Removing sudoers configuration..."
+log_step 3 5 "Removing sudoers configuration..."
 sudo rm -f /etc/sudoers.d/knxohui
 
 # 4. Remove directories
-log_info "Removing directories..."
+log_step 4 5 "Removing directories..."
 sudo rm -rf "$INSTALL_DIR"
 sudo rm -rf "$JOBS_DIR"
 sudo rm -rf "$BACKUPS_DIR"
 
 # 5. Remove user
-log_info "Removing service user..."
+log_step 5 5 "Removing service user..."
 if id "knxohui" &>/dev/null; then
     sudo userdel knxohui || log_warning "Could not delete user knxohui (might be in use)"
 else
@@ -143,6 +157,22 @@ else
 fi
 
 log_success "Uninstallation complete. All components have been removed."
-log_info "Manual cleanup may still be required:"
-log_info "  - Remove any remaining backups or logs"
-log_info "  - Check /etc/openhab permissions if modified"
+echo ""
+echo -e "${GREEN}â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—${NC}"
+echo -e "${GREEN}â•‘                                                            â•‘${NC}"
+echo -e "${GREEN}â•‘  âœ“ KNX to OpenHAB Generator uninstalled successfully!     â•‘${NC}"
+echo -e "${GREEN}â•‘                                                            â•‘${NC}"
+echo -e "${GREEN}â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}"
+echo ""
+echo -e "${BLUE}Removed:${NC}"
+echo "  - Installation directory: $INSTALL_DIR"
+echo "  - Jobs directory:         $JOBS_DIR"
+echo "  - Backups directory:      $BACKUPS_DIR"
+echo "  - Systemd units:          knxohui.service, knxohui-backup-cleanup.*"
+echo "  - Sudoers config:         /etc/sudoers.d/knxohui"
+echo "  - Service user:           knxohui"
+echo ""
+echo -e "${YELLOW}Manual cleanup may still be required:${NC}"
+echo "  - Remove any remaining backups or logs outside the listed directories"
+echo "  - Check /etc/openhab permissions if modified"
+echo "  - Verify no other services depend on the knxohui user"

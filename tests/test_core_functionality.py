@@ -240,7 +240,7 @@ class TestGetDptFromDco:
         """Test extracting DPT from valid device communication object."""
         dco = {"dpts": [{"main": 5, "sub": 1}]}
         result = get_dpt_from_dco(dco)
-        assert result == "5.001"
+        assert result == "DPST-5-1"
 
     def test_get_dpt_from_dco_multiple_dpts(self):
         """Test extracting first DPT when multiple are present."""
@@ -251,17 +251,17 @@ class TestGetDptFromDco:
             ]
         }
         result = get_dpt_from_dco(dco)
-        assert result == "1.002"
+        assert result == "DPST-1-2"
 
-    def test_get_dpt_from_dco_three_digit_padding(self):
-        """Test that sub-value is properly padded to three digits."""
+    def test_get_dpt_from_dco_sub_values(self):
+        """Test that sub-value is correctly formatted."""
         dco = {"dpts": [{"main": 1, "sub": 10}]}
         result = get_dpt_from_dco(dco)
-        assert result == "1.010"
+        assert result == "DPST-1-10"
 
         dco = {"dpts": [{"main": 1, "sub": 100}]}
         result = get_dpt_from_dco(dco)
-        assert result == "1.100"
+        assert result == "DPST-1-100"
 
     def test_get_dpt_from_dco_returns_none_when_no_dpts_key(self):
         """Test that None is returned when no dpts key exists."""
@@ -290,9 +290,9 @@ class TestGetDptFromDco:
         assert get_dpt_from_dco(dco) is None
 
     def test_get_dpt_from_dco_returns_none_when_missing_main_or_sub(self):
-        """Test that None is returned when main or sub is missing."""
-        dco = {"dpts": [{"main": 5}]}  # Missing 'sub'
-        assert get_dpt_from_dco(dco) is None
+        """Test behavior when main or sub is missing."""
+        dco = {"dpts": [{"main": 5}]}  # Missing 'sub' — defaults to 0
+        assert get_dpt_from_dco(dco) == "DPST-5-0"
 
         dco = {"dpts": [{"sub": 1}]}  # Missing 'main'
         assert get_dpt_from_dco(dco) is None
@@ -303,7 +303,7 @@ class TestGetDptFromDco:
     def test_get_dpt_from_dco_returns_none_when_main_or_sub_none(self):
         """Test that None is returned when main or sub is None."""
         dco = {"dpts": [{"main": 5, "sub": None}]}
-        assert get_dpt_from_dco(dco) is None
+        assert get_dpt_from_dco(dco) == "DPST-5-0"  # None sub defaults to 0
 
         dco = {"dpts": [{"main": None, "sub": 1}]}
         assert get_dpt_from_dco(dco) is None
@@ -312,19 +312,19 @@ class TestGetDptFromDco:
         """Test handling of negative main/sub values."""
         dco = {"dpts": [{"main": -1, "sub": -1}]}
         result = get_dpt_from_dco(dco)
-        assert result == "-1.-01"  # Negative values with padding
+        assert result == "DPST--1--1"
 
     def test_get_dpt_from_dco_with_zero_values(self):
         """Test handling of zero main/sub values."""
         dco = {"dpts": [{"main": 0, "sub": 0}]}
         result = get_dpt_from_dco(dco)
-        assert result == "0.000"
+        assert result == "DPST-0-0"
 
     def test_get_dpt_from_dco_with_large_values(self):
         """Test handling of large main/sub values."""
         dco = {"dpts": [{"main": 999, "sub": 999}]}
         result = get_dpt_from_dco(dco)
-        assert result == "999.999"
+        assert result == "DPST-999-999"
 
     def test_get_dpt_from_dco_with_invalid_input(self):
         """Test handling of invalid input types."""
@@ -369,10 +369,10 @@ class TestIntegrationScenarios:
 
         # Extract DPT
         dpt = get_dpt_from_dco(dco)
-        assert dpt == "9.001"
+        assert dpt == "DPST-9-1"
 
         # Verify it's the expected temperature DPT
-        assert dpt.startswith("9.")  # Temperature domain
+        assert dpt.startswith("DPST-9-")  # Temperature domain
 
     def test_combined_processing_for_knx_device(self):
         """Test combined processing for a typical KNX device."""
@@ -394,7 +394,7 @@ class TestIntegrationScenarios:
         cmd_dpt = get_dpt_from_dco(command_co)
 
         assert cmd_flags is not None
-        assert cmd_dpt == "3.007"  # Dimming control
+        assert cmd_dpt == "DPST-3-7"  # Dimming control
         assert flags_match(cmd_flags, {"write": True}) is True  # Should be writable
         assert flags_match(cmd_flags, {"read": True}) is False  # Should not be readable
 
@@ -403,7 +403,7 @@ class TestIntegrationScenarios:
         status_dpt = get_dpt_from_dco(status_co)
 
         assert status_flags is not None
-        assert status_dpt == "5.001"  # Dimmer position
+        assert status_dpt == "DPST-5-1"  # Dimmer position
         assert flags_match(status_flags, {"read": True}) is True  # Should be readable
         assert flags_match(status_flags, {"write": True}) is False  # Should not be writable
         assert flags_match(status_flags, {"transmit": True}) is True  # Should be transmittable

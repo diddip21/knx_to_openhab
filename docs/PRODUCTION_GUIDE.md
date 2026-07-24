@@ -360,8 +360,8 @@ Health check (no auth required).
 # Check service is running
 sudo systemctl status knxohui.service
 
-# Check port 8080 is open
-netstat -tulpn | grep 8080
+# Check port 8085 is open
+netstat -tulpn | grep 8085
 
 # View service logs
 sudo journalctl -u knxohui.service -n 50 -f
@@ -517,7 +517,6 @@ For issues or feature requests:
 1. Check the API reference above
 2. Review troubleshooting section
 3. Check systemd logs: `sudo journalctl -u knxohui.service`
-  sudo systemctl start knxohui-backup-cleanup.service
 4. Open an issue on GitHub with logs and error messages
 
 ---

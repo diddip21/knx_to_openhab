@@ -2,6 +2,16 @@
 
 This guide explains how to prepare your ETS project, configure the generator, and understand how KNX data types are mapped to OpenHAB items.
 
+## Quick Start
+
+1. **Upload** your `.knxproj` (or JSON dump) via the Web UI or CLI
+2. **Preview** the building structure to verify floors/rooms
+3. **Process** and check Generated Files + Reports (unknown, partial, completeness)
+4. **Fix ETS naming** or **enable Auto-Place** if you want quick placement
+5. **Deploy** when you're happy with the output
+
+![UI overview](../docs/images/ui-home.png)
+
 ## Table of Contents
 
 1. [Command Line Usage (CLI)](#command-line-usage)

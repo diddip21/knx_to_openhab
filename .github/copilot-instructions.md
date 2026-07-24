@@ -1,55 +1,92 @@
-# Copilot / AI agent instructions for knx_to_openhab
+# Copilot / AI Agent Instructions for knx_to_openhab
 
-Short summary
-- Entry point: `knxproject_to_openhab.py` — parses a KNX project and builds an in-memory house model.
-- Generator: `ets_to_openhab.py` — consumes the house model and writes OpenHAB `things`, `items`, `sitemaps`, `persistence`, `rules` using the `*.template` files.
-- Configuration lives in `config.json` and is loaded/normalized by `config.py`.
+## Quick Summary
 
-Big picture (how data flows)
-- `knxproject_to_openhab.py` parses a KNX file (via `xknxproject.XKNXProj`) → creates `building` via `create_building()` → extracts `addresses` via `get_addresses()` → `put_addresses_in_building()` to merge addresses into building structure.
-- The finished `house` and `addresses` are assigned into module-level vars in `ets_to_openhab` (e.g. `ets_to_openhab.floors`, `ets_to_openhab.all_addresses`) and then `ets_to_openhab.main()` is called to produce files.
-- `ets_to_openhab.gen_building()` performs a two-pass processing of addresses: first pass to resolve multi-address components (dimmers, rollershutters, scenes), second pass to generate remaining single-address items. This ordering is important — keep it when changing generation logic.
+- **Entry point:** `knxproject_to_openhab.py` — parses KNX project, builds in-memory building model
+- **Generator:** `ets_to_openhab.py` — consumes building model, writes OpenHAB files via `*.template` wrappers
+- **Config:** `config.json` loaded/normalized by `config.py`
+- **Web UI:** Flask backend (`web_ui/backend/app.py`) + vanilla JS frontend (`web_ui/static/app.js`)
 
-Key files and conventions (quick map)
-- `config.json`: central; contains `regexpattern`, `defines` (switch/dimmer/rollershutter metadata), `datapoint_mappings`, and output paths like `items_path`, `things_path`. Edit this to change detection rules and output locations.
-- `config.py`: loads/normalizes `config.json` and exposes `config`, `datapoint_mappings` and `special_char_map` (used to sanitize item names). Use `normalize_string()` for comparisons.
-- `knxproject_to_openhab.py`: KNX parsing, name extraction helpers (`get_floor_name`, `get_room_name`) and placement logic (`place_address_in_building`, `place_address_by_device`). See `find_floors()` for recursion over nested ETS structures.
-- `ets_to_openhab.py`: generator. Important parts: `get_co_by_functiontext()`, `get_address_from_dco()`, `process_description()` (parses ETS description tags like `influx`, `icon=pump`, `semantic=…`), `gen_building()` and `export_output()` which applies the templates `things.template`, `items.template`, `sitemap.template`.
-- Templates: `items.template`, `things.template`, `sitemap.template` — these are small wrappers where the generated content is injected (`###items###`, `###things###`, `###sitemap###`). Keep templates intact to preserve header/footer formatting.
+## Data Flow
 
-Project-specific patterns and expectations
-- Item naming: generated item names use an `i_` prefix and combine floor/room short names and a shortened GA label (see `ets_to_openhab.py` item_name generation). The `special_char_map` in `config.py` ensures umlauts and special characters are replaced consistently.
-- Regex-driven detection: many decisions rely on `config['regexpattern']` (e.g. `item_Room`, `item_Floor`). Changing these affects parsing throughout — run a full generation after adjustments.
-- `defines` dict in `config.json`: contains suffix lists, `drop` lists and `change_metadata`. These are used heavily to detect multi-address components (dimmers, shutters, heaters) and to tweak generated metadata (icons, semantic tags, homekit/alexa hints).
-- ETS description processing: `Description` fields in ETS may include semicolon-separated flags: `influx`, `debug`, `icon=...`, `semantic=...`, `location=...`, `ignore`. `process_description()` maps these to item metadata.
+```
+knxproject_to_openhab.py:
+  XKNXProj(file) → create_building() → get_addresses() → put_addresses_in_building()
 
-Integration points & dependencies
-- External Python: code uses `xknxproject` to parse KNX projects. Ensure it's installed in the environment (`pip install xknxproject`).
-- Templates and outputs: generator writes into paths set in `config.json` and uses `openhab/` as a recommended local output folder (there are sample `openhab/items/...` in the repo).
-- HomeKit/Alexa: enabled by parsing `project['info']['comment']` (strings containing `homekit` or `alexa`) — generation adds `homekit`/`alexa` metadata accordingly.
+ets_to_openhab.py:
+  gen_building() → 3-pass loop over addresses
+    Pass 0-1: resolve multi-address components (dimmers, rollos, scenes)
+    Pass 2: generate single-address items
+  export_output() → apply templates → write files to openhab/
+```
 
-Developer workflows (how to run locally)
-- 1) Edit `config.json` to match your naming conventions and output paths.
-- 2) Generate OpenHAB files from a KNX project (example using an existing JSON dump):
-  - `python3 knxproject_to_openhab.py --file_path tests/Mayer.knxprojarchive.json --readDump`
-  - Or point to the `.knxprojarchive` and optionally supply `--knxPW`.
-- 3) After generation, outputs are written to the configured `things_path`, `items_path`, `sitemaps_path`, `influx_path`, `fenster_path` (see `config.json`).
-- 4) Regenerate tests (optional): `python3 generate_openhab_tests.py` will create unit tests under `tests/unit/` based on current `openhab/` output. NOTE: the bundled test generation and generated tests contain Windows-style absolute paths — update the generated test paths or re-run the generator to produce repo-relative paths before running tests.
+## Key Files
 
-Testing and pitfalls
-- The repo contains `tests/unit/test_knxproject_to_openhab_Mayer.py` which was auto-generated referencing `c:\Users\...` absolute paths — these will fail on Linux. Recommended: run `generate_openhab_tests.py` (or adjust it) to produce tests with repository-relative paths, or edit the test to use `openhab/...` paths.
-- `generate_openhab_tests.py` currently uses a Windows venv path (`.venv/Scripts/python.exe`); for Linux edit it to use `sys.executable` or call the script directly with `python3`.
+| File | Lines | Purpose |
+|------|-------|---------|
+| `knxproject_to_openhab.py` | 789 | KNX parser, building hierarchy, address placement |
+| `ets_to_openhab.py` | 1058 | Core generator: `gen_building()` (L34-849), `export_output()` (L929-1046) |
+| `config.py` | 217 | Config loader. **Executes on import** — `main()` called at L202 |
+| `config.json` | 500 | Detection rules, DPT mappings, regex patterns, output paths |
+| `ets_helpers.py` | 173 | Testable helpers: `get_co_flags()`, `flags_match()`, `get_dpt_from_dco()` |
+| `completeness.py` | 111 | Post-generation validation of Things files |
+| `web_ui/backend/app.py` | 1071 | Flask routes, auth, SSE, 20+ API endpoints |
+| `web_ui/backend/jobs.py` | 1233 | Job queue, staging/deploy, backup/rollback |
+| `web_ui/backend/storage.py` | 147 | JSON persistence, atomic writes |
+| `web_ui/backend/updater.py` | 260 | Git-based self-update via GitHub API |
 
-Small examples to copy/paste
-- Run generator from a JSON dump:
-  - `python3 knxproject_to_openhab.py --file_path tests/Mayer.knxprojarchive.json --readDump`
-- Quick install of main dependency (if missing):
-  - `python3 -m pip install xknxproject lark-parser`
-- Regenerate tests (edit `generate_openhab_tests.py` first on Linux):
-  - open `generate_openhab_tests.py` and replace the hardcoded `venv_python` with `sys.executable`, then run `python3 generate_openhab_tests.py`
+## Conventions
 
-When to ask the human
-- If `config.json` rules are ambiguous (regex/suffix lists) ask for a sample ETS address/name to craft or refine matching rules.
-- If generated tests are required to run in CI, ask whether you want repo-relative paths or platform-specific test variants.
+- **Python 3.12+**, Black (line-length 100), isort (profile=black), flake8 (max 100)
+- Conventional commits: `feat:`, `fix:`, `chore:`, `style:`
+- Item naming: `i_` prefix + floor/room short names + shortened GA label
+- `config.py` `normalize_string()` for all string comparisons
+- `config.py` `special_char_map` for umlaut replacement (ä→ae, ö→oe, ü→ue, ß→ss)
 
-If anything above is missing or you'd like it adapted to CI (GitHub Actions) or to generate tests with repo-relative paths automatically, tell me which option you prefer and I will update this file.
+## Testing
+
+```bash
+pytest -q                          # All core tests (excludes UI)
+pytest tests/integration -v        # Integration tests
+pytest -m unit                     # Unit tests only
+pytest --cov=. --cov-report=html   # With coverage
+pytest tests/ui -v -o addopts=     # UI tests (needs Playwright + server)
+python scripts/regenerate_golden.py  # Regenerate golden files after output changes
+```
+
+**CI pipeline:** Lint (black+isort+flake8) → Core Tests (Python 3.12+3.13) → UI Tests (Playwright)
+
+## Pitfalls
+
+1. **Global state** — `ets_to_openhab.py` uses 10+ module-level mutable globals. Reset in test `setup_method()`.
+2. **config.py side effects** — `main()` runs on import. Mock before importing if needed.
+3. **gen_building() complexity** — 500+ lines, 3 nested sub-functions, 3-pass loop. Run golden file regen after changes.
+4. **Monkeypatch order** — In `test_web_ui_job_endpoints.py`, mock `builtins.open` BEFORE `importlib.import_module`.
+5. **DPT format mismatch** — `ets_helpers.py` returns `"5.001"`, `ets_to_openhab.py` returns `"DPST-5-1"`. Know which one you're using.
+6. **ETS description tags** — Semicolon-separated in GA description: `influx`, `debug`, `icon=pump`, `semantic=Projector`, `ignore`
+7. **Template placeholders** — `###items###`, `###things###`, `###sitemap###` in `*.template` files
+
+## API Endpoints (Web UI)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/upload` | Upload `.knxproj`, create job |
+| GET | `/api/jobs` | List all jobs |
+| GET | `/api/job/<id>` | Job details |
+| GET | `/api/job/<id>/events` | SSE live log stream |
+| POST | `/api/job/<id>/deploy` | Deploy staged files to live OpenHAB |
+| POST | `/api/job/<id>/rollback` | Restore from backup |
+| GET | `/api/job/<id>/diff` | Diff stats |
+| GET | `/api/config` | Read config |
+| POST | `/api/config` | Write config |
+| POST | `/api/service/restart` | Restart systemd service |
+| GET | `/api/version` | Current git version |
+| GET | `/api/status` | Health check |
+
+## When to Ask the Human
+
+- `config.json` rules are ambiguous — ask for a sample ETS address/name
+- Modifying `gen_building()` — confirm the 3-pass logic understanding
+- Adding new dependencies — check `requirements.txt` first
+- Changing output format — confirm OpenHAB compatibility
+- Test failures involve global state — check `setup_method()` resets

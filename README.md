@@ -1,119 +1,126 @@
 # KNX to OpenHAB Generator
 
-Generate complete OpenHAB configurations (Things, Items, Sitemaps) directly from your ETS project export (`.knxproj` / `.knxprojarchive`) or a JSON dump.
+A tool that generates complete [OpenHAB](https://www.openhab.org/) configurations (Items, Things, Sitemaps, Persistence) directly from ETS project exports (`.knxproj`) or JSON dumps.
 
-This project ships with a **Web UI** for guided uploads/configuration and a **CLI** for headless/automated use.
+Includes a **Web UI** for browser-based management and a **CLI** for automated workflows.
 
-> **Status:** Current releases are intended for pilot / test deployments.
+## Features
+
+- **Automated Generation** — Creates Things, Items, Sitemaps, and Persistence rules in one step
+- **Smart Detection** — Identifies Dimmers, Rollershutters, Thermostats, and multi-address components by DPT analysis and naming conventions
+- **Web Interface** — Drag-and-drop upload, live progress streaming (SSE), job history, diff viewer, deploy/rollback
+- **Backup & Rollback** — Automatic tar.gz backup before each generation, restore any previous version
+- **Reports** — Unknown addresses, partial items, completeness checks (missing required channels)
+- **Auto-Placement** — Optional: automatically create missing floors/rooms for unmatched addresses
+- **Semantic Model** — Auto-tags items for OpenHAB's semantic model
+- **HomeKit / Alexa** — Auto-generates metadata when enabled in ETS project comments
+- **InfluxDB Support** — Auto-configure persistence via ETS description tags
+- **Self-Update** — Check for and apply updates from GitHub directly in the UI
+- **Service Management** — Restart OpenHAB from the Web UI
+
+## Documentation
+
+| Guide | For whom | What's in it |
+|-------|----------|--------------|
+| **[User Guide](docs/USER_GUIDE.md)** | End users | Configuration, ETS preparation, DPT mappings, troubleshooting |
+| **[Production Guide](docs/PRODUCTION_GUIDE.md)** | Raspberry Pi admins | Installation, systemd, API reference, security |
+| **[Developer Guide](docs/DEVELOPER_GUIDE.md)** | Contributors | Local setup, architecture, testing, coding conventions |
+| **[Contributing](CONTRIBUTING.md)** | Contributors | Branch naming, commit style, PR checklist |
 
 ---
 
-## System Requirements
+## Quick Start
 
-- **OS (Installer):** Debian-based Linux (DietPi, Raspberry Pi OS, Ubuntu)
-- **User:** Non‑root user with `sudo` privileges
-- **Packages (installed by installer):** `git`, `python3`, `python3-venv`, `python3-pip`, `rsync`, `curl`
-- **Supported ETS exports:** `.knxproj`, `.knxprojarchive`, `.json` dump
-- **OpenHAB:** Any recent 3.x / 4.x install for deployment (generator outputs standard files)
+### Option 1: One-Command Installer (Linux / Raspberry Pi)
 
----
+Best for fresh installs of Raspberry Pi OS (Lite) or DietPi.
 
-## Recommended Quick Start (Web UI)
-
-**Happy path, no method mix:** use the installer + UI.
-
-### 1) Install
+**Prereqs (apt):** `python3-venv python3-tk build-essential`
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install.sh | bash
 ```
 
-The installer will:
-- clone to `/opt/knx_to_openhab`
-- set up the `knxohui` systemd service
-- configure permissions for self‑updates
+This will:
+1. Install system dependencies (Python, git, etc.)
+2. Clone the repository to `/opt/knx_to_openhab`
+3. Set up the **knxohui** systemd service (Web UI on port 8085)
+4. Configure permissions for self-updates
 
-### 2) Open the UI
+### Option 2: CLI (Any Platform)
 
-Open your browser:
-```
-http://<your-ip>:8085
-```
-Default credentials:
-- **User:** `admin`
-- **Password:** `logihome` *(change this right away)*
-
-To change credentials:
-```
-/opt/knx_to_openhab/web_ui/backend/config.json
-```
-Then:
 ```bash
-sudo systemctl restart knxohui.service
+git clone https://github.com/diddip21/knx_to_openhab.git
+cd knx_to_openhab
+pip install -r requirements.txt
+
+python knxproject_to_openhab.py --file_path "MyHouse.knxproj"
 ```
 
-### 3) Upload & Generate
+Output files are written to the `openhab/` directory (configurable in `config.json`).
 
-1. Upload your `.knxproj` / `.knxprojarchive` (or `.json` dump)
-2. Review floors/rooms and fix naming if needed
-3. Generate OpenHAB files
+### Option 3: Local Development
 
-### 4) Deploy Output
-
-Generated files are written to:
+```bash
+git clone https://github.com/diddip21/knx_to_openhab.git
+cd knx_to_openhab
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+flask --app web_ui.backend.app:app run --debug
+# → http://localhost:5000
 ```
-/opt/knx_to_openhab/openhab/
-```
-
-If your OpenHAB config is elsewhere, set `openhab_path` in `config.json` (e.g. `/etc/openhab`).
 
 ---
 
-## Updates & Uninstall
+## Using the Web UI
 
-### Update
+1. **Open** `http://<your-ip>:8085` (default: `admin` / `logihome` — change in Settings!)
+2. **Upload** your `.knxproj` export or JSON dump
+3. **Preview** the building structure before processing
+4. **Review** generated files, diffs, and reports
+5. **Deploy** when satisfied (copies files to live OpenHAB directory)
 
-- **Via UI:** click the **Version** badge in the header
-- **Via script:**
-  ```bash
-  curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/update.sh | bash
-  ```
+### What Gets Generated
 
-### Uninstall
+For each KNX project, the generator produces:
+
+| File | Contents |
+|------|----------|
+| `knx.items` | Item definitions with types, icons, semantics, HomeKit/Alexa metadata |
+| `knx.things` | Thing definitions with KNX bridge and channel mappings |
+| `knx.sitemap` | Sitemap with floor/room hierarchy and labeled widgets |
+| `influxdb.persist` | InfluxDB persistence rules for items tagged with `influx` |
+
+### Reports & Auto-Placement
+
+The UI surfaces reports for anything that couldn't be fully placed:
+
+- **`unknown_report.json`** — Group addresses with no matching floor/room (generated even when auto-place is disabled)
+- **`partial_report.json`** — Incomplete multi-address components (e.g., dimmer missing status GA)
+- **`completeness_report.json`** — Generated Things missing required channels per device type
+
+Enable auto-placement in **Settings → Auto-place unknown addresses** or set `general.auto_place_unknown = true` in `config.json`.
+
+---
+
+## UI Overview
+
+**Home — Job List & Upload**
+
+![UI overview](docs/images/ui-home.png)
+
+**Settings — Auto-Place Toggle**
+
+![UI settings](docs/images/ui-settings.png)
+
+---
+
+## Uninstallation
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/uninstall.sh | bash
 ```
-
----
-
-## CLI (Alternative)
-
-```bash
-python3 knxproject_to_openhab.py --file_path "MyHouse.knxproj"
-```
-
-Parameters:
-- `--file_path`: path to `.knxproj` / `.knxprojarchive` or `.json` dump
-- `--knxPW`: password for protected project files
-- `--readDump`: read from JSON dump
-
----
-
-## Known Limitations (Current)
-
-- Some DPTs or device profiles may not be fully mapped yet.
-- Dimmer / rollershutter detection relies on ETS naming conventions.
-- Auto‑placement is optional and may create generic floor/room structure.
-- Web UI is intended for LAN use (basic auth, no HTTPS by default).
-
----
-
-## More Documentation
-
-- **[User Guide](docs/USER_GUIDE.md)** — configuration, ETS prep, troubleshooting
-- **[Production Guide](docs/PRODUCTION_GUIDE.md)** — Raspberry Pi / DietPi setup, services
-- **[Developer Guide](docs/DEVELOPER_GUIDE.md)** — architecture, testing, local dev
 
 ---
 

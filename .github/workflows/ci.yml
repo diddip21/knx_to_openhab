@@ -50,7 +50,7 @@ jobs:
           pytest -q --cov=. --cov-report=xml -m "not ui" --ignore=tests/ui
 
   lint:
-    name: Lint (format + flake8)
+    name: Lint (format + typecheck)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -86,6 +86,10 @@ jobs:
       - name: Flake8
         run: |
           flake8 .
+
+      - name: Mypy
+        run: |
+          mypy .
 
   ui-tests:
     name: UI Tests (Playwright)

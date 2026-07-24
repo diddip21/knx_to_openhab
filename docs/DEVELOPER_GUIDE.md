@@ -128,20 +128,24 @@ python -m app
 ```
 knx_to_openhab/
 ├── README.md                       # Main project readme
-├── DEVELOPMENT.md                  # This file
-├── WEBUI_INSTALLATION.md           # Production installation guide
+├── CONTRIBUTING.md                 # Contributing guidelines
+├── AGENTS.md                       # AI agent instructions
 ├── requirements.txt                # Python dependencies
 ├── config.json                     # Main KNX parser configuration
-├── config.py                       # Config loader
+├── config.py                       # Config loader (executes on import!)
 │
 ├── knxproject_to_openhab.py        # Core: KNX project parser
 ├── ets_to_openhab.py               # Core: OpenHAB file generator
+├── ets_helpers.py                  # Extracted helper functions
+├── completeness.py                 # Post-generation validation
+├── utils.py                        # Shared utilities
 │
 ├── web_ui/                         # Web UI application
 │   ├── backend/
 │   │   ├── app.py                  # Flask routes & SSE
 │   │   ├── jobs.py                 # Job manager & backup logic
 │   │   ├── storage.py              # JSON persistence
+│   │   ├── updater.py              # Git-based self-update
 │   │   ├── service_manager.py      # systemctl wrapper
 │   │   └── config.json             # Web UI config
 │   ├── templates/
@@ -153,7 +157,7 @@ knx_to_openhab/
 ├── installer/                      # Production installation
 │   ├── setup.sh                    # systemd installer (Linux)
 │   ├── backup_cleanup.sh           # Cleanup script
-│   ├── knxohui.service               # systemd unit
+│   ├── knxohui.service             # systemd unit
 │   └── ...
 │
 ├── scripts/                        # Development helper scripts
@@ -161,20 +165,27 @@ knx_to_openhab/
 │   ├── dev-setup.sh                # Linux/macOS setup
 │   ├── dev-run.ps1                 # Windows dev server
 │   ├── dev-run.sh                  # Linux/macOS dev server
+│   ├── regenerate_golden.py        # Golden file regeneration
 │   └── verify-setup.ps1/sh         # Setup verification
 │
 ├── tests/                          # Test files
 │   ├── integration/                # Integration tests
-│   ├── ui/                         # UI tests (Playwright, optional)
-│   ├── fixtures/                   # Test data and fixtures
+│   ├── ui/                         # UI tests (Playwright)
+│   ├── fixtures/                   # Test data and golden files
 │   ├── conftest.py                 # Shared fixtures
-│   └── test_*.py                   # Unit-style tests
+│   └── test_*.py                   # Unit tests
 │
-└── openhab/                        # OpenHAB output directory
+├── docs/                           # Documentation
+│   ├── USER_GUIDE.md               # End-user guide
+│   ├── DEVELOPER_GUIDE.md          # This file
+│   ├── PRODUCTION_GUIDE.md         # Production installation
+│   └── images/                     # Screenshots
+│
+└── openhab/                        # Generated OpenHAB output
     ├── items/
     ├── things/
     ├── sitemaps/
-    └── ...
+    └── persistence/
 ```
 
 ---

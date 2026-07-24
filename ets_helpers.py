@@ -118,29 +118,19 @@ def get_dpt_from_dco(dco: Dict[str, Any]) -> Optional[str]:
 
     Data Point Types (DPT) define the semantics and physical representation
     of data in KNX. Each device communication object can have associated DPTs.
-    This function extracts the first DPT and formats it as a string.
+    This function extracts the first DPT and formats it as a DPST string.
 
     Args:
         dco: Device communication object dictionary with potential 'dpts' key.
              Expected structure: {'dpts': [{'main': int, 'sub': int}, ...]}
 
     Returns:
-        Formatted DPT string in format "main.sub" (e.g., "1.001" for DPT 1.001)
-        with sub-type zero-padded to 3 digits. Returns None if:
-        - dco is not a dict
-        - dco has no dpts array
-        - dpts array is empty or invalid
-        - DPT doesn't have both 'main' and 'sub' fields
+        Formatted DPST string (e.g., "DPST-5-1") or None if no valid DPT found.
 
     Example:
         >>> dco = {'dpts': [{'main': 5, 'sub': 1}]}
         >>> get_dpt_from_dco(dco)
-        '5.001'
-
-    Example - Missing sub:
-        >>> dco = {'dpts': [{'main': 1}]}
-        >>> get_dpt_from_dco(dco) is None
-        True
+        'DPST-5-1'
 
     Example - No DPTs:
         >>> dco = {'text': 'Some Object'}
@@ -152,22 +142,17 @@ def get_dpt_from_dco(dco: Dict[str, Any]) -> Optional[str]:
 
     dpts = dco.get("dpts", [])
 
-    # Validate dpts is a list and not empty
     if not dpts or not isinstance(dpts, list) or len(dpts) == 0:
         return None
 
-    # Get first DPT
     first_dpt = dpts[0]
     if not isinstance(first_dpt, dict):
         return None
 
-    # Extract main and sub values
     main = first_dpt.get("main")
-    sub = first_dpt.get("sub")
+    sub = first_dpt.get("sub") or 0
 
-    # Both main and sub must be present
-    if main is None or sub is None:
+    if main is None:
         return None
 
-    # Format as "main.sub" with sub zero-padded to 3 digits
-    return f"{main}.{sub:03d}"
+    return f"DPST-{main}-{sub}"

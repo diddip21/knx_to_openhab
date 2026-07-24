@@ -55,7 +55,7 @@ def _password_error_message(error):
     if any(marker in msg for marker in password_markers):
         return (
             "This KNX project appears to be password-protected or the password is incorrect. "
-            "Please enter the correct password and try again."
+            "Please enter the correct password in the upload form and try again."
         )
     return None
 

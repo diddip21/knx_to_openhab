@@ -525,6 +525,64 @@ class JobManager:
             save_jobs(self.jobs_dir, self._jobs)
             q.put(None)
 
+    def _compute_staged_stats(self, stage_mapping, openhab_path):
+        """Compute line and diff statistics for staged files against live files."""
+        stats = {}
+        import difflib
+
+        abs_openhab = os.path.normpath(os.path.abspath(openhab_path))
+        for staged_path, real_path in stage_mapping.items():
+            try:
+                with open(staged_path, "r", encoding="utf-8", errors="ignore") as f:
+                    curr_lines = f.readlines()
+            except OSError as exc:
+                logger.warning(f"Could not read staged file {staged_path}: {exc}")
+                continue
+
+            abs_real_path = os.path.normpath(os.path.abspath(real_path))
+            orig_lines = []
+            if os.path.exists(abs_real_path):
+                try:
+                    with open(abs_real_path, "r", encoding="utf-8", errors="ignore") as f:
+                        orig_lines = f.readlines()
+                except OSError as exc:
+                    logger.warning(f"Could not read live file {abs_real_path}: {exc}")
+
+            added = 0
+            removed = 0
+            matcher = difflib.SequenceMatcher(None, orig_lines, curr_lines)
+            for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+                if tag == "replace":
+                    removed += i2 - i1
+                    added += j2 - j1
+                elif tag == "delete":
+                    removed += i2 - i1
+                elif tag == "insert":
+                    added += j2 - j1
+
+            try:
+                within_openhab = os.path.commonpath([abs_real_path, abs_openhab]) == abs_openhab
+            except ValueError:
+                within_openhab = False
+            if within_openhab:
+                rel_display = os.path.relpath(abs_real_path, abs_openhab).replace("\\", "/")
+            elif os.path.isabs(real_path):
+                rel_display = os.path.basename(real_path)
+            else:
+                rel_display = os.path.relpath(abs_real_path, os.getcwd()).replace("\\", "/")
+
+            stats[rel_display] = {
+                "before": len(orig_lines),
+                "after": len(curr_lines),
+                "delta": len(curr_lines) - len(orig_lines),
+                "added": added,
+                "removed": removed,
+                "staged_path": staged_path,
+                "real_path": abs_real_path,
+            }
+
+        return stats
+
     def _extract_thing_info(self, line):
         match = re.search(
             r'^Type\s+(?P<kind>\w+)\s*:\s*(?P<id>\S+)\s+"(?P<label>[^"]*)"',

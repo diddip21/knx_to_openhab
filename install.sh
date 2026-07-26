@@ -223,7 +223,10 @@ handle_existing_install() {
             [Uu])
                 log_info "Running update..."
                 if [[ -x "$INSTALL_DIR/update.sh" ]]; then
-                    bash "$INSTALL_DIR/update.sh"
+                    sudo -u knxohui env \
+                        INSTALL_DIR="$INSTALL_DIR" \
+                        LOG_FILE="$INSTALL_DIR/update.log" \
+                        bash "$INSTALL_DIR/update.sh"
                 else
                     log_error "update.sh not found in $INSTALL_DIR"
                     exit 1

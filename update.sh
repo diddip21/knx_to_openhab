@@ -43,6 +43,24 @@ fatal() {
     exit 1
 }
 
+rollback_dependencies() {
+    log "Rolling repository back to $CURRENT_COMMIT..."
+    if ! git -c safe.directory='*' reset --hard "$CURRENT_COMMIT"; then
+        log "ERROR: Failed to reset the repository to $CURRENT_COMMIT"
+        return 1
+    fi
+
+    # The failed install may have upgraded, removed, or replaced packages. Reinstall
+    # the requirements from the restored revision to return the venv to a usable state.
+    if [[ -f "$INSTALL_DIR/venv/bin/pip" && -f requirements.txt ]]; then
+        log "Restoring dependencies from the previous revision..."
+        if ! "$INSTALL_DIR/venv/bin/pip" install -r requirements.txt -q; then
+            log "ERROR: Repository rollback succeeded, but dependency restoration failed"
+            return 1
+        fi
+    fi
+}
+
 trap 'fatal "Update failed unexpectedly at line $LINENO."' ERR
 
 on_signal() {
@@ -222,7 +240,11 @@ log "Updating Python dependencies..."
 if [[ -f "$INSTALL_DIR/venv/bin/pip" ]]; then
     "$INSTALL_DIR/venv/bin/pip" install --upgrade pip -q || log "WARNING: pip upgrade failed"
     if ! "$INSTALL_DIR/venv/bin/pip" install -r requirements.txt -q; then
-        fatal "Failed to install dependencies"
+        if rollback_dependencies; then
+            fatal "Failed to install dependencies; the previous revision and dependencies were restored"
+        else
+            fatal "Failed to install dependencies; automatic rollback was incomplete"
+        fi
     fi
 else
     log "WARNING: Virtual environment not found, skipping dependency update"

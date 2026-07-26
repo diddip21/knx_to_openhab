@@ -27,8 +27,8 @@ used_addresses: list[dict[str, Any]] = []
 partial_dimmers: list[dict[str, Any]] = []  # collect incomplete dimmer definitions
 partial_unknowns: list[dict[str, Any]] = []  # collect other partials if needed
 
-equipments = {}
-FENSTERKONTAKTE = []
+equipments: dict[str, Any] = {}
+FENSTERKONTAKTE: list[str] = []
 PRJ_NAME = "Our Home"
 
 

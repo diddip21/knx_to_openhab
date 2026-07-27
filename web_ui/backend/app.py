@@ -37,13 +37,13 @@ except Exception:
 from .jobs import JobManager
 from .service_manager import get_service_status, restart_service
 from .storage import load_config
+from .updater import Updater
 from .upload_security import (
     MAX_UPLOAD_SIZE_BYTES,
     UploadValidationError,
     validate_upload,
     validate_upload_from_path,
 )
-from .updater import Updater
 
 logger = logging.getLogger(__name__)
 

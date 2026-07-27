@@ -220,7 +220,7 @@ class TestJobSecurityUI:
         page.screenshot(path=os.path.join(FIXTURES_DIR, "..", "docs", "images", "job_list.png"))
 
         # Verify no password fields are visible
-        password_elements = page.locator(re.compile(r"password", re.IGNORECASE))
+        password_elements = page.locator("text=password")
         count = password_elements.count()
         # Password should not appear in job list
         assert count == 0 or all(not el.is_visible() for el in password_elements.all())

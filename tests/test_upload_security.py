@@ -16,23 +16,23 @@ import io
 import json
 import os
 import shutil
-import tarfile
-import tempfile
-import zipfile
-
-import pytest
 
 # Add project root to path
 import sys
+import tarfile
+import tempfile
+import zipfile
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from web_ui.backend.upload_security import (
     MAX_COMPRESSION_RATIO,
     MAX_DECOMPRESSED_SIZE_BYTES,
-    MAX_ZIP_ENTRIES,
     MAX_UPLOAD_SIZE_BYTES,
+    MAX_ZIP_ENTRIES,
     UploadValidationError,
     validate_file_extension,
     validate_magic_bytes,
@@ -342,7 +342,7 @@ class TestPasswordSecurity:
 
     def test_password_not_in_job_json(self, tmp_path):
         """Password should not be stored in jobs.json."""
-        from web_ui.backend.storage import save_jobs, load_jobs
+        from web_ui.backend.storage import load_jobs, save_jobs
 
         jobs_dir = tmp_path / "jobs"
         jobs_dir.mkdir()

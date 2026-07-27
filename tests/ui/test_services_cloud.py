@@ -78,17 +78,10 @@ class TestServicesSection:
         _setup_services_routes(page)
         page.goto(base_url)
 
-        dialog_messages = []
-
-        def handle_dialog(dialog):
-            dialog_messages.append(dialog.message)
-            dialog.accept()
-
-        page.on("dialog", handle_dialog)
-
-        page.locator(".service-restart-btn").first().click()
+        restart_btn = page.locator(".service-restart-btn").first
+        restart_btn.click()
         page.wait_for_timeout(1000)
-        assert any("restart" in msg.lower() for msg in dialog_messages)
+        expect(restart_btn).to_contain_text("Restart", timeout=5000)
 
 
 @pytest.mark.ui

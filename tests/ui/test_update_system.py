@@ -10,11 +10,16 @@ from playwright.sync_api import Page, expect
 def _setup_version_routes(page: Page, update_available=False):
     current_version = {
         "commit_short": "abc1234",
-        "commit_message": "Current release",
-        "commit_date": "2026-01-15",
+        "current_commit": "abc1234",
+        "current_message": "Current release",
+        "current_date": "2026-01-15",
     }
     latest_version = {
         "commit_short": "def5678",
+        "latest_commit": "def5678",
+        "latest_message": "Latest improvement",
+        "latest_author": "developer",
+        "latest_date": "2026-07-20",
         "commit_message": "Latest improvement",
         "commit_author": "developer",
         "commit_date": "2026-07-20",
@@ -34,8 +39,13 @@ def _setup_version_routes(page: Page, update_available=False):
                 route,
                 {
                     "update_available": update_available,
-                    "current": current_version,
-                    "latest": latest_version,
+                    "current_commit": current_version["commit_short"],
+                    "current_message": current_version["current_message"],
+                    "current_date": current_version["current_date"],
+                    "latest_commit": latest_version["commit_short"],
+                    "latest_message": latest_version["commit_message"],
+                    "latest_author": latest_version["commit_author"],
+                    "latest_date": latest_version["commit_date"],
                 },
             )
         if url.endswith("/api/version/update") and method == "POST":
@@ -109,5 +119,5 @@ class TestUpdateSystem:
         page.locator("#versionBadge").click()
         expect(page.locator("#updateDialog[open]")).to_be_visible(timeout=10000)
 
-        page.locator("#updateDialog button:has-text('Close')").click()
+        page.locator("#updateDialog .close-btn").click()
         expect(page.locator("#updateDialog[open]")).to_have_count(0, timeout=5000)

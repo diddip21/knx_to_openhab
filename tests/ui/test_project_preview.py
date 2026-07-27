@@ -1,10 +1,15 @@
 """UI tests for project preview (building structure tree)."""
 
 import json
+import os
 import re
 
 import pytest
 from playwright.sync_api import Page, expect
+
+TEST_FILE_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "fixtures", "Charne.knxproj")
+)
 
 PREVIEW_PAYLOAD = {
     "metadata": {
@@ -138,13 +143,19 @@ def _setup_empty_preview_routes(page: Page):
 
 @pytest.mark.ui
 class TestProjectPreview:
-    def test_preview_button_opens_structure(self, page: Page, base_url, flask_server):
-        _setup_preview_routes(page)
+    def _click_preview(self, page: Page, base_url, routes_fn=_setup_preview_routes):
+        routes_fn(page)
         page.goto(base_url)
+        if os.path.exists(TEST_FILE_PATH):
+            page.locator("#fileInput").set_input_files(TEST_FILE_PATH)
+        else:
+            page.locator("#fileInput").set_input_files(
+                {"name": "test.knxproj", "mimeType": "application/octet-stream", "buffer": b"\x00"}
+            )
+        page.locator("button:has-text('Preview Structure')").click()
 
-        preview_btn = page.locator("button:has-text('Preview Structure')")
-        expect(preview_btn).to_be_visible()
-        preview_btn.click()
+    def test_preview_button_opens_structure(self, page: Page, base_url, flask_server):
+        self._click_preview(page, base_url)
 
         expect(page.locator("#status")).to_contain_text(
             re.compile(r"Project structure loaded|Structure loaded"), timeout=20000
@@ -152,10 +163,7 @@ class TestProjectPreview:
         expect(page.locator("#preview-section")).to_be_visible(timeout=10000)
 
     def test_preview_shows_metadata_cards(self, page: Page, base_url, flask_server):
-        _setup_preview_routes(page)
-        page.goto(base_url)
-
-        page.locator("button:has-text('Preview Structure')").click()
+        self._click_preview(page, base_url)
         expect(page.locator("#preview-section")).to_be_visible(timeout=20000)
 
         metadata = page.locator(".metadata-cards")
@@ -164,20 +172,14 @@ class TestProjectPreview:
         expect(metadata).to_contain_text("192.168.1.100")
 
     def test_preview_tree_renders_buildings(self, page: Page, base_url, flask_server):
-        _setup_preview_routes(page)
-        page.goto(base_url)
-
-        page.locator("button:has-text('Preview Structure')").click()
+        self._click_preview(page, base_url)
         expect(page.locator("#preview-section")).to_be_visible(timeout=20000)
 
         expect(page.locator(".building-node")).to_have_count(1)
         expect(page.locator(".building-node")).to_contain_text("Main Building")
 
     def test_preview_tree_expand_floors(self, page: Page, base_url, flask_server):
-        _setup_preview_routes(page)
-        page.goto(base_url)
-
-        page.locator("button:has-text('Preview Structure')").click()
+        self._click_preview(page, base_url)
         expect(page.locator("#preview-section")).to_be_visible(timeout=20000)
 
         expect(page.locator(".floor-node")).to_have_count(2)
@@ -185,10 +187,7 @@ class TestProjectPreview:
         expect(page.locator(".floor-node").last).to_contain_text("Upper Floor")
 
     def test_preview_tree_shows_rooms(self, page: Page, base_url, flask_server):
-        _setup_preview_routes(page)
-        page.goto(base_url)
-
-        page.locator("button:has-text('Preview Structure')").click()
+        self._click_preview(page, base_url)
         expect(page.locator("#preview-section")).to_be_visible(timeout=20000)
 
         expect(page.locator(".room-node")).to_have_count(3)
@@ -198,29 +197,20 @@ class TestProjectPreview:
         assert any("Bedroom" in t for t in room_texts)
 
     def test_preview_shows_unknown_items_banner(self, page: Page, base_url, flask_server):
-        _setup_preview_routes(page)
-        page.goto(base_url)
-
-        page.locator("button:has-text('Preview Structure')").click()
+        self._click_preview(page, base_url)
         expect(page.locator("#preview-section")).to_be_visible(timeout=20000)
 
         expect(page.locator(".metadata-card.unknown-items")).to_be_visible()
         expect(page.locator(".metadata-card.unknown-items")).to_contain_text("Unknown")
 
     def test_preview_empty_project(self, page: Page, base_url, flask_server):
-        _setup_empty_preview_routes(page)
-        page.goto(base_url)
-
-        page.locator("button:has-text('Preview Structure')").click()
+        self._click_preview(page, base_url, _setup_empty_preview_routes)
         expect(page.locator("#preview-section")).to_be_visible(timeout=20000)
 
         expect(page.locator(".building-node")).to_have_count(0)
 
     def test_preview_homekit_alexa_indicators(self, page: Page, base_url, flask_server):
-        _setup_preview_routes(page)
-        page.goto(base_url)
-
-        page.locator("button:has-text('Preview Structure')").click()
+        self._click_preview(page, base_url)
         expect(page.locator("#preview-section")).to_be_visible(timeout=20000)
 
         metadata = page.locator(".metadata-cards")

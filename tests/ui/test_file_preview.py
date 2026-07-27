@@ -63,6 +63,22 @@ def _setup_preview_routes(page: Page):
         if re.search(r"/api/job/[^/]+/file/diff.*", url):
             return _fulfill_json(route, diff_lines)
 
+        if re.search(r"/api/job/[^/]+/preview$", url):
+            return _fulfill_json(
+                route,
+                {
+                    "metadata": {
+                        "project_name": "Preview Test",
+                        "gateway_ip": "192.168.1.10",
+                        "total_addresses": 1,
+                        "homekit_enabled": False,
+                        "alexa_enabled": False,
+                        "unknown_items": [],
+                    },
+                    "buildings": [],
+                },
+            )
+
         if re.search(r"/api/job/[^/]+$", url) and method == "GET":
             return _fulfill_json(route, job_payload())
 
@@ -107,7 +123,7 @@ class TestFilePreview:
         expect(page.locator("#detail-section")).to_be_visible(timeout=10000)
         expect(page.locator("#stats-section")).to_be_visible(timeout=10000)
 
-        page.locator(".stats-table button:has-text('Preview')").first().click()
+        page.locator(".stats-table button:has-text('Preview')").first.click()
 
     def test_preview_from_stats_opens_dialog(self, page: Page, base_url, flask_server):
         self._open_stats_preview(page, base_url, flask_server)
@@ -122,6 +138,7 @@ class TestFilePreview:
     def test_preview_diff_view_toggle(self, page: Page, base_url, flask_server):
         self._open_stats_preview(page, base_url, flask_server)
 
+        expect(page.locator("#previewContent")).not_to_have_text("Loading...", timeout=10000)
         page.locator("#viewModeDiff").click()
         expect(page.locator("#diffLegend")).to_be_visible()
         expect(page.locator("#diffContent")).to_be_visible()
@@ -129,6 +146,7 @@ class TestFilePreview:
     def test_preview_diff_shows_additions(self, page: Page, base_url, flask_server):
         self._open_stats_preview(page, base_url, flask_server)
 
+        expect(page.locator("#previewContent")).not_to_have_text("Loading...", timeout=10000)
         page.locator("#viewModeDiff").click()
         added_lines = page.locator(".diff-line.added")
         expect(added_lines.first).to_be_visible()
@@ -137,6 +155,7 @@ class TestFilePreview:
     def test_preview_switch_back_to_final(self, page: Page, base_url, flask_server):
         self._open_stats_preview(page, base_url, flask_server)
 
+        expect(page.locator("#previewContent")).not_to_have_text("Loading...", timeout=10000)
         page.locator("#viewModeDiff").click()
         expect(page.locator("#diffContent")).to_be_visible()
 

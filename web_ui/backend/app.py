@@ -78,9 +78,7 @@ if FLASK_AVAILABLE:
         static_url_path="/static",
     )
     app.config["UPLOAD_FOLDER"] = cfg.get("jobs_dir", "./var/lib/knx_to_openhab")
-    app.config["MAX_CONTENT_LENGTH"] = cfg.get(
-        "max_upload_size_bytes", MAX_UPLOAD_SIZE_BYTES
-    )
+    app.config["MAX_CONTENT_LENGTH"] = cfg.get("max_upload_size_bytes", MAX_UPLOAD_SIZE_BYTES)
 
     # Fix openhab_path to be absolute if it's relative and based on project root
 
@@ -215,15 +213,11 @@ if FLASK_AVAILABLE:
         # Validate upload (extension, magic bytes, size, ZIP safety)
         result = validate_upload(file_content, fn)
         if not result.valid:
-            logger.warning(
-                "Upload rejected: %s (file: %s)", result.error_message, fn
-            )
+            logger.warning("Upload rejected: %s (file: %s)", result.error_message, fn)
             return jsonify({"error": result.error_message}), 400
 
         # Save validated file
-        saved_path = os.path.join(
-            app.config["UPLOAD_FOLDER"], f"{uuid.uuid4().hex}-{fn}"
-        )
+        saved_path = os.path.join(app.config["UPLOAD_FOLDER"], f"{uuid.uuid4().hex}-{fn}")
         try:
             with open(saved_path, "wb") as out:
                 out.write(file_content)
@@ -232,9 +226,7 @@ if FLASK_AVAILABLE:
             return jsonify({"error": "Failed to save uploaded file"}), 500
 
         password = request.form.get("password") or None
-        job = job_mgr.create_job(
-            saved_path, original_name=fn, password=password
-        )
+        job = job_mgr.create_job(saved_path, original_name=fn, password=password)
         return jsonify(job), 201
 
     @app.route("/api/jobs", methods=["GET"])
@@ -290,9 +282,7 @@ if FLASK_AVAILABLE:
 
         try:
             # SECURITY: Password is not stored - user must re-enter if needed
-            new_job = job_mgr.create_job(
-                input_path, original_name=job.get("name"), password=None
-            )
+            new_job = job_mgr.create_job(input_path, original_name=job.get("name"), password=None)
             return jsonify(new_job), 201
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -679,9 +669,7 @@ if FLASK_AVAILABLE:
                     try:
                         # Validate member path to prevent path traversal
                         normalized_member = os.path.normpath(member_path)
-                        if ".." in normalized_member.split(os.sep) or os.path.isabs(
-                            member_path
-                        ):
+                        if ".." in normalized_member.split(os.sep) or os.path.isabs(member_path):
                             return jsonify({"error": "invalid path in backup"}), 400
 
                         member = tar.getmember(member_path)
@@ -796,9 +784,7 @@ if FLASK_AVAILABLE:
             return jsonify({"error": "no selected file"}), 400
 
         fn = secure_filename(f.filename)
-        temp_path = os.path.join(
-            app.config["UPLOAD_FOLDER"], f"temp_{uuid.uuid4().hex}_{fn}"
-        )
+        temp_path = os.path.join(app.config["UPLOAD_FOLDER"], f"temp_{uuid.uuid4().hex}_{fn}")
         try:
             # Read and validate file content
             file_content = f.read()

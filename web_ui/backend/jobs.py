@@ -768,9 +768,7 @@ class JobManager:
                 for member in tar.getmembers():
                     member_path = os.path.normpath(os.path.join(tmp, member.name))
                     if not member_path.startswith(os.path.normpath(tmp)):
-                        raise ValueError(
-                            f"Path traversal detected in backup: {member.name}"
-                        )
+                        raise ValueError(f"Path traversal detected in backup: {member.name}")
                 # Use filter='data' for Python 3.12+ (safe extraction)
                 try:
                     tar.extractall(path=tmp, filter="data")

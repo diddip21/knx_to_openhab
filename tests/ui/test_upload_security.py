@@ -55,7 +55,9 @@ class TestUploadSecurityUI:
 
             # Take screenshot for documentation
             page.screenshot(
-                path=os.path.join(FIXTURES_DIR, "..", "docs", "images", "upload_reject_invalid_type.png")
+                path=os.path.join(
+                    FIXTURES_DIR, "..", "docs", "images", "upload_reject_invalid_type.png"
+                )
             )
 
         finally:
@@ -215,17 +217,13 @@ class TestJobSecurityUI:
         page.wait_for_load_state("networkidle")
 
         # Take screenshot of job list
-        page.screenshot(
-            path=os.path.join(FIXTURES_DIR, "..", "docs", "images", "job_list.png")
-        )
+        page.screenshot(path=os.path.join(FIXTURES_DIR, "..", "docs", "images", "job_list.png"))
 
         # Verify no password fields are visible
-        password_elements = page.locator("text=password", re.IGNORECASE)
+        password_elements = page.locator(re.compile(r"password", re.IGNORECASE))
         count = password_elements.count()
         # Password should not appear in job list
-        assert count == 0 or all(
-            not el.is_visible() for el in password_elements.all()
-        )
+        assert count == 0 or all(not el.is_visible() for el in password_elements.all())
 
     def test_job_detail_no_password_exposure(self, page: Page, base_url):
         """Job detail should not show passwords."""
@@ -256,7 +254,9 @@ class TestSecurityScreenshots:
         password_input = page.locator("input[name='password'], #password")
         if password_input.count() > 0:
             page.screenshot(
-                path=os.path.join(FIXTURES_DIR, "..", "docs", "images", "security_02_password_field.png")
+                path=os.path.join(
+                    FIXTURES_DIR, "..", "docs", "images", "security_02_password_field.png"
+                )
             )
 
         # Screenshot 3: Error state (will be captured by other tests)

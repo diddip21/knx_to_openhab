@@ -15,9 +15,29 @@ from concurrent.futures import ThreadPoolExecutor
 
 from completeness import check_completeness, iter_thing_lines
 
-from .storage import ensure_dirs, load_jobs, save_job, save_jobs
+from .storage import ensure_dirs, load_jobs, save_jobs
 
 logger = logging.getLogger(__name__)
+
+
+def _password_error_message(error):
+    msg = str(error).lower()
+    password_markers = [
+        "bad password",
+        "wrong password",
+        "password required",
+        "password-protected",
+        "password protected",
+        "encrypted",
+        "decrypt",
+        "decryption",
+    ]
+    if any(marker in msg for marker in password_markers):
+        return (
+            "This KNX project appears to be password-protected or the password is incorrect. "
+            "Please enter the correct password in the upload form and try again."
+        )
+    return None
 
 
 class JobManager:
@@ -112,25 +132,6 @@ class JobManager:
             save_jobs(self.jobs_dir, self._jobs)
         self.executor.submit(self._run_job, job_id)
         return job
-
-    def _password_error_message(self, error):
-        msg = str(error).lower()
-        password_markers = [
-            "bad password",
-            "wrong password",
-            "password required",
-            "password-protected",
-            "password protected",
-            "encrypted",
-            "decrypt",
-            "decryption",
-        ]
-        if any(marker in msg for marker in password_markers):
-            return (
-                "This KNX project appears to be password-protected or the password is incorrect. "
-                "Please enter the correct password in the upload form and try again."
-            )
-        return None
 
     def _log_to_queue(self, job_id, q, msg):
         """Helper to both send to queue and persist in job log."""
@@ -497,7 +498,7 @@ class JobManager:
         except Exception as e:
             job["status"] = "failed"
             err_msg = str(e)
-            friendly_msg = self._password_error_message(e)
+            friendly_msg = _password_error_message(e)
             if friendly_msg:
                 job["error"] = friendly_msg
                 self._log_to_queue(
@@ -584,404 +585,64 @@ class JobManager:
 
         return report_path
 
-    def _compute_detailed_stats(self, openhab_path, backup_path):
-        """Compute detailed diff stats (added, removed) by comparing current files with backup."""
-        import difflib
-        import logging
-
-        logger = logging.getLogger(__name__)
-        stats = {}
-
-        # Comprehensive file type detection for OpenHAB files
-        supported_extensions = {
-            ".items",
-            ".things",
-            ".sitemap",
-            ".rules",
-            ".persist",
-            ".script",
-            ".transform",
-            ".db",
-            ".cfg",
-            ".properties",
-            ".json",
-        }
-
-        # Get list of current files
-        current_files = {}
-        if os.path.exists(openhab_path):
-            for root, dirs, files in os.walk(openhab_path):
-                for fname in files:
-                    # Check if file has supported extension or is in known OpenHAB directories
-                    if any(fname.endswith(ext) for ext in supported_extensions) or any(
-                        root.endswith(dir_name)
-                        for dir_name in [
-                            "items",
-                            "things",
-                            "sitemaps",
-                            "rules",
-                            "persistence",
-                            "scripts",
-                            "transform",
-                        ]
-                    ):
-                        fpath = os.path.join(root, fname)
-                        try:
-                            with open(fpath, "r", encoding="utf8", errors="ignore") as f:
-                                lines = f.readlines()
-                                # Store with relative path for proper comparison
-                                rel_path = os.path.relpath(fpath, openhab_path).replace("\\", "/")
-                                current_files[rel_path] = lines
-                        except Exception as e:
-                            logger.warning(f"Could not read current file {fpath}: {e}")
-                            continue
-
-        # Get list of original files from backup
-        original_files = {}
-        if os.path.exists(backup_path):
-            try:
-                with tarfile.open(backup_path, "r:gz") as tar:
-                    for member in tar.getmembers():
-                        if member.isfile():
-                            member_name_normalized = member.name.replace("\\", "/")
-
-                            # Extract relative path more robustly
-                            relpath = self._extract_relative_path_from_backup(
-                                member_name_normalized
-                            )
-
-                            if relpath and self._is_supported_openhab_file(relpath):
-                                try:
-                                    f = tar.extractfile(member)
-                                    if f:
-                                        wrapper = io.TextIOWrapper(
-                                            f, encoding="utf-8", errors="ignore"
-                                        )
-                                        lines = wrapper.readlines()
-                                        original_files[relpath] = lines
-                                except Exception as e:
-                                    logger.warning(
-                                        f"Could not extract file from backup {member.name}: {e}"
-                                    )
-                                    continue
-            except Exception as e:
-                logger.error(f"Error reading backup for stats: {e}")
-                # Even if backup reading fails, try to generate stats for current files
-                # This handles the case where backup is corrupted or doesn't exist
-                pass
-
-        # No need to normalize current files since we already stored them with relative paths
-        normalized_current_files = current_files
-
-        # If no backup exists, stats will show all current files as "added"
-        all_files = set(normalized_current_files.keys()) | set(original_files.keys())
-        for fname in sorted(all_files):
-            orig_lines = original_files.get(fname, [])
-            curr_lines = normalized_current_files.get(fname, [])
-
-            matcher = difflib.SequenceMatcher(None, orig_lines, curr_lines)
-            added = 0
-            removed = 0
-            for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-                if tag == "replace":
-                    removed += i2 - i1
-                    added += j2 - j1
-                elif tag == "delete":
-                    removed += i2 - i1
-                elif tag == "insert":
-                    added += j2 - j1
-
-            stats[fname] = {
-                "before": len(orig_lines),
-                "after": len(curr_lines),
-                "delta": len(curr_lines) - len(orig_lines),
-                "added": added,
-                "removed": removed,
-            }
-
-        # If no files were found, make sure to generate stats for the main expected files
-        if not stats:
-            # Look for common OpenHAB files in the openhab directory
-            expected_files = [
-                "items/knx.items",
-                "things/knx.things",
-                "sitemaps/knx.sitemap",
-                "persistence/influxdb.persist",
-                "rules/fenster.rules",
-            ]
-            for expected_file in expected_files:
-                full_path = os.path.join(openhab_path, expected_file)
-                if os.path.exists(full_path):
-                    try:
-                        with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
-                            lines = len(f.readlines())
-                        stats[expected_file] = {
-                            "before": 0,  # No backup existed before
-                            "after": lines,
-                            "delta": lines,
-                            "added": lines,
-                            "removed": 0,
-                        }
-                    except Exception as e:
-                        logger.warning(f"Could not read expected file {full_path}: {e}")
-
-        return stats
-
     def _compute_staged_stats(self, stage_mapping, openhab_path):
-        """Compute stats by comparing staged files with live files."""
-        stats = {}
+        """Compute line and diff statistics for staged files against their live targets."""
         import difflib
+
+        stats = {}
+        abs_openhab_path = os.path.normpath(os.path.abspath(openhab_path))
 
         for staged_path, real_path in stage_mapping.items():
-            # Read staged content (New)
-            curr_lines = []
-            if os.path.exists(staged_path):
-                try:
-                    with open(staged_path, "r", encoding="utf-8", errors="ignore") as f:
-                        curr_lines = f.readlines()
-                except Exception as e:
-                    logger.warning(f"Could not read staged file {staged_path}: {e}")
-                    continue
+            try:
+                with open(staged_path, "r", encoding="utf-8", errors="ignore") as staged_file:
+                    staged_lines = staged_file.readlines()
+            except OSError as error:
+                logger.warning("Could not read staged file %s: %s", staged_path, error)
+                continue
 
-            # Determine absolute paths for comparison and display calculation
             abs_real_path = os.path.normpath(os.path.abspath(real_path))
-            abs_openhab = os.path.normpath(os.path.abspath(openhab_path))
-
-            # Read live content (Old)
-            orig_lines = []
+            live_lines = []
             if os.path.exists(abs_real_path):
                 try:
-                    with open(abs_real_path, "r", encoding="utf-8", errors="ignore") as f:
-                        orig_lines = f.readlines()
-                except Exception as e:
-                    logger.warning(f"Could not read live file {abs_real_path}: {e}")
+                    with open(abs_real_path, "r", encoding="utf-8", errors="ignore") as live_file:
+                        live_lines = live_file.readlines()
+                except OSError as error:
+                    logger.warning("Could not read live file %s: %s", abs_real_path, error)
 
-            # Compute Diff
-            matcher = difflib.SequenceMatcher(None, orig_lines, curr_lines)
             added = 0
             removed = 0
-            for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-                if tag == "replace":
-                    removed += i2 - i1
-                    added += j2 - j1
-                elif tag == "delete":
-                    removed += i2 - i1
-                elif tag == "insert":
-                    added += j2 - j1
+            matcher = difflib.SequenceMatcher(None, live_lines, staged_lines)
+            for tag, old_start, old_end, new_start, new_end in matcher.get_opcodes():
+                if tag in ("replace", "delete"):
+                    removed += old_end - old_start
+                if tag in ("replace", "insert"):
+                    added += new_end - new_start
 
-            # Relative path for display (key in stats dict)
-            # Ensure it's relative to openhab_path to avoid double-prefix bugs in the UI
-            if abs_real_path.startswith(abs_openhab):
-                rel_display = os.path.relpath(abs_real_path, abs_openhab).replace("\\", "/")
-            else:
-                # Fallback to basename or relative to project root
-                rel_display = (
-                    os.path.relpath(abs_real_path, os.getcwd()).replace("\\", "/")
-                    if not os.path.isabs(real_path)
-                    else os.path.basename(real_path)
+            try:
+                is_openhab_file = (
+                    os.path.commonpath([abs_real_path, abs_openhab_path]) == abs_openhab_path
                 )
+            except ValueError:
+                is_openhab_file = False
 
-            stats[rel_display] = {
-                "before": len(orig_lines),
-                "after": len(curr_lines),
-                "delta": len(curr_lines) - len(orig_lines),
+            if is_openhab_file:
+                relative_path = os.path.relpath(abs_real_path, abs_openhab_path)
+            elif os.path.isabs(real_path):
+                relative_path = os.path.basename(real_path)
+            else:
+                relative_path = os.path.relpath(abs_real_path, os.getcwd())
+
+            stats[relative_path.replace("\\", "/")] = {
+                "before": len(live_lines),
+                "after": len(staged_lines),
+                "delta": len(staged_lines) - len(live_lines),
                 "added": added,
                 "removed": removed,
-                "staged_path": staged_path,  # Keep track for other uses
+                "staged_path": staged_path,
                 "real_path": abs_real_path,
             }
 
         return stats
-
-    def _extract_relative_path_from_backup(self, member_name):
-        """Extract relative path from backup member name, handling various archive structures."""
-        # Handle different possible archive structures:
-        # 1. "openhab/items/knx.items"
-        # 2. "items/knx.items"
-        # 3. "knx.items"
-
-        parts = member_name.split("/")
-
-        # Find the index of 'openhab' if present
-        openhab_idx = -1
-        for i, part in enumerate(parts):
-            if part == "openhab":
-                openhab_idx = i
-                break
-
-        if openhab_idx >= 0 and len(parts) > openhab_idx + 1:
-            # Structure: path/to/openhab/relative/file
-            relpath = "/".join(parts[openhab_idx + 1 :])
-        elif len(parts) >= 2 and parts[0] in [
-            "items",
-            "things",
-            "sitemaps",
-            "rules",
-            "persistence",
-            "scripts",
-            "transform",
-        ]:
-            # Structure: items/knx.items
-            relpath = "/".join(parts)
-        else:
-            # Structure: knx.items or unknown
-            relpath = parts[-1] if parts else member_name
-
-        return relpath
-
-    def _is_supported_openhab_file(self, relpath):
-        """Check if a file path represents a supported OpenHAB configuration file."""
-        supported_extensions = {
-            ".items",
-            ".things",
-            ".sitemap",
-            ".rules",
-            ".persist",
-            ".script",
-            ".transform",
-            ".db",
-            ".cfg",
-            ".properties",
-            ".json",
-        }
-
-        # Check file extension
-        if any(relpath.endswith(ext) for ext in supported_extensions):
-            return True
-
-        # Check if it's in a known OpenHAB directory
-        path_parts = relpath.split("/")
-        if len(path_parts) >= 2:
-            dirname = path_parts[0]
-            known_dirs = [
-                "items",
-                "things",
-                "sitemaps",
-                "rules",
-                "persistence",
-                "scripts",
-                "transform",
-            ]
-            if dirname in known_dirs:
-                return True
-
-        return False
-
-    def _normalize_current_files(self, current_files, openhab_path):
-        """Normalize current file paths to match backup format."""
-        normalized = {}
-
-        for filename, lines in current_files.items():
-            # Find the full path of this file
-            for root, dirs, files in os.walk(openhab_path):
-                if filename in files:
-                    fpath = os.path.join(root, filename)
-                    relpath = os.path.relpath(fpath, openhab_path).replace("\\", "/")
-                    normalized[relpath] = lines
-                    break
-
-        return normalized
-
-    def _generate_basic_stats(self, openhab_path):
-        """Generate basic statistics for generated files when detailed stats fail."""
-        import importlib.util
-
-        # Load the main config to get the actual paths
-        main_config_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config.json"
-        )
-        if os.path.exists(main_config_path):
-            with open(main_config_path, "r", encoding="utf-8") as f:
-                main_config = json.load(f)
-        else:
-            # Fallback to default paths if config can't be loaded
-            main_config = {
-                "items_path": "openhab/items/knx.items",
-                "things_path": "openhab/things/knx.things",
-                "sitemaps_path": "openhab/sitemaps/knx.sitemap",
-                "influx_path": "openhab/persistence/influxdb.persist",
-                "fenster_path": "openhab/rules/fenster.rules",
-            }
-
-        basic_stats = {}
-
-        # Check for expected generated files using actual configured paths
-        expected_paths = [
-            main_config.get("items_path", "openhab/items/knx.items"),
-            main_config.get("things_path", "openhab/things/knx.things"),
-            main_config.get("sitemaps_path", "openhab/sitemaps/knx.sitemap"),
-            main_config.get("influx_path", "openhab/persistence/influxdb.persist"),
-            main_config.get("fenster_path", "openhab/rules/fenster.rules"),
-        ]
-
-        for config_path in expected_paths:
-            # Convert relative path to absolute path based on openhab_path
-            if os.path.isabs(config_path):
-                full_path = config_path
-            else:
-                full_path = os.path.join(self.cfg.get("openhab_path", "openhab"), config_path)
-                # If the config path already includes the openhab directory, use it as is
-                if not os.path.exists(full_path):
-                    full_path = config_path
-
-            # If still doesn't exist, try with openhab_path as base
-            if not os.path.exists(full_path):
-                openhab_base = self.cfg.get("openhab_path", "openhab")
-                full_path = os.path.join(openhab_base, config_path)
-
-            if os.path.exists(full_path):
-                try:
-                    with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
-                        lines = len(f.readlines())
-                    filename = os.path.basename(full_path)
-                    basic_stats[filename] = {
-                        "before": 0,  # No backup existed before
-                        "after": lines,
-                        "delta": lines,
-                        "added": lines,
-                        "removed": 0,
-                    }
-                except Exception as e:
-                    print(
-                        f"Could not read {full_path}: {str(e)}"
-                    )  # Use print instead of q.put since this is outside job context
-
-        # If still no files found, scan the entire openhab directory for any generated files
-        if not basic_stats:
-            openhab_path = self.cfg.get("openhab_path", "openhab")
-            if os.path.exists(openhab_path):
-                for root, dirs, files in os.walk(openhab_path):
-                    for file in files:
-                        if file.endswith(
-                            (
-                                ".items",
-                                ".things",
-                                ".sitemap",
-                                ".rules",
-                                ".persist",
-                                ".script",
-                                ".transform",
-                            )
-                        ):
-                            full_path = os.path.join(root, file)
-                            try:
-                                with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
-                                    lines = len(f.readlines())
-                                # Create relative path for display
-                                rel_path = os.path.relpath(full_path, openhab_path)
-                                basic_stats[rel_path] = {
-                                    "before": 0,  # No backup existed before
-                                    "after": lines,
-                                    "delta": lines,
-                                    "added": lines,
-                                    "removed": 0,
-                                }
-                            except Exception as e:
-                                print(
-                                    f"Could not read generated file {full_path}: {str(e)}"
-                                )  # Use print instead of q.put since this is outside job context
-
-        return basic_stats
 
     def get_file_diff(self, job_id, rel_path):
         """Get diff for a specific file in a job (comparing Staged vs Live)."""

@@ -28,16 +28,7 @@ partial_dimmers: list[dict[str, Any]] = []  # collect incomplete dimmer definiti
 partial_unknowns: list[dict[str, Any]] = []  # collect other partials if needed
 
 equipments: dict[str, Any] = {}
-
-
-class WindowContact(TypedDict):
-    """Fields needed to generate an OpenHAB window-contact rule."""
-
-    item_name: str
-    name: str
-
-
-FENSTERKONTAKTE: list[WindowContact] = []
+FENSTERKONTAKTE: list[str] = []
 PRJ_NAME = "Our Home"
 
 

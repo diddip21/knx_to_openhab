@@ -650,6 +650,65 @@ class JobManager:
 
         return report_path
 
+    def _compute_staged_stats(self, stage_mapping, openhab_path):
+        """Compute line and diff statistics for staged files against their live targets."""
+        import difflib
+
+        stats = {}
+        abs_openhab_path = os.path.normpath(os.path.abspath(openhab_path))
+
+        for staged_path, real_path in stage_mapping.items():
+            try:
+                with open(staged_path, "r", encoding="utf-8", errors="ignore") as staged_file:
+                    staged_lines = staged_file.readlines()
+            except OSError as error:
+                logger.warning("Could not read staged file %s: %s", staged_path, error)
+                continue
+
+            abs_real_path = os.path.normpath(os.path.abspath(real_path))
+            live_lines = []
+            if os.path.exists(abs_real_path):
+                try:
+                    with open(abs_real_path, "r", encoding="utf-8", errors="ignore") as live_file:
+                        live_lines = live_file.readlines()
+                except OSError as error:
+                    logger.warning("Could not read live file %s: %s", abs_real_path, error)
+
+            added = 0
+            removed = 0
+            matcher = difflib.SequenceMatcher(None, live_lines, staged_lines)
+            for tag, old_start, old_end, new_start, new_end in matcher.get_opcodes():
+                if tag in ("replace", "delete"):
+                    removed += old_end - old_start
+                if tag in ("replace", "insert"):
+                    added += new_end - new_start
+
+            try:
+                is_openhab_file = (
+                    os.path.commonpath([abs_real_path, abs_openhab_path]) == abs_openhab_path
+                )
+            except ValueError:
+                is_openhab_file = False
+
+            if is_openhab_file:
+                relative_path = os.path.relpath(abs_real_path, abs_openhab_path)
+            elif os.path.isabs(real_path):
+                relative_path = os.path.basename(real_path)
+            else:
+                relative_path = os.path.relpath(abs_real_path, os.getcwd())
+
+            stats[relative_path.replace("\\", "/")] = {
+                "before": len(live_lines),
+                "after": len(staged_lines),
+                "delta": len(staged_lines) - len(live_lines),
+                "added": added,
+                "removed": removed,
+                "staged_path": staged_path,
+                "real_path": abs_real_path,
+            }
+
+        return stats
+
     def get_file_diff(self, job_id, rel_path):
         """Get diff for a specific file in a job (comparing Staged vs Live)."""
         job = self._jobs.get(job_id)

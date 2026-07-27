@@ -57,12 +57,12 @@ Target audience: German-speaking smart home users running OpenHAB on Raspberry P
 ### Run Tests
 
 ```bash
-# All core tests (explicitly excludes UI tests)
-pytest -q -m "not ui" --ignore=tests/ui
+# All core tests (default, excludes UI tests)
+pytest -q
 
 # Specific test groups
 pytest tests/integration -v
-pytest tests/test_*.py -v
+pytest -m unit
 pytest -m integration
 
 # With coverage
@@ -132,11 +132,9 @@ Scene mapping: `1='Cooking', 2='TV'`
 
 Processed by `ets_to_openhab.process_description()`.
 
-### 6. DPT format normalization
+### 6. DPT format mismatch
 
-`ets_helpers.py` is the single source of truth for `get_dpt_from_dco()` and returns
-the canonical `"DPST-5-1"` format used by `ets_to_openhab.py`. Do not add a nested or
-duplicate implementation with another format.
+`ets_helpers.py` `get_dpt_from_dco()` returns `"5.001"` format, but `ets_to_openhab.py` has its own nested version returning `"DPST-5-1"` format. These are incompatible — be careful which one you use.
 
 ### 7. Template placeholders
 
@@ -159,9 +157,7 @@ Edit `config.json` → `defines`. Modify suffix lists for `dimmer`, `switch`, `r
 
 ### Add a new API endpoint
 
-Edit `web_ui/backend/app.py`. Follow existing Flask route and JSON response patterns.
-Authentication is applied globally by the zero-argument `require_auth` `before_request`
-callback; do not use it as a route decorator. Update `web_ui/api_schema.json`.
+Edit `web_ui/backend/app.py`. Follow existing patterns: Flask route, auth via `@require_auth`, JSON response. Update `web_ui/api_schema.json`.
 
 ### Modify output generation
 

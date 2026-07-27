@@ -46,9 +46,9 @@ ets_to_openhab.py:
 ## Testing
 
 ```bash
-pytest -q -m "not ui" --ignore=tests/ui  # All core tests (excludes UI)
+pytest -q                          # All core tests (excludes UI)
 pytest tests/integration -v        # Integration tests
-pytest tests/test_*.py -v          # Unit tests only
+pytest -m unit                     # Unit tests only
 pytest --cov=. --cov-report=html   # With coverage
 pytest tests/ui -v -o addopts=     # UI tests (needs Playwright + server)
 python scripts/regenerate_golden.py  # Regenerate golden files after output changes
@@ -62,7 +62,7 @@ python scripts/regenerate_golden.py  # Regenerate golden files after output chan
 2. **config.py side effects** — `main()` runs on import. Mock before importing if needed.
 3. **gen_building() complexity** — 500+ lines, 3 nested sub-functions, 3-pass loop. Run golden file regen after changes.
 4. **Monkeypatch order** — In `test_web_ui_job_endpoints.py`, mock `builtins.open` BEFORE `importlib.import_module`.
-5. **DPT format normalization** — Use the shared `ets_helpers.get_dpt_from_dco()`, which returns canonical `"DPST-5-1"`; do not duplicate it in the generator.
+5. **DPT format mismatch** — `ets_helpers.py` returns `"5.001"`, `ets_to_openhab.py` returns `"DPST-5-1"`. Know which one you're using.
 6. **ETS description tags** — Semicolon-separated in GA description: `influx`, `debug`, `icon=pump`, `semantic=Projector`, `ignore`
 7. **Template placeholders** — `###items###`, `###things###`, `###sitemap###` in `*.template` files
 

@@ -47,14 +47,14 @@ playwright install chromium
 
 ## Running Tests
 
-### All Tests
+### Core Tests
 ```bash
-pytest
+pytest -q -m "not ui" --ignore=tests/ui
 ```
 
 ### Unit Tests Only
 ```bash
-pytest -m unit -v
+pytest tests/test_*.py -v
 ```
 
 ### Integration Tests Only
@@ -65,7 +65,7 @@ pytest tests/integration -v
 ### UI Tests (server must be running!)
 ```bash
 # Terminal 1: Start server
-flask --app web_ui.backend.app:app run --debug
+flask --app web_ui.backend.app:app run --debug --port 8085
 
 # Terminal 2: Run UI tests
 pytest tests/ui/ -v -o addopts=
@@ -83,7 +83,7 @@ pytest --cov=. --cov-report=html
 pytest -k "test_login"
 
 # By marker
-pytest -m unit
+pytest tests/test_*.py -v
 pytest -m integration
 pytest -m ui
 ```

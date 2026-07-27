@@ -4,7 +4,7 @@ import logging
 import os
 import re
 import shutil
-from typing import Any
+from typing import Any, TypedDict
 
 from config import config, datapoint_mappings, normalize_string
 from ets_helpers import flags_match, get_co_flags, get_dpt_from_dco
@@ -28,7 +28,16 @@ partial_dimmers: list[dict[str, Any]] = []  # collect incomplete dimmer definiti
 partial_unknowns: list[dict[str, Any]] = []  # collect other partials if needed
 
 equipments: dict[str, Any] = {}
-FENSTERKONTAKTE: list[str] = []
+
+
+class WindowContact(TypedDict):
+    """Fields needed to generate an OpenHAB window-contact rule."""
+
+    item_name: str
+    name: str
+
+
+FENSTERKONTAKTE: list[WindowContact] = []
 PRJ_NAME = "Our Home"
 
 

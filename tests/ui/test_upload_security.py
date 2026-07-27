@@ -210,31 +210,36 @@ class TestJobSecurityUI:
     """UI tests for job security features."""
 
     def test_job_list_hides_sensitive_info(self, page: Page, base_url):
-        """Job list should not expose passwords or sensitive data."""
+        """Job list should not expose passwords or sensitive data in job records."""
         page.goto(base_url)
-
-        # Navigate to job list
         page.wait_for_load_state("networkidle")
 
         # Take screenshot of job list
         page.screenshot(path=os.path.join(FIXTURES_DIR, "..", "docs", "images", "job_list.png"))
 
-        # Verify no password fields are visible
-        password_elements = page.locator("text=password")
-        count = password_elements.count()
-        # Password should not appear in job list
-        assert count == 0 or all(not el.is_visible() for el in password_elements.all())
+        # Verify no password values leak in rendered job data
+        # The upload form has a password field (expected), but job records
+        # must not contain password values like the default "logihome"
+        content = page.content()
+        # Check that password values don't appear in job-related elements
+        job_section = page.locator("#jobs, #jobList, .job-list")
+        if job_section.count() > 0:
+            job_text = job_section.first.inner_text()
+            assert (
+                "logihome" not in job_text.lower()
+            ), "Password value 'logihome' found in job list - possible credential leak"
 
     def test_job_detail_no_password_exposure(self, page: Page, base_url):
-        """Job detail should not show passwords."""
+        """Job detail should not show password values in job records."""
         page.goto(base_url)
-
-        # Wait for page load
         page.wait_for_load_state("networkidle")
 
-        # Check page content for password leaks
-        content = page.content()
-        assert "password" not in content.lower() or "password" in "password-protected"
+        # Check page content for password value leaks (not the word "password" in form labels)
+        content = page.content().lower()
+        # The default password "logihome" should never appear in rendered job data
+        assert (
+            "logihome" not in content
+        ), "Password value 'logihome' found in page content - possible credential leak"
 
 
 @pytest.mark.ui

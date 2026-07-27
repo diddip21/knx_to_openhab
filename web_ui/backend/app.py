@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import shutil
 import sys
 import tarfile
 import uuid
@@ -40,9 +39,7 @@ from .storage import load_config
 from .updater import Updater
 from .upload_security import (
     MAX_UPLOAD_SIZE_BYTES,
-    UploadValidationError,
     validate_upload,
-    validate_upload_from_path,
 )
 
 logger = logging.getLogger(__name__)

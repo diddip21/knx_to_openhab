@@ -7,7 +7,6 @@ ZIP bombs and path traversal attacks.
 import io
 import logging
 import os
-import struct
 import zipfile
 from dataclasses import dataclass
 from typing import Optional

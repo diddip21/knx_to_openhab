@@ -525,6 +525,71 @@ class JobManager:
             save_jobs(self.jobs_dir, self._jobs)
             q.put(None)
 
+    def _compute_staged_stats(self, stage_mapping, openhab_path):
+        """Compare staged output files with their live OpenHAB counterparts."""
+        import difflib
+
+        stats = {}
+        abs_openhab_path = os.path.normpath(os.path.abspath(openhab_path))
+
+        for staged_path, real_path in stage_mapping.items():
+            staged_lines = []
+            if os.path.exists(staged_path):
+                try:
+                    with open(staged_path, "r", encoding="utf-8", errors="ignore") as f:
+                        staged_lines = f.readlines()
+                except OSError as error:
+                    logger.warning("Could not read staged file %s: %s", staged_path, error)
+                    continue
+
+            abs_real_path = os.path.normpath(os.path.abspath(real_path))
+            live_lines = []
+            if os.path.exists(abs_real_path):
+                try:
+                    with open(abs_real_path, "r", encoding="utf-8", errors="ignore") as f:
+                        live_lines = f.readlines()
+                except OSError as error:
+                    logger.warning("Could not read live file %s: %s", abs_real_path, error)
+
+            added = 0
+            removed = 0
+            matcher = difflib.SequenceMatcher(None, live_lines, staged_lines)
+            for tag, live_start, live_end, staged_start, staged_end in matcher.get_opcodes():
+                if tag == "replace":
+                    removed += live_end - live_start
+                    added += staged_end - staged_start
+                elif tag == "delete":
+                    removed += live_end - live_start
+                elif tag == "insert":
+                    added += staged_end - staged_start
+
+            try:
+                is_openhab_file = (
+                    os.path.commonpath([abs_real_path, abs_openhab_path]) == abs_openhab_path
+                )
+            except ValueError:
+                # Different drives on Windows cannot have a common path.
+                is_openhab_file = False
+
+            if is_openhab_file:
+                display_path = os.path.relpath(abs_real_path, abs_openhab_path).replace("\\", "/")
+            elif os.path.isabs(real_path):
+                display_path = os.path.basename(real_path)
+            else:
+                display_path = os.path.relpath(abs_real_path, os.getcwd()).replace("\\", "/")
+
+            stats[display_path] = {
+                "before": len(live_lines),
+                "after": len(staged_lines),
+                "delta": len(staged_lines) - len(live_lines),
+                "added": added,
+                "removed": removed,
+                "staged_path": staged_path,
+                "real_path": abs_real_path,
+            }
+
+        return stats
+
     def _extract_thing_info(self, line):
         match = re.search(
             r'^Type\s+(?P<kind>\w+)\s*:\s*(?P<id>\S+)\s+"(?P<label>[^"]*)"',

@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from completeness import check_completeness, iter_thing_lines
 
 from .storage import ensure_dirs, load_jobs, save_jobs
+from .upload_security import remove_upload
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,12 @@ class JobManager:
 
         ensure_dirs([self.jobs_dir, self.backups_dir])
         self._jobs = load_jobs(self.jobs_dir)
+        # Passwords are process-only secrets. Remove values written by older releases.
+        for job in self._jobs.values():
+            job.pop("password", None)
+        save_jobs(self.jobs_dir, self._jobs)
+        self._passwords = {}
+        self._temporary_inputs = set()
         self.queues = {}
         self.executor = ThreadPoolExecutor(max_workers=2)
         self.lock = threading.Lock()
@@ -112,7 +119,7 @@ class JobManager:
             return None
         return self.queues.get(job_id)
 
-    def create_job(self, input_path, original_name=None, password=None):
+    def create_job(self, input_path, original_name=None, password=None, cleanup_input=False):
         job_id = uuid.uuid4().hex
         job = {
             "id": job_id,
@@ -123,11 +130,14 @@ class JobManager:
             "backups": [],
             "log": [],
             "stats": {},
-            "password": password,
         }
         q = queue.Queue()
         with self.lock:
             self._jobs[job_id] = job
+            if password:
+                self._passwords[job_id] = password
+            if cleanup_input:
+                self._temporary_inputs.add(job_id)
             self.queues[job_id] = q  # Register queue before saving jobs
             save_jobs(self.jobs_dir, self._jobs)
         self.executor.submit(self._run_job, job_id)
@@ -330,7 +340,7 @@ class JobManager:
                         },
                     )
                     sys.stdout = captured_output
-                    pwd = job.get("password")
+                    pwd = self._passwords.get(job_id)
                     knxproj = XKNXProj(path=job["input"], password=pwd, language="de-DE")
                     project = knxproj.parse()
                     sys.stdout = old_stdout
@@ -522,6 +532,10 @@ class JobManager:
                     knxmod.config["openhab_path"] = original_openhab_path
                 except Exception:
                     pass
+            self._passwords.pop(job_id, None)
+            if job_id in self._temporary_inputs:
+                remove_upload(job.get("input"))
+                self._temporary_inputs.discard(job_id)
             save_jobs(self.jobs_dir, self._jobs)
             q.put(None)
 
@@ -890,5 +904,7 @@ class JobManager:
             del self._jobs[job_id]
             if job_id in self.queues:
                 del self.queues[job_id]
+            self._passwords.pop(job_id, None)
+            self._temporary_inputs.discard(job_id)
             save_jobs(self.jobs_dir, self._jobs)
         return True

@@ -2,7 +2,6 @@ import json
 import os
 import sys
 import tarfile
-import uuid
 from typing import Any, Callable, TypedDict
 
 try:
@@ -36,6 +35,12 @@ from .jobs import JobManager
 from .service_manager import get_service_status, restart_service
 from .storage import load_config
 from .updater import Updater
+from .upload_security import (
+    DEFAULT_MAX_UPLOAD_BYTES,
+    UploadValidationError,
+    remove_upload,
+    store_validated_upload,
+)
 
 cfg = load_config()
 
@@ -68,6 +73,14 @@ if FLASK_AVAILABLE:
         static_url_path="/static",
     )
     app.config["UPLOAD_FOLDER"] = cfg.get("jobs_dir", "./var/lib/knx_to_openhab")
+    app.config["MAX_CONTENT_LENGTH"] = int(
+        cfg.get("upload_security", {}).get("max_upload_bytes", DEFAULT_MAX_UPLOAD_BYTES)
+    )
+
+    @app.errorhandler(413)
+    def upload_too_large(_error):
+        limit_mb = app.config["MAX_CONTENT_LENGTH"] // (1024 * 1024)
+        return jsonify({"error": f"Upload exceeds the {limit_mb} MB size limit."}), 413
 
     # Fix openhab_path to be absolute if it's relative and based on project root
 
@@ -193,12 +206,21 @@ if FLASK_AVAILABLE:
         if f.filename == "":
             return jsonify({"error": "no selected file"}), 400
         fn = secure_filename(f.filename)
-        os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
-        saved_path = os.path.join(app.config["UPLOAD_FOLDER"], f"{uuid.uuid4().hex}-{fn}")
-        f.save(saved_path)
-        password = request.form.get("password") or None
-        job = job_mgr.create_job(saved_path, original_name=fn, password=password)
-        return jsonify(job), 201
+        saved_path = None
+        try:
+            saved_path = store_validated_upload(
+                f, fn, app.config["UPLOAD_FOLDER"], cfg.get("upload_security", {})
+            )
+            password = request.form.get("password") or None
+            job = job_mgr.create_job(
+                saved_path, original_name=fn, password=password, cleanup_input=True
+            )
+            return jsonify(job), 201
+        except UploadValidationError as error:
+            return jsonify({"error": str(error)}), 400
+        except Exception:
+            remove_upload(saved_path)
+            return jsonify({"error": "Unable to create processing job."}), 500
 
     @app.route("/api/jobs", methods=["GET"])
     def jobs():
@@ -248,10 +270,7 @@ if FLASK_AVAILABLE:
             return jsonify({"error": "original input file not found"}), 404
 
         try:
-            # Create a new job with the same input and password
-            new_job = job_mgr.create_job(
-                input_path, original_name=job.get("name"), password=job.get("password")
-            )
+            new_job = job_mgr.create_job(input_path, original_name=job.get("name"))
             return jsonify(new_job), 201
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -737,12 +756,11 @@ if FLASK_AVAILABLE:
         if f.filename == "":
             return jsonify({"error": "no selected file"}), 400
 
-        # Save to temporary location
         fn = secure_filename(f.filename)
-        temp_path = os.path.join(app.config["UPLOAD_FOLDER"], f"temp_{uuid.uuid4().hex}_{fn}")
-        f.save(temp_path)
-
         try:
+            temp_path = store_validated_upload(
+                f, fn, app.config["UPLOAD_FOLDER"], cfg.get("upload_security", {})
+            )
             password = request.form.get("password") or None
 
             # Load project (json dump or parse knxproj)
@@ -859,17 +877,15 @@ if FLASK_AVAILABLE:
 
             return jsonify(preview_data)
 
+        except UploadValidationError as e:
+            return jsonify({"error": str(e)}), 400
         except Exception as e:
             friendly_msg = _password_error_message(e)
             if friendly_msg:
                 return jsonify({"error": friendly_msg}), 400
             return jsonify({"error": str(e)}), 500
         finally:
-            # Clean up temp file
-            try:
-                os.remove(temp_path)
-            except:
-                pass
+            remove_upload(locals().get("temp_path"))
 
     @app.route("/api/job/<job_id>/deploy", methods=["POST"])
     def job_deploy(job_id):

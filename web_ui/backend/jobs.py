@@ -123,8 +123,12 @@ class JobManager:
             "backups": [],
             "log": [],
             "stats": {},
-            "password": password,
+            # SECURITY: Do NOT store password in job JSON - keep only in memory
         }
+        # Store password in memory only (for job processing)
+        self._passwords = getattr(self, "_passwords", {})
+        self._passwords[job_id] = password
+
         q = queue.Queue()
         with self.lock:
             self._jobs[job_id] = job
@@ -159,6 +163,10 @@ class JobManager:
         q = self.queues[job_id]
         job["status"] = "running"
         save_jobs(self.jobs_dir, self._jobs)
+
+        # Retrieve password from in-memory store (not from job JSON)
+        passwords = getattr(self, "_passwords", {})
+        pwd = passwords.get(job_id)
 
         # create backup of current openhab folder
         openhab_path = self.cfg.get("openhab_path", "openhab")
@@ -330,7 +338,6 @@ class JobManager:
                         },
                     )
                     sys.stdout = captured_output
-                    pwd = job.get("password")
                     knxproj = XKNXProj(path=job["input"], password=pwd, language="de-DE")
                     project = knxproj.parse()
                     sys.stdout = old_stdout
@@ -522,6 +529,9 @@ class JobManager:
                     knxmod.config["openhab_path"] = original_openhab_path
                 except Exception:
                     pass
+            # SECURITY: Clear password from memory after job completes
+            passwords = getattr(self, "_passwords", {})
+            passwords.pop(job_id, None)
             save_jobs(self.jobs_dir, self._jobs)
             q.put(None)
 
@@ -754,7 +764,19 @@ class JobManager:
         os.makedirs(tmp, exist_ok=True)
         try:
             with tarfile.open(backup["path"], "r:gz") as tar:
-                tar.extractall(path=tmp)
+                # SECURITY: Validate all members before extraction to prevent path traversal
+                for member in tar.getmembers():
+                    member_path = os.path.normpath(os.path.join(tmp, member.name))
+                    if not member_path.startswith(os.path.normpath(tmp)):
+                        raise ValueError(
+                            f"Path traversal detected in backup: {member.name}"
+                        )
+                # Use filter='data' for Python 3.12+ (safe extraction)
+                try:
+                    tar.extractall(path=tmp, filter="data")
+                except TypeError:
+                    # Fallback for Python <3.12
+                    tar.extractall(path=tmp)
             extracted = os.path.join(tmp, os.listdir(tmp)[0])
             dst = self.cfg.get("openhab_path", "openhab")
             if os.path.exists(dst):
@@ -890,5 +912,8 @@ class JobManager:
             del self._jobs[job_id]
             if job_id in self.queues:
                 del self.queues[job_id]
+            # SECURITY: Clear password from memory
+            passwords = getattr(self, "_passwords", {})
+            passwords.pop(job_id, None)
             save_jobs(self.jobs_dir, self._jobs)
         return True

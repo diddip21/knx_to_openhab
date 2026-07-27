@@ -201,9 +201,11 @@ class Updater:
             # Prepare log file
             log_file = os.path.join(self.base_path, "update.log")
 
-            # Prepare environment with LOG_FILE override to avoid writing to system logs
+            # Prepare environment with overrides to avoid writing to system logs
+            # and to ensure the update runs from the actual install path.
             env = os.environ.copy()
             env["LOG_FILE"] = os.devnull
+            env["INSTALL_DIR"] = self.base_path
 
             # Write header to log
             try:

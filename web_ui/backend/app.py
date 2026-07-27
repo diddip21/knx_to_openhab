@@ -270,7 +270,10 @@ if FLASK_AVAILABLE:
             return jsonify({"error": "original input file not found"}), 404
 
         try:
-            new_job = job_mgr.create_job(input_path, original_name=job.get("name"))
+            password = job_mgr.get_job_password(job_id)
+            new_job = job_mgr.create_job(
+                input_path, original_name=job.get("name"), password=password
+            )
             return jsonify(new_job), 201
         except Exception as e:
             return jsonify({"error": str(e)}), 500

@@ -119,6 +119,10 @@ class JobManager:
             return None
         return self.queues.get(job_id)
 
+    def get_job_password(self, job_id):
+        """Return the in-memory password for a job, if any."""
+        return self._passwords.get(job_id)
+
     def create_job(self, input_path, original_name=None, password=None, cleanup_input=False):
         job_id = uuid.uuid4().hex
         job = {

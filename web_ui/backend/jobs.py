@@ -130,11 +130,24 @@ class JobManager:
         self._passwords[job_id] = password
 
         q = queue.Queue()
-        with self.lock:
-            self._jobs[job_id] = job
-            self.queues[job_id] = q  # Register queue before saving jobs
-            save_jobs(self.jobs_dir, self._jobs)
-        self.executor.submit(self._run_job, job_id)
+        try:
+            with self.lock:
+                self._jobs[job_id] = job
+                self.queues[job_id] = q  # Register queue before saving jobs
+                save_jobs(self.jobs_dir, self._jobs)
+            self.executor.submit(self._run_job, job_id)
+        except Exception:
+            # A worker is not guaranteed to run, so remove the in-memory
+            # secret and roll back the partially created job immediately.
+            with self.lock:
+                self._passwords.pop(job_id, None)
+                self._jobs.pop(job_id, None)
+                self.queues.pop(job_id, None)
+                try:
+                    save_jobs(self.jobs_dir, self._jobs)
+                except Exception:
+                    logger.exception("Failed to persist job rollback for %s", job_id)
+            raise
         return job
 
     def _log_to_queue(self, job_id, q, msg):

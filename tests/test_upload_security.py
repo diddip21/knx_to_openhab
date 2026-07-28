@@ -394,6 +394,37 @@ class TestPasswordSecurity:
             shutil.rmtree(config["backups_dir"], ignore_errors=True)
 
 
+    def test_password_removed_when_job_submission_fails(self, tmp_path, monkeypatch):
+        """Job creation failures must not leave passwords or partial jobs in memory."""
+        from web_ui.backend.jobs import JobManager
+        from web_ui.backend.storage import load_jobs
+
+        config = {
+            "jobs_dir": str(tmp_path / "jobs"),
+            "backups_dir": str(tmp_path / "backups"),
+            "openhab_path": str(tmp_path / "openhab"),
+        }
+        mgr = JobManager(config)
+
+        def fail_submit(*args, **kwargs):
+            raise RuntimeError("executor unavailable")
+
+        monkeypatch.setattr(mgr.executor, "submit", fail_submit)
+
+        with pytest.raises(RuntimeError, match="executor unavailable"):
+            mgr.create_job(
+                "/tmp/test.knxproj",
+                original_name="test.knxproj",
+                password="secret_password",
+            )
+
+        assert mgr._passwords == {}
+        assert mgr._jobs == {}
+        assert mgr.queues == {}
+        assert load_jobs(mgr.jobs_dir) == {}
+        mgr.executor.shutdown(wait=False)
+
+
 # --- Configuration Constants Tests ---
 
 

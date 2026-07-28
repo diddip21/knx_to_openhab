@@ -393,7 +393,6 @@ class TestPasswordSecurity:
             shutil.rmtree(config["jobs_dir"], ignore_errors=True)
             shutil.rmtree(config["backups_dir"], ignore_errors=True)
 
-
     def test_password_removed_when_job_submission_fails(self, tmp_path, monkeypatch):
         """Job creation failures must not leave passwords or partial jobs in memory."""
         from web_ui.backend.jobs import JobManager

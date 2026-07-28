@@ -43,9 +43,15 @@ def save_jobs(jobs_dir, jobs):
     jf = jobs_file(jobs_dir)
     tmp_file = jf + ".tmp"
 
+    # SECURITY: Remove passwords from jobs before saving to disk
+    sanitized_jobs = {}
+    for job_id, job in jobs.items():
+        sanitized_job = {k: v for k, v in job.items() if k != "password"}
+        sanitized_jobs[job_id] = sanitized_job
+
     # Write to temporary file
     with open(tmp_file, "w", encoding="utf-8") as f:
-        json.dump(jobs, f, indent=2, ensure_ascii=False)
+        json.dump(sanitized_jobs, f, indent=2, ensure_ascii=False)
 
     # Windows-safe atomic replacement
     # On Windows, os.replace() can fail with PermissionError if the target file is in use

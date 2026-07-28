@@ -5,7 +5,7 @@ import os
 import re
 
 import pytest
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Dialog, Page, expect
 
 TEST_FILE_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "fixtures", "Charne.knxproj")
@@ -149,7 +149,12 @@ class TestJobLifecycleE2E:
         expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
 
         dialog_messages = []
-        page.on("dialog", lambda d: (dialog_messages.append(d.message), d.accept()))
+
+        def accept_dialog(dialog: Dialog) -> None:
+            dialog_messages.append(dialog.message)
+            dialog.accept()
+
+        page.on("dialog", accept_dialog)
 
         page.locator(".job-item button:has-text('Deploy')").click()
         page.wait_for_timeout(1000)

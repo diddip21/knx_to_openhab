@@ -246,8 +246,9 @@ class TestMappingsTab:
     def test_mappings_has_datapoint_types(self, page: Page, base_url, flask_server):
         self._open_mappings_tab(page, base_url, flask_server)
 
-        table_text = page.locator("#mappingsTable").inner_text()
-        assert "1.001" in table_text or "Switch" in table_text
+        switch_mapping = page.locator("#mappingsTable tbody tr[data-key='1.001']")
+        expect(switch_mapping).to_be_visible()
+        expect(switch_mapping.locator("input[data-field='item_type']")).to_have_value("Switch")
 
 
 @pytest.mark.ui

@@ -110,6 +110,11 @@ class TestCloudInfoCard:
         page.goto(base_url)
 
         toggle_btn = page.locator(".cloud-toggle-btn")
-        if toggle_btn.count() > 0:
-            toggle_btn.first.click()
-            page.wait_for_timeout(500)
+        secret_value = page.locator("#cloud-secret-val")
+        expect(toggle_btn).to_be_visible(timeout=10000)
+        expect(secret_value).to_have_class(re.compile(r"cloud-secret-masked"))
+
+        toggle_btn.click()
+
+        expect(secret_value).to_have_text("super-secret-value")
+        expect(secret_value).not_to_have_class(re.compile(r"cloud-secret-masked"))

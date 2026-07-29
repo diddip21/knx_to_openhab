@@ -75,7 +75,7 @@ def _setup_sse_routes(page: Page, job_log=None):
             return _fulfill(route, [job_payload()])
 
         if re.search(r"/api/job/[^/]+/events$", url):
-            body = 'data: {"type": "status", "message": "completed"}\n\n'
+            body = 'data: {"type": "status", "message": "completed via SSE"}\n\n'
             route.fulfill(status=200, content_type="text/event-stream", body=body)
             return
 
@@ -119,7 +119,7 @@ class TestSSEStreaming:
         page.goto(base_url)
 
         _upload_and_wait(page)
-        expect(page.locator("#log")).not_to_have_text("Waiting for events...", timeout=10000)
+        expect(page.locator("#log")).to_contain_text("completed via SSE", timeout=10000)
 
     def test_sse_backup_event_logged(self, page: Page, base_url, flask_server):
         _setup_sse_routes(page)
@@ -164,7 +164,11 @@ class TestSSEStreaming:
         expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
 
     def test_sse_log_level_filter(self, page: Page, base_url, flask_server):
-        _setup_sse_routes(page)
+        filtered_log = [
+            {"level": "error", "text": "[ERROR] Filtered failure"},
+            {"level": "info", "text": "[INFO] Hidden after filtering"},
+        ]
+        _setup_sse_routes(page, job_log=filtered_log)
         page.goto(base_url)
 
         _upload_and_wait(page)
@@ -175,8 +179,9 @@ class TestSSEStreaming:
 
         error_entries = page.locator(".log-entry.log-level-error")
         info_entries = page.locator(".log-entry.log-level-info")
-        assert error_entries.count() >= 0
-        assert info_entries.count() == 0
+        expect(error_entries).to_have_count(1)
+        expect(error_entries).to_contain_text("Filtered failure")
+        expect(info_entries).to_have_count(0)
 
     def test_sse_multiple_event_types(self, page: Page, base_url, flask_server):
         _setup_sse_routes(page)

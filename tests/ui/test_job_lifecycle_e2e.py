@@ -157,9 +157,7 @@ class TestJobLifecycleE2E:
         page.on("dialog", accept_dialog)
 
         page.locator(".job-item button:has-text('Deploy')").click()
-        expect(page.locator(".job-item button:has-text('Deploy')")).to_have_count(
-            0, timeout=10000
-        )
+        expect(page.locator(".job-item button:has-text('Deploy')")).to_have_count(0, timeout=10000)
         assert any("successfully deployed" in msg.lower() for msg in dialog_messages)
 
     def test_rollback_after_deploy(self, page: Page, base_url, flask_server):

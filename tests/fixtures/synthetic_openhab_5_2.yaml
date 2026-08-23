@@ -1,0 +1,47 @@
+version: 1
+things:
+  knx:ip:bridge:
+    isBridge: true
+    config:
+      type: "TUNNEL"
+      autoReconnectPeriod: 30
+      ipAddress: "192.0.2.1"
+      portNumber: 3671
+  knx:device:bridge:generic:
+    bridge: "knx:ip:bridge"
+    channels:
+      ExampleDimmer:
+        type: "dimmer"
+        label: "Example dimmer"
+        config:
+          position: "0/0/1+<0/0/2"
+items:
+  Base:
+    type: "Group"
+    label: "Example Home"
+    icon: "house"
+    tags:
+      - "Location"
+  ExampleRoom:
+    type: "Group"
+    label: "Example Room"
+    groups:
+      - "Base"
+    tags:
+      - "Room"
+  ExampleDimmer:
+    type: "Dimmer"
+    label: "Example Dimmer"
+    groups:
+      - "ExampleRoom"
+    tags:
+      - "Light"
+    channel: "knx:device:bridge:generic:ExampleDimmer"
+sitemaps:
+  knx:
+    label: "Example"
+    widgets:
+      -
+        type: "Default"
+        item: "ExampleDimmer"
+        label: "Example Dimmer"

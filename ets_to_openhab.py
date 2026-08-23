@@ -8,6 +8,18 @@ from typing import Any
 
 from config import config, datapoint_mappings, normalize_string
 from ets_helpers import flags_match, get_co_flags, get_dpt_from_dco
+from openhab_yaml import (
+    add_channel,
+    add_item,
+    new_model,
+    normalize_icon,
+    parse_assignments,
+    parse_item_type,
+    parse_metadata,
+    parse_tags,
+    parse_visibility,
+    write_yaml,
+)
 from utils import get_datapoint_type
 
 logger = logging.getLogger(__name__)
@@ -32,7 +44,7 @@ FENSTERKONTAKTE: list[str] = []
 PRJ_NAME = "Our Home"
 
 
-def gen_building():
+def gen_building(include_yaml_model=False):
     """Generates a Building from an ETS Project"""
 
     def get_co_by_functiontext(cos, config_functiontexts, checkwriteflag=True):
@@ -269,7 +281,7 @@ def gen_building():
         # floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Presence       \"{floor_variables['name']} Präsenz [MAP(presence.map):%s]\"      <presence>         (map{floor_nr},Base)                  [\"Presence\"] \n"
         # floor_configuration += f"Group:Contact:OR(OPEN, CLOSED) map{floor_nr}_Contacts       \"{floor_variables['name']} Öffnungsmelder\"                      <contact>          (map{floor_nr})                [\"OpenState\"] \n"
         # floor_configuration += f"Group:Number:Temperature:AVG   map{floor_nr}_Temperature    \"{floor_variables['name']} Ø Temperatur\"                        <temperature>      (map{floor_nr})             [\"Measurement\", \"Temperature\"]        {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
-        return floor_configuration, floor_name
+        return floor_configuration, floor_name, floor_variables
 
     def generate_room_configuration(room, floor_nr, room_nr):
         """
@@ -296,14 +308,33 @@ def gen_building():
     items = ""
     sitemap = ""
     things = ""
+    yaml_model = new_model(PRJ_NAME, GWIP, config.get("sitemap_label", "MiCasa"))
+    yaml_sitemap_widgets = yaml_model["sitemaps"]["knx"]["widgets"]
     floor_nr = 0
     homekit_instance = 1
     homekit_accessorie = 0
     for floor in floors:
         floor_nr += 1
-        floor_configuration, floor_name = generate_floor_configuration(floor, floor_nr)
+        floor_configuration, floor_name, floor_variables = generate_floor_configuration(
+            floor, floor_nr
+        )
         items += floor_configuration
         sitemap += f'Frame label="{floor_name}" {{\n'
+        floor_item: dict[str, Any] = {
+            "type": "Group",
+            "label": floor_variables["name"],
+            "icon": normalize_icon(floor_variables["icon"]),
+            "groups": ["Base"],
+            "tags": parse_tags(floor_variables["semantic"]),
+            "metadata": parse_metadata(floor_variables["synonyms"]),
+        }
+        add_item(yaml_model, f"map{floor_nr}", floor_item)
+        yaml_floor_widget: dict[str, Any] = {
+            "type": "Frame",
+            "label": floor_name,
+            "widgets": [],
+        }
+        yaml_sitemap_widgets.append(yaml_floor_widget)
 
         room_nr = 0
         for room in floor["rooms"]:
@@ -314,6 +345,24 @@ def gen_building():
             items += room_configuration
             sitemap += f"     Group item=map{floor_nr}_{room_nr} {room_variables['visibility']} label=\"{room_name}\" "
             group = ""
+            room_item: dict[str, Any] = {
+                "type": "Group",
+                "label": room_variables["name"],
+                "icon": normalize_icon(room_variables["icon"]),
+                "groups": [f"map{floor_nr}"],
+                "tags": parse_tags(room_variables["semantic"]),
+                "metadata": parse_metadata(room_variables["synonyms"]),
+            }
+            room_item_name = f"map{floor_nr}_{room_nr}"
+            add_item(yaml_model, room_item_name, room_item)
+            yaml_room_widget: dict[str, Any] = {
+                "type": "Group",
+                "item": room_item_name,
+                "label": room_name,
+            }
+            if visibility := parse_visibility(room_variables["visibility"]):
+                yaml_room_widget["visibility"] = visibility
+            yaml_floor_widget["widgets"].append(yaml_room_widget)
 
             addresses = room["Addresses"]
             logger.debug("Room: %s and %s Adresses", room_name, len(addresses))
@@ -729,6 +778,13 @@ def gen_building():
 
                         thing_type = item_type.lower().split(":")[0]
                         things += f"Type {thing_type}    :   {item_name}   \"{address['Group name']}\"   [ {thing_address_info} ]\n"
+                        channel_uid = add_channel(
+                            yaml_model,
+                            item_name,
+                            thing_type,
+                            address["Group name"],
+                            parse_assignments(thing_address_info),
+                        )
 
                         root = f"map{floor_nr}_{room_nr}"
 
@@ -750,6 +806,18 @@ def gen_building():
                                 if grp_metadata:
                                     grp_metadata = f"{{ {grp_metadata} }}"
                                 items += f'Group   equipment_{item_name}   "{item_label}"  {item_icon}  ({root})   ["{equipment}"] {grp_metadata}\n'
+                                add_item(
+                                    yaml_model,
+                                    f"equipment_{item_name}",
+                                    {
+                                        "type": "Group",
+                                        "label": item_label,
+                                        "icon": normalize_icon(item_icon),
+                                        "groups": [root],
+                                        "tags": [equipment],
+                                        "metadata": parse_metadata(grp_metadata),
+                                    },
+                                )
                                 root = f"equipment_{item_name}"
                             else:
                                 root = f"equipment_{equipments[item_label]}"
@@ -771,6 +839,26 @@ def gen_building():
 
                         items += f'{item_type}   {item_name}   "{item_label}"   {item_icon}   ({root})   {semantic_info}    {{ channel="knx:device:bridge:generic:{item_name}" {metadata}{synonyms} }}\n'
                         group += f"        {sitemap_type} item={item_name} label=\"{item_label}\" {item_variables['visibility']}\n"
+                        yaml_item = parse_item_type(item_type)
+                        yaml_item.update(
+                            {
+                                "label": item_label,
+                                "icon": normalize_icon(item_icon),
+                                "groups": [entry.strip() for entry in root.split(",")],
+                                "tags": parse_tags(semantic_info),
+                                "channel": channel_uid,
+                                "metadata": parse_metadata(metadata, synonyms),
+                            }
+                        )
+                        add_item(yaml_model, item_name, yaml_item)
+                        yaml_widget: dict[str, Any] = {
+                            "type": sitemap_type,
+                            "item": item_name,
+                            "label": item_label,
+                        }
+                        if visibility := parse_visibility(item_variables["visibility"]):
+                            yaml_widget["visibility"] = visibility
+                        yaml_room_widget.setdefault("widgets", []).append(yaml_widget)
 
                         if homekit_accessorie >= HOMEKIT_MAX_ACCESSORIES_PER_INSTANCE:
                             homekit_accessorie = 0
@@ -791,6 +879,8 @@ def gen_building():
             else:
                 sitemap += "\n"
         sitemap += "}\n"
+    if include_yaml_model:
+        return items, sitemap, things, yaml_model
     return items, sitemap, things
 
 
@@ -871,15 +961,8 @@ def write_partial_report(cfg):
         logger.warning("Failed to write partial_report.json: %s", e)
 
 
-def export_output(items, sitemap, things, configuration=None):
-    """Exports things / items / sitemap / ...  Files"""
-    # Use provided configuration or fallback to global config
-    cfg = configuration if configuration is not None else config
-
-    # write partial report if any
-    write_partial_report(cfg)
-
-    # export things:
+def _export_legacy_model(items, sitemap, things, cfg):
+    """Write the pre-5.2 textual Things, Items and Sitemap files."""
     try:
         things_template = open("things.template", "r", encoding="utf8").read()
         if GWIP:
@@ -930,6 +1013,25 @@ def export_output(items, sitemap, things, configuration=None):
     except Exception as e:
         logger.error(f"Failed to write sitemap file to {cfg['sitemaps_path']}: {e}")
         raise
+
+
+def export_output(items, sitemap, things, configuration=None, yaml_model=None):
+    """Export the generated openHAB model plus legacy persistence/rules files."""
+    cfg = configuration if configuration is not None else config
+    output_format = str(cfg.get("output_format", "legacy")).casefold()
+    if output_format not in {"legacy", "yaml"}:
+        raise ValueError('output_format must be either "legacy" or "yaml"')
+
+    write_partial_report(cfg)
+
+    if output_format == "yaml":
+        if yaml_model is None:
+            raise ValueError("yaml_model is required when output_format is yaml")
+        yaml_path = cfg.get("yaml_path", "openhab/yaml/knx.yaml")
+        write_yaml(yaml_path, yaml_model)
+        logger.info("Successfully wrote openHAB 5.2 YAML configuration to %s", yaml_path)
+    else:
+        _export_legacy_model(items, sitemap, things, cfg)
 
     # export persistent
     private_persistence = ""
@@ -994,9 +1096,23 @@ def export_output(items, sitemap, things, configuration=None):
 def main(configuration=None):
     """Main function"""
     logging.basicConfig()
-    items, sitemap, things = gen_building()
+    cfg = configuration if configuration is not None else config
+    include_yaml_model = str(cfg.get("output_format", "legacy")).casefold() == "yaml"
+    generated = gen_building(include_yaml_model=include_yaml_model)
+    if include_yaml_model:
+        items, sitemap, things, yaml_model = generated
+    else:
+        items, sitemap, things = generated
+        yaml_model = None
     check_unused_addresses()
-    export_output(items, sitemap, things, configuration=configuration)
+    export_output(
+        items,
+        sitemap,
+        things,
+        configuration=configuration,
+        yaml_model=yaml_model,
+    )
+    return {"things": things, "yaml_model": yaml_model}
 
 
 if __name__ == "__main__":

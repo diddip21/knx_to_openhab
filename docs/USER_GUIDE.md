@@ -78,6 +78,13 @@ The `config.json` file controls global settings for the generator.
 
 ### Key Settings
 
+- **`output_format`**: Selects the model format.
+  - `legacy` (default during the migration period): separate `.things`, `.items`, and `.sitemap` files.
+  - `yaml`: one native openHAB 5.2 `version: 1` model.
+
+- **`yaml_path`**: Target for the native YAML model.
+  - Default: `openhab/yaml/knx.yaml` (or `$OPENHAB_CONF/yaml/knx.yaml` when openHAB is detected).
+
 - **`drop_words`**: A list of words to remove from item labels to keep them short.
   - _Example_: If you have a group address "Kitchen Light Right", and "Light" is in `drop_words`, the label becomes "Kitchen Right" (assuming the icon already indicates it's a light).
   - _Note_: Words are NOT dropped if doing so would result in an empty label.
@@ -96,6 +103,25 @@ The `config.json` file controls global settings for the generator.
 
 - **`switch`**: Configuration for switch detection.
   - `status_suffix`: Suffixes identifying the status GA (e.g., "Status", "Rückmeldung").
+
+## openHAB 5.2 YAML Output
+
+Set `output_format` to `yaml` in the Web UI or `config.json` to generate a native openHAB 5.2 file:
+
+```json
+{
+  "output_format": "yaml",
+  "yaml_path": "openhab/yaml/knx.yaml"
+}
+```
+
+The resulting document contains `version: 1` and the `things`, `items`, and `sitemaps` sections. The generator validates Item names, parent Groups, Bridge references, Item-channel links, and Sitemap Item references before replacing the target file.
+
+Migration is intentionally explicit: never load the generated legacy model files and `knx.yaml` at the same time, because they define the same entity IDs. A Web UI deployment backs up the live configuration and then retires the generated files from the other format. Rollback restores the backed-up configuration.
+
+`influxdb.persist` remains in the persistence directory. The existing stateful `fenster.rules` also remains textual; wrapping its body in a YAML Script action would reset its counters and change the 15-minute notification behavior.
+
+Official format reference: [openHAB YAML Configuration](https://www.openhab.org/docs/configuration/yaml/).
 
 ---
 

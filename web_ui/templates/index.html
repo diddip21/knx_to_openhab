@@ -111,6 +111,18 @@
           <div id="tab-general" class="tab-content active">
             <!-- ETS Export Path removed -->
             <div class="form-group">
+              <label>OpenHAB Model Format</label>
+              <select id="conf-output-format" class="form-control">
+                <option value="legacy">Legacy DSL (.things/.items/.sitemap)</option>
+                <option value="yaml">openHAB 5.2 YAML</option>
+              </select>
+              <div class="checkbox-help">YAML combines Things, Items and the Sitemap in one versioned file. Persistence and the stateful window rule remain textual.</div>
+            </div>
+            <div class="form-group">
+              <label>YAML Path</label>
+              <input type="text" id="conf-yaml-path" class="form-control">
+            </div>
+            <div class="form-group">
               <label>Items Path</label>
               <input type="text" id="conf-items-path" class="form-control">
             </div>

@@ -1130,6 +1130,8 @@ async function loadConfig() {
 
     // Populate General Tab
     // ETS export path removed
+    document.getElementById('conf-output-format').value = currentConfig.output_format || 'legacy'
+    document.getElementById('conf-yaml-path').value = currentConfig.yaml_path || 'openhab/yaml/knx.yaml'
     document.getElementById('conf-items-path').value = currentConfig.items_path || ''
     document.getElementById('conf-things-path').value = currentConfig.things_path || ''
     document.getElementById('conf-sitemaps-path').value = currentConfig.sitemaps_path || ''
@@ -1280,6 +1282,8 @@ async function saveConfig(reprocess = false) {
 
     // General
     // ETS export path removed
+    newConfig.output_format = document.getElementById('conf-output-format').value
+    newConfig.yaml_path = document.getElementById('conf-yaml-path').value
     newConfig.items_path = document.getElementById('conf-items-path').value
     newConfig.things_path = document.getElementById('conf-things-path').value
     newConfig.sitemaps_path = document.getElementById('conf-sitemaps-path').value

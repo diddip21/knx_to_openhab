@@ -373,8 +373,10 @@ sudo systemctl restart knxohui.service
 ### Permission Denied Errors
 
 Deploy writes only the exact files configured for KNX generation. The installer
-provisions those files for the `knxohui` service account and keeps OpenHAB
-directories non-writable. Manual configuration files remain protected.
+removes group and other write access under the effective OpenHAB configuration
+root, reassigns service-owned non-output files to root, and provisions the
+generated files for `knxohui`. File contents remain intact and manually
+maintained files cannot be overwritten by deployment.
 
 If a deploy reports that a managed output is missing or not writable, run the
 administrator repair script:

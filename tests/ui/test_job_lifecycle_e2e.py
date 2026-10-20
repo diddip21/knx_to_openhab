@@ -135,7 +135,7 @@ def _setup_e2e_routes(page: Page):
 
 def _setup_multiple_upload_routes(page: Page):
     """Mock independent job state for multiple uploads in one browser session."""
-    jobs = {}
+    jobs: dict[str, str] = {}
 
     def job_payload(job_id):
         return {

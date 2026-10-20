@@ -106,11 +106,11 @@ sudo userdel knxohui
 
 ## OpenHAB output permissions
 
-The installer keeps the `openhab` group for read access, removes group write
-access under `/etc/openhab`, and provisions only the configured generated files
-for `knxohui`. Those files are owned by `knxohui:openhab` with mode `0640`; their
-directories remain non-writable to the Web UI account. Manually maintained
-files are not chowned or replaced. The same provisioning runs from
+The installer keeps the `openhab` group for read access and removes group and
+other write access under the effective OpenHAB configuration root. Objects
+owned by `knxohui` outside the generated output allowlist are reassigned to
+`root`; configured generated files are provisioned as `knxohui:openhab` with
+mode `0640`. File contents are left intact. The same provisioning runs from
 `fix_permissions.sh` when an administrator repairs an existing installation.
 
 Deploy accepts only the configured generated outputs in their expected OpenHAB

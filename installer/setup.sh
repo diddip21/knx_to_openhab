@@ -69,14 +69,7 @@ if ! getent group openhab > /dev/null 2>&1; then
 fi
 # Add knxohui user to openhab group
 sudo usermod -a -G openhab $SERVICE_USER
-# Keep group read access, but remove broad group write access left by older runs.
-# Only the exact generated files are made writable for the service user below.
-if [ -d "/etc/openhab" ]; then
-    sudo find -P /etc/openhab -type d -exec chmod g-w {} +
-    sudo find -P /etc/openhab -type f -exec chmod g-w {} +
-fi
-
-echo "Provisioning only generated OpenHAB output files"
+echo "Restricting OpenHAB writes to generated output files"
 sudo "$BASE/venv/bin/python" "$REPO_ROOT/installer/provision_managed_files.py" \
     --service-user "$SERVICE_USER" --openhab-group openhab
 

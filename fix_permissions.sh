@@ -47,11 +47,6 @@ echo "Setting proper permissions for git directory..."
 sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR/.git"
 sudo chmod -R u+w "$INSTALL_DIR/.git"
 
-# Mark directory as safe for git operations
-echo "Marking directory as safe for git..."
-sudo -u "$SERVICE_USER" git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
-sudo -u "$SERVICE_USER" git -C "$INSTALL_DIR" config --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
-
 # Ensure OpenHAB group permissions
 echo "Ensuring OpenHAB group permissions..."
 if ! getent group openhab > /dev/null 2>&1; then
@@ -63,25 +58,10 @@ if [ -d "/etc/openhab" ]; then
     sudo chmod -R 775 /etc/openhab 2>/dev/null || true
 fi
 
-# Check if sudoers entry exists
+# Replace the sudoers entry so repairs also remove obsolete broad permissions.
 SUDOERS_FILE="/etc/sudoers.d/knxohui"
-if [ ! -f "$SUDOERS_FILE" ]; then
-    echo "Creating sudoers entry for $SERVICE_USER..."
-    # Create sudoers entry for required commands
-    CMDS="/bin/systemctl restart openhab.service, /usr/bin/systemctl restart openhab.service"
-    CMDS="$CMDS, /bin/systemctl restart knxohui.service, /usr/bin/systemctl restart knxohui.service"
-    CMDS="$CMDS, /bin/systemctl restart evcc.service, /usr/bin/systemctl restart evcc.service"
-    CMDS="$CMDS, /bin/systemctl is-active openhab.service, /usr/bin/systemctl is-active openhab.service"
-    CMDS="$CMDS, /bin/systemctl is-active knxohui.service, /usr/bin/systemctl is-active knxohui.service"
-    CMDS="$CMDS, /bin/systemctl is-active evcc.service, /usr/bin/systemctl is-active evcc.service"
-    CMDS="$CMDS, /bin/systemctl show openhab.service *, /usr/bin/systemctl show openhab.service *"
-    CMDS="$CMDS, /bin/systemctl show knxohui.service *, /usr/bin/systemctl show knxohui.service *"
-    CMDS="$CMDS, /bin/systemctl show evcc.service *, /usr/bin/systemctl show evcc.service *"
-    CMDS="$CMDS, /usr/bin/git *"
-    
-    echo "$SERVICE_USER ALL=(ALL) NOPASSWD: $CMDS" | sudo tee $SUDOERS_FILE
-    sudo chmod 440 $SUDOERS_FILE
-fi
+sudo install -o root -g root -m 0440 "$INSTALL_DIR/installer/knxohui.sudoers" "$SUDOERS_FILE"
+sudo visudo -cf "$SUDOERS_FILE"
 
 echo "Permissions fixed successfully!"
 echo ""

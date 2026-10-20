@@ -22,8 +22,19 @@ This will:
 2. Create system user and directories
 3. Install systemd services and timer
 4. Start the Flask web server on port 8080
+5. Install and validate a restricted sudoers policy with `visudo`
 
 See `WEBUI_INSTALLATION.md` for full documentation.
+
+## Service user privileges
+
+The web UI runs as the unprivileged `knxohui` service user. Git-based application
+updates run as that user; Git is not granted through sudo. The sudoers policy in
+`knxohui.sudoers` permits only exact `systemctl restart` and `systemctl is-active`
+commands for `openhab.service`, `knxohui.service`, and `evcc.service`. It does not
+grant a shell, arbitrary Git commands, or wildcard command arguments. Re-running
+`setup.sh` or `fix_permissions.sh` replaces the prior policy and checks it with
+`visudo -cf`.
 
 > **Note:** For local development without systemd installation, see [DEVELOPMENT.md](../DEVELOPMENT.md)
 

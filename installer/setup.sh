@@ -56,12 +56,6 @@ sudo mkdir -p "$BACKUPS_DIR"
 sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$BASE"
 sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$JOBS_DIR" "$BACKUPS_DIR"
 
-# Mark directory as safe for git (required since we change ownership)
-sudo -u "$SERVICE_USER" git config --global --add safe.directory "$BASE"
-
-# Also mark the specific directory as safe (for newer git versions)
-sudo -u "$SERVICE_USER" git -C "$BASE" config --add safe.directory "$BASE" 2>/dev/null || true
-
 echo "Setting up group permissions for OpenHAB access"
 # Check if openhab group exists, create if needed
 if ! getent group openhab > /dev/null 2>&1; then
@@ -74,24 +68,10 @@ if [ -d "/etc/openhab" ]; then
     sudo chmod -R 775 /etc/openhab 2>/dev/null || true
 fi
 
-echo "Create sudoers entry for restarting services and git operations"
+echo "Install restricted sudoers policy for service operations"
 SUDOERS_FILE="/etc/sudoers.d/knxohui"
-# Allow both /bin/systemctl and /usr/bin/systemctl to cover different OS layouts
-# Allow restart, is-active, and show (for uptime info)
-CMDS="/bin/systemctl restart openhab.service, /usr/bin/systemctl restart openhab.service"
-CMDS="$CMDS, /bin/systemctl restart knxohui.service, /usr/bin/systemctl restart knxohui.service"
-CMDS="$CMDS, /bin/systemctl restart evcc.service, /usr/bin/systemctl restart evcc.service"
-CMDS="$CMDS, /bin/systemctl is-active openhab.service, /usr/bin/systemctl is-active openhab.service"
-CMDS="$CMDS, /bin/systemctl is-active knxohui.service, /usr/bin/systemctl is-active knxohui.service"
-CMDS="$CMDS, /bin/systemctl is-active evcc.service, /usr/bin/systemctl is-active evcc.service"
-CMDS="$CMDS, /bin/systemctl show openhab.service *, /usr/bin/systemctl show openhab.service *"
-CMDS="$CMDS, /bin/systemctl show knxohui.service *, /usr/bin/systemctl show knxohui.service *"
-CMDS="$CMDS, /bin/systemctl show evcc.service *, /usr/bin/systemctl show evcc.service *"
-# Add git commands needed for updates
-CMDS="$CMDS, /usr/bin/git *"
-
-echo "$SERVICE_USER ALL=(ALL) NOPASSWD: $CMDS" | sudo tee $SUDOERS_FILE
-sudo chmod 440 $SUDOERS_FILE
+sudo install -o root -g root -m 0440 installer/knxohui.sudoers "$SUDOERS_FILE"
+sudo visudo -cf "$SUDOERS_FILE"
 
 echo "Installing systemd units and timers"
 sudo cp installer/knxohui.service /etc/systemd/system/knxohui.service

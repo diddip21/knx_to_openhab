@@ -71,9 +71,35 @@ flask --app web_ui.backend.app:app run --debug
 | GET | `/api/version` | Current git version info |
 | GET | `/api/version/check` | Check GitHub for updates |
 | POST | `/api/version/update` | Trigger self-update |
+| GET | `/api/service/<openhab|evcc>/version` | Installed package and APT candidate |
+| POST | `/api/service/updates/<refresh|openhab|evcc>` | Refresh package lists or update one package |
 | GET | `/api/status` | Health check (no auth) |
 
 Full schema: see `api_schema.json`.
+
+### openHAB and evcc package updates
+
+The Services panel compares the installed Debian package with the candidate from the local APT
+package lists. Use **Paketlisten prüfen** to refresh those lists, then update either package
+individually. The update follows the configured APT repository (including an evcc nightly
+repository, if configured). Review the upstream release notes before a major upgrade. Manual,
+Docker, and other non-APT installations are shown as unsupported; they are never modified.
+
+The update installs the exact APT version shown in the confirmation. If the candidate changes
+before installation, it aborts and asks you to check again. The update runs in the background.
+The UI reports completion or failure; existing generated
+openHAB configuration is not replaced by the Web UI. A personal Web UI password is required.
+After upgrading an existing Web UI installation from a version before this feature, run
+`cd /opt/knx_to_openhab && sudo bash installer/setup.sh` once to install the root-owned,
+package-restricted update helper and its sudoers entries. This step is also performed by
+`install.sh` on a new installation. The APT candidate can be newer than the version displayed
+before refreshing the package lists; the selected package is the only one explicitly upgraded.
+
+Example screens with illustrative versions:
+
+![Both packages have updates](../docs/screenshots/issue-41-updates-available.png)
+
+![evcc is not an APT package](../docs/screenshots/issue-41-no-apt-package.png)
 
 ## Configuration
 

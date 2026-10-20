@@ -9,6 +9,7 @@ from web_ui.backend.deploy_policy import (
     deploy_staged_files,
     provision_managed_files,
     restore_managed_files,
+    restrict_service_write_access,
 )
 
 
@@ -69,6 +70,23 @@ def test_provisioning_rejects_symlinked_managed_directory(tmp_path):
         )
 
     assert list(outside.iterdir()) == []
+
+
+def test_restrict_write_access_does_not_follow_symlinks(tmp_path):
+    root = tmp_path / "openhab"
+    outside = tmp_path / "outside"
+    root.mkdir(mode=0o777)
+    root.chmod(0o777)
+    outside.mkdir()
+    external_file = outside / "manual.items"
+    external_file.write_text("external", encoding="utf-8")
+    external_file.chmod(0o666)
+    (root / "linked.items").symlink_to(external_file)
+
+    restrict_service_write_access(str(root), os.getuid() + 1000)
+
+    assert root.stat().st_mode & 0o022 == 0
+    assert external_file.stat().st_mode & 0o022 == 0o022
 
 
 def test_deploy_overwrites_only_existing_managed_file_and_keeps_mode(tmp_path):

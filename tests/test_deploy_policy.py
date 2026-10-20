@@ -78,6 +78,9 @@ def test_restrict_write_access_does_not_follow_symlinks(tmp_path):
     root.mkdir(mode=0o777)
     root.chmod(0o777)
     outside.mkdir()
+    manual = root / "manual.items"
+    manual.write_text("keep contents", encoding="utf-8")
+    manual.chmod(0o666)
     external_file = outside / "manual.items"
     external_file.write_text("external", encoding="utf-8")
     external_file.chmod(0o666)
@@ -86,6 +89,8 @@ def test_restrict_write_access_does_not_follow_symlinks(tmp_path):
     restrict_service_write_access(str(root), os.getuid() + 1000)
 
     assert root.stat().st_mode & 0o022 == 0
+    assert manual.stat().st_mode & 0o022 == 0
+    assert manual.read_text(encoding="utf-8") == "keep contents"
     assert external_file.stat().st_mode & 0o022 == 0o022
 
 

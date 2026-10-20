@@ -34,6 +34,7 @@ except Exception:
 
 from .jobs import JobManager
 from .service_manager import get_service_status, restart_service
+from .service_updates import PACKAGES, ServiceUpdates, package_version
 from .storage import load_config
 from .updater import Updater
 
@@ -82,6 +83,7 @@ if FLASK_AVAILABLE:
     job_mgr = JobManager(cfg)
     # Use project root directory as base path for updater
     updater = Updater(base_path=project_root)
+    service_updates = ServiceUpdates()
 
     # Session-based authentication -------------------------------------------------
     import secrets
@@ -333,6 +335,33 @@ if FLASK_AVAILABLE:
     def service_status(service_name):
         status = get_service_status(service_name)
         return jsonify(status)
+
+    @app.route("/api/service/<package>/version", methods=["GET"])
+    def service_version(package):
+        if package not in PACKAGES:
+            return jsonify({"error": "Unsupported service"}), 404
+        return jsonify(package_version(package))
+
+    @app.route("/api/service/updates/status", methods=["GET"])
+    def service_update_status():
+        return jsonify(service_updates.status())
+
+    @app.route("/api/service/updates/<action>", methods=["POST"])
+    def service_update_start(action):
+        if action not in (*PACKAGES, "refresh"):
+            return jsonify({"error": "Unsupported action"}), 404
+        # Package installation grants system privileges; the shipped demo password is insufficient.
+        acfg = cfg.get("auth", {})
+        if not acfg.get("enabled") or acfg.get("password") in (None, "", "logihome"):
+            return (
+                jsonify({"error": "Set a personal Web UI password before using package updates."}),
+                403,
+            )
+        if request.headers.get("X-Requested-With") != "XMLHttpRequest":
+            return jsonify({"error": "Missing request header"}), 403
+        data = request.get_json(silent=True) or {}
+        ok, message = service_updates.start(action, data.get("version"))
+        return jsonify({"ok": ok, "message": message}), 202 if ok else 409
 
     @app.route("/api/status")
     def status():

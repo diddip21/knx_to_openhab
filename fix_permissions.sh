@@ -58,6 +58,13 @@ if [ -d "/etc/openhab" ]; then
     sudo chmod -R 775 /etc/openhab 2>/dev/null || true
 fi
 
+# Install the package helper outside the service user's writable application tree.
+if [[ -f "$INSTALL_DIR/installer/service_update.sh" ]]; then
+    sudo install -o root -g root -m 0755 \
+        "$INSTALL_DIR/installer/service_update.sh" \
+        /usr/local/sbin/knxohui-service-update
+fi
+
 # Replace the sudoers entry so repairs also remove obsolete broad permissions.
 sudo bash "$INSTALL_DIR/installer/migrate_sudoers.sh"
 

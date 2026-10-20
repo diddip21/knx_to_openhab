@@ -54,11 +54,6 @@ if ! getent group openhab > /dev/null 2>&1; then
     sudo groupadd openhab 2>/dev/null || true
 fi
 sudo usermod -a -G openhab $SERVICE_USER 2>/dev/null || true
-if [ -d "/etc/openhab" ]; then
-    sudo find -P /etc/openhab -type d -exec chmod g-w {} +
-    sudo find -P /etc/openhab -type f -exec chmod g-w {} +
-fi
-
 PYTHON="$INSTALL_DIR/venv/bin/python"
 if [ ! -x "$PYTHON" ]; then
     PYTHON="python3"

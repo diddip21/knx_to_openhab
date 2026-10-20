@@ -40,17 +40,19 @@ grant a shell, arbitrary Git commands, or wildcard command arguments. Re-running
 
 The old policy allowed the service user to run arbitrary Git commands as root.
 The Web UI cannot safely use that old permission to replace its own sudoers file.
-After the source update has been applied, an administrator must run this one-time
-migration before starting another Web UI update:
+Do not use the Web UI updater for the first transition. After this change has
+been merged, an administrator should pull the source as the service user and
+then install the new policy:
 
 ```bash
-cd /opt/knx_to_openhab
-sudo bash installer/migrate_sudoers.sh
+sudo -u knxohui git -C /opt/knx_to_openhab pull --ff-only origin main
+sudo bash /opt/knx_to_openhab/installer/migrate_sudoers.sh
 ```
 
 The migration only replaces `/etc/sudoers.d/knxohui` and validates the resulting
-policy; it does not copy application files or modify configuration and job data.
-Until the migration succeeds, the updater stops and prints the same command.
+policy; it does not copy
+application files or modify configuration and job data. The new updater stops
+and prints the migration command while the old Git wildcard policy remains.
 
 > **Note:** For local development without systemd installation, see [DEVELOPMENT.md](../DEVELOPMENT.md)
 

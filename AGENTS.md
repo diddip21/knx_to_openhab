@@ -72,6 +72,14 @@ pytest --cov=. --cov-report=html
 pytest tests/ui -v -o addopts=
 ```
 
+## Cross-Task Delivery Rules
+
+- Start from the linked issue's acceptance criteria and trace the affected flow through the UI, API, configuration, and generated output. Keep existing defaults and configuration keys working unless the issue explicitly changes them.
+- For a bug fix, add a regression test that fails on the previous behavior. For a feature, cover the normal path, the existing/default path, and invalid input where relevant. Run the focused tests first, then the full applicable suite.
+- UI changes need committed screenshots of the finished interface in `docs/screenshots/`. Screenshots must show real app state, avoid secrets and personal data, and be referenced from the pull request with a short explanation of each view.
+- Before calling work complete, run formatting/lint checks, core tests, relevant UI tests, and `git diff --check`. Report any checks that could not be run; do not state that a check passed without its output.
+- A pull request should summarize user-visible behavior, compatibility/default behavior, tests and their results, and screenshots for UI changes. Keep scope focused and verify that saving one setting does not discard sibling configuration.
+
 ### Test Structure
 
 - `tests/test_*.py` — Unit tests (root level)

@@ -1,6 +1,8 @@
 """UI tests for settings/config tabs and save actions."""
 
+import json
 import re
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -89,3 +91,47 @@ def test_save_and_reprocess_requires_job(page: Page, flask_server):
 
     expect(page.locator("#configStatus")).to_contain_text("Configuration saved")
     assert "No job selected" in dialog_messages.get("message", "")
+
+
+@pytest.mark.ui
+def test_gateway_ip_round_trip_preserves_other_device_settings(page: Page, flask_server):
+    """Saving the new setting must retain existing and future device configuration."""
+    config_path = Path(__file__).resolve().parents[2] / "config.json"
+    config_data = json.loads(config_path.read_text(encoding="utf-8"))
+    config_data["devices"]["gateway"]["ip_address"] = "192.168.1.10"
+    config_data["devices"]["gateway"]["transport_mode"] = "tunnel"
+    config_data["devices"]["future_device"] = {"hardware_name": ["Future Device"]}
+    saved_payload = {}
+
+    def config_route(route):
+        request = route.request
+        if request.method == "GET":
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps(config_data),
+            )
+            return
+        if request.method == "POST":
+            saved_payload.update(request.post_data_json)
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps({"message": "Configuration updated successfully"}),
+            )
+            return
+        route.fulfill(status=405, body="Method not allowed")
+
+    page.route("**/api/config", config_route)
+    open_settings(page, flask_server)
+    page.get_by_role("button", name="Devices").click()
+
+    gateway_ip = page.locator("#conf-gateway-ip")
+    expect(gateway_ip).to_have_value("192.168.1.10")
+    gateway_ip.fill("192.168.1.25")
+    page.get_by_role("button", name="Save Config").click()
+
+    expect(page.locator("#configStatus")).to_contain_text("Configuration saved")
+    assert saved_payload["devices"]["gateway"]["ip_address"] == "192.168.1.25"
+    assert saved_payload["devices"]["gateway"]["transport_mode"] == "tunnel"
+    assert saved_payload["devices"]["future_device"] == {"hardware_name": ["Future Device"]}

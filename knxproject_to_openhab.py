@@ -664,9 +664,7 @@ def get_gateway_ip(project: KNXProject):
         try:
             return str(ip_address(configured_ip))
         except ValueError as exc:
-            raise ValueError(
-                f"Invalid gateway IP address configured: {configured_ip}"
-            ) from exc
+            raise ValueError(f"Invalid gateway IP address configured: {configured_ip}") from exc
 
     devices = project["devices"]
     if not devices:

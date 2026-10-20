@@ -1306,7 +1306,14 @@ async function saveConfig(reprocess = false) {
     // Devices
     const gwNames = document.getElementById('conf-gateway-names').value.split(',').map(s => s.trim()).filter(s => s)
     const gatewayIp = document.getElementById('conf-gateway-ip').value.trim()
-    newConfig.devices = { gateway: { hardware_name: gwNames, ip_address: gatewayIp } }
+    newConfig.devices = {
+      ...(newConfig.devices || {}),
+      gateway: {
+        ...(newConfig.devices?.gateway || {}),
+        hardware_name: gwNames,
+        ip_address: gatewayIp
+      }
+    }
 
     // Mappings
     const rows = document.querySelectorAll('#mappingsTable tbody tr')

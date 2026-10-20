@@ -373,8 +373,8 @@
           "properties": {
             "ip_address": {
               "type": "string",
-              "title": "Gateway IP Address",
-              "description": "Optional IP address override. Leave empty to detect the address from the KNX project.",
+              "title": "KNX Gateway IP Override",
+              "description": "Optional IPv4 or IPv6 override. Leave blank to detect the address from the ETS project.",
               "default": ""
             },
             "hardware_name": {

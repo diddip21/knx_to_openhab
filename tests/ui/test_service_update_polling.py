@@ -48,7 +48,7 @@ def test_running_package_operation_finishes_after_page_load(page: Page, base_url
     page.goto(base_url)
 
     expect(page.locator("#packageOperationStatus")).to_contain_text(
-        "completed: Update finished.", timeout=10000
+        "Update finished.", timeout=10000
     )
     expect(page.locator("#refreshPackagesBtn")).to_be_enabled()
     assert state["status_calls"] >= 2

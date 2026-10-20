@@ -1107,6 +1107,12 @@ function switchTab(tabId) {
 window.showReportDialog = showReportDialog
 
 
+function updateOutputPathVisibility() {
+  const useYaml = document.getElementById('conf-output-format').value === 'yaml'
+  document.getElementById('yaml-path-group').hidden = !useYaml
+  document.getElementById('legacy-model-paths').hidden = useYaml
+}
+
 async function loadConfig() {
   const configStatus = document.getElementById('configStatus')
 
@@ -1131,6 +1137,7 @@ async function loadConfig() {
     // Populate General Tab
     // ETS export path removed
     document.getElementById('conf-output-format').value = currentConfig.output_format || 'legacy'
+    updateOutputPathVisibility()
     document.getElementById('conf-yaml-path').value = currentConfig.yaml_path || 'openhab/yaml/knx.yaml'
     document.getElementById('conf-items-path').value = currentConfig.items_path || ''
     document.getElementById('conf-things-path').value = currentConfig.things_path || ''
@@ -1788,6 +1795,9 @@ function startEvents(jobId) {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('conf-output-format').addEventListener('change', updateOutputPathVisibility)
+  updateOutputPathVisibility()
+
   refreshJobs()
   refreshServices()
   loadVersion()

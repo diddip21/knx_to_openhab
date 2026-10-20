@@ -74,6 +74,7 @@ pytest tests/ui -v -o addopts=
 
 ## Cross-Task Delivery Rules
 
+- Keep issues actionable and reviewable: describe the user problem, intended behavior, scope, compatibility expectations, acceptance criteria, and relevant dependencies. Link active pull requests and state what remains outstanding; keep an issue open when a pull request covers only part of its scope.
 - Start from the linked issue's acceptance criteria and trace the affected flow through the UI, API, configuration, and generated output. Keep existing defaults and configuration keys working unless the issue explicitly changes them.
 - For a bug fix, add a regression test that fails on the previous behavior. For a feature, cover the normal path, the existing/default path, and invalid input where relevant. Run the focused tests first, then the full applicable suite.
 - UI changes need committed screenshots of the finished interface in `docs/screenshots/`. Screenshots must show real app state, avoid secrets and personal data, and be referenced from the pull request with a short explanation of each view.

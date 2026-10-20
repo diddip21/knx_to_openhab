@@ -141,6 +141,7 @@ def main():
     # We should replace the leading 'openhab' (or base) with oh_conf if it's absolute.
 
     paths_to_update = [
+        "yaml_path",
         "items_path",
         "things_path",
         "sitemaps_path",
@@ -177,6 +178,8 @@ def main():
                     # Let's map based on parent dir name.
                     if "items" in p.parts:
                         config[key] = str(Path(oh_conf) / "items" / p.name)
+                    elif "yaml" in p.parts:
+                        config[key] = str(Path(oh_conf) / "yaml" / p.name)
                     elif "things" in p.parts:
                         config[key] = str(Path(oh_conf) / "things" / p.name)
                     elif "sitemaps" in p.parts:
@@ -196,6 +199,9 @@ def main():
     config["target_user"] = oh_user
     config["target_group"] = oh_group
     config["openhab_path"] = oh_conf
+    config.setdefault("output_format", "legacy")
+    config.setdefault("yaml_path", str(Path(oh_conf) / "yaml" / "knx.yaml"))
+    config.setdefault("sitemap_label", "MiCasa")
 
 
 # if __name__ == "__main__":

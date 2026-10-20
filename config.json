@@ -487,6 +487,7 @@
   },
   "influx_path": "openhab/persistence/influxdb.persist",
   "items_path": "openhab/items/knx.items",
+  "output_format": "legacy",
   "regexpattern": {
     "item_Floor": "^=?[1-9\\.A-Z]{1,5}",
     "item_Floor_nameshort": "^=?[a-zA-Z]{1,5}\\b",
@@ -495,6 +496,8 @@
     "items_Name": "[^A-Za-z0-9_]+"
   },
   "sitemaps_path": "openhab/sitemaps/knx.sitemap",
+  "sitemap_label": "MiCasa",
   "things_path": "openhab/things/knx.things",
-  "transform_dir_path": "openhab/transform"
+  "transform_dir_path": "openhab/transform",
+  "yaml_path": "openhab/yaml/knx.yaml"
 }

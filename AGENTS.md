@@ -16,7 +16,10 @@ Target audience: German-speaking smart home users running OpenHAB on Raspberry P
       get_addresses()        → flat list of group addresses with metadata
       put_addresses_in_building() → addresses placed into building tree
   → ets_to_openhab.py
-      gen_building()         → generates items/things/sitemap strings (500+ lines)
+      gen_building()         → generates legacy strings and a structured openHAB model
+  → openhab_yaml.py
+      validate_model()       → validates IDs and cross-references
+      render_yaml()          → deterministic openHAB 5.2 YAML
       export_output()        → writes files using *.template wrappers
   → openhab/ output directory
       knx.items, knx.things, knx.sitemap, influxdb.persist
@@ -28,6 +31,7 @@ Target audience: German-speaking smart home users running OpenHAB on Raspberry P
 |------|---------|
 | `knxproject_to_openhab.py` | Entry point: parses `.knxproj`, builds building hierarchy, calls generator (789 lines) |
 | `ets_to_openhab.py` | Core generator: `gen_building()` produces items/things/sitemap strings, `export_output()` writes files (1058 lines) |
+| `openhab_yaml.py` | Dependency-free openHAB 5.2 YAML renderer and semantic validator |
 | `config.json` | Central config: regex patterns, device detection rules, datapoint mappings, output paths (500 lines) |
 | `config.py` | Loads `config.json`, normalizes values, detects OpenHAB paths. **Executes on import** — side effects at module level |
 | `utils.py` | Single helper: `get_datapoint_type()` |

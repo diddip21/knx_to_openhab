@@ -250,13 +250,19 @@ class JobManager:
             knxmod.config["openhab_path"] = staged_config["openhab_path"]
 
             # Define output keys to override
-            output_keys = [
-                "items_path",
-                "things_path",
-                "sitemaps_path",
-                "influx_path",
-                "fenster_path",
-            ]
+            output_format = str(staged_config.get("output_format", "legacy")).casefold()
+            model_output_keys = (
+                ["yaml_path"]
+                if output_format == "yaml"
+                else ["items_path", "things_path", "sitemaps_path"]
+            )
+            retired_keys = (
+                ["items_path", "things_path", "sitemaps_path"]
+                if output_format == "yaml"
+                else ["yaml_path"]
+            )
+            retired_paths = [staged_config[key] for key in retired_keys if staged_config.get(key)]
+            output_keys = model_output_keys + ["influx_path", "fenster_path"]
             stage_mapping = {}  # staged_path -> real_absolute_path
 
             q.put(
@@ -383,13 +389,14 @@ class JobManager:
                 sys.stdout = captured_output
 
                 # ets_to_openhab.main() writes output files to STAGING via injected config
-                etsmod.main(configuration=staged_config)
+                generation_result = etsmod.main(configuration=staged_config)
 
                 # Generate completeness report from staged knx.things
                 try:
                     report_path = self._write_completeness_report(
                         staged_config.get("things_path"),
                         staged_config.get("openhab_path", ""),
+                        things_text=generation_result.get("things"),
                     )
                     if report_path:
                         self._log_to_queue(
@@ -454,11 +461,13 @@ class JobManager:
             # Save staging info to job
             job["staging_dir"] = staging_dir
             job["stage_mapping"] = stage_mapping
+            job["retired_paths"] = retired_paths
             job["staged"] = True
 
             # Compute statistics by comparing STAGED vs LIVE/BACKUP
             try:
                 detailed_stats = self._compute_staged_stats(stage_mapping, openhab_path)
+                detailed_stats.update(self._compute_retired_stats(retired_paths, openhab_path))
                 job["stats"] = detailed_stats
 
                 for fn, stat in sorted(job["stats"].items()):
@@ -538,12 +547,12 @@ class JobManager:
             "label": match.group("label"),
         }
 
-    def _write_completeness_report(self, things_path, openhab_path):
-        if not things_path or not os.path.exists(things_path):
-            return None
-
-        with open(things_path, "r", encoding="utf-8", errors="ignore") as f:
-            things_text = f.read()
+    def _write_completeness_report(self, things_path, openhab_path, things_text=None):
+        if things_text is None:
+            if not things_path or not os.path.exists(things_path):
+                return None
+            with open(things_path, "r", encoding="utf-8", errors="ignore") as f:
+                things_text = f.read()
 
         missing_required_tuples, recommended_missing_tuples = check_completeness(things_text)
 
@@ -642,6 +651,42 @@ class JobManager:
                 "real_path": abs_real_path,
             }
 
+        return stats
+
+    def _compute_retired_stats(self, retired_paths, openhab_path):
+        """Report generated files that will be removed during a format transition."""
+        stats = {}
+        abs_openhab_path = os.path.normpath(os.path.abspath(openhab_path))
+        for path in retired_paths:
+            absolute_path = os.path.normpath(os.path.abspath(path))
+            if not os.path.isfile(absolute_path):
+                continue
+            try:
+                with open(absolute_path, "r", encoding="utf-8", errors="ignore") as file:
+                    before = len(file.readlines())
+            except OSError:
+                continue
+            try:
+                in_openhab = (
+                    os.path.commonpath([absolute_path, abs_openhab_path]) == abs_openhab_path
+                )
+            except ValueError:
+                in_openhab = False
+            relative_path = (
+                os.path.relpath(absolute_path, abs_openhab_path)
+                if in_openhab
+                else os.path.basename(absolute_path)
+            )
+            stats[relative_path.replace("\\", "/")] = {
+                "before": before,
+                "after": 0,
+                "delta": -before,
+                "added": 0,
+                "removed": before,
+                "staged_path": "",
+                "real_path": absolute_path,
+                "retired": True,
+            }
         return stats
 
     def get_file_diff(self, job_id, rel_path):
@@ -797,6 +842,7 @@ class JobManager:
             raise Exception(f"Backup failed, aborting deploy: {e}")
 
         deployed_count = 0
+        retired_count = 0
         try:
             for staged_path, real_path in mapping.items():
                 if os.path.exists(staged_path):
@@ -812,9 +858,23 @@ class JobManager:
                 else:
                     logger.warning(f"Staged file missing: {staged_path}")
 
+            deployed_targets = {
+                os.path.normpath(os.path.abspath(path)) for path in mapping.values()
+            }
+            for retired_path in job.get("retired_paths", []):
+                target = os.path.normpath(os.path.abspath(retired_path))
+                if target in deployed_targets:
+                    continue
+                if os.path.isfile(target):
+                    os.remove(target)
+                    retired_count += 1
+
             job["deployed"] = True
             save_jobs(self.jobs_dir, self._jobs)
-            return True, f"Deployed {deployed_count} files."
+            return (
+                True,
+                f"Deployed {deployed_count} files; retired {retired_count} old model files.",
+            )
 
         except Exception as e:
             logger.error(f"Deploy failed: {e}")

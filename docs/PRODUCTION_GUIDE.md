@@ -132,7 +132,7 @@ You will be prompted for username/password (default: `admin` / `logihome`).
 1. **Find the job** you want to rollback (can be any completed job)
 2. **Click "Rollback"** button (only appears if backups exist)
 3. **Select a backup** from the dropdown (shows timestamp)
-4. **Confirm** — the `openhab/` folder is restored
+4. **Confirm** — generated files are restored; manually maintained OpenHAB configuration remains unchanged
 
 ### Restart OpenHAB
 
@@ -371,28 +371,21 @@ sudo systemctl restart knxohui.service
 ```
 
 ### Permission Denied Errors
-If you encounter "Permission denied" errors when trying to write to OpenHAB directories:
 
-1. Verify the knxohui user is in the openhab group:
-   ```bash
-   groups knxohui
-   ```
+Deploy writes only the exact files configured for KNX generation. The installer
+provisions those files for the `knxohui` service account and keeps OpenHAB
+directories non-writable. Manual configuration files remain protected.
 
-2. Check that the openhab group has proper permissions:
-   ```bash
-   ls -la /etc/openhab
-   ```
+If a deploy reports that a managed output is missing or not writable, run the
+administrator repair script:
 
-3. The installer and updater scripts automatically handle these permissions, but if needed, you can verify with:
-   ```bash
-   sudo usermod -a -G openhab knxohui
-   sudo chmod -R 775 /etc/openhab
-   ```
+```bash
+sudo bash /opt/knx_to_openhab/fix_permissions.sh
+```
 
-4. Restart the service to apply changes:
-   ```bash
-   sudo systemctl restart knxohui.service
-   ```
+After changing generator output paths, run `setup.sh` once so the new exact
+output files are provisioned. Do not restore broad permissions with
+`chmod -R 775 /etc/openhab`.
 
 ### Update Fails with "Permission denied"
 If the update log shows "Permission denied" or "error: cannot open .git/FETCH_HEAD":

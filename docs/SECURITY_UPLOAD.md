@@ -29,14 +29,16 @@ Allowed extensions:
 - **Enforced at two levels:**
   1. Flask `MAX_CONTENT_LENGTH` configuration
   2. Application-level validation before processing
+- **Streaming:** Uploads are spooled to temporary files and validated from disk, avoiding a second full-size copy in process memory
 
 ### 3. ZIP Bomb Protection
 
 **Protection against:** Decompression bombs, memory exhaustion
 
-- **Maximum entries:** 500 files per archive
-- **Maximum decompressed size:** 500 MB total
+- **Maximum entries:** 500 files across nested archives
+- **Maximum decompressed size:** 500 MB across nested archives
 - **Compression ratio check:** Individual files with >100:1 ratio are rejected
+- **Nested archive inspection:** Inner project ZIPs such as `P-*.zip` are checked to depth 5
 - **Pre-extraction validation:** ZIP headers are analyzed before extraction
 
 ### 4. Path Traversal Protection
@@ -66,7 +68,7 @@ Allowed extensions:
 
 ## Configuration
 
-Add these settings to `web_ui/backend/config.json`:
+The validator uses these defaults when no overrides are present. Operators can add or change the limits in `web_ui/backend/config.json`:
 
 ```json
 {

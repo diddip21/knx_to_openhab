@@ -62,6 +62,7 @@ class JobManager:
         ensure_dirs([self.jobs_dir, self.backups_dir])
         self._jobs = load_jobs(self.jobs_dir)
         self.queues = {}
+        self._preview_cache = {}
         self.executor = ThreadPoolExecutor(max_workers=2)
         self.lock = threading.Lock()
 
@@ -149,6 +150,40 @@ class JobManager:
                     logger.exception("Failed to persist job rollback for %s", job_id)
             raise
         return job
+
+    def save_job_preview(self, job_id, preview):
+        """Persist a passphrase-free project preview outside the public job data."""
+        self._preview_cache[job_id] = preview
+        job_dir = os.path.join(self.jobs_dir, job_id)
+        os.makedirs(job_dir, exist_ok=True)
+        preview_path = os.path.join(job_dir, "project-preview.json")
+        temp_path = f"{preview_path}.{uuid.uuid4().hex}.tmp"
+        try:
+            with open(temp_path, "w", encoding="utf-8") as preview_file:
+                json.dump(preview, preview_file, ensure_ascii=False)
+            os.chmod(temp_path, 0o600)
+            os.replace(temp_path, preview_path)
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    def get_job_preview(self, job_id):
+        """Load a cached project preview without reopening the source archive."""
+        if job_id in self._preview_cache:
+            return self._preview_cache[job_id]
+
+        preview_path = os.path.join(self.jobs_dir, job_id, "project-preview.json")
+        try:
+            with open(preview_path, "r", encoding="utf-8") as preview_file:
+                preview = json.load(preview_file)
+        except FileNotFoundError:
+            return None
+        except (OSError, json.JSONDecodeError):
+            logger.exception("Failed to read cached project preview for %s", job_id)
+            return None
+
+        self._preview_cache[job_id] = preview
+        return preview
 
     def _log_to_queue(self, job_id, q, msg):
         """Helper to both send to queue and persist in job log."""
@@ -377,6 +412,27 @@ class JobManager:
                 sys.stdout = captured_output
 
                 house = knxmod.put_addresses_in_building(building, addresses, project)
+                from .project_preview import build_project_preview
+
+                try:
+                    self.save_job_preview(
+                        job_id,
+                        build_project_preview(
+                            project,
+                            knxmod,
+                            parsed=(building, addresses, house),
+                        ),
+                    )
+                except Exception as preview_error:
+                    self._log_to_queue(
+                        job_id,
+                        q,
+                        {
+                            "type": "info",
+                            "level": "warning",
+                            "message": f"project structure preview could not be saved: {preview_error}",
+                        },
+                    )
                 prj_name = house[0].get("name_long") if house else None
                 ip = knxmod.get_gateway_ip(project)
                 homekit_enabled = knxmod.is_homekit_enabled(project)
@@ -778,9 +834,10 @@ class JobManager:
         try:
             with tarfile.open(backup["path"], "r:gz") as tar:
                 # SECURITY: Validate all members before extraction to prevent path traversal
+                extraction_root = os.path.realpath(tmp)
                 for member in tar.getmembers():
-                    member_path = os.path.normpath(os.path.join(tmp, member.name))
-                    if not member_path.startswith(os.path.normpath(tmp)):
+                    member_path = os.path.realpath(os.path.join(extraction_root, member.name))
+                    if os.path.commonpath((extraction_root, member_path)) != extraction_root:
                         raise ValueError(f"Path traversal detected in backup: {member.name}")
                 # Use filter='data' for Python 3.12+ (safe extraction)
                 try:
@@ -926,5 +983,13 @@ class JobManager:
             # SECURITY: Clear password from memory
             passwords = getattr(self, "_passwords", {})
             passwords.pop(job_id, None)
+            self._preview_cache.pop(job_id, None)
+            preview_path = os.path.join(self.jobs_dir, job_id, "project-preview.json")
+            try:
+                os.remove(preview_path)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                logger.warning("Failed to remove cached preview for %s", job_id, exc_info=True)
             save_jobs(self.jobs_dir, self._jobs)
         return True

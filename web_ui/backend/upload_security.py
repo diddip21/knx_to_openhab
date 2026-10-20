@@ -6,9 +6,11 @@ ZIP bombs and path traversal attacks.
 
 import io
 import logging
+import math
 import os
 import zipfile
 from dataclasses import dataclass
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -19,6 +21,7 @@ ALLOWED_EXTENSIONS = {".knxproj", ".knxprojarchive", ".json"}
 MAX_ZIP_ENTRIES = 500
 MAX_DECOMPRESSED_SIZE_BYTES = 500 * 1024 * 1024  # 500 MB
 MAX_COMPRESSION_RATIO = 100  # compressed:uncompressed ratio
+MAX_ZIP_NESTING_DEPTH = 5
 
 # Magic bytes for validation
 MAGIC_BYTES_ZIP = b"PK\x03\x04"  # ZIP archive (also .knxproj)
@@ -31,6 +34,26 @@ class UploadValidationError(Exception):
     def __init__(self, message: str, code: str = "VALIDATION_ERROR"):
         super().__init__(message)
         self.code = code
+
+
+def get_zip_validation_options(security_config: dict | None = None) -> dict[str, int | float]:
+    """Return positive ZIP limits from config, falling back to safe defaults."""
+    security_config = security_config or {}
+    defaults = {
+        "max_zip_entries": (MAX_ZIP_ENTRIES, int),
+        "max_decompressed_size_bytes": (MAX_DECOMPRESSED_SIZE_BYTES, int),
+        "max_compression_ratio": (MAX_COMPRESSION_RATIO, float),
+    }
+    options = {}
+    for key, (default, value_type) in defaults.items():
+        try:
+            value = value_type(security_config.get(key, default))
+        except (TypeError, ValueError):
+            value = default
+        if not math.isfinite(value) or value <= 0:
+            value = default
+        options[key] = value
+    return options
 
 
 @dataclass
@@ -85,7 +108,7 @@ def validate_magic_bytes(file_content_start: bytes, filename: str) -> str:
                 f"Expected .knxproj or .knxprojarchive",
                 code="MIME_MISMATCH",
             )
-    elif file_content_start.startswith(MAGIC_BYTES_JSON):
+    elif file_content_start.lstrip(b" \t\r\n").startswith(MAGIC_BYTES_JSON):
         detected_type = "json"
         if ext != ".json":
             raise UploadValidationError(
@@ -109,34 +132,56 @@ def validate_magic_bytes(file_content_start: bytes, filename: str) -> str:
     return detected_type
 
 
-def validate_zip_safety(file_content: bytes) -> None:
+def validate_zip_safety(
+    file_content: bytes | str | os.PathLike[str],
+    max_zip_entries: int = MAX_ZIP_ENTRIES,
+    max_decompressed_size_bytes: int = MAX_DECOMPRESSED_SIZE_BYTES,
+    max_compression_ratio: float = MAX_COMPRESSION_RATIO,
+    password: str | None = None,
+) -> None:
     """Check ZIP archive for potential ZIP bomb or path traversal.
 
-    This performs a pre-extraction safety check by analyzing the ZIP
-    header without fully extracting contents.
+    This checks metadata for each archive and scans nested ZIP members without
+    extracting project files to the upload directory.
 
     Args:
-        file_content: Full content of the ZIP file.
+        file_content: ZIP bytes or a path to a ZIP file.
+        max_zip_entries: Maximum number of entries across nested archives.
+        max_decompressed_size_bytes: Maximum aggregate declared size.
+        max_compression_ratio: Maximum ratio for any entry.
+        password: Optional password for encrypted parent archive members.
 
     Raises:
         UploadValidationError: If ZIP is potentially dangerous.
     """
     try:
-        with zipfile.ZipFile(io.BytesIO(file_content)) as zf:
-            entries = zf.infolist()
+        source = io.BytesIO(file_content) if isinstance(file_content, bytes) else file_content
+        total_entries = 0
+        total_decompressed = 0
+        password_bytes = password.encode("utf-8") if password else None
 
-            # Check number of entries
-            if len(entries) > MAX_ZIP_ENTRIES:
+        def inspect_archive(archive: zipfile.ZipFile, depth: int = 0) -> None:
+            nonlocal total_entries, total_decompressed
+            entries = archive.infolist()
+
+            total_entries += len(entries)
+            if total_entries > max_zip_entries:
                 raise UploadValidationError(
-                    f"Archive contains {len(entries)} files, maximum allowed is {MAX_ZIP_ENTRIES}. "
+                    f"Nested archives contain {total_entries} files, maximum allowed is "
+                    f"{max_zip_entries}. "
                     f"This may indicate a ZIP bomb.",
                 )
 
-            total_decompressed = 0
             for entry in entries:
                 # Check for path traversal
-                normalized = os.path.normpath(entry.filename)
-                if normalized.startswith("..") or os.path.isabs(entry.filename):
+                posix_path = PurePosixPath(entry.filename.replace("\\", "/"))
+                windows_path = PureWindowsPath(entry.filename)
+                if (
+                    ".." in posix_path.parts
+                    or posix_path.is_absolute()
+                    or windows_path.is_absolute()
+                    or windows_path.drive
+                ):
                     raise UploadValidationError(
                         f"Archive contains unsafe path: {entry.filename}. "
                         f"Path traversal is not allowed.",
@@ -144,22 +189,40 @@ def validate_zip_safety(file_content: bytes) -> None:
 
                 # Check decompressed size
                 total_decompressed += entry.file_size
-                if total_decompressed > MAX_DECOMPRESSED_SIZE_BYTES:
+                if total_decompressed > max_decompressed_size_bytes:
                     raise UploadValidationError(
                         f"Archive would decompress to {total_decompressed} bytes "
-                        f"(limit: {MAX_DECOMPRESSED_SIZE_BYTES}). "
+                        f"(limit: {max_decompressed_size_bytes}). "
                         f"This may indicate a ZIP bomb.",
                     )
 
                 # Check compression ratio for individual files
                 if entry.compress_size > 0 and entry.file_size > 0:
                     ratio = entry.file_size / entry.compress_size
-                    if ratio > MAX_COMPRESSION_RATIO:
+                    if ratio > max_compression_ratio:
                         raise UploadValidationError(
                             f"File '{entry.filename}' has compression ratio of {ratio:.0f}:1 "
-                            f"(limit: {MAX_COMPRESSION_RATIO}:1). "
+                            f"(limit: {max_compression_ratio}:1). "
                             f"This may indicate a ZIP bomb.",
                         )
+
+                if entry.filename.lower().endswith((".zip", ".knxproj", ".knxprojarchive")):
+                    if depth >= MAX_ZIP_NESTING_DEPTH:
+                        raise UploadValidationError(
+                            f"Archive nesting exceeds maximum depth {MAX_ZIP_NESTING_DEPTH}.",
+                        )
+                    try:
+                        with archive.open(entry, pwd=password_bytes) as nested_stream:
+                            with zipfile.ZipFile(nested_stream) as nested_archive:
+                                inspect_archive(nested_archive, depth + 1)
+                    except (RuntimeError, NotImplementedError) as exc:
+                        raise UploadValidationError(
+                            f"Unable to inspect nested archive '{entry.filename}'. "
+                            "Check the project password and archive format.",
+                        ) from exc
+
+        with zipfile.ZipFile(source) as zf:
+            inspect_archive(zf)
 
     except zipfile.BadZipFile:
         raise UploadValidationError(
@@ -179,6 +242,10 @@ def validate_upload(
     file_content: bytes,
     filename: str,
     max_size: int = MAX_UPLOAD_SIZE_BYTES,
+    max_zip_entries: int = MAX_ZIP_ENTRIES,
+    max_decompressed_size_bytes: int = MAX_DECOMPRESSED_SIZE_BYTES,
+    max_compression_ratio: float = MAX_COMPRESSION_RATIO,
+    password: str | None = None,
 ) -> ValidationResult:
     """Perform full upload validation.
 
@@ -221,7 +288,7 @@ def validate_upload(
 
     # 3. Magic bytes check
     try:
-        detected_type = validate_magic_bytes(file_content[:16], filename)
+        detected_type = validate_magic_bytes(file_content[:4096], filename)
     except UploadValidationError as e:
         return ValidationResult(
             valid=False,
@@ -233,7 +300,13 @@ def validate_upload(
     # 4. ZIP safety check (for archives)
     if detected_type == "zip":
         try:
-            validate_zip_safety(file_content)
+            validate_zip_safety(
+                file_content,
+                max_zip_entries=max_zip_entries,
+                max_decompressed_size_bytes=max_decompressed_size_bytes,
+                max_compression_ratio=max_compression_ratio,
+                password=password,
+            )
         except UploadValidationError as e:
             return ValidationResult(
                 valid=False,
@@ -253,6 +326,10 @@ def validate_upload(
 def validate_upload_from_path(
     file_path: str,
     max_size: int = MAX_UPLOAD_SIZE_BYTES,
+    max_zip_entries: int = MAX_ZIP_ENTRIES,
+    max_decompressed_size_bytes: int = MAX_DECOMPRESSED_SIZE_BYTES,
+    max_compression_ratio: float = MAX_COMPRESSION_RATIO,
+    password: str | None = None,
 ) -> ValidationResult:
     """Validate an uploaded file from disk path.
 
@@ -292,10 +369,10 @@ def validate_upload_from_path(
 
     filename = os.path.basename(file_path)
 
-    # Read only first bytes for magic byte check
+    # Read only a small header for magic byte check; do not buffer the upload.
     try:
         with open(file_path, "rb") as f:
-            header = f.read(16)
+            header = f.read(4096)
     except OSError as e:
         return ValidationResult(
             valid=False,
@@ -325,12 +402,17 @@ def validate_upload_from_path(
             file_size=file_size,
         )
 
-    # ZIP safety check
-    if detected_type == "zip" and file_size <= MAX_DECOMPRESSED_SIZE_BYTES:
+    # ZIP safety check directly against the file on disk. Passing a path to
+    # ZipFile avoids loading another complete copy of a large upload into RAM.
+    if detected_type == "zip":
         try:
-            with open(file_path, "rb") as f:
-                content = f.read()
-            validate_zip_safety(content)
+            validate_zip_safety(
+                file_path,
+                max_zip_entries=max_zip_entries,
+                max_decompressed_size_bytes=max_decompressed_size_bytes,
+                max_compression_ratio=max_compression_ratio,
+                password=password,
+            )
         except UploadValidationError as e:
             return ValidationResult(
                 valid=False,

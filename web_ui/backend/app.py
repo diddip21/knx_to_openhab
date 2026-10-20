@@ -39,7 +39,8 @@ from .storage import load_config
 from .updater import Updater
 from .upload_security import (
     MAX_UPLOAD_SIZE_BYTES,
-    validate_upload,
+    get_zip_validation_options,
+    validate_upload_from_path,
 )
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,11 @@ if FLASK_AVAILABLE:
     )
     app.config["UPLOAD_FOLDER"] = cfg.get("jobs_dir", "./var/lib/knx_to_openhab")
     app.config["MAX_CONTENT_LENGTH"] = cfg.get("max_upload_size_bytes", MAX_UPLOAD_SIZE_BYTES)
+
+    @app.errorhandler(413)
+    def request_too_large(_error):
+        limit = app.config.get("MAX_CONTENT_LENGTH", MAX_UPLOAD_SIZE_BYTES)
+        return jsonify({"error": f"Upload exceeds the maximum allowed size ({limit} bytes)"}), 413
 
     # Fix openhab_path to be absolute if it's relative and based on project root
 
@@ -202,29 +208,42 @@ if FLASK_AVAILABLE:
             return jsonify({"error": "no selected file"}), 400
 
         fn = secure_filename(f.filename)
-        os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
-
-        # Read file content for validation
-        file_content = f.read()
-
-        # Validate upload (extension, magic bytes, size, ZIP safety)
-        result = validate_upload(file_content, fn)
-        if not result.valid:
-            logger.warning("Upload rejected: %s (file: %s)", result.error_message, fn)
-            return jsonify({"error": result.error_message}), 400
-
-        # Save validated file
-        saved_path = os.path.join(app.config["UPLOAD_FOLDER"], f"{uuid.uuid4().hex}-{fn}")
-        try:
-            with open(saved_path, "wb") as out:
-                out.write(file_content)
-        except OSError as e:
-            logger.error("Failed to save uploaded file: %s", e)
-            return jsonify({"error": "Failed to save uploaded file"}), 500
-
         password = request.form.get("password") or None
-        job = job_mgr.create_job(saved_path, original_name=fn, password=password)
-        return jsonify(job), 201
+        os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+        upload_id = uuid.uuid4().hex
+        temp_path = os.path.join(app.config["UPLOAD_FOLDER"], f".upload-{upload_id}-{fn}")
+        saved_path = os.path.join(app.config["UPLOAD_FOLDER"], f"{upload_id}-{fn}")
+        try:
+            # Werkzeug's FileStorage streams to disk; do not materialize the
+            # full upload (or a second copy for ZIP inspection) in process RAM.
+            f.save(temp_path)
+            result = validate_upload_from_path(
+                temp_path,
+                max_size=app.config["MAX_CONTENT_LENGTH"],
+                **get_zip_validation_options(cfg.get("security", {})),
+                password=password,
+            )
+            if not result.valid:
+                logger.warning("Upload rejected: %s (file: %s)", result.error_message, fn)
+                return jsonify({"error": result.error_message}), 400
+
+            os.replace(temp_path, saved_path)
+            job = job_mgr.create_job(saved_path, original_name=fn, password=password)
+            saved_path = ""
+            return jsonify(job), 201
+        except OSError as e:
+            logger.error("Failed to save or validate uploaded file: %s", e)
+            return jsonify({"error": "Failed to save uploaded file"}), 500
+        except Exception:
+            logger.exception("Failed to create processing job for uploaded file")
+            return jsonify({"error": "Failed to create processing job"}), 500
+        finally:
+            for path in (temp_path, saved_path):
+                if path and os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except OSError as e:
+                        logger.warning("Failed to remove temporary upload %s: %s", path, e)
 
     @app.route("/api/jobs", methods=["GET"])
     def jobs():
@@ -781,19 +800,20 @@ if FLASK_AVAILABLE:
             return jsonify({"error": "no selected file"}), 400
 
         fn = secure_filename(f.filename)
+        password = request.form.get("password") or None
         temp_path = os.path.join(app.config["UPLOAD_FOLDER"], f"temp_{uuid.uuid4().hex}_{fn}")
         try:
-            # Read and validate file content
-            file_content = f.read()
-            result = validate_upload(file_content, fn)
+            # Save to Werkzeug's spooled stream target, then inspect the file
+            # on disk so large projects are not copied into process RAM.
+            f.save(temp_path)
+            result = validate_upload_from_path(
+                temp_path,
+                max_size=app.config["MAX_CONTENT_LENGTH"],
+                **get_zip_validation_options(cfg.get("security", {})),
+                password=password,
+            )
             if not result.valid:
                 return jsonify({"error": result.error_message}), 400
-
-            # Save validated content to temp file
-            with open(temp_path, "wb") as out:
-                out.write(file_content)
-
-            password = request.form.get("password") or None
 
             # Load project (json dump or parse knxproj)
             if temp_path.lower().endswith(".json"):
@@ -940,6 +960,12 @@ if FLASK_AVAILABLE:
         job = job_mgr.get_job(job_id)
         if not job:
             return jsonify({"error": "job not found"}), 404
+
+        # A completed password-protected project cannot be parsed again after
+        # its passphrase has been cleared. Prefer the safe, cached projection.
+        cached_preview = job_mgr.get_job_preview(job_id)
+        if isinstance(cached_preview, dict):
+            return jsonify(cached_preview)
 
         input_path = job.get("input")
         if not input_path or not os.path.exists(input_path):

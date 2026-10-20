@@ -23,6 +23,8 @@ import tarfile
 import tempfile
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -34,6 +36,7 @@ from web_ui.backend.upload_security import (
     MAX_UPLOAD_SIZE_BYTES,
     MAX_ZIP_ENTRIES,
     UploadValidationError,
+    get_zip_validation_options,
     validate_file_extension,
     validate_magic_bytes,
     validate_upload,
@@ -201,6 +204,39 @@ class TestZipSafety:
         with pytest.raises(UploadValidationError):
             validate_zip_safety(content)
 
+    def test_configured_entry_limit_is_applied(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("one.xml", "one")
+            zf.writestr("two.xml", "two")
+
+        with pytest.raises(UploadValidationError, match="maximum allowed is 1"):
+            validate_zip_safety(buf.getvalue(), max_zip_entries=1)
+
+    def test_configured_compression_ratio_is_applied(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("large.xml", "A" * 4096)
+
+        with pytest.raises(UploadValidationError, match="compression ratio"):
+            validate_zip_safety(buf.getvalue(), max_compression_ratio=1)
+
+    def test_nested_project_archive_is_inspected_for_decompression_size(self):
+        inner = io.BytesIO()
+        with zipfile.ZipFile(inner, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("0.xml", "A" * 4096)
+
+        outer = io.BytesIO()
+        with zipfile.ZipFile(outer, "w") as zf:
+            zf.writestr("P-0001.zip", inner.getvalue())
+
+        with pytest.raises(UploadValidationError, match="decompress"):
+            validate_zip_safety(
+                outer.getvalue(),
+                max_decompressed_size_bytes=2000,
+                max_compression_ratio=1000,
+            )
+
     def test_reject_invalid_zip(self):
         """Invalid ZIP file should be rejected."""
         content = b"This is not a ZIP file"
@@ -281,27 +317,36 @@ class TestTarfileSecurity:
                 assert member_path.startswith(
                     os.path.normpath(extract_dir)
                 ), f"Path traversal detected: {member.name}"
-            tar.extractall(path=extract_dir)
+            tar.extractall(path=extract_dir, filter="data")
 
         assert (extract_dir / "openhab" / "test.txt").exists()
 
     def test_reject_path_traversal_tar(self, tmp_path):
-        """Tar with path traversal should be detected."""
+        """Rollback must reject a traversal archive before extracting it."""
         tar_path = tmp_path / "malicious.tar.gz"
         with tarfile.open(tar_path, "w:gz") as tar:
             data = b"malicious content"
-            info = tarfile.TarInfo(name="../../../etc/passwd")
+            info = tarfile.TarInfo(name="../../outside.txt")
             info.size = len(data)
             tar.addfile(info, io.BytesIO(data))
 
-        extract_dir = tmp_path / "extracted"
-        extract_dir.mkdir()
+        from web_ui.backend.jobs import JobManager
 
-        with tarfile.open(tar_path, "r:gz") as tar:
-            for member in tar.getmembers():
-                member_path = os.path.normpath(os.path.join(extract_dir, member.name))
-                if not member_path.startswith(os.path.normpath(extract_dir)):
-                    pytest.skip("Path traversal correctly detected")
+        manager = JobManager(
+            {
+                "jobs_dir": str(tmp_path / "jobs"),
+                "backups_dir": str(tmp_path / "backups"),
+                "openhab_path": str(tmp_path / "openhab"),
+            }
+        )
+        manager._jobs["job-1"] = {"backups": [{"name": "malicious.tar.gz", "path": str(tar_path)}]}
+        try:
+            with pytest.raises(ValueError, match="Path traversal detected"):
+                manager.rollback("job-1")
+        finally:
+            manager.executor.shutdown(wait=True)
+
+        assert not (tmp_path / "outside.txt").exists()
 
 
 # --- File Upload via Path Tests ---
@@ -332,6 +377,41 @@ class TestUploadFromPath:
         result = validate_upload_from_path(str(file_path))
         assert result.valid is False
         assert result.error_code == "FILE_TOO_LARGE"
+
+    def test_validate_zip_from_path_without_reading_archive_into_memory(
+        self, temp_upload_dir, sample_knxproj_content, monkeypatch
+    ):
+        """Disk validation must pass the path directly to ZIP inspection."""
+        file_path = temp_upload_dir / "project.knxproj"
+        file_path.write_bytes(sample_knxproj_content)
+        inspected = []
+
+        def inspect_archive(source, **limits):
+            inspected.append((source, limits))
+
+        monkeypatch.setattr("web_ui.backend.upload_security.validate_zip_safety", inspect_archive)
+
+        result = validate_upload_from_path(str(file_path))
+
+        assert result.valid is True
+        assert inspected == [
+            (
+                str(file_path),
+                {
+                    "max_zip_entries": MAX_ZIP_ENTRIES,
+                    "max_decompressed_size_bytes": MAX_DECOMPRESSED_SIZE_BYTES,
+                    "max_compression_ratio": MAX_COMPRESSION_RATIO,
+                    "password": None,
+                },
+            )
+        ]
+
+    def test_validate_json_with_leading_whitespace(self):
+        """JSON whitespace allowed by the parser must remain accepted."""
+        result = validate_upload(b' \n\t{"project": true}', "project.json")
+
+        assert result.valid is True
+        assert result.file_type == "json"
 
 
 # --- Password Security Tests ---
@@ -466,14 +546,83 @@ class TestUploadEndpointIntegration:
         assert response.status_code == 400
         assert "error" in response.json
 
-    def test_upload_rejects_oversized_file_via_api(self, client):
-        """API should reject files exceeding size limit."""
+    def test_upload_rejects_oversized_file_as_json(self, client, monkeypatch):
+        """Flask request-size rejection must return the API's JSON error shape."""
         if client is None:
             pytest.skip("Flask test client not available")
 
-        # This test verifies the MAX_CONTENT_LENGTH configuration
-        # Actual size limit testing requires setting up Flask test config
-        pytest.skip("Requires Flask test client setup")
+        from web_ui.backend import app as app_module
+
+        monkeypatch.setitem(app_module.app.config, "MAX_CONTENT_LENGTH", 128)
+        response = client.post(
+            "/api/upload",
+            data={"file": (io.BytesIO(b"x" * 512), "project.knxproj")},
+            content_type="multipart/form-data",
+        )
+
+        assert response.status_code == 413
+        assert response.is_json
+        assert "maximum allowed size" in response.json["error"]
+
+    def test_upload_validates_disk_file_with_configured_size_limit(
+        self, client, tmp_path, monkeypatch
+    ):
+        """The upload route streams to disk and passes the configured limit."""
+        if client is None:
+            pytest.skip("Flask test client not available")
+
+        from web_ui.backend import app as app_module
+
+        upload_dir = tmp_path / "uploads"
+        upload_dir.mkdir()
+        monkeypatch.setitem(app_module.app.config, "UPLOAD_FOLDER", str(upload_dir))
+        configured_limit = 256 * 1024 * 1024
+        monkeypatch.setitem(app_module.app.config, "MAX_CONTENT_LENGTH", configured_limit)
+        configured_zip_limits = {
+            "max_zip_entries": 23,
+            "max_decompressed_size_bytes": 12345,
+            "max_compression_ratio": 7.5,
+        }
+        monkeypatch.setitem(app_module.cfg, "security", configured_zip_limits)
+        job_manager = Mock()
+        job_manager.create_job.return_value = {"id": "job-1"}
+        monkeypatch.setattr(app_module, "job_mgr", job_manager)
+        validated = {}
+
+        def validate_path(path, max_size, **security_limits):
+            validated.update(path=path, max_size=max_size, security_limits=security_limits)
+            assert os.path.isfile(path)
+            return SimpleNamespace(valid=True)
+
+        monkeypatch.setattr(app_module, "validate_upload_from_path", validate_path)
+        response = client.post(
+            "/api/upload",
+            data={"file": (io.BytesIO(b"project bytes"), "project.knxproj")},
+            content_type="multipart/form-data",
+        )
+
+        assert response.status_code == 201
+        assert validated["max_size"] == configured_limit
+        assert validated["security_limits"] == {
+            **configured_zip_limits,
+            "password": None,
+        }
+        assert Path(validated["path"]).name.endswith("project.knxproj")
+        job_manager.create_job.assert_called_once()
+        assert os.path.isfile(job_manager.create_job.call_args.args[0])
+
+    def test_invalid_zip_settings_fall_back_to_safe_defaults(self):
+        assert get_zip_validation_options(
+            {
+                "max_zip_entries": 0,
+                "max_decompressed_size_bytes": "invalid",
+                "max_compression_ratio": -1,
+            }
+        ) == {
+            "max_zip_entries": MAX_ZIP_ENTRIES,
+            "max_decompressed_size_bytes": MAX_DECOMPRESSED_SIZE_BYTES,
+            "max_compression_ratio": float(MAX_COMPRESSION_RATIO),
+        }
 
 
 # --- Helper to create test client ---

@@ -371,6 +371,12 @@
           "type": "object",
           "title": "Gateway Configuration",
           "properties": {
+            "ip_address": {
+              "type": "string",
+              "title": "Gateway IP Address",
+              "description": "Optional IP address override. Leave empty to detect the address from the KNX project.",
+              "default": ""
+            },
             "hardware_name": {
               "type": "array",
               "title": "Gateway Hardware Names",

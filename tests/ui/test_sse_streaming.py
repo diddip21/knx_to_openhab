@@ -118,8 +118,11 @@ class TestSSEStreaming:
         _setup_sse_routes(page)
         page.goto(base_url)
 
-        _upload_and_wait(page)
-        expect(page.locator("#log")).to_contain_text("completed via SSE", timeout=10000)
+        with page.expect_request(re.compile(r"/api/job/[^/]+/events(?:\?.*)?$")) as event_request:
+            _upload_and_wait(page)
+
+        assert event_request.value.method == "GET"
+        expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=10000)
 
     def test_sse_backup_event_logged(self, page: Page, base_url, flask_server):
         _setup_sse_routes(page)

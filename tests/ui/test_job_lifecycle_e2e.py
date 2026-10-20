@@ -5,7 +5,7 @@ import os
 import re
 
 import pytest
-from playwright.sync_api import Dialog, Page, expect
+from playwright.sync_api import Page, expect
 
 TEST_FILE_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "fixtures", "Charne.knxproj")
@@ -215,17 +215,17 @@ class TestJobLifecycleE2E:
         expect(page.locator("#detail-section")).to_be_visible(timeout=20000)
         expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
 
-        dialog_messages = []
+        page.once("dialog", lambda dialog: dialog.accept())
+        with page.expect_response(
+            lambda response: response.request.method == "POST"
+            and re.search(r"/api/job/[^/]+/deploy$", response.url)
+        ) as deploy_response:
+            page.locator(".job-item button:has-text('Deploy')").click()
 
-        def accept_dialog(dialog: Dialog) -> None:
-            dialog_messages.append(dialog.message)
-            dialog.accept()
-
-        page.on("dialog", accept_dialog)
-
-        page.locator(".job-item button:has-text('Deploy')").click()
+        response = deploy_response.value
+        assert response.status == 200
+        assert response.json()["success"] is True
         expect(page.locator(".job-item button:has-text('Deploy')")).to_have_count(0, timeout=10000)
-        assert any("successfully deployed" in msg.lower() for msg in dialog_messages)
 
     def test_rollback_after_deploy(self, page: Page, base_url, flask_server):
         if not os.path.exists(TEST_FILE_PATH):

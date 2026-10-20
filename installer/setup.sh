@@ -75,6 +75,8 @@ if [ -d "/etc/openhab" ]; then
 fi
 
 echo "Create sudoers entry for restarting services and git operations"
+# Keep the privileged helper outside /opt (which the Web UI user can modify).
+sudo install -o root -g root -m 0755 installer/service_update.sh /usr/local/sbin/knxohui-service-update
 SUDOERS_FILE="/etc/sudoers.d/knxohui"
 # Allow both /bin/systemctl and /usr/bin/systemctl to cover different OS layouts
 # Allow restart, is-active, and show (for uptime info)
@@ -89,6 +91,9 @@ CMDS="$CMDS, /bin/systemctl show knxohui.service *, /usr/bin/systemctl show knxo
 CMDS="$CMDS, /bin/systemctl show evcc.service *, /usr/bin/systemctl show evcc.service *"
 # Add git commands needed for updates
 CMDS="$CMDS, /usr/bin/git *"
+CMDS="$CMDS, /usr/local/sbin/knxohui-service-update refresh"
+CMDS="$CMDS, /usr/local/sbin/knxohui-service-update openhab"
+CMDS="$CMDS, /usr/local/sbin/knxohui-service-update evcc"
 
 echo "$SERVICE_USER ALL=(ALL) NOPASSWD: $CMDS" | sudo tee $SUDOERS_FILE
 sudo chmod 440 $SUDOERS_FILE

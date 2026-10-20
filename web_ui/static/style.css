@@ -568,6 +568,16 @@ input[type="file"] {
   white-space: nowrap;
 }
 
+.service-note, .service-version, #packageOperationStatus {
+  color: var(--text-light);
+  font-size: 13px;
+}
+
+.service-version { margin-top: 8px; }
+.service-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+#refreshPackagesBtn { margin: 0 12px 16px 0; }
+#packageOperationStatus { display: inline-block; margin-bottom: 16px; }
+
 dialog {
   border: none;
   border-radius: 8px;

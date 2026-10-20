@@ -316,8 +316,7 @@ async function doRollback() {
   }
 }
 
-async function restartService(service) {
-  const btn = event.target || document.querySelector(`button[onclick*="restartService('${service}')"]`)
+async function restartService(service, btn) {
   if (btn) {
     btn.disabled = true
     btn.textContent = 'Restarting...'
@@ -712,11 +711,25 @@ function computeLineDiff(original, current) {
 async function refreshServices() {
   const services = ['openhab.service', 'evcc.service']
   servicesListEl.innerHTML = ''
+  let task = { state: 'idle' }
+  try {
+    const taskResponse = await fetch('/api/service/updates/status')
+    if (taskResponse.ok) task = await taskResponse.json()
+  } catch (e) { console.error('Package status unavailable:', e) }
+  const busy = task.state === 'running'
+  document.getElementById('refreshPackagesBtn').disabled = busy
+  document.getElementById('packageOperationStatus').textContent =
+    task.state === 'idle' ? '' : `${task.action}: ${task.message}`
 
   for (const service of services) {
     try {
-      const res = await fetch(`/api/service/${service}/status`)
+      const pkg = service.split('.')[0]
+      const [res, versionRes] = await Promise.all([
+        fetch(`/api/service/${service}/status`),
+        fetch(`/api/service/${pkg}/version`)
+      ])
       const status = await res.json()
+      const version = await versionRes.json()
 
       const div = document.createElement('div')
       div.className = 'service-item'
@@ -728,28 +741,69 @@ async function refreshServices() {
       if (status.active && status.uptime_str) {
         // Simplify timestamp display if it's very long
         let ts = status.uptime_str.split('=', 1)[1] || status.uptime_str
-        extraInfo = `<div class="service-uptime" title="${status.uptime_str}">Since: ${ts}</div>`
+        extraInfo = `<div class="service-uptime" title="${escapeHtml(status.uptime_str)}">Since: ${escapeHtml(ts)}</div>`
       } else if (!status.active && status.last_run_str) {
         let ts = status.last_run_str.split('=', 1)[1] || status.last_run_str
-        extraInfo = `<div class="service-uptime" title="${status.last_run_str}">Last active: ${ts}</div>`
+        extraInfo = `<div class="service-uptime" title="${escapeHtml(status.last_run_str)}">Last active: ${escapeHtml(ts)}</div>`
       }
 
       div.innerHTML = `
         <div class="service-header">
-          <span class="service-name">${service}</span>
+          <span class="service-name">${escapeHtml(service)}</span>
           <div class="service-status-wrapper">
-             <span class="service-status ${statusClass}">${statusText}</span>
+             <span class="service-status ${statusClass}">${escapeHtml(statusText)}</span>
              ${extraInfo}
           </div>
         </div>
-        <button onclick="restartService('${service}')" class="service-restart-btn">Restart</button>
+        <div class="service-version">Installiert: ${escapeHtml(version.installed || '—')}<br>
+          APT-Kandidat: ${escapeHtml(version.candidate || '—')}<br>
+          ${escapeHtml(version.message)}</div>
+        <div class="service-actions">
+          <button type="button" class="service-restart-btn restart-btn">Restart</button>
+          <button type="button" class="service-restart-btn upgrade-btn"
+            ${!version.supported || !version.update_available || busy ? 'disabled' : ''}>
+            ${version.update_available ? 'Update' : 'Kein Update'}</button>
+        </div>
       `
+      div.querySelector('.restart-btn').addEventListener('click', e => restartService(service, e.currentTarget))
+      div.querySelector('.upgrade-btn').addEventListener('click', () => {
+        if (confirm(`${service} von ${version.installed} auf den APT-Kandidaten ${version.candidate} aktualisieren?`)) {
+          startPackageOperation(pkg, version.candidate)
+        }
+      })
       servicesListEl.appendChild(div)
     } catch (e) {
       console.error('Error fetching service status:', e)
     }
   }
   await loadCloudInfo()
+}
+
+let packagePollInterval = null
+async function startPackageOperation(action, version = null) {
+  const statusEl = document.getElementById('packageOperationStatus')
+  try {
+    const response = await fetch(`/api/service/updates/${action}`, {
+      method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version })
+    })
+    const result = await response.json()
+    if (!response.ok) { statusEl.textContent = result.error || result.message; return }
+    await refreshServices()
+    if (packagePollInterval) clearInterval(packagePollInterval)
+    packagePollInterval = setInterval(async () => {
+      try {
+        const response = await fetch('/api/service/updates/status')
+        const task = await response.json()
+        statusEl.textContent = `${task.action}: ${task.message}`
+        if (task.state !== 'running') {
+          clearInterval(packagePollInterval)
+          packagePollInterval = null
+          await refreshServices()
+        }
+      } catch (e) { statusEl.textContent = `Status nicht erreichbar: ${e.message}` }
+    }, 2000)
+  } catch (e) { statusEl.textContent = `Paketoperation fehlgeschlagen: ${e.message}` }
 }
 
 async function loadCloudInfo() {
@@ -1784,6 +1838,7 @@ function startEvents(jobId) {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('refreshPackagesBtn').addEventListener('click', () => startPackageOperation('refresh'))
   refreshJobs()
   refreshServices()
   loadVersion()

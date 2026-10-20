@@ -218,7 +218,7 @@ class TestJobLifecycleE2E:
         page.once("dialog", lambda dialog: dialog.accept())
         with page.expect_response(
             lambda response: response.request.method == "POST"
-            and re.search(r"/api/job/[^/]+/deploy$", response.url)
+            and re.search(r"/api/job/[^/]+/deploy$", response.url) is not None
         ) as deploy_response:
             page.locator(".job-item button:has-text('Deploy')").click()
 

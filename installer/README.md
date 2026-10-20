@@ -13,8 +13,8 @@ This directory contains installation and maintenance scripts for the web UI.
 ## Quick Install
 
 ```bash
-chmod +x setup.sh backup_cleanup.sh
-sudo ./setup.sh
+# Run from the repository root.
+sudo bash installer/setup.sh
 ```
 
 This will:

@@ -2,6 +2,8 @@
 set -euo pipefail
 
 # Simple installer for DietPi / Raspberry Pi (no docker)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BASE="/opt/knx_to_openhab"
 SERVICE_USER="knxohui"
 PYVER=$(python3 -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))')
@@ -23,10 +25,10 @@ sudo chown "$SERVICE_USER":"$SERVICE_USER" "$BASE"
 echo "Creating python venv"
 python3 -m venv "$BASE/venv"
 "$BASE/venv/bin/pip" install --upgrade pip
-"$BASE/venv/bin/pip" install -r "$(pwd)/requirements.txt"
+"$BASE/venv/bin/pip" install -r "$REPO_ROOT/requirements.txt"
 
 echo "Copying files"
-rsync -a --exclude .git . "$BASE/"
+rsync -a --exclude .git "$REPO_ROOT/" "$BASE/"
 
 # Read config values
 CONF="$BASE/web_ui/backend/config.json"
@@ -70,13 +72,13 @@ fi
 
 echo "Install restricted sudoers policy for service operations"
 SUDOERS_FILE="/etc/sudoers.d/knxohui"
-sudo install -o root -g root -m 0440 installer/knxohui.sudoers "$SUDOERS_FILE"
+sudo install -o root -g root -m 0440 "$REPO_ROOT/installer/knxohui.sudoers" "$SUDOERS_FILE"
 sudo visudo -cf "$SUDOERS_FILE"
 
 echo "Installing systemd units and timers"
-sudo cp installer/knxohui.service /etc/systemd/system/knxohui.service
-sudo cp installer/knxohui-backup-cleanup.service /etc/systemd/system/knxohui-backup-cleanup.service
-sudo cp installer/knxohui-backup-cleanup.timer /etc/systemd/system/knxohui-backup-cleanup.timer
+sudo cp "$REPO_ROOT/installer/knxohui.service" /etc/systemd/system/knxohui.service
+sudo cp "$REPO_ROOT/installer/knxohui-backup-cleanup.service" /etc/systemd/system/knxohui-backup-cleanup.service
+sudo cp "$REPO_ROOT/installer/knxohui-backup-cleanup.timer" /etc/systemd/system/knxohui-backup-cleanup.timer
 sudo systemctl daemon-reload
 sudo systemctl enable --now knxohui.service || true
 sudo systemctl enable --now knxohui-backup-cleanup.timer || true

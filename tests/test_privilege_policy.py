@@ -32,6 +32,10 @@ def test_installer_scripts_install_and_validate_the_restricted_policy():
         assert "installer/knxohui.sudoers" in script
         assert 'visudo -cf "$SUDOERS_FILE"' in script
 
+    assert 'REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"' in setup
+    assert '"$REPO_ROOT/requirements.txt"' in setup
+    assert '"$REPO_ROOT/installer/knxohui.sudoers"' in setup
+
 
 def test_update_script_never_elevates_git_or_uses_a_global_safe_directory():
     update = (ROOT / "update.sh").read_text(encoding="utf-8")

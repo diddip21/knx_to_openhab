@@ -196,6 +196,30 @@ def provision_managed_files(root, managed_paths, uid, gid, mode=0o640):
             os.close(parent_fd)
 
 
+def restrict_service_write_access(root, service_uid):
+    """Remove broad group/other writes and service-owned non-output files."""
+    root = os.path.realpath(os.path.abspath(root))
+
+    def fail_walk(error):
+        raise error
+
+    def secure_path(path):
+        info = os.lstat(path)
+        if stat.S_ISLNK(info.st_mode):
+            return
+        if info.st_uid == service_uid and service_uid != 0:
+            os.chown(path, 0, -1, follow_symlinks=False)
+            info = os.lstat(path)
+        mode = stat.S_IMODE(info.st_mode) & ~0o022
+        if mode != stat.S_IMODE(info.st_mode):
+            os.chmod(path, mode, follow_symlinks=False)
+
+    secure_path(root)
+    for current, directories, files in os.walk(root, followlinks=False, onerror=fail_walk):
+        for name in [*directories, *files]:
+            secure_path(os.path.join(current, name))
+
+
 def _copy_file_descriptors(source_fd, target_fd):
     os.lseek(source_fd, 0, os.SEEK_SET)
     os.ftruncate(target_fd, 0)

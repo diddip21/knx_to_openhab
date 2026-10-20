@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import re
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Any
 
@@ -655,7 +656,18 @@ def create_json_dump(project: KNXProject, file_path: Path):
 
 
 def get_gateway_ip(project: KNXProject):
-    """Get the IP address of the gateway device."""
+    """Get the configured gateway IP or detect it from the KNX project."""
+    configured_ip = (
+        config.get("devices", {}).get("gateway", {}).get("ip_address", "") or ""
+    ).strip()
+    if configured_ip:
+        try:
+            return str(ip_address(configured_ip))
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid gateway IP address configured: {configured_ip}"
+            ) from exc
+
     devices = project["devices"]
     if not devices:
         logger.error("'devices' is empty.")

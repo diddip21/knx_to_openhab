@@ -1153,6 +1153,7 @@ async function loadConfig() {
     const dev = currentConfig.devices || {}
     const gw = dev.gateway || {}
     document.getElementById('conf-gateway-names').value = (gw.hardware_name || []).join(', ')
+    document.getElementById('conf-gateway-ip').value = gw.ip_address || ''
 
     // Populate Mappings Tab
     renderMappingsTable(currentConfig.datapoint_mappings || {})
@@ -1304,7 +1305,8 @@ async function saveConfig(reprocess = false) {
 
     // Devices
     const gwNames = document.getElementById('conf-gateway-names').value.split(',').map(s => s.trim()).filter(s => s)
-    newConfig.devices = { gateway: { hardware_name: gwNames } }
+    const gatewayIp = document.getElementById('conf-gateway-ip').value.trim()
+    newConfig.devices = { gateway: { hardware_name: gwNames, ip_address: gatewayIp } }
 
     // Mappings
     const rows = document.querySelectorAll('#mappingsTable tbody tr')

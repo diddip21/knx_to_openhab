@@ -16,6 +16,7 @@ import config as generator_config  # noqa: E402
 from web_ui.backend.deploy_policy import (  # noqa: E402
     configured_managed_paths,
     provision_managed_files,
+    restrict_service_write_access,
 )
 
 
@@ -31,6 +32,7 @@ def main():
         root, managed = configured_managed_paths(generator_config.config, str(PROJECT_ROOT))
         if not os.path.isdir(root) or os.path.islink(root):
             raise RuntimeError(f"OpenHAB configuration root is not a real directory: {root}")
+        restrict_service_write_access(root, service_uid)
         provision_managed_files(root, managed, service_uid, openhab_gid)
     except (KeyError, OSError, RuntimeError, ValueError) as error:
         print(f"Cannot provision managed OpenHAB outputs: {error}", file=sys.stderr)

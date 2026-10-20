@@ -103,3 +103,19 @@ sudo rm /etc/sudoers.d/knxohui
 # Remove system user
 sudo userdel knxohui
 ```
+
+## OpenHAB output permissions
+
+The installer keeps the `openhab` group for read access, removes group write
+access under `/etc/openhab`, and provisions only the configured generated files
+for `knxohui`. Those files are owned by `knxohui:openhab` with mode `0640`; their
+directories remain non-writable to the Web UI account. Manually maintained
+files are not chowned or replaced. The same provisioning runs from
+`fix_permissions.sh` when an administrator repairs an existing installation.
+
+Deploy accepts only the configured generated outputs in their expected OpenHAB
+directories. It rejects traversal, symlinks, and missing pre-provisioned files.
+Backups still contain the full OpenHAB configuration tree, while rollback
+restores only generator-managed files so manual configuration is preserved.
+Re-run `setup.sh` after changing output paths so the new exact files can be
+provisioned; the Web UI updater does not change system file permissions.

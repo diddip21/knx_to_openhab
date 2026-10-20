@@ -114,3 +114,10 @@ sudo systemctl restart knxohui.service
 # Check port
 netstat -tulpn | grep 8085
 ```
+
+Deploy writes only the configured generator outputs (`items`, `things`,
+`sitemaps`, `persistence`, `rules`, and optional YAML) plus the three generated
+reports. Targets must be existing regular files inside the effective OpenHAB
+configuration root. Symlinks and traversal paths are rejected. Rollback
+restores those managed files from the selected full-tree backup and leaves
+manually maintained files untouched.

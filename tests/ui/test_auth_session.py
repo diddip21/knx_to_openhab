@@ -2,6 +2,8 @@
 
 import json
 import re
+import secrets
+from base64 import b64encode
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -73,13 +75,47 @@ class TestAuthentication:
 
         expect(page.locator("#versionBadge")).to_be_visible()
 
-    def test_session_cookie_set(self, page: Page, base_url, flask_server):
-        _setup_auth_routes(page)
-        page.goto(base_url)
+    def test_session_cookie_set_when_auth_is_enabled(self, monkeypatch):
+        """Basic Auth must issue a secure session cookie when auth is enabled."""
+        from web_ui.backend import app as app_module
 
-        cookies = page.context.cookies()
-        session_cookies = [c for c in cookies if "session" in c["name"].lower()]
-        has_auth_cookie = len(session_cookies) > 0 or any(
-            "auth" in c["name"].lower() for c in cookies
+        username = "ui-test-user"
+        password = secrets.token_urlsafe(32)
+        monkeypatch.setitem(
+            app_module.cfg,
+            "auth",
+            {"enabled": True, "user": username, "password": password},
         )
-        assert True
+        monkeypatch.setitem(app_module.app.config, "TESTING", True)
+        auth_header = "Basic " + b64encode(f"{username}:{password}".encode()).decode()
+
+        response = app_module.app.test_client().get("/", headers={"Authorization": auth_header})
+
+        assert response.status_code == 200
+        session_cookie = next(
+            (
+                cookie
+                for cookie in response.headers.getlist("Set-Cookie")
+                if "knx_session=" in cookie
+            ),
+            None,
+        )
+        assert session_cookie is not None
+        assert "HttpOnly" in session_cookie
+        assert "SameSite=Lax" in session_cookie
+
+    def test_requests_are_rejected_without_valid_auth_when_enabled(self, monkeypatch):
+        """The auth-enabled backend rejects requests without valid credentials."""
+        from web_ui.backend import app as app_module
+
+        password = secrets.token_urlsafe(32)
+        monkeypatch.setitem(
+            app_module.cfg,
+            "auth",
+            {"enabled": True, "user": "ui-test-user", "password": password},
+        )
+        monkeypatch.setitem(app_module.app.config, "TESTING", True)
+
+        response = app_module.app.test_client().get("/")
+
+        assert response.status_code == 401

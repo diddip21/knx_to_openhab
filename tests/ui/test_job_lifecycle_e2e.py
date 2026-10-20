@@ -133,6 +133,72 @@ def _setup_e2e_routes(page: Page):
     page.route("**/api/**", handler)
 
 
+def _setup_multiple_upload_routes(page: Page):
+    """Mock independent job state for multiple uploads in one browser session."""
+    jobs = {}
+
+    def job_payload(job_id):
+        return {
+            "id": job_id,
+            "name": f"{job_id}.knxproj",
+            "status": jobs[job_id],
+            "staged": True,
+            "deployed": False,
+            "backups": [],
+            "created": 1700000000,
+            "stats": {},
+            "log": [],
+        }
+
+    def _fulfill(route, data, status=200):
+        route.fulfill(status=status, content_type="application/json", body=json.dumps(data))
+
+    def handler(route, request):
+        url = request.url
+        method = request.method
+
+        if url.endswith("/api/upload") and method == "POST":
+            job_id = f"job-e2e-{len(jobs) + 1}"
+            jobs[job_id] = "running"
+            return _fulfill(route, {"id": job_id, "status": "running"})
+
+        if url.endswith("/api/jobs"):
+            return _fulfill(route, [job_payload(job_id) for job_id in jobs])
+
+        event_match = re.search(r"/api/job/([^/]+)/events$", url)
+        if event_match:
+            job_id = event_match.group(1)
+            jobs[job_id] = "completed"
+            body = (
+                'data: {"type": "status", "message": "running"}\n\n'
+                'data: {"type": "status", "message": "completed (staged) - ready to deploy"}\n\n'
+            )
+            route.fulfill(status=200, content_type="text/event-stream", body=body)
+            return
+
+        job_match = re.search(r"/api/job/([^/]+)$", url)
+        if job_match and method == "GET":
+            job_id = job_match.group(1)
+            if job_id in jobs:
+                return _fulfill(route, job_payload(job_id))
+            return _fulfill(route, {"error": "not found"}, status=404)
+
+        if url.endswith("/api/services"):
+            return _fulfill(route, [])
+        if url.endswith("/api/version/check"):
+            return _fulfill(route, {"update_available": False})
+        if url.endswith("/api/version"):
+            return _fulfill(route, {"commit_short": "abc123"})
+        if url.endswith("/api/config"):
+            return _fulfill(route, {})
+        if url.endswith("/api/status"):
+            return _fulfill(route, {"status": "ok"})
+        return _fulfill(route, {"error": f"unmocked {url}"}, status=404)
+
+    page.route("**/api/**", handler)
+    return jobs
+
+
 @pytest.mark.ui
 class TestJobLifecycleE2E:
     def test_upload_to_deploy(self, page: Page, base_url, flask_server):
@@ -214,18 +280,20 @@ class TestJobLifecycleE2E:
         expect(page.locator("#log-section")).to_be_visible()
         expect(page.locator("#stats-section")).to_be_visible()
 
-    def test_concurrent_uploads(self, page: Page, base_url, flask_server):
+    def test_multiple_uploads_keep_independent_jobs(self, page: Page, base_url, flask_server):
         if not os.path.exists(TEST_FILE_PATH):
             pytest.skip("Test file not found")
 
-        _setup_e2e_routes(page)
+        jobs = _setup_multiple_upload_routes(page)
         page.goto(base_url)
 
-        page.locator("#fileInput").set_input_files(TEST_FILE_PATH)
-        page.locator("button[type='submit']").click()
-        expect(page.locator("#detail-section")).to_be_visible(timeout=20000)
+        for expected_count in (1, 2):
+            page.locator("#fileInput").set_input_files(TEST_FILE_PATH)
+            page.locator("button[type='submit']").click()
+            expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
+            expect(page.locator(".job-item")).to_have_count(expected_count, timeout=10000)
 
-        expect(page.locator(".job-item")).to_have_count(1)
+        assert list(jobs) == ["job-e2e-1", "job-e2e-2"]
 
     def test_job_flow_with_structure_view(self, page: Page, base_url, flask_server):
         if not os.path.exists(TEST_FILE_PATH):

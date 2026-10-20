@@ -17,8 +17,11 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture(autouse=True)
-def configure_playwright_timeouts(page):
+def configure_playwright_timeouts(request):
     """Set default Playwright timeouts for more reliable CI runs."""
+    if "page" not in request.fixturenames:
+        return
+    page = request.getfixturevalue("page")
     default_timeout = int(os.getenv("PLAYWRIGHT_TIMEOUT", "10000"))
     nav_timeout = int(os.getenv("PLAYWRIGHT_NAV_TIMEOUT", "30000"))
     expect_timeout = int(os.getenv("PLAYWRIGHT_EXPECT_TIMEOUT", "10000"))
@@ -38,11 +41,11 @@ def base_url():
 def browser_context_args(browser_context_args):
     """Configure browser context for testing (basic auth + defaults)."""
     username = os.getenv("UI_AUTH_USER", "admin")
-    password = os.getenv("UI_AUTH_PASSWORD", "logihome")
-    return {
-        **browser_context_args,
-        "http_credentials": {"username": username, "password": password},
-    }
+    password = os.getenv("UI_AUTH_PASSWORD")
+    context_args = dict(browser_context_args)
+    if password:
+        context_args["http_credentials"] = {"username": username, "password": password}
+    return context_args
 
 
 @pytest.fixture(scope="session")

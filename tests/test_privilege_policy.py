@@ -27,14 +27,23 @@ def test_sudoers_policy_only_allows_named_service_actions():
 def test_installer_scripts_install_and_validate_the_restricted_policy():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
     repair = (ROOT / "fix_permissions.sh").read_text(encoding="utf-8")
+    migration = (ROOT / "installer" / "migrate_sudoers.sh").read_text(encoding="utf-8")
 
-    for script in (setup, repair):
-        assert "installer/knxohui.sudoers" in script
-        assert 'visudo -cf "$SUDOERS_FILE"' in script
+    assert "installer/migrate_sudoers.sh" in setup
+    assert "migrate_sudoers.sh" in repair
+    assert "knxohui.sudoers" in migration
+    assert 'visudo -cf "$TEMP_POLICY"' in migration
 
     assert 'REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"' in setup
     assert '"$REPO_ROOT/requirements.txt"' in setup
-    assert '"$REPO_ROOT/installer/knxohui.sudoers"' in setup
+
+
+def test_web_updater_stops_until_legacy_sudoers_policy_is_migrated():
+    update = (ROOT / "update.sh").read_text(encoding="utf-8")
+
+    assert "sudo -n -l" in update
+    assert "/usr/bin/git|/bin/git" in update
+    assert "installer/migrate_sudoers.sh" in update
 
 
 def test_update_script_never_elevates_git_or_uses_a_global_safe_directory():
@@ -53,7 +62,12 @@ def test_privilege_scripts_have_valid_bash_syntax():
     if shutil.which("bash") is None:
         return
 
-    for path in (ROOT / "installer" / "setup.sh", ROOT / "fix_permissions.sh", ROOT / "update.sh"):
+    for path in (
+        ROOT / "installer" / "setup.sh",
+        ROOT / "installer" / "migrate_sudoers.sh",
+        ROOT / "fix_permissions.sh",
+        ROOT / "update.sh",
+    ):
         result = subprocess.run(
             ["bash", "-n", str(path)], capture_output=True, text=True, check=False
         )

@@ -59,9 +59,7 @@ if [ -d "/etc/openhab" ]; then
 fi
 
 # Replace the sudoers entry so repairs also remove obsolete broad permissions.
-SUDOERS_FILE="/etc/sudoers.d/knxohui"
-sudo install -o root -g root -m 0440 "$INSTALL_DIR/installer/knxohui.sudoers" "$SUDOERS_FILE"
-sudo visudo -cf "$SUDOERS_FILE"
+sudo bash "$INSTALL_DIR/installer/migrate_sudoers.sh"
 
 echo "Permissions fixed successfully!"
 echo ""

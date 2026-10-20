@@ -71,9 +71,7 @@ if [ -d "/etc/openhab" ]; then
 fi
 
 echo "Install restricted sudoers policy for service operations"
-SUDOERS_FILE="/etc/sudoers.d/knxohui"
-sudo install -o root -g root -m 0440 "$REPO_ROOT/installer/knxohui.sudoers" "$SUDOERS_FILE"
-sudo visudo -cf "$SUDOERS_FILE"
+sudo bash "$REPO_ROOT/installer/migrate_sudoers.sh"
 
 echo "Installing systemd units and timers"
 sudo cp "$REPO_ROOT/installer/knxohui.service" /etc/systemd/system/knxohui.service

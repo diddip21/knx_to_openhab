@@ -44,6 +44,18 @@ if ! cd "$INSTALL_DIR"; then
     exit 1
 fi
 
+# The previous release granted passwordless root Git access. A Web UI update
+# cannot safely replace that policy itself, so require the one-time admin
+# migration before allowing another update to proceed.
+if ! SUDO_POLICY=$(sudo -n -l 2>/dev/null); then
+    log "ERROR: Cannot verify the service user's sudoers policy. Run 'sudo bash $INSTALL_DIR/installer/migrate_sudoers.sh' as an administrator, then retry."
+    exit 1
+fi
+if printf '%s\n' "$SUDO_POLICY" | grep -Eq '(/usr/bin/git|/bin/git)[[:space:]]+\\*|NOPASSWD:[[:space:]]+ALL'; then
+    log "ERROR: The legacy broad sudoers policy is still installed. Run 'sudo bash $INSTALL_DIR/installer/migrate_sudoers.sh' as an administrator before updating again."
+    exit 1
+fi
+
 # The updater runs as the service user. It must not elevate to repair ownership.
 if [[ ! -w ".git" ]]; then
     log "ERROR: The service user cannot write to $INSTALL_DIR/.git. Run fix_permissions.sh as an administrator."

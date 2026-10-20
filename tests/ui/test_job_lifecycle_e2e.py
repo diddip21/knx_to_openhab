@@ -133,9 +133,10 @@ def _setup_e2e_routes(page: Page):
     page.route("**/api/**", handler)
 
 
-def _setup_multiple_upload_routes(page: Page):
-    """Mock independent job state for multiple uploads in one browser session."""
-    jobs: dict[str, str] = {}
+def _setup_multiple_upload_routes(page: Page, jobs: dict[str, str] | None = None) -> dict[str, str]:
+    """Mock independent job state shared by concurrent uploads."""
+    if jobs is None:
+        jobs = {}
 
     def job_payload(job_id):
         return {
@@ -284,16 +285,27 @@ class TestJobLifecycleE2E:
         if not os.path.exists(TEST_FILE_PATH):
             pytest.skip("Test file not found")
 
-        jobs = _setup_multiple_upload_routes(page)
+        jobs: dict[str, str] = {}
+        second_page = page.context.new_page()
+        _setup_multiple_upload_routes(page, jobs)
+        _setup_multiple_upload_routes(second_page, jobs)
         page.goto(base_url)
+        second_page.goto(base_url)
 
-        for expected_count in (1, 2):
-            page.locator("#fileInput").set_input_files(TEST_FILE_PATH)
-            page.locator("button[type='submit']").click()
-            expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
-            expect(page.locator(".job-item")).to_have_count(expected_count, timeout=10000)
+        for upload_page in (page, second_page):
+            upload_page.locator("#fileInput").set_input_files(TEST_FILE_PATH)
 
-        assert list(jobs) == ["job-e2e-1", "job-e2e-2"]
+        # Dispatch both form submissions without waiting for the first response.
+        submit = "document.getElementById('uploadForm').dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}))"
+        page.evaluate(submit)
+        second_page.evaluate(submit)
+
+        expect(page.locator(".job-item")).to_have_count(2, timeout=20000)
+        expect(second_page.locator(".job-item")).to_have_count(2, timeout=20000)
+        expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
+        expect(second_page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
+
+        assert set(jobs) == {"job-e2e-1", "job-e2e-2"}
 
     def test_job_flow_with_structure_view(self, page: Page, base_url, flask_server):
         if not os.path.exists(TEST_FILE_PATH):

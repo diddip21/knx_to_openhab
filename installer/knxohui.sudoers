@@ -1,5 +1,6 @@
-# Restricted system service actions for the KNX to openHAB Web UI.
+# Restricted service and package actions for the KNX to openHAB Web UI.
 # Git updates run as the service user and do not require sudo.
+# Package actions use a root-owned helper with fixed package names and arguments.
 Cmnd_Alias KNOHUI_SERVICE_COMMANDS = \
     /bin/systemctl restart openhab.service, \
     /usr/bin/systemctl restart openhab.service, \
@@ -12,6 +13,9 @@ Cmnd_Alias KNOHUI_SERVICE_COMMANDS = \
     /bin/systemctl is-active knxohui.service, \
     /usr/bin/systemctl is-active knxohui.service, \
     /bin/systemctl is-active evcc.service, \
-    /usr/bin/systemctl is-active evcc.service
+    /usr/bin/systemctl is-active evcc.service, \
+    /usr/local/sbin/knxohui-service-update refresh, \
+    /usr/local/sbin/knxohui-service-update openhab, \
+    /usr/local/sbin/knxohui-service-update evcc
 
 knxohui ALL=(root) NOPASSWD: KNOHUI_SERVICE_COMMANDS

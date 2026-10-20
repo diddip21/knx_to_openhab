@@ -28,10 +28,17 @@ python3 -m venv "$BASE/venv"
 "$BASE/venv/bin/pip" install -r "$REPO_ROOT/requirements.txt"
 
 echo "Copying files"
-rsync -a --exclude .git "$REPO_ROOT/" "$BASE/"
+CONF="$BASE/web_ui/backend/config.json"
+rsync -a --exclude .git --exclude web_ui/backend/config.json "$REPO_ROOT/" "$BASE/"
+if [[ ! -f "$CONF" ]]; then
+    sudo install -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0600 \
+        "$REPO_ROOT/web_ui/backend/config.json" "$CONF"
+fi
+sudo install -o root -g root -m 0755 \
+    "$REPO_ROOT/installer/service_update.sh" \
+    /usr/local/sbin/knxohui-service-update
 
 # Read config values
-CONF="$BASE/web_ui/backend/config.json"
 if [ -f "$CONF" ]; then
     JOBS_DIR=$(python3 -c "import json; print(json.load(open('$CONF')).get('jobs_dir', 'var/lib/knx_to_openhab'))" 2>/dev/null || echo "var/lib/knx_to_openhab")
     BACKUPS_DIR=$(python3 -c "import json; print(json.load(open('$CONF')).get('backups_dir', 'var/backups/knx_to_openhab'))" 2>/dev/null || echo "var/backups/knx_to_openhab")

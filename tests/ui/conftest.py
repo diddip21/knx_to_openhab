@@ -37,12 +37,12 @@ def base_url():
 @pytest.fixture(scope="session")
 def browser_context_args(browser_context_args):
     """Configure browser context for testing (basic auth + defaults)."""
-    username = os.getenv("UI_AUTH_USER", "admin")
-    password = os.getenv("UI_AUTH_PASSWORD", "logihome")
-    return {
-        **browser_context_args,
-        "http_credentials": {"username": username, "password": password},
-    }
+    username = os.getenv("UI_AUTH_USER")
+    password = os.getenv("UI_AUTH_PASSWORD")
+    config = {**browser_context_args}
+    if username and password:
+        config["http_credentials"] = {"username": username, "password": password}
+    return config
 
 
 @pytest.fixture(scope="session")

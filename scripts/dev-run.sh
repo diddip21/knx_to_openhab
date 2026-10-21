@@ -27,6 +27,6 @@ echo ""
 
 # Set Flask environment variables and start
 export FLASK_APP="web_ui.backend.app:app"
-export FLASK_ENV="development"
+export FLASK_ENV="testing"
 
 flask run --host 127.0.0.1 --port 5000 --debug

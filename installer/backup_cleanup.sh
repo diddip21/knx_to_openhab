@@ -5,6 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PYTHON="$APP_DIR/venv/bin/python"
 if [[ ! -x "$PYTHON" ]]; then
+    PYTHON="$APP_DIR/.venv/bin/python"
+fi
+if [[ ! -x "$PYTHON" ]]; then
     PYTHON=python3
 fi
 

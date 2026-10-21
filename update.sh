@@ -41,6 +41,65 @@ if printf '%s\n' "$SUDO_POLICY" | grep -Eq '(/usr/bin/git|/bin/git)[[:space:]]+\
     exit 1
 fi
 
+# Refuse an in-place update until credentials live in the external config tree.
+# An older checkout may still keep its default or plaintext password in tracked
+# files, so fetching first could replace the code before credentials are migrated.
+PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
+if [[ ! -x "$INSTALL_DIR/venv/bin/python" ]]; then
+    log "ERROR: The installed Python environment is missing; credential migration cannot be verified."
+    log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' as an administrator, then retry."
+    exit 1
+fi
+if ! CREDENTIAL_CHECK=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" \
+    PYTHONPATH="$INSTALL_DIR" "$INSTALL_DIR/venv/bin/python" - "$PATHS_FILE" <<'PY' 2>&1
+import base64
+import binascii
+import json
+import sys
+from pathlib import Path
+
+from knxoh_paths import get_paths
+from web_ui.backend.auth import is_password_hash
+
+paths_file = Path(sys.argv[1])
+if not paths_file.is_file():
+    raise SystemExit(f"installer paths file is missing: {paths_file}")
+paths = get_paths()
+if (
+    paths.secrets_file is None
+    or paths.config_dir == paths.install_dir
+    or paths.install_dir in paths.config_dir.parents
+):
+    raise SystemExit("external Web UI configuration is not installed")
+if not paths.web_config_file.is_file() or not paths.secrets_file.is_file():
+    raise SystemExit("external Web UI config.json or secrets.env is missing")
+try:
+    config = json.loads(paths.web_config_file.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError) as error:
+    raise SystemExit(f"cannot read external Web UI config: {error}") from error
+auth = config.get("auth", {}) if isinstance(config, dict) else None
+if not isinstance(auth, dict):
+    raise SystemExit("external Web UI auth configuration is invalid")
+if auth.get("enabled", True):
+    encoded_hash = None
+    for line in paths.secrets_file.read_text(encoding="utf-8").splitlines():
+        name, separator, value = line.partition("=")
+        if separator and name == "KNXOH_UI_PASSWORD_HASH_B64":
+            encoded_hash = value.strip()
+    try:
+        password_hash = base64.b64decode(encoded_hash, validate=True).decode("utf-8")
+    except (TypeError, binascii.Error, UnicodeDecodeError) as error:
+        raise SystemExit("a valid external Argon2id password hash is required") from error
+    if not is_password_hash(password_hash):
+        raise SystemExit("a valid external Argon2id password hash is required")
+PY
+); then
+    log "ERROR: Credential migration is incomplete: $CREDENTIAL_CHECK"
+    log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' as an administrator, then retry."
+    exit 1
+fi
+log "External Web UI configuration and password hash are ready."
+
 # The updater runs as the service user. It must not elevate to repair ownership.
 if [[ ! -w ".git" ]]; then
     log "ERROR: The service user cannot write to $INSTALL_DIR/.git. Run fix_permissions.sh as an administrator."

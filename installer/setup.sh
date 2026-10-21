@@ -139,6 +139,9 @@ sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$BASE" "$DATA_DIR" "$BACKUP_DIR"
 sudo chown root:"$SERVICE_USER" "$CONFIG_DIR" "$PATHS_FILE"
 sudo chmod 0750 "$CONFIG_DIR"
 sudo chmod 0644 "$PATHS_FILE"
+echo "Configuring Web UI credentials"
+sudo "$BASE/venv/bin/python" "$BASE/installer/configure_auth.py" \
+    --config "$CONF" --secrets "$CONFIG_DIR/secrets.env"
 sudo chown root:"$SERVICE_USER" "$CONF" "$CONFIG_DIR/secrets.env"
 sudo chmod 0640 "$CONF" "$CONFIG_DIR/secrets.env"
 

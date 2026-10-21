@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import argparse
 import base64
+import binascii
 import filecmp
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -17,6 +19,11 @@ LEGACY_RUNTIME_PATHS = {
     "jobs": Path("var/lib/knx_to_openhab"),
     "backups": Path("var/backups/knx_to_openhab"),
 }
+SHIPPED_DEFAULT_PASSWORD = "logihome"
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from web_ui.backend.auth import hash_password, is_password_hash, verify_password  # noqa: E402
 
 
 def _read_json(path: Path) -> dict:
@@ -259,6 +266,7 @@ def migrate_runtime_data(
     if not app_config_target.exists():
         if legacy_app_path:
             shutil.copy2(legacy_app_path, app_config_target)
+            os.chmod(app_config_target, 0o640)
         else:
             app_config_target.write_text("{}\n", encoding="utf-8")
 
@@ -267,26 +275,64 @@ def migrate_runtime_data(
     if not isinstance(auth, dict):
         raise ValueError("Web UI auth configuration must be an object")
     password = auth.pop("password", None)
+    auth.pop("legacy_password", None)
     secret_lines = (
         secrets_target.read_text(encoding="utf-8").splitlines() if secrets_target.exists() else []
     )
-    has_password_secret = any(line.startswith("KNXOH_UI_PASSWORD_B64=") for line in secret_lines)
-    if password is not None and not has_password_secret:
-        encoded = base64.b64encode(str(password).encode("utf-8")).decode("ascii")
-        secret_lines.append(f"KNXOH_UI_PASSWORD_B64={encoded}")
+    secret_values = {
+        name: value.strip()
+        for line in secret_lines
+        for name, separator, value in [line.partition("=")]
+        if separator and name in ("KNXOH_UI_PASSWORD_HASH_B64", "KNXOH_UI_PASSWORD_B64")
+    }
+    encoded_hash = secret_values.get("KNXOH_UI_PASSWORD_HASH_B64")
+    password_hash = None
+    if encoded_hash:
+        try:
+            password_hash = base64.b64decode(encoded_hash, validate=True).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError) as error:
+            raise ValueError("The stored Web UI password hash is invalid") from error
+        if not is_password_hash(password_hash):
+            raise ValueError("The stored Web UI password hash is invalid")
+        if verify_password(password_hash, SHIPPED_DEFAULT_PASSWORD):
+            password_hash = None
+    else:
+        legacy_password = password
+        legacy_encoded = secret_values.get("KNXOH_UI_PASSWORD_B64")
+        if legacy_password is None and legacy_encoded:
+            try:
+                legacy_password = base64.b64decode(legacy_encoded, validate=True).decode("utf-8")
+            except (binascii.Error, UnicodeDecodeError) as error:
+                raise ValueError("The stored legacy Web UI password is invalid") from error
+        if str(legacy_password) == SHIPPED_DEFAULT_PASSWORD:
+            legacy_password = None
+        if legacy_password is not None:
+            password_hash = hash_password(str(legacy_password))
+
+    secret_lines = [
+        line
+        for line in secret_lines
+        if line.partition("=")[0].strip()
+        not in ("KNXOH_UI_PASSWORD_HASH_B64", "KNXOH_UI_PASSWORD_B64")
+    ]
+    if password_hash:
+        encoded_hash = base64.b64encode(password_hash.encode("utf-8")).decode("ascii")
+        secret_lines.append(f"KNXOH_UI_PASSWORD_HASH_B64={encoded_hash}")
         _atomic_write(secrets_target, "\n".join(secret_lines) + "\n", 0o640)
-    elif not secrets_target.exists():
+    elif secret_lines or secrets_target.exists():
+        _atomic_write(
+            secrets_target, "\n".join(secret_lines) + ("\n" if secret_lines else ""), 0o640
+        )
+    else:
         _atomic_write(secrets_target, "", 0o640)
     os.chmod(secrets_target, 0o640)
 
-    runtime_config.update(
-        {
-            "jobs_dir": str(new_jobs),
-            "staging_dir": str(new_staging),
-            "generated_dir": str(new_generated),
-            "backups_dir": str(backup_dir),
-        }
+    # Sanitize the copied settings before publishing their new path. A failure
+    # in the next step must not leave a second plaintext password under /etc.
+    _atomic_write(
+        app_config_target, json.dumps(runtime_config, indent=2, ensure_ascii=False) + "\n", 0o640
     )
+    os.chmod(app_config_target, 0o640)
 
     values = {
         "KNXOH_INSTALL_DIR": install_dir,
@@ -299,6 +345,14 @@ def migrate_runtime_data(
     # Publish canonical paths only after all data is copied, and rewrite the
     # job index before removing legacy data. If path publication fails, both
     # the old configuration and its source data remain usable for a retry.
+    runtime_config.update(
+        {
+            "jobs_dir": str(new_jobs),
+            "staging_dir": str(new_staging),
+            "generated_dir": str(new_generated),
+            "backups_dir": str(backup_dir),
+        }
+    )
     _rewrite_job_paths(new_jobs / "jobs.json", old_jobs, new_jobs, old_backups, backup_dir)
 
     _atomic_write(

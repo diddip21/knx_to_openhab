@@ -8,7 +8,8 @@ Lightweight Flask web interface for `knxproject_to_openhab.py`. Upload KNX proje
 # On Raspberry Pi / DietPi (production)
 curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install.sh | bash
 
-# Access: http://<pi-ip>:8085 (or the configured bind address and port)
+# Default access on the Pi: http://127.0.0.1:8085
+# Remote access: use an SSH tunnel or explicitly configure a LAN bind / HTTPS proxy.
 ```
 
 ## Architecture
@@ -97,8 +98,10 @@ Production runtime config in `/etc/knx_to_openhab/config.json`:
   "staging_dir": "/var/lib/knx_to_openhab/staging",
   "generated_dir": "/var/lib/knx_to_openhab/generated",
   "backups_dir": "/var/backups/knx_to_openhab",
-  "bind_host": "0.0.0.0",
+  "bind_host": "127.0.0.1",
   "port": 8085,
+  "trusted_proxy_hops": 0,
+  "session_max_age_seconds": 43200,
   "auth": {
     "enabled": true,
     "user": "admin"
@@ -110,6 +113,15 @@ Production runtime config in `/etc/knx_to_openhab/config.json`:
   }
 }
 ```
+
+The default binds only to the local machine. Setup asks before retaining a legacy
+LAN-wide bind. To allow direct LAN access, deliberately set `bind_host` to the
+device's private interface address and restart the service. For HTTPS, keep the
+application on loopback behind a reverse proxy and set `trusted_proxy_hops` to
+the exact number of trusted proxies (usually `1`). The proxy must set
+`X-Forwarded-Proto`; cookies are marked `Secure` when the request is recognized
+as HTTPS. Write API requests require the signed-in session cookie and
+`X-CSRF-Token` header.
 
 ## Troubleshooting
 

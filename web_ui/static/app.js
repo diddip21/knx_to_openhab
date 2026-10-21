@@ -1,3 +1,36 @@
+let authRedirectPending = false
+
+async function apiFetch(resource, options = {}) {
+  const method = (options.method || 'GET').toUpperCase()
+  const headers = new Headers(options.headers || {})
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || ''
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) {
+    headers.set('X-CSRF-Token', csrfToken)
+  }
+  const response = await window['fetch'](resource, {
+    ...options,
+    headers,
+    credentials: options.credentials || 'same-origin'
+  })
+  if (response.status === 401 && !authRedirectPending && window.location.pathname !== '/login') {
+    authRedirectPending = true
+    window.location.assign('/login')
+  }
+  return response
+}
+
+const logoutButton = document.getElementById('logoutButton')
+if (logoutButton) {
+  logoutButton.addEventListener('click', async () => {
+    try {
+      const response = await apiFetch('/api/logout', { method: 'POST' })
+      if (response.ok) window.location.assign('/login')
+    } catch (error) {
+      console.error('Unable to log out', error)
+    }
+  })
+}
+
 const uploadForm = document.getElementById('uploadForm')
 const fileInput = document.getElementById('fileInput')
 const passwordInput = document.getElementById('passwordInput')
@@ -99,7 +132,7 @@ window.renderExpertPanel = renderExpertPanel
 applyExpertToggle()
 
 async function refreshJobs() {
-  const res = await fetch('/api/jobs', { credentials: 'include' })
+  const res = await apiFetch('/api/jobs', { credentials: 'include' })
   const jobs = await res.json()
   jobsList.innerHTML = ''
   jobs.forEach(j => {
@@ -143,7 +176,7 @@ function showJobDetail(jobId) {
   allLogEntries = []
   logEl.textContent = 'Loading logs...'
 
-  fetch(`/api/job/${jobId}`, {
+  apiFetch(`/api/job/${jobId}`, {
     credentials: 'include'
   })
     .then(async r => {
@@ -225,7 +258,7 @@ function showJobDetail(jobId) {
 
 function showRollbackDialog(jobId) {
   currentJobId = jobId
-  fetch(`/api/job/${jobId}`)
+  apiFetch(`/api/job/${jobId}`)
     .then(r => r.json())
     .then(j => {
       backupSelect.innerHTML = ''
@@ -242,7 +275,7 @@ function showRollbackDialog(jobId) {
 async function deleteJob(jobId) {
   if (!confirm('Delete this job from history?')) return
   try {
-    const res = await fetch(`/api/job/${jobId}`, {
+    const res = await apiFetch(`/api/job/${jobId}`, {
       method: 'DELETE',
       credentials: 'include'
     })
@@ -271,7 +304,7 @@ async function deployJob(jobId) {
   }
 
   try {
-    const res = await fetch(`/api/job/${jobId}/deploy`, {
+    const res = await apiFetch(`/api/job/${jobId}/deploy`, {
       method: 'POST',
       credentials: 'include'
     })
@@ -299,7 +332,7 @@ async function doRollback() {
   const backup = backupSelect.value
   rollbackStatusEl.textContent = 'Rolling back...'
   try {
-    const res = await fetch(`/api/job/${currentJobId}/rollback`, {
+    const res = await apiFetch(`/api/job/${currentJobId}/rollback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ backup })
@@ -323,7 +356,7 @@ async function restartService(service) {
     btn.textContent = 'Restarting...'
   }
   try {
-    const res = await fetch('/api/service/restart', {
+    const res = await apiFetch('/api/service/restart', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ service })
@@ -351,7 +384,7 @@ let currentPreviewData = null  // Store current preview data for view switching
 async function showDiff(jobId) {
   currentJobId = jobId
   try {
-    const res = await fetch(`/api/job/${jobId}/diff`, { credentials: 'include' })
+    const res = await apiFetch(`/api/job/${jobId}/diff`, { credentials: 'include' })
     if (!res.ok) throw new Error(`Diff API error ${res.status}`)
     const diffs = await res.json()
 
@@ -441,7 +474,7 @@ async function previewFile(filename) {
     // Fetch current file content
     let url = `/api/file/preview?path=${encodeURIComponent(path)}`
     if (currentJobId) url += `&job_id=${currentJobId}`
-    const res = await fetch(url)
+    const res = await apiFetch(url)
     if (!res.ok) {
       const error = await res.json()
       throw new Error(error.error || 'Failed to load file')
@@ -451,7 +484,7 @@ async function previewFile(filename) {
     // Try to fetch original file from Live configuration
     let originalData = null
     try {
-      const liveRes = await fetch(`/api/file/preview?path=openhab/${normalizedPath}`)
+      const liveRes = await apiFetch(`/api/file/preview?path=openhab/${normalizedPath}`)
       if (liveRes.ok) {
         originalData = await liveRes.json()
       }
@@ -466,7 +499,7 @@ async function previewFile(filename) {
     let diffData = null
     if (currentJobId) {
       try {
-        const diffRes = await fetch(`/api/job/${currentJobId}/file/diff?path=openhab/${normalizedPath}`)
+        const diffRes = await apiFetch(`/api/job/${currentJobId}/file/diff?path=openhab/${normalizedPath}`)
         if (diffRes.ok) {
           diffData = await diffRes.json()
         }
@@ -509,7 +542,7 @@ async function downloadReport(filename) {
     let url = `/api/file/preview?path=${encodeURIComponent(path)}`
     if (currentJobId) url += `&job_id=${currentJobId}`
 
-    const res = await fetch(url)
+    const res = await apiFetch(url)
     if (!res.ok) {
       const error = await res.json().catch(() => ({}))
       throw new Error(error.error || `HTTP ${res.status}`)
@@ -540,7 +573,7 @@ async function copyReport(filename) {
     let url = `/api/file/preview?path=${encodeURIComponent(path)}`
     if (currentJobId) url += `&job_id=${currentJobId}`
 
-    const res = await fetch(url)
+    const res = await apiFetch(url)
     if (!res.ok) {
       const error = await res.json().catch(() => ({}))
       throw new Error(error.error || `HTTP ${res.status}`)
@@ -715,7 +748,7 @@ async function refreshServices() {
 
   for (const service of services) {
     try {
-      const res = await fetch(`/api/service/${service}/status`)
+      const res = await apiFetch(`/api/service/${service}/status`)
       const status = await res.json()
 
       const div = document.createElement('div')
@@ -757,7 +790,7 @@ async function loadCloudInfo() {
   if (existing) existing.remove()
 
   try {
-    const res = await fetch('/api/openhab/cloud-info')
+    const res = await apiFetch('/api/openhab/cloud-info')
     const data = await res.json()
     const card = document.createElement('div')
     card.id = 'cloud-info-card'
@@ -846,7 +879,7 @@ async function loadStructureFromJob(jobId) {
 
   try {
     // First check if the job is completed before attempting to load structure
-    const jobRes = await fetch(`/api/job/${jobId}`)
+    const jobRes = await apiFetch(`/api/job/${jobId}`)
     if (!jobRes.ok) {
       throw new Error(`Failed to get job status: ${jobRes.status}`)
     }
@@ -860,7 +893,7 @@ async function loadStructureFromJob(jobId) {
       while (job.status !== 'completed' && Date.now() - startTime < timeout) {
         await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
 
-        const updatedJobRes = await fetch(`/api/job/${jobId}`)
+        const updatedJobRes = await apiFetch(`/api/job/${jobId}`)
         if (updatedJobRes.ok) {
           const updatedJob = await updatedJobRes.json();
           job.status = updatedJob.status;
@@ -881,7 +914,7 @@ async function loadStructureFromJob(jobId) {
 
     statusEl.textContent = 'Retrieving structure data...';
 
-    const res = await fetch(`/api/job/${jobId}/preview`)
+    const res = await apiFetch(`/api/job/${jobId}/preview`)
     if (!res.ok) {
       const error = await res.json()
       throw new Error(error.error || 'Failed to load structure from job')
@@ -1044,7 +1077,7 @@ function showReportDialog(reportKey) {
   content.innerHTML = '<div class="muted">Loading report...</div>'
   dialog.showModal()
 
-  fetch(`/api/file/preview?path=${encodeURIComponent(reportPath)}&job_id=${currentJobId}`, { credentials: 'include' })
+  apiFetch(`/api/file/preview?path=${encodeURIComponent(reportPath)}&job_id=${currentJobId}`, { credentials: 'include' })
     .then((res) => {
       if (!res.ok) throw new Error(`Preview API error ${res.status}`)
       return res.json()
@@ -1113,7 +1146,7 @@ async function loadConfig() {
   try {
     configStatus.textContent = 'Loading configuration...'
 
-    const res = await fetch('/api/config')
+    const res = await apiFetch('/api/config')
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({ error: 'Unknown error' }))
       throw new Error(errorData.error || `HTTP ${res.status}`)
@@ -1332,7 +1365,7 @@ async function saveConfig(reprocess = false) {
     })
 
     // Save to backend
-    const res = await fetch('/api/config', {
+    const res = await apiFetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newConfig)
@@ -1351,7 +1384,7 @@ async function saveConfig(reprocess = false) {
 
       configStatus.textContent = 'Triggering reprocessing...'
       try {
-        const rerunRes = await fetch(`/api/job/${currentJobId}/rerun`, { method: 'POST' })
+        const rerunRes = await apiFetch(`/api/job/${currentJobId}/rerun`, { method: 'POST' })
 
         if (!rerunRes.ok) {
           const errorData = await rerunRes.json().catch(() => ({ error: 'Unknown error' }));
@@ -1408,7 +1441,7 @@ async function previewProject() {
   statusEl.className = 'status-message'
 
   try {
-    const res = await fetch('/api/project/preview', { method: 'POST', body: fd })
+    const res = await apiFetch('/api/project/preview', { method: 'POST', body: fd })
     if (!res.ok) {
       const error = await res.json()
       throw new Error(error.error || 'Preview failed')
@@ -1555,7 +1588,7 @@ uploadForm.addEventListener('submit', async (e) => {
   statusEl.className = 'status-message'
 
   try {
-    const res = await fetch('/api/upload', { method: 'POST', body: fd })
+    const res = await apiFetch('/api/upload', { method: 'POST', body: fd })
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({ error: 'Upload failed' }))
       throw new Error(errorData.error || `Upload failed: ${res.status}`)
@@ -1608,7 +1641,7 @@ function startEvents(jobId) {
   // Store the controller to allow cancellation later
   window.eventStreamController = controller;
 
-  fetch(`/api/job/${jobId}/events`, {
+  apiFetch(`/api/job/${jobId}/events`, {
     signal: signal,
     headers: {
       'Accept': 'text/event-stream',
@@ -1641,7 +1674,7 @@ function startEvents(jobId) {
             renderLog();
 
             // Refresh job details to get final status and stats
-            fetch(`/api/job/${jobId}`, {
+            apiFetch(`/api/job/${jobId}`, {
               credentials: 'include'
             })
               .then(r => r.json())
@@ -1717,7 +1750,7 @@ function startEvents(jobId) {
                     }
 
                     // Proactively fetch final job data to update stats and status badges immediately
-                    fetch(`/api/job/${jobId}`, { credentials: 'include' })
+                    apiFetch(`/api/job/${jobId}`, { credentials: 'include' })
                       .then(r => r.json())
                       .then(j => {
                         // Update status badge in detail view if this is the current job
@@ -1791,7 +1824,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Set up automatic refresh for jobs - only refresh running jobs periodically
   setInterval(async () => {
     try {
-      const res = await fetch('/api/jobs', { credentials: 'include' })
+      const res = await apiFetch('/api/jobs', { credentials: 'include' })
       if (res.ok) {
         const jobs = await res.json()
         const runningJobs = jobs.filter(job => job.status === 'running')
@@ -1819,7 +1852,7 @@ let currentVersionData = null
 let latestVersionData = null
 async function loadVersion() {
   try {
-    const response = await fetch('/api/version')
+    const response = await apiFetch('/api/version')
     const data = await response.json()
     currentVersionData = data
     document.getElementById('headerCommit').textContent = data.commit_short || 'unknown'
@@ -1833,7 +1866,7 @@ async function loadVersion() {
 }
 async function checkForUpdatesBackground() {
   try {
-    const response = await fetch('/api/version/check')
+    const response = await apiFetch('/api/version/check')
     const data = await response.json()
 
     if (!data.error && data.update_available) {
@@ -1851,7 +1884,7 @@ async function checkForUpdatesBackground() {
 }
 async function checkForUpdates() {
   try {
-    const response = await fetch('/api/version/check')
+    const response = await apiFetch('/api/version/check')
     const data = await response.json()
 
     if (data.error) {
@@ -1906,7 +1939,7 @@ async function performUpdate() {
   logContent.textContent = 'Starting update process...\n'
 
   try {
-    const response = await fetch('/api/version/update', { method: 'POST' })
+    const response = await apiFetch('/api/version/update', { method: 'POST' })
     const data = await response.json()
 
     if (data.status === 'updating' || data.status === 'simulated') {
@@ -1933,7 +1966,7 @@ function startUpdateLogPolling() {
 
   updatePollInterval = setInterval(async () => {
     try {
-      const res = await fetch('/api/version/log')
+      const res = await apiFetch('/api/version/log')
       if (res.ok) {
         const data = await res.json()
         if (data.log) {

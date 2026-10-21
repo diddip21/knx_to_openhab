@@ -3,7 +3,7 @@ from web_ui.backend.storage import load_config
 conf = load_config()
 
 # Default settings
-bind_host = conf.get("bind_host", "0.0.0.0")
+bind_host = conf.get("bind_host", "127.0.0.1")
 port = conf.get("port", 8085)
 
 # Gunicorn settings

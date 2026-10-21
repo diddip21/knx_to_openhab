@@ -45,6 +45,13 @@ def test_installer_runs_provisioner_from_installed_tree():
     assert '"$REPO_ROOT/installer/provision_managed_files.py"' not in setup
 
 
+def test_permission_repair_restores_external_runtime_data_ownership():
+    repair = (ROOT / "fix_permissions.sh").read_text(encoding="utf-8")
+
+    assert "get_paths; print(get_paths().data_dir)" in repair
+    assert 'sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$DATA_DIR"' in repair
+
+
 def test_web_updater_stops_until_legacy_sudoers_policy_is_migrated():
     update = (ROOT / "update.sh").read_text(encoding="utf-8")
 

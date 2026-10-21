@@ -5,6 +5,8 @@ import tarfile
 import uuid
 from typing import Any, Callable, TypedDict
 
+from knxoh_paths import get_paths
+
 try:
     from flask import (
         Flask,
@@ -34,7 +36,7 @@ except Exception:
 
 from .jobs import JobManager
 from .service_manager import get_service_status, restart_service
-from .storage import load_config
+from .storage import load_config, load_generator_config, save_generator_config
 from .updater import Updater
 
 cfg = load_config()
@@ -358,9 +360,9 @@ if FLASK_AVAILABLE:
 
         # Check configured paths
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        main_config_path = os.path.join(project_root, "config.json")
+        main_config_path = get_paths(project_root).generator_config_file
 
-        if os.path.exists(main_config_path):
+        if main_config_path.exists():
             with open(main_config_path, "r", encoding="utf-8") as f:
                 main_config = json.load(f)
         else:
@@ -444,10 +446,10 @@ if FLASK_AVAILABLE:
 
         # Get the main config (from the main config.json)
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        main_config_path = os.path.join(project_root, "config.json")
+        main_config_path = get_paths(project_root).generator_config_file
 
         main_config = {}
-        if os.path.exists(main_config_path):
+        if main_config_path.exists():
             with open(main_config_path, "r", encoding="utf-8") as f:
                 main_config = json.load(f)
 
@@ -472,7 +474,7 @@ if FLASK_AVAILABLE:
                     "fenster_path": main_config.get("fenster_path", "openhab/rules/fenster.rules"),
                 },
                 "project_root": project_root,
-                "main_config_exists": os.path.exists(main_config_path),
+                "main_config_exists": main_config_path.exists(),
             }
         )
 
@@ -683,12 +685,7 @@ if FLASK_AVAILABLE:
         """Get the current configuration."""
         try:
             # Load the main config.json file which contains knxproject_to_openhab settings
-            main_config_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                "config.json",
-            )
-            with open(main_config_path, "r", encoding="utf-8") as f:
-                main_config = json.load(f)
+            main_config = load_generator_config(project_root)
             return jsonify(main_config)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -706,12 +703,7 @@ if FLASK_AVAILABLE:
                 return jsonify({"error": "Config must be a JSON object"}), 400
 
             # Save to the main config file (which contains knxproject_to_openhab settings)
-            main_config_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                "config.json",
-            )
-            with open(main_config_path, "w", encoding="utf-8") as f:
-                json.dump(new_config, f, indent=2, ensure_ascii=False)
+            save_generator_config(new_config, project_root)
 
             return jsonify({"message": "Configuration updated successfully"})
         except Exception as e:

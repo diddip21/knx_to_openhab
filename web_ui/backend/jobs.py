@@ -49,6 +49,7 @@ class JobManager:
         self.cfg = cfg
         # Use the configured backup directory from config, with a sensible default
         jobs_dir_config = cfg.get("jobs_dir", "var/lib/knx_to_openhab")
+        staging_dir_config = cfg.get("staging_dir", jobs_dir_config)
         backups_dir_config = cfg.get("backups_dir", "var/backups/knx_to_openhab")
 
         # If paths are relative, make them relative to project root
@@ -58,12 +59,17 @@ class JobManager:
         else:
             self.jobs_dir = jobs_dir_config
 
+        if not os.path.isabs(staging_dir_config):
+            self.staging_dir = os.path.join(project_root, staging_dir_config)
+        else:
+            self.staging_dir = staging_dir_config
+
         if not os.path.isabs(backups_dir_config):
             self.backups_dir = os.path.join(project_root, backups_dir_config)
         else:
             self.backups_dir = backups_dir_config
 
-        ensure_dirs([self.jobs_dir, self.backups_dir])
+        ensure_dirs([self.jobs_dir, self.staging_dir, self.backups_dir])
         self._jobs = load_jobs(self.jobs_dir)
         self.queues = {}
         self.executor = ThreadPoolExecutor(max_workers=2)
@@ -184,7 +190,10 @@ class JobManager:
             importlib.reload(etsmod)  # Ensure we use the latest code
 
             # Setup Staging
-            staging_dir = os.path.join(self.jobs_dir, job_id, "staging")
+            if os.path.abspath(self.staging_dir) == os.path.abspath(self.jobs_dir):
+                staging_dir = os.path.join(self.jobs_dir, job_id, "staging")
+            else:
+                staging_dir = os.path.join(self.staging_dir, job_id)
             ensure_dirs([staging_dir])
 
             # Load main config to base our staged config on

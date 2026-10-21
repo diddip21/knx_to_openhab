@@ -1,78 +1,66 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Backup cleanup script for knx_to_openhab
-# Reads retention settings from web_ui/backend/config.json
-
-# Determine installation directory based on script location
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INSTALL_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
-CONF="$INSTALL_DIR/web_ui/backend/config.json"
-
-if [ ! -f "$CONF" ]; then
-  echo "Config not found at $CONF, using defaults"
-  BACKUPS_DIR="/var/backups/knx_to_openhab"
-  DAYS=14
-  MAX_BACKUPS=50
-  MAX_SIZE_MB=500
-else
-  BACKUPS_DIR=$(python3 - <<PY
-import json
-import os
-cfg=json.load(open('$CONF'))
-backups_dir = cfg.get('backups_dir','/var/backups/knx_to_openhab')
-# If it's a relative path, make it relative to the installation directory
-if not backups_dir.startswith('/'):
-    backups_dir = os.path.join('$INSTALL_DIR', backups_dir)
-print(backups_dir)
-PY
-)
-  DAYS=$(python3 - <<PY
-import json
-cfg=json.load(open('$CONF'))
-print(cfg.get('retention',{}).get('days',14))
-PY
-)
-  MAX_BACKUPS=$(python3 - <<PY
-import json
-cfg=json.load(open('$CONF'))
-print(cfg.get('retention',{}).get('max_backups',50))
-PY
-)
-  MAX_SIZE_MB=$(python3 - <<PY
-import json
-cfg=json.load(open('$CONF'))
-print(cfg.get('retention',{}).get('max_backups_size_mb',500))
-PY
-)
+APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PYTHON="$APP_DIR/venv/bin/python"
+if [[ ! -x "$PYTHON" ]]; then
+    PYTHON=python3
 fi
+
+readarray -t SETTINGS < <(PYTHONPATH="$APP_DIR" "$PYTHON" - "$APP_DIR" <<'PY'
+import json
+import sys
+sys.path.insert(0, sys.argv[1])
+from web_ui.backend.storage import load_config
+config = load_config(sys.argv[1])
+print(config["backups_dir"])
+retention = config.get("retention", {})
+print(int(retention.get("days", 14)))
+print(int(retention.get("max_backups", 50)))
+print(int(retention.get("max_backups_size_mb", 500)))
+PY
+)
+
+if [[ "${#SETTINGS[@]}" -ne 4 ]]; then
+    echo "Unable to load the backup retention settings" >&2
+    exit 1
+fi
+BACKUPS_DIR="${SETTINGS[0]}"
+DAYS="${SETTINGS[1]}"
+MAX_BACKUPS="${SETTINGS[2]}"
+MAX_SIZE_MB="${SETTINGS[3]}"
 
 echo "Backups dir: $BACKUPS_DIR"
 echo "Retention days: $DAYS, max backups: $MAX_BACKUPS, max size MB: $MAX_SIZE_MB"
-
-if [ ! -d "$BACKUPS_DIR" ]; then
-  echo "Backups dir does not exist: $BACKUPS_DIR"
-  exit 0
+if [[ ! -d "$BACKUPS_DIR" ]]; then
+    echo "Backups dir does not exist: $BACKUPS_DIR"
+    exit 0
 fi
 
-# delete by age
-find "$BACKUPS_DIR" -maxdepth 1 -name '*.tar.gz' -mtime +$DAYS -print -delete || true
+find "$BACKUPS_DIR" -maxdepth 1 -type f -name '*.tar.gz' -mtime "+$DAYS" -print -delete
+mapfile -t BACKUPS < <(find "$BACKUPS_DIR" -maxdepth 1 -type f -name '*.tar.gz' -printf '%T@ %p\n' | sort -rn | cut -d' ' -f2-)
+for ((index = MAX_BACKUPS; index < ${#BACKUPS[@]}; index++)); do
+    rm -f -- "${BACKUPS[$index]}"
+done
 
-# enforce max backups by removing oldest
-cd "$BACKUPS_DIR"
-ls -1t *.tar.gz 2>/dev/null | tail -n +$((MAX_BACKUPS+1)) | xargs -r rm -f || true
-
-# enforce size limit
-TOTAL=$(du -sb . | awk '{print $1}')
+mapfile -t BACKUPS < <(find "$BACKUPS_DIR" -maxdepth 1 -type f -name '*.tar.gz' -printf '%T@ %s %p\n' | sort -n)
+TOTAL=0
+for record in "${BACKUPS[@]}"; do
+    size="${record#* }"
+    size="${size%% *}"
+    TOTAL=$((TOTAL + size))
+done
 MAX_BYTES=$((MAX_SIZE_MB * 1024 * 1024))
-if [ "$TOTAL" -gt "$MAX_BYTES" ]; then
-  echo "Total backup size $TOTAL > $MAX_BYTES, trimming oldest"
-  for f in $(ls -1tr *.tar.gz 2>/dev/null); do
-    if [ "$TOTAL" -le "$MAX_BYTES" ]; then break; fi
-    sz=$(stat -c%s "$f")
-    rm -f "$f"
-    TOTAL=$((TOTAL - sz))
-  done
-fi
+for record in "${BACKUPS[@]}"; do
+    if ((TOTAL <= MAX_BYTES)); then
+        break
+    fi
+    size="${record#* }"
+    size="${size%% *}"
+    file="${record#* * }"
+    rm -f -- "$file"
+    TOTAL=$((TOTAL - size))
+done
 
 echo "Cleanup finished"

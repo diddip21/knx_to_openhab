@@ -1,18 +1,4 @@
-import json
-import multiprocessing
-import os
-
-# Locate config.json relative to this file
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
-
-
-def load_config():
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
+from web_ui.backend.storage import load_config
 
 conf = load_config()
 

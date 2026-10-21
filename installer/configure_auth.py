@@ -9,6 +9,7 @@ import binascii
 import getpass
 import json
 import os
+import secrets
 import sys
 import tempfile
 from pathlib import Path
@@ -16,7 +17,11 @@ from typing import Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from web_ui.backend.auth import hash_password, is_password_hash, verify_password  # noqa: E402
+from web_ui.backend.auth import (  # noqa: E402
+    hash_password,
+    is_password_hash,
+    verify_password,
+)
 
 SHIPPED_DEFAULT_PASSWORD = "logihome"
 
@@ -114,14 +119,31 @@ def configure_auth(
         line
         for line in lines
         if line.partition("=")[0].strip()
-        not in ("KNXOH_UI_PASSWORD_HASH_B64", "KNXOH_UI_PASSWORD_B64")
+        not in (
+            "KNXOH_UI_PASSWORD_HASH_B64",
+            "KNXOH_UI_PASSWORD_B64",
+            "KNXOH_SESSION_SECRET_B64",
+        )
     ]
     if password_hash:
         encoded_hash = base64.b64encode(password_hash.encode("utf-8")).decode("ascii")
         secret_lines.append(f"KNXOH_UI_PASSWORD_HASH_B64={encoded_hash}")
+
+    session_secret = values.get("KNXOH_SESSION_SECRET_B64")
+    if auth.get("enabled", True) and not session_secret:
+        session_secret = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
+    if session_secret:
+        try:
+            decoded_session_secret = base64.b64decode(session_secret, validate=True)
+        except binascii.Error as error:
+            raise ValueError("The stored session secret is invalid") from error
+        if len(decoded_session_secret) < 32:
+            raise ValueError("The stored session secret is invalid")
+        if not any(line.startswith("KNXOH_SESSION_SECRET_B64=") for line in secret_lines):
+            secret_lines.append(f"KNXOH_SESSION_SECRET_B64={session_secret}")
+
+    if password_hash or session_secret or secret_lines != lines or not secrets_path.exists():
         _atomic_write(secrets_path, "\n".join(secret_lines) + "\n", 0o640)
-    elif not secrets_path.exists():
-        _atomic_write(secrets_path, "", 0o640)
 
     if "password" in config.get("auth", {}):
         config["auth"].pop("password", None)

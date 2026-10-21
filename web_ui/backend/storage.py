@@ -1,7 +1,10 @@
 import base64
 import binascii
+import errno
 import json
 import os
+import secrets
+import stat
 import tempfile
 
 from knxoh_paths import get_paths
@@ -16,9 +19,12 @@ def load_config(project_root=None):
         "jobs_dir": str(paths.jobs_dir),
         "staging_dir": str(paths.staging_dir),
         "generated_dir": str(paths.generated_dir),
+        "sessions_file": str(paths.sessions_file),
         "backups_dir": str(paths.backup_dir),
-        "bind_host": "0.0.0.0",
+        "bind_host": "127.0.0.1",
         "port": 8085,
+        "trusted_proxy_hops": 0,
+        "session_max_age_seconds": 43200,
         "auth": {"enabled": True, "user": "admin"},
         "retention": {"days": 14, "max_backups": 50, "max_backups_size_mb": 500},
         "general": {"auto_place_unknown": False},
@@ -95,6 +101,60 @@ def load_generator_config(project_root=None):
     paths = get_paths(project_root)
     with paths.generator_config_file.open(encoding="utf-8") as config_file:
         return json.load(config_file)
+
+
+def get_session_secret(project_root=None):
+    """Load a durable session key, creating a private data-dir key if needed."""
+    paths = get_paths(project_root)
+    if paths.secrets_file and paths.secrets_file.is_file():
+        for line in paths.secrets_file.read_text(encoding="utf-8").splitlines():
+            name, separator, value = line.partition("=")
+            if separator and name == "KNXOH_SESSION_SECRET_B64":
+                try:
+                    secret = base64.b64decode(value.strip(), validate=True)
+                except binascii.Error as error:
+                    raise ValueError("The stored session secret is invalid") from error
+                if len(secret) < 32:
+                    raise ValueError("The stored session secret is invalid")
+                return secret
+
+    key_file = paths.data_dir / "session.secret"
+    os.makedirs(paths.data_dir, mode=0o750, exist_ok=True)
+
+    def read_existing_key() -> bytes:
+        try:
+            descriptor = os.open(key_file, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        except OSError as error:
+            if error.errno == errno.ELOOP:
+                raise ValueError(
+                    f"The stored session secret must not be a symlink: {key_file}"
+                ) from error
+            raise
+        with os.fdopen(descriptor, "rb") as secret_file:
+            if not stat.S_ISREG(os.fstat(secret_file.fileno()).st_mode):
+                raise ValueError(f"The stored session secret is not a regular file: {key_file}")
+            os.fchmod(secret_file.fileno(), 0o600)
+            secret = secret_file.read()
+        if len(secret) < 32:
+            raise ValueError(f"The stored session secret is invalid: {key_file}")
+        return secret
+
+    if key_file.exists() or key_file.is_symlink():
+        return read_existing_key()
+    try:
+        descriptor = os.open(
+            key_file,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+    except FileExistsError:
+        return read_existing_key()
+    secret = secrets.token_bytes(32)
+    with os.fdopen(descriptor, "wb") as secret_file:
+        secret_file.write(secret)
+        secret_file.flush()
+        os.fsync(secret_file.fileno())
+    return secret
 
 
 def save_generator_config(config, project_root=None):

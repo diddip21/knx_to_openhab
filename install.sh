@@ -32,7 +32,26 @@ for line in lines:
 print("/opt/knx_to_openhab")
 PY
 }
+read_saved_config_dir() {
+    python3 - "$PATHS_FILE" <<'PY'
+import shlex
+import sys
+try:
+    lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
+except FileNotFoundError:
+    print("/etc/knx_to_openhab")
+    raise SystemExit(0)
+for line in lines:
+    if line.startswith("KNXOH_CONFIG_DIR="):
+        value = shlex.split(line.split("=", 1)[1], posix=True)
+        if len(value) == 1:
+            print(value[0])
+            raise SystemExit(0)
+print("/etc/knx_to_openhab")
+PY
+}
 INSTALL_DIR="${KNXOH_INSTALL_DIR:-$(read_saved_install_dir)}"
+CONFIG_DIR="${KNXOH_CONFIG_DIR:-$(read_saved_config_dir)}"
 BRANCH="main"
 
 # Helper functions
@@ -190,7 +209,16 @@ run_setup_script() {
 }
 
 display_completion() {
-    local ip_address=$(hostname -I | awk '{print $1}')
+    local ip_addresses=$(hostname -I)
+    local ip_address="${ip_addresses%% *}"
+    local ui_settings
+    ui_settings=$(sudo python3 "$INSTALL_DIR/installer/web_ui_endpoint.py" \
+        --config "$CONFIG_DIR/config.json" --lan-ip "$ip_addresses")
+    local -a ui_values=()
+    mapfile -t ui_values <<<"$ui_settings"
+    local binding_mode="${ui_values[0]:-loopback}"
+    local ui_host="${ui_values[1]:-127.0.0.1}"
+    local port="${ui_values[2]:-8085}"
     
     echo ""
     echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
@@ -202,7 +230,12 @@ display_completion() {
     echo -e "${BLUE}Installation Details:${NC}"
     echo -e "  • Installation directory: ${YELLOW}$INSTALL_DIR${NC}"
     echo -e "  • Service name: ${YELLOW}knxohui.service${NC}"
-    echo -e "  • Web UI URL: ${YELLOW}http://$ip_address:8085${NC}"
+    echo -e "  • Web UI URL: ${YELLOW}http://$ui_host:$port${NC}"
+    if [[ "$binding_mode" == "loopback" ]]; then
+        local device_host="${ip_address:-your-device-ip}"
+        echo -e "  • Local-only listener. For remote access, run: ${YELLOW}ssh -L $port:$ui_host:$port <user>@$device_host${NC}"
+        echo -e "    Then open ${YELLOW}http://$ui_host:$port${NC} in your browser."
+    fi
     echo ""
     echo -e "${BLUE}Web UI Credentials:${NC}"
     echo -e "  • Username: ${YELLOW}admin${NC} (unless changed in the external config)"

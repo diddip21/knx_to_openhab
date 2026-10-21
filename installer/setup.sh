@@ -70,7 +70,7 @@ fi
 # Add knxohui user to openhab group
 sudo usermod -a -G openhab $SERVICE_USER
 echo "Restricting OpenHAB writes to generated output files"
-sudo "$BASE/venv/bin/python" "$REPO_ROOT/installer/provision_managed_files.py" \
+sudo "$BASE/venv/bin/python" "$BASE/installer/provision_managed_files.py" \
     --service-user "$SERVICE_USER" --openhab-group openhab
 
 echo "Install restricted sudoers policy for service operations"

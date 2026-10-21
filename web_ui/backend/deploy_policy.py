@@ -231,6 +231,28 @@ def _copy_file_descriptors(source_fd, target_fd):
             os.fsync(target.fileno())
 
 
+def _read_all(fd):
+    os.lseek(fd, 0, os.SEEK_SET)
+    chunks = []
+    while True:
+        chunk = os.read(fd, 1024 * 1024)
+        if not chunk:
+            return b"".join(chunks)
+        chunks.append(chunk)
+
+
+def _replace_file_contents(fd, content):
+    os.ftruncate(fd, 0)
+    os.lseek(fd, 0, os.SEEK_SET)
+    remaining = memoryview(content)
+    while remaining:
+        written = os.write(fd, remaining)
+        if written <= 0:
+            raise OSError("Short write while restoring managed file")
+        remaining = remaining[written:]
+    os.fsync(fd)
+
+
 def deploy_staged_files(mapping, staging_dir, openhab_root, managed_paths):
     """Copy only configured managed files into already provisioned inodes.
 
@@ -285,43 +307,72 @@ def deploy_staged_files(mapping, staging_dir, openhab_root, managed_paths):
 
 
 def restore_managed_files(backup_path, openhab_root, managed_relatives):
-    """Restore only managed regular files from a full-directory tar backup."""
+    """Restore available managed regular files from a full-directory tar backup.
+
+    Archive contents and current target contents are read before any live file is
+    changed. If a write fails, the saved target contents are written back.
+    """
     openhab_root = os.path.realpath(os.path.abspath(openhab_root))
     archive_root = os.path.basename(os.path.normpath(openhab_root))
+    staged_contents = {}
+
+    # Read and validate every available archive entry before opening any live
+    # file for writing. Older backups can lack some of today's managed outputs.
+    with tarfile.open(backup_path, "r:gz") as archive:
+        for relative in sorted(set(managed_relatives)):
+            _path_text(relative, "backup target")
+            if (
+                _relative_path(os.path.join(openhab_root, relative), openhab_root, "backup target")
+                != relative
+            ):
+                raise DeployPolicyError("Backup target is not a managed relative path")
+            member_name = f"{archive_root}/{relative}"
+            try:
+                member = archive.getmember(member_name)
+            except KeyError:
+                continue
+            if not member.isfile():
+                raise DeployPolicyError(f"Backup entry is not a regular file: {relative}")
+            source = archive.extractfile(member)
+            if source is None:
+                raise DeployPolicyError(f"Could not read backup entry: {relative}")
+            with source:
+                staged_contents[relative] = source.read()
+
+    if not staged_contents:
+        return 0
+
     opened = []
-
     try:
-        with tarfile.open(backup_path, "r:gz") as archive:
-            for relative in sorted(set(managed_relatives)):
-                _path_text(relative, "backup target")
-                if (
-                    _relative_path(
-                        os.path.join(openhab_root, relative), openhab_root, "backup target"
-                    )
-                    != relative
-                ):
-                    raise DeployPolicyError("Backup target is not a managed relative path")
-                member_name = f"{archive_root}/{relative}"
-                try:
-                    member = archive.getmember(member_name)
-                except KeyError as error:
-                    raise DeployPolicyError(f"Backup does not contain {relative}") from error
-                if not member.isfile():
-                    raise DeployPolicyError(f"Backup entry is not a regular file: {relative}")
-                source = archive.extractfile(member)
-                if source is None:
-                    raise DeployPolicyError(f"Could not read backup entry: {relative}")
-                target_fd = _open_regular_file(openhab_root, relative, os.O_WRONLY)
-                opened.append((source, target_fd))
+        for relative in sorted(staged_contents):
+            target_fd = _open_regular_file(openhab_root, relative, os.O_RDWR)
+            try:
+                original = _read_all(target_fd)
+            except Exception:
+                os.close(target_fd)
+                raise
+            opened.append((relative, target_fd, original))
 
-            for source, target_fd in opened:
-                os.ftruncate(target_fd, 0)
-                os.lseek(target_fd, 0, os.SEEK_SET)
-                with os.fdopen(os.dup(target_fd), "wb") as target:
-                    shutil.copyfileobj(source, target, length=1024 * 1024)
-                    target.flush()
-                    os.fsync(target.fileno())
+        touched = []
+        try:
+            for relative, target_fd, _original in opened:
+                touched.append((relative, target_fd, _original))
+                _replace_file_contents(target_fd, staged_contents[relative])
+        except Exception as write_error:
+            recovery_errors = []
+            for relative, target_fd, original in touched:
+                try:
+                    _replace_file_contents(target_fd, original)
+                except Exception as recovery_error:
+                    recovery_errors.append(f"{relative}: {recovery_error}")
+            if recovery_errors:
+                raise DeployPolicyError(
+                    "Restore failed and one or more live files could not be recovered: "
+                    + "; ".join(recovery_errors)
+                ) from write_error
+            raise
     finally:
-        for source, target_fd in opened:
-            source.close()
+        for _relative, target_fd, _original in opened:
             os.close(target_fd)
+
+    return len(opened)

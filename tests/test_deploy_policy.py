@@ -196,3 +196,67 @@ def test_rollback_restores_managed_files_without_replacing_manual_files(tmp_path
 
     assert target.read_text(encoding="utf-8") == "previous generated content\n"
     assert manual.read_text(encoding="utf-8") == "current manual content\n"
+
+
+def test_rollback_skips_managed_files_missing_from_legacy_backup(tmp_path):
+    root = tmp_path / "openhab"
+    (root / "items").mkdir(parents=True)
+    target = root / "items" / "knx.items"
+    report = root / "completeness_report.json"
+    target.write_text("current generated content\n", encoding="utf-8")
+    report.write_text("current report\n", encoding="utf-8")
+
+    original = tmp_path / "original"
+    (original / "openhab" / "items").mkdir(parents=True)
+    (original / "openhab" / "items" / "knx.items").write_text(
+        "legacy generated content\n", encoding="utf-8"
+    )
+    backup = tmp_path / "legacy-backup.tar.gz"
+    with tarfile.open(backup, "w:gz") as archive:
+        archive.add(original / "openhab", arcname="openhab")
+
+    restored = restore_managed_files(
+        str(backup), str(root), {"items/knx.items", "completeness_report.json"}
+    )
+
+    assert restored == 1
+    assert target.read_text(encoding="utf-8") == "legacy generated content\n"
+    assert report.read_text(encoding="utf-8") == "current report\n"
+
+
+def test_rollback_recovers_all_live_files_if_a_write_fails(tmp_path, monkeypatch):
+    root = tmp_path / "openhab"
+    items = root / "items"
+    items.mkdir(parents=True)
+    first = items / "a.items"
+    second = items / "b.items"
+    first.write_text("current first file\n", encoding="utf-8")
+    second.write_text("current second file\n", encoding="utf-8")
+
+    original = tmp_path / "original"
+    original_items = original / "openhab" / "items"
+    original_items.mkdir(parents=True)
+    (original_items / "a.items").write_text("backup first file\n", encoding="utf-8")
+    (original_items / "b.items").write_text("backup second file\n", encoding="utf-8")
+    backup = tmp_path / "backup.tar.gz"
+    with tarfile.open(backup, "w:gz") as archive:
+        archive.add(original / "openhab", arcname="openhab")
+
+    real_write = os.write
+    write_count = 0
+
+    def fail_once_after_partial_write(fd, content):
+        nonlocal write_count
+        write_count += 1
+        if write_count == 2:
+            real_write(fd, content[:2])
+            raise OSError("simulated disk write failure")
+        return real_write(fd, content)
+
+    monkeypatch.setattr(os, "write", fail_once_after_partial_write)
+
+    with pytest.raises(OSError, match="simulated disk write failure"):
+        restore_managed_files(str(backup), str(root), {"items/a.items", "items/b.items"})
+
+    assert first.read_text(encoding="utf-8") == "current first file\n"
+    assert second.read_text(encoding="utf-8") == "current second file\n"

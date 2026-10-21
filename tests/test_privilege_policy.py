@@ -38,6 +38,13 @@ def test_installer_scripts_install_and_validate_the_restricted_policy():
     assert '"$REPO_ROOT/requirements.txt"' in setup
 
 
+def test_installer_runs_provisioner_from_installed_tree():
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+
+    assert '"$BASE/installer/provision_managed_files.py"' in setup
+    assert '"$REPO_ROOT/installer/provision_managed_files.py"' not in setup
+
+
 def test_web_updater_stops_until_legacy_sudoers_policy_is_migrated():
     update = (ROOT / "update.sh").read_text(encoding="utf-8")
 

@@ -718,6 +718,11 @@ class JobManager:
         return diff_lines
 
     def rollback(self, job_id, backup_name=None):
+        """Restore a job's managed files, serialized with deployments."""
+        with self.lock:
+            return self._rollback_locked(job_id, backup_name)
+
+    def _rollback_locked(self, job_id, backup_name=None):
         job = self._jobs.get(job_id)
         if not job:
             raise ValueError("job not found")
@@ -759,6 +764,10 @@ class JobManager:
 
     def deploy(self, job_id):
         """Deploy staged files to live environment."""
+        with self.lock:
+            return self._deploy_locked(job_id)
+
+    def _deploy_locked(self, job_id):
         job = self._jobs.get(job_id)
         if not job:
             raise ValueError("Job not found")

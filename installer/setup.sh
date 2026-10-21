@@ -28,10 +28,14 @@ python3 -m venv "$BASE/venv"
 "$BASE/venv/bin/pip" install -r "$REPO_ROOT/requirements.txt"
 
 echo "Copying files"
-rsync -a --exclude .git "$REPO_ROOT/" "$BASE/"
+CONF="$BASE/web_ui/backend/config.json"
+rsync -a --exclude .git --exclude web_ui/backend/config.json "$REPO_ROOT/" "$BASE/"
+if [[ ! -f "$CONF" ]]; then
+    sudo install -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0600 \
+        "$REPO_ROOT/web_ui/backend/config.json" "$CONF"
+fi
 
 # Read config values
-CONF="$BASE/web_ui/backend/config.json"
 if [ -f "$CONF" ]; then
     JOBS_DIR=$(python3 -c "import json; print(json.load(open('$CONF')).get('jobs_dir', 'var/lib/knx_to_openhab'))" 2>/dev/null || echo "var/lib/knx_to_openhab")
     BACKUPS_DIR=$(python3 -c "import json; print(json.load(open('$CONF')).get('backups_dir', 'var/backups/knx_to_openhab'))" 2>/dev/null || echo "var/backups/knx_to_openhab")
@@ -65,10 +69,9 @@ if ! getent group openhab > /dev/null 2>&1; then
 fi
 # Add knxohui user to openhab group
 sudo usermod -a -G openhab $SERVICE_USER
-# Set proper permissions on OpenHAB directory if it exists
-if [ -d "/etc/openhab" ]; then
-    sudo chmod -R 775 /etc/openhab 2>/dev/null || true
-fi
+echo "Restricting OpenHAB writes to generated output files"
+sudo "$BASE/venv/bin/python" "$BASE/installer/provision_managed_files.py" \
+    --service-user "$SERVICE_USER" --openhab-group openhab
 
 echo "Install restricted sudoers policy for service operations"
 sudo bash "$REPO_ROOT/installer/migrate_sudoers.sh"

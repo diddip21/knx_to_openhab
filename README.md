@@ -9,7 +9,7 @@ Includes a **Web UI** for browser-based management and a **CLI** for automated w
 - **Automated Generation** — Creates Things, Items, Sitemaps, and Persistence rules in one step
 - **Smart Detection** — Identifies Dimmers, Rollershutters, Thermostats, and multi-address components by DPT analysis and naming conventions
 - **Web Interface** — Drag-and-drop upload, live progress streaming (SSE), job history, diff viewer, deploy/rollback
-- **Backup & Rollback** — Automatic tar.gz backup before each generation, restore any previous version
+- **Backup & Rollback** — Automatic tar.gz backup before each generation; rollback restores generated files and preserves manual OpenHAB configuration
 - **Reports** — Unknown addresses, partial items, completeness checks (missing required channels)
 - **Auto-Placement** — Optional: automatically create missing floors/rooms for unmatched addresses
 - **Semantic Model** — Auto-tags items for OpenHAB's semantic model

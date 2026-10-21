@@ -54,9 +54,12 @@ if ! getent group openhab > /dev/null 2>&1; then
     sudo groupadd openhab 2>/dev/null || true
 fi
 sudo usermod -a -G openhab $SERVICE_USER 2>/dev/null || true
-if [ -d "/etc/openhab" ]; then
-    sudo chmod -R 775 /etc/openhab 2>/dev/null || true
+PYTHON="$INSTALL_DIR/venv/bin/python"
+if [ ! -x "$PYTHON" ]; then
+    PYTHON="python3"
 fi
+sudo "$PYTHON" "$INSTALL_DIR/installer/provision_managed_files.py" \
+    --service-user "$SERVICE_USER" --openhab-group openhab
 
 # Replace the sudoers entry so repairs also remove obsolete broad permissions.
 sudo bash "$INSTALL_DIR/installer/migrate_sudoers.sh"

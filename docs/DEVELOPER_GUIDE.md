@@ -76,48 +76,29 @@ pip install -r requirements.txt
 
 ### 3. Configure Web UI (Optional)
 
-For development, you can create a custom config:
-
-```bash
-cp web_ui/backend/config.json web_ui/backend/config.dev.json
-```
-
-Edit `config.dev.json` to disable authentication for easier local testing:
-
-```json
-{
-  "openhab_path": "openhab",
-  "jobs_dir": "var/lib/knx_to_openhab",
-  "backups_dir": "var/backups/knx_to_openhab",
-  "bind_host": "127.0.0.1",
-  "port": 5000,
-  "auth": {
-    "enabled": false
-  },
-  "retention": {
-    "days": 14,
-    "max_backups": 50,
-    "max_backups_size_mb": 500
-  }
-}
-```
+For local development and browser tests, set `FLASK_ENV=testing`. This disables
+authentication only for that explicitly marked test process; production does
+not use this setting.
 
 ### 4. Start Development Server
 
 **Using Flask CLI** (recommended):
 ```bash
 # Activate venv first (see step 1)
+export FLASK_ENV=testing
 flask --app web_ui.backend.app:app run --debug
 ```
 
 **Or using Python directly**:
 ```bash
+FLASK_ENV=testing \
 python -m flask --app web_ui.backend.app:app run --debug
 ```
 
 **Or run the app module**:
 ```bash
 cd web_ui/backend
+export FLASK_ENV=testing
 python -m app
 ```
 
@@ -246,7 +227,7 @@ Vanilla HTML/CSS/JavaScript interface:
 
 Example:
 ```bash
-curl -u admin:logihome http://localhost:5000/api/status
+curl -u '<user>:<password>' http://localhost:5000/api/status
 ```
 
 ### Frontend Changes
@@ -392,7 +373,7 @@ pip install -r requirements.txt
 - Kill existing Flask process
 - Or use a different port:
   ```bash
-  flask --app web_ui.backend.app:app run --port 5001
+  FLASK_ENV=testing flask --app web_ui.backend.app:app run --port 5001
   ```
 
 ### Import Errors in `web_ui.backend.app`
@@ -403,7 +384,7 @@ pip install -r requirements.txt
 Run Flask from the project root, not from `web_ui/backend/`:
 ```bash
 cd /path/to/knx_to_openhab  # project root
-flask --app web_ui.backend.app:app run
+FLASK_ENV=testing flask --app web_ui.backend.app:app run
 ```
 
 ---

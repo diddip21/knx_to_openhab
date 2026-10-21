@@ -49,8 +49,10 @@ the active paths. It checks for conflicting files and refuses symlinked or
 system-wide legacy source directories. Only after a successful copy does it
 remove legacy job or backup directories inside the application tree. The old
 root `config.json` is copied to `generator.json` before the application tree is
-reset to the packaged defaults. The Web UI password is separated into the
-restricted secrets file while the runtime settings remain in `config.json`.
+reset to the packaged defaults. Existing user-chosen Web UI passwords are converted to
+Argon2id hashes in the restricted secrets file. The shipped default password is discarded,
+and setup prompts for a replacement. A fresh install also prompts for a unique password;
+runtime settings remain in `config.json`.
 
 The Web UI and generator both read the saved path environment, so the Settings
 screen writes `/var/lib/knx_to_openhab/generator.json` and future releases do not
@@ -68,12 +70,14 @@ To set or rotate it, run the helper, enter the new password twice, then restart
 the service:
 
 ```bash
-sudo /usr/bin/python3 /usr/local/libexec/knx_to_openhab/set_ui_password.py
+sudo /opt/knx_to_openhab/venv/bin/python \
+  /usr/local/libexec/knx_to_openhab/set_ui_password.py
 sudo systemctl restart knxohui.service
 ```
 
-The root-owned helper resolves the configured secrets path from `paths.env`,
-preserves other secret values, and does not put the password in shell history.
+The root-owned helper hashes the new password with Argon2id, resolves the
+configured secrets path from `paths.env`, preserves other secret values, and
+does not put the password in shell history.
 
 See `WEBUI_INSTALLATION.md` for full documentation.
 

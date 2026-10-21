@@ -26,6 +26,6 @@ Write-Host ""
 
 # Set Flask environment variables and start
 $env:FLASK_APP = "web_ui.backend.app:app"
-$env:FLASK_ENV = "development"
+$env:FLASK_ENV = "testing"
 
 flask run --host 127.0.0.1 --port 5000 --debug

@@ -67,6 +67,7 @@ cd knx_to_openhab
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+export FLASK_ENV=testing
 flask --app web_ui.backend.app:app run --debug
 # → http://localhost:5000
 ```
@@ -75,7 +76,9 @@ flask --app web_ui.backend.app:app run --debug
 
 ## Using the Web UI
 
-1. **Open** `http://<your-ip>:8085` (default: `admin` / `logihome`; rotate it with the secure helper in [`installer/README.md`](installer/README.md))
+1. **Open** `http://<your-ip>:8085` and use the Web UI password set during installation.
+   A fresh install prompts for a unique password; no shared default password is shipped.
+   Rotate it later with the secure helper in [`installer/README.md`](installer/README.md).
 2. **Upload** your `.knxproj` export or JSON dump
 3. **Preview** the building structure before processing
 4. **Review** generated files, diffs, and reports

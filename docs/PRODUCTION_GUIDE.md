@@ -81,8 +81,10 @@ curl http://localhost:8085/api/status
 
 ### Step 3: Verify migrated settings and data
 
-The setup step preserves the existing Web UI login and moves its password value
-to `/etc/knx_to_openhab/secrets.env` with mode `0640`. Runtime settings are in
+The setup step preserves existing user-chosen logins and stores their Argon2id password
+hashes in `/etc/knx_to_openhab/secrets.env` with mode `0640`. A legacy shipped default
+is discarded and setup prompts for a replacement. A fresh install also prompts for a
+unique password; no default password is shipped. Runtime settings are in
 `/etc/knx_to_openhab/config.json`; generator rules edited through the Settings
 screen are in `/var/lib/knx_to_openhab/generator.json`. Jobs and backups remain
 available after migration:
@@ -92,16 +94,17 @@ sudo cat /etc/knx_to_openhab/paths.env
 sudo ls -la /var/lib/knx_to_openhab/jobs /var/backups/knx_to_openhab
 ```
 
-The default login is `admin` / `logihome`. To set a new password without
-editing tracked configuration or exposing it in shell history, run:
+To rotate the password without editing tracked configuration or exposing it in
+shell history, run:
 
 ```bash
-sudo /usr/bin/python3 /usr/local/libexec/knx_to_openhab/set_ui_password.py
+sudo /opt/knx_to_openhab/venv/bin/python \
+  /usr/local/libexec/knx_to_openhab/set_ui_password.py
 sudo systemctl restart knxohui.service
 ```
 
-The root-owned helper prompts twice and updates the password in the configured
-secrets file while preserving other secret values.
+The root-owned helper prompts twice, stores an Argon2id hash in the configured
+secrets file, and preserves other secret values.
 
 ### Uninstallation
 To completely remove the application, use the uninstaller script:
@@ -121,8 +124,9 @@ Open in your browser:
 http://<pi-ip-address>:8085
 ```
 
-You will be prompted for the Web UI username and password configured on the
-installation. The installer preserves the existing login during migration.
+Use the Web UI password entered during installation. Existing installations
+keep their password while setup replaces the stored cleartext value with an
+Argon2id hash.
 
 ### Upload and Process a KNX Project
 

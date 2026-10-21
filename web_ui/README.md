@@ -41,7 +41,8 @@ python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-# Start dev server
+# Start local browser tests without production credentials
+export FLASK_ENV=testing
 flask --app web_ui.backend.app:app run --debug
 # → http://localhost:5000
 ```
@@ -75,8 +76,10 @@ flask --app web_ui.backend.app:app run --debug
 Full schema: see `api_schema.json`.
 
 On an installed system, runtime settings live in `/etc/knx_to_openhab/config.json`,
-generator rules live in `/var/lib/knx_to_openhab/generator.json`, and the UI
-password is separated into `/etc/knx_to_openhab/secrets.env`. Jobs and uploads
+generator rules live in `/var/lib/knx_to_openhab/generator.json`, and the Argon2id UI
+password hash is stored in `/etc/knx_to_openhab/secrets.env`. Fresh installs
+prompt for a unique password; existing user-chosen passwords are preserved during migration,
+while the shipped default requires replacement. Jobs and uploads
 live in `/var/lib/knx_to_openhab/jobs`, staging output in
 `/var/lib/knx_to_openhab/staging`, and backup archives in
 `/var/backups/knx_to_openhab`. The installer migrates existing files before

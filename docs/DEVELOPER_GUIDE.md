@@ -261,7 +261,13 @@ curl -u admin:logihome http://localhost:5000/api/status
 - **Web UI config**: `web_ui/backend/config.json`
 - **KNX parser config**: `config.json` (root)
 
-After changing config, restart the Flask server.
+These are the repository-local development files. In an installed system,
+`KNXOH_CONFIG_DIR` from `/etc/knx_to_openhab/paths.env` points to persistent
+Web UI settings in `config.json`; credentials are kept in `secrets.env`.
+Generator rules are stored in `/var/lib/knx_to_openhab/generator.json` with
+jobs and staging. Backups are under `/var/backups/knx_to_openhab`. The installer
+migrates the old files and the API saves generator settings to the external
+file. Restart the Flask server after changing local development config.
 
 ### Testing a KNX Project Locally
 

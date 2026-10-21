@@ -3,27 +3,14 @@
 
 set -euo pipefail
 
-# Configuration
-INSTALL_DIR="/opt/knx_to_openhab"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_DIR="${KNXOH_INSTALL_DIR:-$(PYTHONPATH="$SCRIPT_DIR" python3 -c \
+    'from knxoh_paths import get_paths; print(get_paths().install_dir)')}"
 SERVICE_USER="knxohui"
-
-# Read backup directory from config (default to /var/backups/knx_to_openhab)
-CONF="$INSTALL_DIR/web_ui/backend/config.json"
-if [ -f "$CONF" ]; then
-    BACKUP_DIR=$(python3 - <<PY
-import json
-import os
-cfg=json.load(open('$CONF'))
-backups_dir = cfg.get('backups_dir','/var/backups/knx_to_openhab')
-# If it's a relative path, make it relative to the installation directory
-if not backups_dir.startswith('/'):
-    backups_dir = os.path.join('$INSTALL_DIR', backups_dir)
-print(backups_dir)
-PY
-)
-else
-    BACKUP_DIR="/var/backups/knx_to_openhab"
-fi
+BACKUP_DIR="${KNXOH_BACKUP_DIR:-$(PYTHONPATH="$INSTALL_DIR" python3 -c \
+    'from knxoh_paths import get_paths; print(get_paths().backup_dir)')}"
+DATA_DIR="${KNXOH_DATA_DIR:-$(PYTHONPATH="$INSTALL_DIR" python3 -c \
+    'from knxoh_paths import get_paths; print(get_paths().data_dir)')}"
 
 echo "Fixing permissions for KNX to OpenHAB Generator..."
 
@@ -41,6 +28,11 @@ sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR"
 echo "Setting ownership for backup directory: $BACKUP_DIR"
 sudo mkdir -p "$BACKUP_DIR"
 sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$BACKUP_DIR"
+
+# Fix ownership of external runtime data (jobs, uploads, staging, generated config)
+echo "Setting ownership for runtime data directory: $DATA_DIR"
+sudo mkdir -p "$DATA_DIR"
+sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$DATA_DIR"
 
 # Fix git directory permissions specifically
 echo "Setting proper permissions for git directory..."

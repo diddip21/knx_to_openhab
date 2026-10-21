@@ -8,8 +8,7 @@ Lightweight Flask web interface for `knxproject_to_openhab.py`. Upload KNX proje
 # On Raspberry Pi / DietPi (production)
 curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install.sh | bash
 
-# Access: http://<pi-ip>:8085
-# Default credentials: admin / logihome (change in Settings!)
+# Access: http://<pi-ip>:8085 (or the configured bind address and port)
 ```
 
 ## Architecture
@@ -22,7 +21,7 @@ web_ui/
 │   ├── storage.py          # JSON persistence, atomic writes
 │   ├── updater.py          # Git-based self-update via GitHub API
 │   ├── service_manager.py  # systemd service control
-│   ├── config.json         # Runtime config (auth, ports, retention)
+│   ├── config.json         # Local development defaults only
 │   └── gunicorn_conf.py    # Production gunicorn config
 ├── templates/
 │   └── index.html          # Single-page application (368 lines)
@@ -75,21 +74,31 @@ flask --app web_ui.backend.app:app run --debug
 
 Full schema: see `api_schema.json`.
 
+On an installed system, runtime settings live in `/etc/knx_to_openhab/config.json`,
+generator rules live in `/var/lib/knx_to_openhab/generator.json`, and the UI
+password is separated into `/etc/knx_to_openhab/secrets.env`. Jobs and uploads
+live in `/var/lib/knx_to_openhab/jobs`, staging output in
+`/var/lib/knx_to_openhab/staging`, and backup archives in
+`/var/backups/knx_to_openhab`. The installer migrates existing files before
+switching the application to these paths. The tracked `backend/config.json` is
+only used for local development and must not be edited to configure production.
+
 ## Configuration
 
-Runtime config in `web_ui/backend/config.json`:
+Production runtime config in `/etc/knx_to_openhab/config.json`:
 
 ```json
 {
   "openhab_path": "openhab",
-  "jobs_dir": "var/lib/knx_to_openhab",
-  "backups_dir": "var/backups/knx_to_openhab",
+  "jobs_dir": "/var/lib/knx_to_openhab/jobs",
+  "staging_dir": "/var/lib/knx_to_openhab/staging",
+  "generated_dir": "/var/lib/knx_to_openhab/generated",
+  "backups_dir": "/var/backups/knx_to_openhab",
   "bind_host": "0.0.0.0",
   "port": 8085,
   "auth": {
     "enabled": true,
-    "user": "admin",
-    "password": "logihome"
+    "user": "admin"
   },
   "retention": {
     "days": 14,

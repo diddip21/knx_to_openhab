@@ -107,7 +107,7 @@ productive device until an upgrade rehearsal and restore test have been complete
 The detailed status and remaining release checks are in
 [`docs/FEATURE_UPGRADE.md`](../docs/FEATURE_UPGRADE.md#status-für-bestehende-installationen).
 
-> **Note:** For local development without systemd installation, see [DEVELOPMENT.md](../DEVELOPMENT.md)
+> **Note:** For local development without systemd installation, see the [Developer Guide](../docs/DEVELOPER_GUIDE.md).
 
 ## Manual Service Control
 

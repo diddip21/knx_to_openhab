@@ -23,7 +23,7 @@ Diese Seite erklärt die sichtbaren Änderungen, das Verhalten für Anwender und
 
 ![Nachher: erneute Anmeldung nach Sitzungsablauf](screenshots/feature-upgrade/after-session-expiry.png)
 
-Die Nachher-Aufnahmen stammen aus dem erfolgreichen GitHub-Actions-Lauf für PR #48 (Run 511). Die Bilder zeigen synthetische Testdaten. Das CI-Artefakt enthält Screenshots, kein Video.
+Die eingecheckten Nachher-Aufnahmen stammen aus automatisierten Playwright-Läufen. Der integrierte Softwarestand (Commit `3340ad2`) wurde zusätzlich in [GitHub Actions Run #516](https://github.com/diddip21/knx_to_openhab/actions/runs/40021087430) geprüft: 108 UI-Tests bestanden, 2 übersprungen. Der Lauf hat ein [Screenshot-Artefakt](https://github.com/diddip21/knx_to_openhab/actions/runs/40021087430/artifacts/12529744512) mit drei Dateien erzeugt (abrufbar bis 21.01.2027). Die Bilder zeigen synthetische Testdaten. Es wurde kein Video erzeugt; Playwright behält Videos nur bei fehlgeschlagenen Tests.
 
 ### Vorher-/Nachher-Übersicht der sichtbaren Funktionen
 

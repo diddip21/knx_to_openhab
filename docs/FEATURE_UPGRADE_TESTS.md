@@ -10,7 +10,9 @@
 
 Dieser Branch sammelt die Änderungen zur gemeinsamen Prüfung. `main` bleibt unverändert. Die Quell-PRs bleiben auf GitHub offen; ihre Änderungen sind in diesem Integrationsbranch enthalten. Der Branch ist kein Release und wurde nicht auf ein echtes openHAB-System ausgerollt.
 
-Der vollständige GitHub-Actions-Lauf für den finalen Branch wird nach Veröffentlichung des Branches dokumentiert. Bis dieser Lauf abgeschlossen ist, ist die gemeinsame Testprüfung als **ausstehend** zu behandeln. Die einzelnen PRs enthalten frühere, getrennte Testläufe; diese ersetzen den Test des integrierten Stands nicht.
+Der vollständige integrierte Softwarestand wurde in [GitHub Actions Run #516](https://github.com/diddip21/knx_to_openhab/actions/runs/40021087430) auf Commit `3340ad2` geprüft. Core-, Lint-/Typprüfungen und Browser-Suite sind erfolgreich. Der zusätzliche Dokumentations-Commit auf diesem Stand lässt dieselbe vollständige CI-Suite erneut laufen.
+
+Run #515 wurde abgebrochen, nachdem die Installation aller Playwright-Browser auf dem Runner über fünf Minuten hing. Die UI-Suite ist auf Chromium konfiguriert; der CI-Schritt installiert nun nur Chromium und der UI-Job hat ein 20-Minuten-Limit. Der anschließende Run #516 war vollständig erfolgreich. Run #515 wird nicht als Testergebnis gewertet.
 
 ## Eingeflossene PRs
 
@@ -45,7 +47,7 @@ Die folgenden fachlichen Konflikte wurden beim Zusammenführen aufgelöst:
 
 Zusätzlich wurde bei der integrierten Prüfung ein Sicherheitsproblem an der Grenze von #39 und #45 behoben: Das Umschalten zwischen Text- und YAML-Ausgabe muss alte, generierte Modell-Dateien entfernen können, obwohl der Webdienst keine allgemeinen Schreibrechte auf OpenHAB-Verzeichnisse besitzt. Dafür provisioniert Setup eine root-eigene Manifestdatei und einen separaten, root-eigenen Helper außerhalb des App-Verzeichnisses. Der Helper verwendet nur die Standardbibliothek, akzeptiert ausschließlich die beiden Formatnamen und entfernt nur zuvor provisionierte, inaktive Ausgabedateien. Sudoers erlaubt genau diese Aufrufe. Tests prüfen unter anderem nicht verwaltete Dateien, Symlinks und Wiederherstellung nach einem Teilfehler.
 
-Die aufgelösten Merge-Commits und diese Korrektur sind Teil des Branches. Beim Abschluss der Prüfung werden außerdem das Fehlen ungelöster Git-Konflikte und nicht aufgelöster Konfliktmarker festgehalten.
+Die aufgelösten Merge-Commits und die zusätzlichen Integrationskorrekturen sind Teil des Branches. Die Prüfung des Remote-Branches bestätigt, dass alle elf PR-Head-Commits enthalten sind, der Git-Index keine ungelösten Konflikte enthält und keine Konfliktmarker in den Dateien verblieben sind.
 
 ## Testumfang und Status
 
@@ -58,22 +60,25 @@ Der integrierte CI-Workflow führt aus:
 
 | Prüfung | Ergebnis auf dem finalen Integrationsbranch |
 |---|---|
-| GitHub Actions: Core Tests, Python 3.12 und 3.13 | Ausstehend; nach dem Branch-Push aktualisieren. |
-| GitHub Actions: Lint und Mypy | Ausstehend; nach dem Branch-Push aktualisieren. |
-| GitHub Actions: Playwright UI und Screenshot-Artefakt | Ausstehend; nach dem Branch-Push aktualisieren. |
+| GitHub Actions Run #516: Core Tests, Python 3.12 | **Erfolgreich: 400 bestanden, 11 übersprungen.** |
+| GitHub Actions Run #516: Core Tests, Python 3.13 | **Erfolgreich: 400 bestanden, 11 übersprungen.** |
+| GitHub Actions Run #516: Black, isort, Flake8 und Mypy | **Alle erfolgreich.** |
+| GitHub Actions Run #516: Playwright UI | **Erfolgreich: 108 bestanden, 2 übersprungen** in 96 Sekunden. |
+| UI-Artefakt aus `test-results/` | [feature-upgrade-ui-screenshots-and-reports](https://github.com/diddip21/knx_to_openhab/actions/runs/40021087430/artifacts/12529744512); drei Dateien, abrufbar bis 21.01.2027. |
+| CI-Änderung für Browserlauf | Installiert nur Chromium (die Suite nutzt `--browser=chromium`); UI-Job ist auf 20 Minuten begrenzt. |
 | Lokale Core-Suite | **400 bestanden, 11 übersprungen** unter Python 3.12.14 mit dem CI-Testbefehl. |
 | Lokales Black / isort / Flake8 | Bestanden nach der Formatkorrektur. |
 | Lokales Mypy | Der Standardlauf endet in dieser Containerumgebung mit einem internen psutil-Fehler (`NoSuchProcess`, Runner-PID nicht sichtbar). Der Fallback-Lauf mit `--no-native-parser` meldet keine Fehler in 95 Dateien. Der Mypy-Gate auf GitHub Actions bleibt maßgeblich. |
-| Lokale Playwright-UI-Suite | Nicht ausgeführt: der lokale Chromium-Download lieferte ein ungültiges, leeres Archiv. Der vollständige Browserlauf läuft auf dem GitHub-Actions-Runner. |
+| Lokale Playwright-UI-Suite | Nicht ausgeführt: der lokale Chromium-Download lieferte ein ungültiges, leeres Archiv. Der integrierte Browserlauf wurde erfolgreich auf dem GitHub-Actions-Runner abgeschlossen. |
 | Reales openHAB-5.2-YAML-Smoke-Load | Nicht ausgeführt; erfordert eine passende laufende openHAB-Instanz. |
 | Echtes APT-Paketupdate | Nicht ausgeführt; es wurde kein Zielgerät verändert. |
 | Upgrade-/Datenmigration einer repräsentativen Installation | Nicht ausgeführt; die Migration ist durch automatisierte Tests abgedeckt, aber noch nicht auf einem Bestandsgerät erprobt. |
 
-Die getrennten CI-Ergebnisse aus den Quell-PRs sind im jeweiligen PR verlinkt und nicht als Gesamtergebnis dieses FeatureUpgrade-Branches zu verstehen.
+Die getrennten CI-Ergebnisse aus den Quell-PRs sind im jeweiligen PR verlinkt und nicht als Gesamtergebnis dieses FeatureUpgrade-Branches zu verstehen. Run #516 ist der gemeinsame Testnachweis für den integrierten Softwarestand; ein reiner Dokumentations-Commit danach wird ebenfalls durch CI geprüft.
 
 ## Screenshot- und Vorher-/Nachher-Nachweis
 
-Die Screenshots für Login, authentifiziertes Dashboard und Sitzungsablauf liegen unter [`docs/screenshots/feature-upgrade/`](screenshots/feature-upgrade/). Einstellungen und Beispielausgaben für YAML, Gateway-IP und Paketupdates liegen unter [`docs/screenshots/`](screenshots/). Die Benutzerübersicht stellt sie jeweils neben den Vorher-Zustand.
+Die Screenshots für Login, authentifiziertes Dashboard und Sitzungsablauf liegen unter [`docs/screenshots/feature-upgrade/`](screenshots/feature-upgrade/). Einstellungen und Beispielausgaben für YAML, Gateway-IP und Paketupdates liegen unter [`docs/screenshots/`](screenshots/). Die Benutzerübersicht stellt sie jeweils neben den Vorher-Zustand. Der vollständige integrierte Browserlauf #516 hat außerdem ein [GitHub-Artefakt aus `test-results/`](https://github.com/diddip21/knx_to_openhab/actions/runs/40021087430/artifacts/12529744512) mit drei Dateien hochgeladen. Playwright behält Videos und Traces nur bei Fehlern; dieser erfolgreiche Lauf hat kein Video erzeugt.
 
 Die Bilder enthalten synthetische Testdaten. Es liegt kein Video vor. Für interne Änderungen an Uploadvalidierung, Dateirechten, Passwortablage, Laufzeitmigration und Testinfrastruktur gibt es keinen eigenständigen UI-Bildschirm; ihre Änderung und Prüfung ist oben je PR und im Quellcode/Testbericht beschrieben. Für YAML, Gateway-IP und Paketupdates existieren keine authentischen Screenshots der alten `main`-Oberfläche; diese Einschränkung ist in der Benutzerübersicht kenntlich gemacht.
 

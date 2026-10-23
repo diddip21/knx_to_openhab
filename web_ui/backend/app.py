@@ -546,7 +546,16 @@ if FLASK_AVAILABLE:
             return jsonify({"error": "Unsupported action"}), 404
         # Package installation grants system privileges; the shipped demo password is insufficient.
         acfg = cfg.get("auth", {})
-        if not acfg.get("enabled") or acfg.get("password") in (None, "", "logihome"):
+        password_hash = acfg.get("password_hash")
+        legacy_password = acfg.get("legacy_password")
+        uses_default_password = legacy_password == "logihome" or bool(
+            password_hash and verify_password(password_hash, "logihome")
+        )
+        if (
+            not acfg.get("enabled")
+            or not (password_hash or legacy_password)
+            or uses_default_password
+        ):
             return (
                 jsonify({"error": "Set a personal Web UI password before using package updates."}),
                 403,

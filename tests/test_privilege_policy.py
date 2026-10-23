@@ -25,9 +25,7 @@ def test_sudoers_policy_only_allows_named_service_actions():
     for action in ("refresh", "openhab", "evcc"):
         assert f"/usr/local/sbin/knxohui-service-update {action}" in policy
     for output_format in ("legacy", "yaml"):
-        assert (
-            f"/usr/local/sbin/knxohui-retire-managed-outputs {output_format}" in policy
-        )
+        assert f"/usr/local/sbin/knxohui-retire-managed-outputs {output_format}" in policy
 
 
 def test_installer_scripts_install_and_validate_the_restricted_policy():
@@ -46,7 +44,7 @@ def test_installer_scripts_install_and_validate_the_restricted_policy():
 
     assert 'REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"' in setup
     assert '"$REPO_ROOT/requirements.txt"' in setup
-    assert "--exclude web_ui/backend/config.json" in setup
+    assert "--exclude /web_ui/backend/config.json" in setup
 
 
 def test_installer_runs_provisioner_from_installed_tree():

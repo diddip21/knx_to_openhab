@@ -341,8 +341,7 @@ def retire_managed_files(openhab_root, managed_relatives, managed_paths):
                 if (
                     not stat.S_ISREG(opened_info.st_mode)
                     or opened_info.st_nlink != 1
-                    or (opened_info.st_dev, opened_info.st_ino)
-                    != (info.st_dev, info.st_ino)
+                    or (opened_info.st_dev, opened_info.st_ino) != (info.st_dev, info.st_ino)
                 ):
                     raise DeployPolicyError(f"Retired output changed during validation: {relative}")
                 content = _read_all(fd)

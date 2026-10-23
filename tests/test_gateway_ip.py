@@ -57,7 +57,13 @@ def test_generator_modules_bind_fresh_config_during_reprocess(tmp_path):
     project_root = Path(__file__).resolve().parents[1]
     config_data = json.loads((project_root / "config.json").read_text(encoding="utf-8"))
     config_data["devices"]["gateway"]["ip_address"] = "192.168.20.45"
-    (tmp_path / "config.json").write_text(json.dumps(config_data), encoding="utf-8")
+    config_dir = tmp_path / "config"
+    data_dir = tmp_path / "data"
+    backup_dir = tmp_path / "backups"
+    config_dir.mkdir()
+    data_dir.mkdir()
+    backup_dir.mkdir()
+    (data_dir / "generator.json").write_text(json.dumps(config_data), encoding="utf-8")
 
     script = """
 import sys
@@ -70,6 +76,15 @@ assert knx_module.config is config_module.config
 assert knx_module.get_gateway_ip({"devices": {}}) == "192.168.20.45"
 """
     env = os.environ.copy()
+    env.update(
+        {
+            "KNXOH_INSTALL_DIR": project_root.as_posix(),
+            "KNXOH_CONFIG_DIR": config_dir.as_posix(),
+            "KNXOH_DATA_DIR": data_dir.as_posix(),
+            "KNXOH_BACKUP_DIR": backup_dir.as_posix(),
+            "KNXOH_PATHS_FILE": (tmp_path / "paths.env").as_posix(),
+        }
+    )
     env["PYTHONPATH"] = os.pathsep.join(
         filter(None, [project_root.as_posix(), env.get("PYTHONPATH")])
     )

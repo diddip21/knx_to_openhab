@@ -1,12 +1,11 @@
 """UI tests for authentication and session handling."""
 
 import json
-import re
-import secrets
-from base64 import b64encode
 
 import pytest
 from playwright.sync_api import Page, expect
+
+from web_ui.backend.auth import hash_password
 
 
 def _setup_auth_routes(page: Page):
@@ -75,23 +74,30 @@ class TestAuthentication:
 
         expect(page.locator("#versionBadge")).to_be_visible()
 
-    def test_session_cookie_set_when_auth_is_enabled(self, monkeypatch):
-        """Basic Auth must issue a secure session cookie when auth is enabled."""
+    def test_session_cookie_set_when_auth_is_enabled(self, monkeypatch, tmp_path):
+        """A successful login creates an HttpOnly session cookie."""
         from web_ui.backend import app as app_module
 
         username = "ui-test-user"
-        password = secrets.token_urlsafe(32)
+        password = "ui-test-password-that-is-long-enough"
         monkeypatch.setitem(
             app_module.cfg,
             "auth",
-            {"enabled": True, "user": username, "password": password},
+            {"enabled": True, "user": username, "password_hash": hash_password(password)},
         )
-        monkeypatch.setitem(app_module.app.config, "TESTING", True)
-        auth_header = "Basic " + b64encode(f"{username}:{password}".encode()).decode()
+        monkeypatch.setitem(app_module.cfg, "sessions_file", str(tmp_path / "sessions.sqlite3"))
+        monkeypatch.setattr(app_module, "_session_store", None)
+        monkeypatch.setattr(app_module, "get_session_secret", lambda project_root=None: b"k" * 32)
+        client = app_module.app.test_client()
+        assert client.get("/login").status_code == 200
+        login_csrf = client.get_cookie("knx_login_csrf").value
 
-        response = app_module.app.test_client().get("/", headers={"Authorization": auth_header})
+        response = client.post(
+            "/login",
+            data={"csrf_token": login_csrf, "username": username, "password": password},
+        )
 
-        assert response.status_code == 200
+        assert response.status_code == 302
         session_cookie = next(
             (
                 cookie
@@ -103,19 +109,27 @@ class TestAuthentication:
         assert session_cookie is not None
         assert "HttpOnly" in session_cookie
         assert "SameSite=Lax" in session_cookie
+        assert client.get_cookie("knx_csrf") is not None
 
-    def test_requests_are_rejected_without_valid_auth_when_enabled(self, monkeypatch):
-        """The auth-enabled backend rejects requests without valid credentials."""
+    def test_requests_are_rejected_without_valid_session_when_auth_is_enabled(
+        self, monkeypatch, tmp_path
+    ):
+        """The auth-enabled backend rejects API requests without a valid session."""
         from web_ui.backend import app as app_module
 
-        password = secrets.token_urlsafe(32)
         monkeypatch.setitem(
             app_module.cfg,
             "auth",
-            {"enabled": True, "user": "ui-test-user", "password": password},
+            {
+                "enabled": True,
+                "user": "ui-test-user",
+                "password_hash": hash_password("ui-test-password-that-is-long-enough"),
+            },
         )
-        monkeypatch.setitem(app_module.app.config, "TESTING", True)
+        monkeypatch.setitem(app_module.cfg, "sessions_file", str(tmp_path / "sessions.sqlite3"))
+        monkeypatch.setattr(app_module, "_session_store", None)
+        monkeypatch.setattr(app_module, "get_session_secret", lambda project_root=None: b"k" * 32)
 
-        response = app_module.app.test_client().get("/")
+        response = app_module.app.test_client().get("/api/jobs")
 
         assert response.status_code == 401

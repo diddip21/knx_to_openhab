@@ -17,8 +17,8 @@ from completeness import check_completeness, iter_thing_lines
 from .deploy_policy import (
     configured_managed_paths,
     deploy_staged_files,
-    retire_managed_files,
     restore_managed_files,
+    retire_managed_files,
 )
 from .storage import ensure_dirs, load_jobs, save_jobs
 
@@ -314,7 +314,7 @@ class JobManager:
                         "level": "error",
                         "message": f"backup failed: {backup_error}",
                     },
-            )
+                )
 
             # Create a copy of the config dict to modify
             staged_config = copy.copy(global_config_module.config)
@@ -940,7 +940,9 @@ class JobManager:
         if output_format not in {"legacy", "yaml"}:
             raise ValueError("Unsupported output format; select legacy or yaml and generate again")
         if str(job.get("output_format", output_format)).casefold() != output_format:
-            raise ValueError("Output format changed since generation; generate a new job before deploy")
+            raise ValueError(
+                "Output format changed since generation; generate a new job before deploy"
+            )
         obsolete_keys = (
             ("items_path", "things_path", "sitemaps_path")
             if output_format == "yaml"

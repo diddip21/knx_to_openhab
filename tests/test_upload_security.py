@@ -321,31 +321,24 @@ class TestTarfileSecurity:
 
         assert (extract_dir / "openhab" / "test.txt").exists()
 
-    def test_reject_path_traversal_tar(self, tmp_path):
-        """Rollback must reject a traversal archive before extracting it."""
+    def test_rollback_ignores_path_traversal_tar_member(self, tmp_path):
+        """Rollback reads named managed files without extracting unrelated archive paths."""
         tar_path = tmp_path / "malicious.tar.gz"
+        openhab_path = tmp_path / "openhab"
+        managed_file = openhab_path / "items" / "knx.items"
+        managed_file.parent.mkdir(parents=True)
+        managed_file.write_text("existing managed file\n", encoding="utf-8")
         with tarfile.open(tar_path, "w:gz") as tar:
             data = b"malicious content"
             info = tarfile.TarInfo(name="../../outside.txt")
             info.size = len(data)
             tar.addfile(info, io.BytesIO(data))
 
-        from web_ui.backend.jobs import JobManager
+        from web_ui.backend.deploy_policy import restore_managed_files
 
-        manager = JobManager(
-            {
-                "jobs_dir": str(tmp_path / "jobs"),
-                "backups_dir": str(tmp_path / "backups"),
-                "openhab_path": str(tmp_path / "openhab"),
-            }
-        )
-        manager._jobs["job-1"] = {"backups": [{"name": "malicious.tar.gz", "path": str(tar_path)}]}
-        try:
-            with pytest.raises(ValueError, match="Path traversal detected"):
-                manager.rollback("job-1")
-        finally:
-            manager.executor.shutdown(wait=True)
+        assert restore_managed_files(tar_path, openhab_path, {"items/knx.items"}) == 0
 
+        assert managed_file.read_text(encoding="utf-8") == "existing managed file\n"
         assert not (tmp_path / "outside.txt").exists()
 
 

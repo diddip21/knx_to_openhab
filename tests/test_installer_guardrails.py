@@ -42,4 +42,4 @@ def test_setup_stops_service_before_migration_and_restarts_after_unit_reload():
     assert stop_index < migration_index < daemon_reload_index < restart_index
     assert "sudo systemctl enable --now knxohui.service" not in setup
     assert 'sudo install -o root -g root -m 0755 "$BASE/installer/set_ui_password.py" ' in setup
-    assert '"$BASE/installer/retire_managed_outputs.py"' in setup
+    assert '"$REPO_ROOT/installer/retire_managed_outputs.py"' in setup

@@ -122,7 +122,7 @@ def _open_directory(root: str, relative: str) -> int:
 
 
 def _read_all(fd: int) -> bytes:
-    chunks = []
+    chunks: list[bytes] = []
     while True:
         chunk = os.read(fd, 1024 * 1024)
         if not chunk:
@@ -222,9 +222,7 @@ def main(argv=None) -> int:
 
     output_format = args[0]
     obsolete_keys = (
-        {"items_path", "things_path", "sitemaps_path"}
-        if output_format == "yaml"
-        else {"yaml_path"}
+        {"items_path", "things_path", "sitemaps_path"} if output_format == "yaml" else {"yaml_path"}
     )
     try:
         saved_paths = _load_paths_file()

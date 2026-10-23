@@ -1,6 +1,5 @@
 """The package update UI must never install arbitrary names or unrelated packages."""
 
-import base64
 import secrets
 import subprocess
 from pathlib import Path
@@ -10,6 +9,7 @@ import pytest
 
 from web_ui.backend import app as app_module
 from web_ui.backend import service_updates
+from web_ui.backend.auth import hash_password
 
 
 def completed(args, output="", code=0):
@@ -105,24 +105,21 @@ def test_changed_candidate_is_rejected_before_start(monkeypatch):
     assert updater.status()["state"] == "idle"
 
 
-def auth_header(username, password):
-    encoded = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
-    return {"Authorization": f"Basic {encoded}"}
-
-
 @pytest.fixture
-def auth_credentials(monkeypatch):
+def auth_credentials(monkeypatch, tmp_path):
     if not app_module.FLASK_AVAILABLE:
         pytest.skip("Flask unavailable")
-    default_password = app_module.cfg.get("auth", {}).get("password")
     username = f"test-{secrets.token_hex(8)}"
     password = secrets.token_urlsafe(24)
     monkeypatch.setitem(
         app_module.cfg,
         "auth",
-        {"enabled": True, "user": username, "password": password},
+        {"enabled": True, "user": username, "password_hash": hash_password(password)},
     )
-    return {"username": username, "password": password, "default_password": default_password}
+    monkeypatch.setitem(app_module.cfg, "sessions_file", str(tmp_path / "sessions.sqlite3"))
+    monkeypatch.setattr(app_module, "_session_store", None)
+    monkeypatch.setattr(app_module, "get_session_secret", lambda project_root=None: b"s" * 32)
+    return {"username": username, "password": password}
 
 
 @pytest.fixture
@@ -131,13 +128,26 @@ def client(auth_credentials):
     return app_module.app.test_client()
 
 
+def log_in(client, username, password):
+    response = client.get("/login")
+    assert response.status_code == 200
+    login_csrf = client.get_cookie("knx_login_csrf").value
+    response = client.post(
+        "/login",
+        data={"csrf_token": login_csrf, "username": username, "password": password},
+    )
+    assert response.status_code == 302
+    return client.get_cookie("knx_csrf").value
+
+
 def test_api_requires_auth_and_request_header(client, auth_credentials, monkeypatch):
     start = Mock(return_value=(True, "started"))
     monkeypatch.setattr(app_module.service_updates, "start", start)
     url = "/api/service/updates/evcc"
     assert client.post(url).status_code == 401
-    headers = auth_header(auth_credentials["username"], auth_credentials["password"])
-    assert client.post(url, headers=headers).status_code == 403
+    csrf_token = log_in(client, auth_credentials["username"], auth_credentials["password"])
+    headers = {"X-CSRF-Token": csrf_token}
+    assert client.post(url, headers=headers, json={"version": "0.205.1"}).status_code == 403
     assert (
         client.post(
             url,
@@ -152,15 +162,21 @@ def test_api_requires_auth_and_request_header(client, auth_credentials, monkeypa
 def test_api_rejects_default_password_and_unlisted_package(client, auth_credentials, monkeypatch):
     start = Mock()
     monkeypatch.setattr(app_module.service_updates, "start", start)
-    headers = {
-        **auth_header(auth_credentials["username"], auth_credentials["password"]),
-        "X-Requested-With": "XMLHttpRequest",
-    }
+    csrf_token = log_in(client, auth_credentials["username"], auth_credentials["password"])
+    headers = {"X-CSRF-Token": csrf_token, "X-Requested-With": "XMLHttpRequest"}
     assert client.post("/api/service/updates/ssh", headers=headers).status_code == 404
-    default_password = auth_credentials["default_password"] or ""
-    monkeypatch.setitem(app_module.cfg["auth"], "password", default_password)
+    monkeypatch.setitem(
+        app_module.cfg,
+        "auth",
+        {
+            "enabled": True,
+            "user": auth_credentials["username"],
+            "password_hash": hash_password("logihome"),
+        },
+    )
+    default_csrf = log_in(client, auth_credentials["username"], "logihome")
     default_headers = {
-        **auth_header(auth_credentials["username"], default_password),
+        "X-CSRF-Token": default_csrf,
         "X-Requested-With": "XMLHttpRequest",
     }
     assert client.post("/api/service/updates/openhab", headers=default_headers).status_code == 403

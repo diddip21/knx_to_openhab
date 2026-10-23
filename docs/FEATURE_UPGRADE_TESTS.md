@@ -61,7 +61,10 @@ Der integrierte CI-Workflow führt aus:
 | GitHub Actions: Core Tests, Python 3.12 und 3.13 | Ausstehend; nach dem Branch-Push aktualisieren. |
 | GitHub Actions: Lint und Mypy | Ausstehend; nach dem Branch-Push aktualisieren. |
 | GitHub Actions: Playwright UI und Screenshot-Artefakt | Ausstehend; nach dem Branch-Push aktualisieren. |
-| Lokale pytest-Suite | In der Arbeitsumgebung ist `pytest` nicht installiert; der vollständige Testlauf ist daher dem GitHub-CI überlassen. |
+| Lokale Core-Suite | **400 bestanden, 11 übersprungen** unter Python 3.12.14 mit dem CI-Testbefehl. |
+| Lokales Black / isort / Flake8 | Bestanden nach der Formatkorrektur. |
+| Lokales Mypy | Der Standardlauf endet in dieser Containerumgebung mit einem internen psutil-Fehler (`NoSuchProcess`, Runner-PID nicht sichtbar). Der Fallback-Lauf mit `--no-native-parser` meldet keine Fehler in 95 Dateien. Der Mypy-Gate auf GitHub Actions bleibt maßgeblich. |
+| Lokale Playwright-UI-Suite | Nicht ausgeführt: der lokale Chromium-Download lieferte ein ungültiges, leeres Archiv. Der vollständige Browserlauf läuft auf dem GitHub-Actions-Runner. |
 | Reales openHAB-5.2-YAML-Smoke-Load | Nicht ausgeführt; erfordert eine passende laufende openHAB-Instanz. |
 | Echtes APT-Paketupdate | Nicht ausgeführt; es wurde kein Zielgerät verändert. |
 | Upgrade-/Datenmigration einer repräsentativen Installation | Nicht ausgeführt; die Migration ist durch automatisierte Tests abgedeckt, aber noch nicht auf einem Bestandsgerät erprobt. |

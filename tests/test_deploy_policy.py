@@ -8,9 +8,9 @@ from web_ui.backend.deploy_policy import (
     configured_managed_paths,
     deploy_staged_files,
     provision_managed_files,
-    retire_managed_files,
     restore_managed_files,
     restrict_service_write_access,
+    retire_managed_files,
 )
 
 
@@ -226,9 +226,7 @@ def test_retirement_rejects_symlink_and_preserves_its_target(tmp_path):
     assert (root / "yaml" / "knx.yaml").is_symlink()
 
 
-def test_retirement_recovers_prior_outputs_when_a_later_unlink_fails(
-    tmp_path, monkeypatch
-):
+def test_retirement_recovers_prior_outputs_when_a_later_unlink_fails(tmp_path, monkeypatch):
     root = tmp_path / "openhab"
     (root / "items").mkdir(parents=True)
     first = root / "items" / "a.items"

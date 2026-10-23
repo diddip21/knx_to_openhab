@@ -86,6 +86,7 @@ pytest tests/ui -v -o addopts=
 - A pull request should summarize user-visible behavior, compatibility/default behavior, tests and their results, and screenshots for UI changes. Keep scope focused and verify that saving one setting does not discard sibling configuration.
 - When integrating several open PRs for combined testing, enumerate all open PRs first (including drafts), create a separate `developer/*` integration branch from the default branch, and merge source branches in dependency order. Do not modify the default branch during integration. Keep source PRs open unless closing them is explicitly requested; record the integrated PR list, conflicts and decisions in a GitHub-visible report.
 - Combined product changes need a user-facing before/after guide linked from the README. Explain defaults, compatibility, setup or migration steps, and how to use each visible feature. Keep security, architecture and test details in the appropriate internal guides and link them from the overview.
+- For repository cleanup, check local references and links from open PRs before removing assets. Reuse an existing screenshot instead of committing an identical copy; fold short image descriptions into the existing guide instead of adding a Markdown sidecar. Keep source modules, installer helpers, security checks, golden files and regression tests needed for the integrated behavior. Preserve stable paths consumed by installations and APIs. Verify links and run the applicable core and browser suites after cleanup.
 
 ### Test Structure
 

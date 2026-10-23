@@ -1,18 +1,20 @@
 # FeatureUpgrade: Integrations- und Testbericht
 
-**Branch:** `developer/feature-upgrade`  
-**Ausgangsbasis:** `main` (`f092abd`)  
-**Prüfstand:** 23.10.2026  
-**Umfang:** alle elf zu diesem Zeitpunkt offenen PRs #33, #35, #37, #39, #42, #43, #44, #45, #46, #47 und #48. PR #39 ist ein Draft.  
-**Benutzerübersicht:** [FeatureUpgrade: Änderungen und Bedienung](FEATURE_UPGRADE.md)
+- **Branch:** `developer/feature-upgrade`
+- **Ausgangsbasis:** `main` (`f092abd`)
+- **Prüfstand:** 23.10.2026
+- **Umfang:** elf offene PRs #33, #35, #37, #39, #42–#48; #39 war ein Draft.
+- **Benutzerübersicht:** [Änderungen und Bedienung](FEATURE_UPGRADE.md)
 
 > **Betriebsgrenze:** Es wurde kein produktives Gerät angesprochen. Die Runtime-Migration besteht automatisierte Tests, aber es gab keine Probe mit einem Abbild einer realen Bestandsinstallation und keinen Wiederherstellungslauf. Deshalb ist der Branch kein freigegebenes Bestands-Upgrade.
 
-## Nachtrag: Qualitätsrunde auf dem Integrationsbranch
+## Aktueller Prüfstand
 
 Die aktuelle Runde überarbeitet die GitHub-README und den Einstieg in die Anwenderanleitung, ergänzt eine Setup-Sperre für erkannte Bestandsinstallationen vor Systemänderungen, sperrt die `main`-Selbstaktualisierung für Vorschau-Branches und ersetzt die allgemeine Deploy-Bestätigung durch eine Dateiliste mit Diff und ausdrücklicher Freigabe. Neue Guardrail- und Browserprüfungen gehören zur Runde. Der Browserlauf erzeugt `test-results/feature-upgrade/deploy-review.png` für das [Screenshot-Artefakt](https://github.com/diddip21/knx_to_openhab/actions/runs/40032134387/artifacts/12535542421) (abrufbar bis 21.01.2027).
 
-[GitHub Actions Run #522](https://github.com/diddip21/knx_to_openhab/actions/runs/40032134387) auf dem vollständigen Qualitätsstand `d1ac2f7` ist erfolgreich: **404 Core-Tests bestanden, 11 übersprungen** unter Python 3.12 und 3.13; **109 Browser-Tests bestanden, 2 übersprungen**; Formatierung, Importreihenfolge, Flake8 und Mypy bestanden. Lokal bestanden dieselben 404 Core-Tests; ein lokaler Chromium-Lauf war in dieser Umgebung nicht verfügbar. Die nachstehenden älteren CI-Zahlen bleiben als Integrationshistorie erhalten. Eine reale Migration und Wiederherstellung einer repräsentativen Bestandsanlage ist weiterhin nicht durchgeführt, daher gibt es keine Freigabe für produktive Bestandsanlagen.
+[GitHub Actions Run #522](https://github.com/diddip21/knx_to_openhab/actions/runs/40032134387) auf dem vollständigen Qualitätsstand `d1ac2f7` ist erfolgreich: **404 Core-Tests bestanden, 11 übersprungen** unter Python 3.12 und 3.13; **109 Browser-Tests bestanden, 2 übersprungen**; Formatierung, Importreihenfolge, Flake8 und Mypy bestanden. Lokal bestanden dieselben 404 Core-Tests; ein lokaler Chromium-Lauf war in dieser Umgebung nicht verfügbar. Eine reale Migration und Wiederherstellung einer repräsentativen Bestandsanlage ist weiterhin nicht durchgeführt, daher gibt es keine Freigabe für produktive Bestandsanlagen.
+
+Auch [Run #524](https://github.com/diddip21/knx_to_openhab/actions/runs/40032779556) auf `1c24902` ist vollständig erfolgreich. Bei der anschließenden Repository-Bereinigung bestanden lokal erneut 404 Core-Tests (11 übersprungen), Black, isort, Flake8, JavaScript- und Shell-Syntaxprüfungen sowie alle lokalen Dokumentationslinks. Der CI-Lauf des Bereinigungs-Commits wird separat geprüft.
 
 ### Noch erforderliche Freigabeprobe auf einer isolierten Kopie
 
@@ -26,11 +28,7 @@ Die aktuelle Runde überarbeitet die GitHub-README und den Einstieg in die Anwen
 
 Dieser Branch sammelt die Änderungen zur gemeinsamen Prüfung. `main` bleibt unverändert. Die Quell-PRs bleiben auf GitHub offen; ihre Änderungen sind in diesem Integrationsbranch enthalten. Der Branch ist kein Release und wurde nicht auf ein echtes openHAB-System ausgerollt.
 
-Der Diff enthält 68 neu hinzugefügte Repository-Dateien: 31 Testdateien, 13 Installer-/Systemhelfer, 9 Programmdateien, 12 Screenshot-Dateien und 3 technische Dokumente. Diese Liste beschreibt den Quellcode und die Prüfbelege im GitHub-Repository; sie entspricht nicht der Anzahl neuer openHAB-Ausgabedateien. Die normale `legacy`-Ausgabe bleibt der Standard.
-
-Der vollständige integrierte Softwarestand wurde in [GitHub Actions Run #516](https://github.com/diddip21/knx_to_openhab/actions/runs/40021087430) auf Commit `3340ad2` geprüft. Core-, Lint-/Typprüfungen und Browser-Suite sind erfolgreich. Der zusätzliche Dokumentations-Commit auf diesem Stand lässt dieselbe vollständige CI-Suite erneut laufen.
-
-Run #515 wurde abgebrochen, nachdem die Installation aller Playwright-Browser auf dem Runner über fünf Minuten hing. Die UI-Suite ist auf Chromium konfiguriert; der CI-Schritt installiert nun nur Chromium und der UI-Job hat ein 20-Minuten-Limit. Der anschließende Run #516 war vollständig erfolgreich. Run #515 wird nicht als Testergebnis gewertet.
+Der Diff enthält nach der Bereinigung 65 neu hinzugefügte Repository-Dateien: 31 Testdateien, 13 Installer-/Systemhelfer, 9 Programmdateien, 9 Screenshot-Dateien und 3 technische Dokumente. Diese Liste beschreibt den Quellcode und die Prüfbelege im GitHub-Repository; sie entspricht nicht der Anzahl neuer openHAB-Ausgabedateien. Die normale `legacy`-Ausgabe bleibt der Standard.
 
 ## Eingeflossene PRs
 
@@ -67,45 +65,10 @@ Zusätzlich wurde bei der integrierten Prüfung ein Sicherheitsproblem an der Gr
 
 Die aufgelösten Merge-Commits und die zusätzlichen Integrationskorrekturen sind Teil des Branches. Die Prüfung des Remote-Branches bestätigt, dass alle elf PR-Head-Commits enthalten sind, der Git-Index keine ungelösten Konflikte enthält und keine Konfliktmarker in den Dateien verblieben sind.
 
-## Testumfang und Status
+## Prüfmethoden und Grenzen
 
-Der integrierte CI-Workflow führt aus:
+Der [gemeinsame CI-Lauf #522](https://github.com/diddip21/knx_to_openhab/actions/runs/40032134387) prüfte den integrierten Code mit Core- und Integrationstests auf Python 3.12/3.13, Black, isort, Flake8, Mypy und 109 erfolgreichen Browser-Tests in Chromium. Die früheren PR-Einzelergebnisse sind keine Gesamtabnahme. Nach diesem Lauf wurden ausschließlich Dokumentation und die hier erläuterten Bildbelege bereinigt.
 
-- Core-, Unit- und Integrationstests mit Coverage auf Python 3.12 und 3.13.
-- Format-, Importreihenfolge-, Flake8- und Mypy-Prüfungen.
-- Playwright-UI-Tests mit Chromium.
-- Upload der UI-Screenshots und Playwright-Berichte als GitHub-Actions-Artefakt, auch wenn ein UI-Test fehlschlägt.
+Der [Anwendervergleich](FEATURE_UPGRADE.md) verlinkt die eingecheckten Screenshots und kennzeichnet Bereiche ohne authentische Vorher-Aufnahme. Der neue Deploy-Dialog wurde im [CI-Screenshot-Artefakt](https://github.com/diddip21/knx_to_openhab/actions/runs/40032134387/artifacts/12535542421) aufgenommen. Die Bilder nutzen synthetische Testdaten; ein Video wurde nicht erzeugt.
 
-| Prüfung | Ergebnis auf dem finalen Integrationsbranch |
-|---|---|
-| GitHub Actions Run #516: Core Tests, Python 3.12 | **Erfolgreich: 400 bestanden, 11 übersprungen.** |
-| GitHub Actions Run #516: Core Tests, Python 3.13 | **Erfolgreich: 400 bestanden, 11 übersprungen.** |
-| GitHub Actions Run #516: Black, isort, Flake8 und Mypy | **Alle erfolgreich.** |
-| GitHub Actions Run #516: Playwright UI | **Erfolgreich: 108 bestanden, 2 übersprungen** in 96 Sekunden. |
-| UI-Artefakt aus `test-results/` | [feature-upgrade-ui-screenshots-and-reports](https://github.com/diddip21/knx_to_openhab/actions/runs/40021087430/artifacts/12529744512); drei Dateien, abrufbar bis 21.01.2027. |
-| CI-Änderung für Browserlauf | Installiert nur Chromium (die Suite nutzt `--browser=chromium`); UI-Job ist auf 20 Minuten begrenzt. |
-| Lokale Core-Suite | **400 bestanden, 11 übersprungen** unter Python 3.12.14 mit dem CI-Testbefehl. |
-| Lokales Black / isort / Flake8 | Bestanden nach der Formatkorrektur. |
-| Lokales Mypy | Der Standardlauf endet in dieser Containerumgebung mit einem internen psutil-Fehler (`NoSuchProcess`, Runner-PID nicht sichtbar). Der Fallback-Lauf mit `--no-native-parser` meldet keine Fehler in 95 Dateien. Der Mypy-Gate auf GitHub Actions bleibt maßgeblich. |
-| Lokale Playwright-UI-Suite | Nicht ausgeführt: der lokale Chromium-Download lieferte ein ungültiges, leeres Archiv. Der integrierte Browserlauf wurde erfolgreich auf dem GitHub-Actions-Runner abgeschlossen. |
-| Reales openHAB-5.2-YAML-Smoke-Load | Nicht ausgeführt; erfordert eine passende laufende openHAB-Instanz. |
-| Echtes APT-Paketupdate | Nicht ausgeführt; es wurde kein Zielgerät verändert. |
-| Upgrade-/Datenmigration einer repräsentativen Installation samt Wiederherstellung | **Nicht ausgeführt.** Automatisierte Tests prüfen Codepfade und Konfliktfälle, belegen aber keinen verlustfreien Upgrade- und Rollback-Ablauf auf einer realistischen Bestandsinstallation. |
-
-Die getrennten CI-Ergebnisse aus den Quell-PRs sind im jeweiligen PR verlinkt und nicht als Gesamtergebnis dieses FeatureUpgrade-Branches zu verstehen. Run #516 ist der gemeinsame Testnachweis für den integrierten Softwarestand; ein reiner Dokumentations-Commit danach wird ebenfalls durch CI geprüft.
-
-## Screenshot- und Vorher-/Nachher-Nachweis
-
-Die Screenshots für Login, authentifiziertes Dashboard und Sitzungsablauf liegen unter [`docs/screenshots/feature-upgrade/`](screenshots/feature-upgrade/). Einstellungen und Beispielausgaben für YAML, Gateway-IP und Paketupdates liegen unter [`docs/screenshots/`](screenshots/). Die Benutzerübersicht stellt sie jeweils neben den Vorher-Zustand. Der vollständige integrierte Browserlauf #516 hat außerdem ein [GitHub-Artefakt aus `test-results/`](https://github.com/diddip21/knx_to_openhab/actions/runs/40021087430/artifacts/12529744512) mit drei Dateien hochgeladen. Playwright behält Videos und Traces nur bei Fehlern; dieser erfolgreiche Lauf hat kein Video erzeugt.
-
-Die Bilder enthalten synthetische Testdaten. Es liegt kein Video vor. Für interne Änderungen an Uploadvalidierung, Dateirechten, Passwortablage, Laufzeitmigration und Testinfrastruktur gibt es keinen eigenständigen UI-Bildschirm; ihre Änderung und Prüfung ist oben je PR und im Quellcode/Testbericht beschrieben. Für YAML, Gateway-IP und Paketupdates existieren keine authentischen Screenshots der alten `main`-Oberfläche; diese Einschränkung ist in der Benutzerübersicht kenntlich gemacht.
-
-## Interne Dokumentation
-
-- `AGENTS.md`: Regeln für künftige PR-Stapel, Branch-Schutz, Konfliktprotokoll und Dokumentation.
-- `docs/DEVELOPER_GUIDE.md`: Architektur, zentrale Runtime-Pfade, Branch-/Integrationsablauf und Sicherheitsinvarianten.
-- `docs/PRODUCTION_GUIDE.md`: Installation, Rechte, Secrets, Migration, Paketupdates und Netzwerkzugriff.
-- `docs/USER_GUIDE.md`: Bedienung der neuen Anwenderfunktionen.
-- `docs/SECURITY_UPLOAD.md`: Upload- und Archivverarbeitung.
-- `installer/README.md` und `web_ui/README.md`: Installer-, Laufzeit- und Web-UI-Hinweise.
-
+**Nicht nachgewiesen:** Ein realer YAML-Ladevorgang auf openHAB 5.2, ein echtes APT-Update sowie die Migration und vollständige Wiederherstellung einer repräsentativen Bestandsinstallation. Dafür gilt die [isolierte Freigabeprobe](#noch-erforderliche-freigabeprobe-auf-einer-isolierten-kopie). Ohne diesen Nachweis ist der Branch kein produktives Upgrade.

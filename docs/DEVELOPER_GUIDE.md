@@ -478,6 +478,14 @@ stack; it does not replace `main`. The user-visible overview, before/after scree
 current no-upgrade warning are in the [Feature Upgrade Guide](FEATURE_UPGRADE.md). The
 technical merge and test record is in [Feature Upgrade Tests](FEATURE_UPGRADE_TESTS.md).
 
+For future cleanup of this branch, compare files against `main` and search both repository
+references and open PR descriptions before deleting or moving them. The existing
+`docs/images/ui-home.png` is the authentic before screenshot; the upgrade guide reuses
+it. Keep distinct screenshots at their linked paths and record context in the guide,
+without separate one-paragraph Markdown files. Do not remove integration tests, golden
+fixtures or installer helpers simply to reduce the file count. Run the core and browser
+suites after any cleanup and update the test report with the actual result.
+
 Keep these invariants when extending the integrated features:
 
 - `knxoh_paths.py` is the path source for the app. Do not add independent production path

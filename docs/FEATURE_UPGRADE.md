@@ -1,9 +1,9 @@
 # Feature Upgrade – integrierter Stand der offenen PRs
 
-**Branch:** `developer/feature-upgrade`  
-**Dokumentationsstand:** 23.10.2026  
-**Ausgangsbasis:** `main` (`f092abd`)  
-**Umfang:** Die elf am 23.10.2026 offenen PRs #33, #35, #37, #39, #42–#48 sind auf diesem Integrationsbranch zusammengeführt. `main` ist davon nicht verändert. PR #39 war zum Prüfzeitpunkt ein Draft. Die Aufnahme hier ist eine Integrationsprüfung und kein Release auf `main`.
+- **Branch:** `developer/feature-upgrade`
+- **Dokumentationsstand:** 23.10.2026
+- **Ausgangsbasis:** `main` (`f092abd`)
+- **Umfang:** Die elf am 23.10.2026 offenen PRs #33, #35, #37, #39, #42–#48 sind auf diesem Integrationsbranch zusammengeführt. `main` ist davon nicht verändert. PR #39 war zum Prüfzeitpunkt ein Draft. Die Aufnahme hier ist eine Integrationsprüfung und kein Release auf `main`.
 
 > [!CAUTION]
 > **Nicht auf einer bestehenden produktiven Installation installieren oder `setup.sh` ausführen.** Dieser Branch enthält noch nicht auf einer repräsentativen Bestandsanlage geprüfte Änderungen an Installation, Laufzeitdaten und Systemdiensten. Die Tests auf GitHub belegen die Softwaretests, aber keine sichere Migration oder Wiederherstellung eines realen Geräts. Diese Arbeit hat keine vorhandene Anlage verändert.
@@ -27,7 +27,7 @@ Für Anwender reicht diese Seite: Sie zeigt die sichtbaren Änderungen und ihre 
 
 **Vorher:** Auf `main` öffnete sich die KNX-Weboberfläche direkt mit dem Dashboard. Es gab keinen Anmeldebildschirm.
 
-![Vorher: Dashboard ohne vorgeschaltete Anmeldung](screenshots/feature-upgrade/before-main-dashboard.png)
+![Vorher: Dashboard ohne vorgeschaltete Anmeldung](images/ui-home.png)
 
 **Nachher:** Die Weboberfläche verlangt eine Anmeldung. Nach erfolgreicher Anmeldung erscheint das Dashboard. Nach Ablauf der Sitzung leitet die Oberfläche zurück zur Anmeldung.
 
@@ -50,20 +50,6 @@ Die eingecheckten Nachher-Aufnahmen stammen aus automatisierten Playwright-Läuf
 | Deploy-Prüfung | Eine allgemeine Browser-Bestätigung warnte vor Überschreiben; die betroffenen Dateien standen nicht in dieser Bestätigung. | Der Dialog listet die Zieldateien, öffnet ihren Diff und verlangt eine ausdrückliche Freigabe. Bei fehlender Vorschau bleibt Deploy gesperrt. | [Screenshot des neuen Dialogs im CI-Artefakt](https://github.com/diddip21/knx_to_openhab/actions/runs/40032134387/artifacts/12535542421); für den alten Browserdialog liegt kein authentisches Bild vor. |
 
 Die Einstellungs- und Ausgabebilder für YAML, Gateway-IP und Paketupdates stammen aus den automatisierten PR-Läufen mit Beispieldaten. Für diese drei Bereiche gibt es im Repository keine authentische Aufnahme der alten `main`-Oberfläche. Der Vorher-Zustand ist daher als Funktionsvergleich beschrieben; es wird kein altes UI-Bild vorgetäuscht. Die übrigen PRs ändern Sicherheit, Installer, Laufzeitdaten oder Tests und erzeugen keine eigene neue Oberfläche.
-
-### Weitere sichtbare Funktionen
-
-**openHAB-YAML-Ausgabe (PR #39):** Die neue Ausgabeoption ist in den erweiterten Einstellungen sichtbar. Der bisherige Legacy-Renderer bleibt die Voreinstellung.
-
-![YAML-Ausgabeoption](screenshots/issue-38-yaml-settings.png)
-
-**KNX-Gateway-IP (PR #42):** Im Gerätebereich kann optional eine feste Gateway-IP eingetragen werden. Ein leeres Feld lässt die ETS-Erkennung unverändert.
-
-![Gateway-IP-Einstellung](screenshots/issue-40-gateway-ip-settings.png)
-
-**Paketupdates (PR #43):** Im Bereich Dienste erscheinen verfügbare APT-Updates für openHAB und evcc; nicht über APT installierte evcc-Installationen werden als nicht unterstützt angezeigt.
-
-![Verfügbare Paketupdates](screenshots/issue-41-updates-available.png)
 
 ## Änderungen im Alltag
 

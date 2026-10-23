@@ -71,7 +71,7 @@ Before opening a PR:
 - [ ] Code passes `black --check .`
 - [ ] Code passes `isort --check-only .`
 - [ ] Code passes `flake8 .`
-- [ ] All tests pass: `pytest -q`
+- [ ] Core tests pass: `pytest -q -m "not ui" --ignore=tests/ui`; UI tests pass when relevant
 - [ ] New tests added (if applicable)
 - [ ] Golden files regenerated (if output logic changed): `python scripts/regenerate_golden.py`
 - [ ] Documentation updated (if needed)
@@ -81,10 +81,10 @@ Before opening a PR:
 
 ```bash
 # Quick (core tests only)
-pytest -q
+pytest -q -m "not ui" --ignore=tests/ui
 
 # With coverage
-pytest --cov=. --cov-report=html
+pytest --cov=. --cov-report=html -m "not ui" --ignore=tests/ui
 
 # Specific group
 pytest tests/integration -v
@@ -93,7 +93,7 @@ pytest -m unit
 # UI tests (needs Playwright)
 pip install pytest-playwright
 python -m playwright install chromium
-pytest tests/ui -v -o addopts=
+pytest tests/ui/ -v -m ui --tb=short
 ```
 
 See [tests/README.md](tests/README.md) for details.

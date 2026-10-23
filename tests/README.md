@@ -62,13 +62,10 @@ pytest -m unit -v
 pytest tests/integration -v
 ```
 
-### UI Tests (server must be running!)
+### UI Tests (Chromium required)
 ```bash
-# Terminal 1: Start server
-flask --app web_ui.backend.app:app run --debug
-
-# Terminal 2: Run UI tests
-pytest tests/ui/ -v -o addopts=
+# Test fixtures start the Flask server as needed.
+pytest tests/ui/ -v -m ui --tb=short
 ```
 
 ### Tests with Coverage

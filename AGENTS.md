@@ -29,21 +29,24 @@ Target audience: German-speaking smart home users running OpenHAB on Raspberry P
 
 | File | Purpose |
 |------|---------|
-| `knxproject_to_openhab.py` | Entry point: parses `.knxproj`, builds building hierarchy, calls generator (789 lines) |
-| `ets_to_openhab.py` | Core generator: `gen_building()` produces items/things/sitemap strings, `export_output()` writes files (1058 lines) |
+| `knxproject_to_openhab.py` | Entry point: parses `.knxproj`, builds building hierarchy, calls generator |
+| `ets_to_openhab.py` | Core generator: `gen_building()` produces items/things/sitemap strings, `export_output()` writes files |
 | `openhab_yaml.py` | Dependency-free openHAB 5.2 YAML renderer and semantic validator |
-| `config.json` | Central config: regex patterns, device detection rules, datapoint mappings, output paths (500 lines) |
+| `config.json` | Generator defaults: regex patterns, device detection rules, datapoint mappings, output paths |
 | `config.py` | Loads `config.json`, normalizes values, detects OpenHAB paths. **Executes on import** — side effects at module level |
+| `knxoh_paths.py` | Resolves installed and local-development configuration, data and backup paths |
 | `utils.py` | Single helper: `get_datapoint_type()` |
 | `ets_helpers.py` | Extracted helpers: `get_co_flags()`, `flags_match()`, `get_dpt_from_dco()` |
 | `completeness.py` | Post-generation validation: checks Things for missing required channels |
 | `*.template` | Output wrappers: `items.template`, `things.template`, `sitemap.template` — use `###items###` placeholders |
-| `web_ui/backend/app.py` | Flask routes, auth, SSE, 20+ endpoints (1071 lines) |
-| `web_ui/backend/jobs.py` | Job queue, staging/deploy, backup/rollback (1233 lines) |
+| `web_ui/backend/app.py` | Flask routes, session/CSRF checks, SSE and API endpoints |
+| `web_ui/backend/auth.py` | Argon2id password verification and login rate limiting |
+| `web_ui/backend/deploy_policy.py` | Validates and confines managed OpenHAB output paths |
+| `web_ui/backend/jobs.py` | Job queue, staging/deploy, backup/rollback |
 | `web_ui/backend/storage.py` | JSON persistence, atomic file writes |
 | `web_ui/backend/updater.py` | Git-based self-update via GitHub API |
 | `web_ui/backend/service_manager.py` | systemd service control |
-| `web_ui/static/app.js` | Frontend SPA: vanilla JS, no framework (1978 lines) |
+| `web_ui/static/app.js` | Frontend SPA: vanilla JS, no framework |
 
 ## Coding Conventions
 
@@ -61,8 +64,8 @@ Target audience: German-speaking smart home users running OpenHAB on Raspberry P
 ### Run Tests
 
 ```bash
-# All core tests (default, excludes UI tests)
-pytest -q
+# Core tests (explicitly exclude browser tests)
+pytest -q -m "not ui" --ignore=tests/ui
 
 # Specific test groups
 pytest tests/integration -v
@@ -70,10 +73,10 @@ pytest -m unit
 pytest -m integration
 
 # With coverage
-pytest --cov=. --cov-report=html
+pytest --cov=. --cov-report=html -m "not ui" --ignore=tests/ui
 
-# UI tests (requires Playwright + running server)
-pytest tests/ui -v -o addopts=
+# UI tests (requires Playwright and Chromium; fixtures start the test server)
+pytest tests/ui/ -v -m ui --tb=short
 ```
 
 ## Cross-Task Delivery Rules
@@ -86,6 +89,8 @@ pytest tests/ui -v -o addopts=
 - A pull request should summarize user-visible behavior, compatibility/default behavior, tests and their results, and screenshots for UI changes. Keep scope focused and verify that saving one setting does not discard sibling configuration.
 - When integrating several open PRs for combined testing, enumerate all open PRs first (including drafts), create a separate `developer/*` integration branch from the default branch, and merge source branches in dependency order. Do not modify the default branch during integration. Keep source PRs open unless closing them is explicitly requested; record the integrated PR list, conflicts and decisions in a GitHub-visible report.
 - Combined product changes need a user-facing before/after guide linked from the README. Explain defaults, compatibility, setup or migration steps, and how to use each visible feature. Keep security, architecture and test details in the appropriate internal guides and link them from the overview.
+- Treat existing installations as a separate compatibility gate: never run migration, permission changes, package updates or cleanup on a productive system as a test. Rehearse setup and full restore on an isolated copy before recommending an existing-install upgrade. A green CI run does not establish this release gate; record missing real-device checks honestly.
+- Keep security invariants across UI, API and helpers: server-side session and CSRF checks for writes, no default credentials or persisted project passwords, and deployment/rollback limited to configured generated files. Preserve legacy output as the default when changing optional YAML output. See [the integrated architecture and release gates](docs/DEVELOPER_GUIDE.md#integrated-feature-upgrade-branch).
 - For repository cleanup, check local references and links from open PRs before removing assets. Reuse an existing screenshot instead of committing an identical copy; fold short image descriptions into the existing guide instead of adding a Markdown sidecar. Keep source modules, installer helpers, security checks, golden files and regression tests needed for the integrated behavior. Preserve stable paths consumed by installations and APIs. Verify links and run the applicable core and browser suites after cleanup.
 
 ### Test Structure
@@ -127,7 +132,7 @@ def setup_method(self):
 
 ### 2. config.py executes on import
 
-`config.py` calls `main()` at module level (line 202). Every `import config` triggers file I/O, subprocess calls, and path detection. Tests that import any module depending on `config` will trigger this. Mock or patch before importing.
+`config.py` calls `main()` at module level. Every `import config` triggers file I/O, subprocess calls, and path detection. Tests that import any module depending on `config` will trigger this. Mock or patch before importing.
 
 ### 3. gen_building() is 500+ lines
 
@@ -173,7 +178,7 @@ Edit `config.json` → `defines`. Modify suffix lists for `dimmer`, `switch`, `r
 
 ### Add a new API endpoint
 
-Edit `web_ui/backend/app.py`. Follow existing patterns: Flask route, auth via `@require_auth`, JSON response. Update `web_ui/api_schema.json`.
+Edit `web_ui/backend/app.py`. When authentication is enabled, its `before_request` handler checks sessions and CSRF centrally; ensure a new route is covered by that policy and add tests for unauthenticated and invalid-CSRF requests when it writes state. Update `web_ui/api_schema.json`.
 
 ### Modify output generation
 
@@ -181,8 +186,4 @@ Edit `ets_to_openhab.py` → `gen_building()` for content, `export_output()` for
 
 ## When to Ask the Human
 
-- If `config.json` rules are ambiguous — ask for a sample ETS address/name
-- If modifying `gen_building()` — confirm understanding of the 3-pass logic
-- If adding new dependencies — confirm they're needed and check `requirements.txt`
-- If changing output file format — confirm compatibility with OpenHAB
-- If test failures involve global state — check if `setup_method()` resets are needed
+Ask for a representative ETS address or project when device rules cannot be determined from existing fixtures. For generator, dependency or output-format changes, inspect the existing behavior, requirements and openHAB compatibility, then implement and test the authorized scope. Ask only when a required behavior or migration decision remains ambiguous. For global-state test failures, first check fixture and `setup_method()` resets.

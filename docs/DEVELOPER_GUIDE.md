@@ -288,12 +288,12 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 ```
 
-### Core Tests (default)
+### Core Tests
 
-The default pytest config **ignores UI tests** (`tests/ui`) so CI stays fast and reliable.
+Select core tests explicitly; the default pytest config also collects browser tests.
 
 ```bash
-pytest -q
+pytest -q -m "not ui" --ignore=tests/ui
 ```
 
 **Run integration-only:**
@@ -303,14 +303,13 @@ pytest tests/integration -v
 
 ### UI Tests (optional)
 
-UI tests use Playwright and start a local Flask server on **8081** with auth disabled.
+UI tests use Playwright and start a local Flask test server on port 8085 by default.
 
 ```bash
 pip install pytest-playwright
 python -m playwright install chromium
 
-# Override pytest.ini addopts to include UI tests
-pytest tests/ui -v -o addopts=
+pytest tests/ui/ -v -m ui --tb=short
 ```
 
 ### Running Everything + Coverage
@@ -503,7 +502,8 @@ Keep these invariants when extending the integrated features:
 - Gateway, output-format and other settings must be saved without dropping sibling or future
   configuration keys.
 
-The integration may be exercised with `pytest -q`, then `pytest tests/ui -v -o addopts=`.
+The integration may be exercised with `pytest -q -m "not ui" --ignore=tests/ui`, then
+`pytest tests/ui/ -v -m ui --tb=short` with Chromium installed.
 CI also runs Black, isort, flake8, mypy, Python 3.12/3.13 tests, and Playwright with Chromium.
 Real-device package updates, migration on a representative installed system, and a running
 openHAB 5.2 YAML smoke-load are separate release checks and must not be described as passed

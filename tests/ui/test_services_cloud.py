@@ -8,11 +8,6 @@ from playwright.sync_api import Page, expect
 
 
 def _setup_services_routes(page: Page):
-    services = [
-        {"name": "openhab.service", "active": True, "status": "active", "uptime": "2h 30min"},
-        {"name": "evcc.service", "active": False, "status": "inactive", "uptime": ""},
-    ]
-
     cloud_info = {
         "uuid": "abc-123-def-456",
         "secret": "super-secret-value",
@@ -29,10 +24,29 @@ def _setup_services_routes(page: Page):
 
         if url.endswith("/api/jobs"):
             return _fulfill(route, [])
-        if url.endswith("/api/services"):
-            return _fulfill(route, services)
+        if url.endswith("/api/service/updates/status"):
+            return _fulfill(route, {"action": None, "state": "idle", "message": ""})
+        if re.search(r"/api/service/(openhab|evcc)/version$", url):
+            return _fulfill(
+                route,
+                {
+                    "installed": "5.0.0-1",
+                    "candidate": "5.0.0-1",
+                    "supported": True,
+                    "update_available": False,
+                    "message": "No APT update available.",
+                },
+            )
         if re.search(r"/api/service/.+/status$", url):
-            return _fulfill(route, {"active": True, "status": "active", "uptime": "2h 30min"})
+            is_openhab = url.endswith("/api/service/openhab.service/status")
+            return _fulfill(
+                route,
+                {
+                    "active": is_openhab,
+                    "status": "active" if is_openhab else "inactive",
+                    "uptime_str": "2h 30min" if is_openhab else "",
+                },
+            )
         if url.endswith("/api/service/restart") and method == "POST":
             return _fulfill(route, {"ok": True, "output": "Service restarted"})
         if url.endswith("/api/openhab/cloud-info"):
@@ -71,17 +85,23 @@ class TestServicesSection:
         _setup_services_routes(page)
         page.goto(base_url)
 
-        restart_btns = page.locator(".service-restart-btn")
+        restart_btns = page.locator(".restart-btn")
         expect(restart_btns.first).to_be_visible()
 
-    def test_service_restart_triggers_confirm(self, page: Page, base_url, flask_server):
+    def test_service_restart_posts_the_named_service(self, page: Page, base_url, flask_server):
         _setup_services_routes(page)
         page.goto(base_url)
 
-        restart_btn = page.locator(".service-restart-btn").first
-        restart_btn.click()
-        page.wait_for_timeout(1000)
-        expect(restart_btn).to_contain_text("Restart", timeout=5000)
+        restart_btn = page.locator(".restart-btn").first
+        with page.expect_request(
+            lambda request: request.url.endswith("/api/service/restart")
+            and request.method == "POST"
+        ) as request_info:
+            restart_btn.click()
+
+        request = request_info.value
+        assert json.loads(request.post_data or "{}") == {"service": "openhab.service"}
+        expect(restart_btn).to_have_text("Restart")
 
 
 @pytest.mark.ui

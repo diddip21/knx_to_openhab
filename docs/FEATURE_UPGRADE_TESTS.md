@@ -14,6 +14,14 @@ Die aktuelle Runde überarbeitet die GitHub-README und den Einstieg in die Anwen
 
 [GitHub Actions Run #522](https://github.com/diddip21/knx_to_openhab/actions/runs/40032134387) auf dem vollständigen Qualitätsstand `d1ac2f7` ist erfolgreich: **404 Core-Tests bestanden, 11 übersprungen** unter Python 3.12 und 3.13; **109 Browser-Tests bestanden, 2 übersprungen**; Formatierung, Importreihenfolge, Flake8 und Mypy bestanden. Lokal bestanden dieselben 404 Core-Tests; ein lokaler Chromium-Lauf war in dieser Umgebung nicht verfügbar. Die nachstehenden älteren CI-Zahlen bleiben als Integrationshistorie erhalten. Eine reale Migration und Wiederherstellung einer repräsentativen Bestandsanlage ist weiterhin nicht durchgeführt, daher gibt es keine Freigabe für produktive Bestandsanlagen.
 
+### Noch erforderliche Freigabeprobe auf einer isolierten Kopie
+
+- Vorher: Version, Konfiguration, Benutzerzugang, Bind-Adresse/Port, Jobs, Staging, Backups, Dienste und manuell gepflegte openHAB-Dateien auf einer **nicht produktiven** Kopie erfassen; separat eine vollständige wiederherstellbare Gerätesicherung anlegen.
+- Migration: nur auf dieser Kopie die ausdrücklich als Labortest gekennzeichnete Setup-Option verwenden. Danach Werte, Dateirechte, Dienststarts, Fernzugriff und vorhandene Job-/Backupdaten mit dem Vorher-Stand vergleichen. Jede unerwartete Änderung blockiert die Freigabe.
+- Anwendung: das gleiche ETS-Testprojekt im bisherigen Standardformat verarbeiten; Diff prüfen, Deploy bestätigen und verwaltete Dateien kontrollieren. Optionales YAML auf einer passenden openHAB-5.2-Testinstanz laden. Manuelle Dateien müssen erhalten bleiben.
+- Wiederherstellung: sowohl einen Deploy-Rollback als auch die **vollständige Rückkehr zum vorherigen Installationsstand** aus der Gerätesicherung durchführen und Daten, Zugriff und Dienste erneut vergleichen. Ein reiner Test der App-Rollback-Taste ersetzt diesen Schritt nicht.
+- Nachweis: Befehle, Testumgebung, Vorher-/Nachher-Ergebnisse, Abweichungen und Freigabeentscheidung hier ergänzen. Bis alle Schritte bestanden sind, keine produktive Upgrade-Anleitung veröffentlichen und `main` nicht mit diesem Branch zusammenführen.
+
 ## Ergebnis
 
 Dieser Branch sammelt die Änderungen zur gemeinsamen Prüfung. `main` bleibt unverändert. Die Quell-PRs bleiben auf GitHub offen; ihre Änderungen sind in diesem Integrationsbranch enthalten. Der Branch ist kein Release und wurde nicht auf ein echtes openHAB-System ausgerollt.

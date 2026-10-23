@@ -24,9 +24,11 @@
       {% endif %}
     </div>
 
+    <p class="workflow-intro">Select a project, review the result, then choose when to deploy. Your running openHAB configuration remains unchanged until deployment.</p>
+
     <!-- Upload Section -->
     <section id="upload-section" class="card">
-      <h2>📤 Upload KNX Project</h2>
+      <h2>1 · Select ETS project</h2>
       <form id="uploadForm">
         <div class="form-group">
           <label for="fileInput">KNX Project File:</label>
@@ -37,8 +39,8 @@
           <input type="password" id="passwordInput" name="password" placeholder="Optional" />
         </div>
         <div class="form-actions">
-          <button type="button" onclick="previewProject()" class="btn-secondary">Preview Structure</button>
-          <button type="submit" class="btn-primary">Upload & Process</button>
+          <button type="button" onclick="previewProject()" class="btn-secondary">Preview structure</button>
+          <button type="submit" class="btn-primary">Process project</button>
         </div>
       </form>
       <div id="status" class="status-message"></div>
@@ -54,7 +56,8 @@
 
     <!-- Jobs Section -->
     <section id="jobs-section" class="card">
-      <h2>📋 Jobs</h2>
+      <h2>2 · Review results and changes</h2>
+      <p class="muted">Open a completed job to review its files, reports and diff. Deployment requires your separate approval.</p>
       <div id="jobs" class="jobs-list"></div>
     </section>
 
@@ -348,6 +351,19 @@
     <button onclick="doRollback()">Rollback</button>
     <button onclick="document.getElementById('rollbackDialog').close()">Cancel</button>
     <div id="rollbackStatus"></div>
+  </dialog>
+
+  <!-- Deployment review: use the current job diff before enabling the action. -->
+  <dialog id="deployReviewDialog" class="deploy-review-dialog" aria-labelledby="deployReviewTitle">
+    <h2 id="deployReviewTitle">3 · Review deployment</h2>
+    <p>These files will be written or removed. A backup is made before deployment. Manually maintained files outside the managed output remain untouched.</p>
+    <div id="deployReviewFiles" class="deploy-review-files"></div>
+    <label class="deploy-review-ack"><input type="checkbox" id="deployReviewAck"> I reviewed the changes and want to deploy them.</label>
+    <p id="deployReviewStatus" role="status" aria-live="polite"></p>
+    <div class="deploy-review-actions">
+      <button type="button" class="btn-secondary" id="deployReviewCancel">Cancel</button>
+      <button type="button" class="btn-primary" id="deployReviewConfirm" disabled>Deploy now</button>
+    </div>
   </dialog>
 
   <!-- Completeness Summary Dialog -->

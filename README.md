@@ -1,136 +1,62 @@
-# KNX to OpenHAB Generator
+# KNX → openHAB: aus dem ETS-Projekt zur prüfbaren Konfiguration
 
-A tool that generates complete [OpenHAB](https://www.openhab.org/) configurations (Items, Things, Sitemaps, Persistence) directly from ETS project exports (`.knxproj`) or JSON dumps.
+Aus einem ETS-Export (`.knxproj`) erzeugt **LogiKNX2HAB** die passenden KNX-Things, Items und eine Sitemap für openHAB. Du siehst das Ergebnis und die Unterschiede zu deiner laufenden Konfiguration, bevor du die generierten Dateien übernimmst. Alternativ lässt sich der Generator per Kommandozeile nutzen.
 
-Includes a **Web UI** for browser-based management and a **CLI** for automated workflows.
+> [!CAUTION]
+> **Dieser Branch ist eine Vorschau, kein freigegebenes Upgrade.** `developer/feature-upgrade` vereint elf PRs. Die Änderungen an Installer und Laufzeitdaten wurden noch nicht mit einer repräsentativen bestehenden Installation samt Wiederherstellung geprüft. Das Setup blockiert deshalb vorhandene Installationen. **Keine produktive Anlage mit diesem Branch aktualisieren.** `main` und bereits installierte Systeme wurden durch diese Arbeit nicht verändert.
 
-## Features
+## So funktioniert es
 
-- **Automated Generation** — Creates Things, Items, Sitemaps, and Persistence rules in one step
-- **openHAB 5.2 YAML** — Optionally combines Things, Items, semantic metadata, channels, and the Sitemap in one native, versioned YAML file
-- **Smart Detection** — Identifies Dimmers, Rollershutters, Thermostats, and multi-address components by DPT analysis and naming conventions
-- **Web Interface** — Drag-and-drop upload, live progress streaming (SSE), job history, diff viewer, deploy/rollback
-- **Backup & Rollback** — Automatic tar.gz backup before each generation; rollback restores generated files and preserves manual OpenHAB configuration
-- **Reports** — Unknown addresses, partial items, completeness checks (missing required channels)
-- **Auto-Placement** — Optional: automatically create missing floors/rooms for unmatched addresses
-- **Semantic Model** — Auto-tags items for OpenHAB's semantic model
-- **HomeKit / Alexa** — Auto-generates metadata when enabled in ETS project comments
-- **InfluxDB Support** — Auto-configure persistence via ETS description tags
-- **Self-Update** — Check for and apply updates from GitHub directly in the UI
-- **Service Management** — Check and update APT-managed openHAB/evcc packages individually, and restart supported services
-- **KNX Gateway Override** — Optionally set the KNX gateway address per project while retaining ETS auto-detection as the default
+1. **ETS-Projekt auswählen:** `.knxproj`, `.knxprojarchive` oder einen passenden JSON-Dump laden; optional vorher die erkannte Gebäudestruktur ansehen.
+2. **Ergebnis prüfen:** generierte Dateien, Hinweise zu unvollständigen Zuordnungen und den Diff zur vorhandenen Konfiguration ansehen. Bis hierhin wird nichts nach openHAB übernommen.
+3. **Bewusst übernehmen:** Der Deploy-Dialog zeigt die betroffenen Dateien und ihre Änderungen. Erst nach deiner Bestätigung wird eine Sicherung erstellt und die verwaltete Ausgabe übernommen. Bei Bedarf lässt sich eine Sicherung wiederherstellen.
 
-## Documentation
+![Dashboard mit Projektauswahl und Jobs](docs/screenshots/feature-upgrade/after-authenticated-dashboard.png)
 
-**For users:** Start with the [User Guide](docs/USER_GUIDE.md) for everyday use. The [Feature Upgrade Guide](docs/FEATURE_UPGRADE.md) shows the before/after screenshots and summarizes what is changing in the current integration branch. That branch is not a release; its warning explains the status for existing installations.
+**Was entsteht?** Standardmäßig `knx.things`, `knx.items` und `knx.sitemap`; je nach Projekt zusätzlich Persistenz- und Regeldateien. Optional kann bei openHAB 5.2 stattdessen eine gemeinsame `yaml/knx.yaml` für Things, Items und Sitemap gewählt werden. **Die bisherige Textausgabe bleibt voreingestellt.** Beide Modellformate dürfen nicht gleichzeitig für dieselben Entitäten geladen werden. [Ausgabeformate und Beispiele](docs/USER_GUIDE.md#openhab-52-yaml-output).
 
-**For admins and contributors:** The [Production Guide](docs/PRODUCTION_GUIDE.md) covers installation and operation; the [Developer Guide](docs/DEVELOPER_GUIDE.md) and [Contributing Guide](CONTRIBUTING.md) cover code and project workflow. Detailed test results and upload-security internals are linked from the Feature Upgrade Guide for readers who need them.
+## Welcher Einstieg passt zu dir?
 
----
+| Situation | Nächster Schritt |
+|---|---|
+| Du willst erst verstehen, was sich ändert | [Bebilderter Vorher-/Nachher-Vergleich](docs/FEATURE_UPGRADE.md) ansehen; keine Installation nötig. |
+| Du benutzt bereits eine produktive Installation | Beim bestehenden Stand bleiben. Für diesen Branch gibt es noch **keinen** freigegebenen Upgrade-Befehl. [Grund und offene Prüfungen](docs/FEATURE_UPGRADE.md#status-für-bestehende-installationen). |
+| Du willst den bisherigen `main`-Stand frisch auf einem separaten Gerät installieren | [Installationshinweise](docs/PRODUCTION_GUIDE.md) und Voraussetzungen prüfen. Der `main`-Installer installiert **nicht** diesen Vorschau-Branch. |
+| Du möchtest den Vorschau-Branch entwickeln oder in einem Wegwerf-Testsystem prüfen | [Entwickleranleitung](docs/DEVELOPER_GUIDE.md) bzw. [Installer-Hinweise für Testsysteme](installer/README.md) verwenden. |
 
-## Quick Start
+**Zugriff auf die Weboberfläche:** Nach einer neuen Installation wird ein eigenes Passwort eingerichtet. Standardmäßig ist die Oberfläche nur am Gerät unter `http://127.0.0.1:8085` erreichbar. Von einem anderen Rechner aus verbindet die [Anleitung für Fernzugriff](docs/USER_GUIDE.md#login-and-remote-access) per SSH-Tunnel. Kein gemeinsames Standardpasswort.
 
-### Option 1: One-Command Installer (Linux / Raspberry Pi)
+## Funktionen im Alltag
 
-Best for fresh installs of Raspberry Pi OS (Lite) or DietPi.
+- KNX-Adressen und typische Geräte wie Schalter, Dimmer, Rollläden und Thermostate aus ETS-Struktur und DPT erkennen.
+- Unbekannte Adressen, fehlende Rückmeldungen und unvollständige Zuordnungen in Berichten prüfen; automatische Platzierung ist optional.
+- Auf Wunsch die Gateway-Adresse ausdrücklich vorgeben; ein leeres Feld behält die Erkennung aus ETS bei.
+- Verfügbare APT-Paketversionen für openHAB und evcc sehen und ein unterstütztes Paket einzeln aktualisieren. Paketupdates sind eine gesonderte Aktion und gehören nicht zum normalen Deploy.
+- Dateien und Unterschiede vor der Übernahme prüfen und eine Sicherung bei Bedarf wiederherstellen. Der Deploy beschränkt sich auf verwaltete Ausgabedateien.
 
-**Prereqs (apt):** `python3-venv python3-tk build-essential`
+## Für die Kommandozeile
 
-```bash
-curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install.sh | bash
-```
-
-This will:
-1. Install system dependencies (Python, git, etc.)
-2. Clone the repository to `/opt/knx_to_openhab`
-3. Set up the **knxohui** systemd service (Web UI on port 8085)
-4. Configure permissions for self-updates
-
-### Option 2: CLI (Any Platform)
+Auf einem **separaten Entwicklungs- oder Testsystem**:
 
 ```bash
-git clone https://github.com/diddip21/knx_to_openhab.git
+git clone --branch developer/feature-upgrade https://github.com/diddip21/knx_to_openhab.git
 cd knx_to_openhab
+python3 -m venv .venv
+. .venv/bin/activate
 pip install -r requirements.txt
-
-python knxproject_to_openhab.py --file_path "MyHouse.knxproj"
+python knxproject_to_openhab.py --file_path MyHouse.knxproj
 ```
 
-Output files are written to the `openhab/` directory (configurable in `config.json`).
+Die Ausgabe landet gemäß `config.json` im Ausgabeverzeichnis. Für den bisherigen Stand stattdessen `main` auschecken. [CLI und Konfiguration](docs/USER_GUIDE.md#command-line-usage).
 
-### Option 3: Local Development
+## Dokumentation
 
-```bash
-git clone https://github.com/diddip21/knx_to_openhab.git
-cd knx_to_openhab
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-export FLASK_ENV=testing
-flask --app web_ui.backend.app:app run --debug
-# → http://localhost:5000
-```
+- [Anwenderanleitung](docs/USER_GUIDE.md): Projekt vorbereiten, Ergebnis prüfen, Einstellungen, Probleme lösen.
+- [Änderungen mit Vorher/Nachher](docs/FEATURE_UPGRADE.md): Was dieser Branch ändert und was davon bereits nachgewiesen ist.
+- [Installation und Betrieb](docs/PRODUCTION_GUIDE.md): Voraussetzungen, Zugriffswege, Sicherungen und Betriebsgrenzen.
+- [Technischer Testbericht](docs/FEATURE_UPGRADE_TESTS.md): PR-Umfang, automatisierte Ergebnisse und ausstehende Systemproben.
+- [Entwicklung und Beiträge](docs/DEVELOPER_GUIDE.md) · [Contributing](CONTRIBUTING.md).
 
----
+## Lizenz
 
-## Using the Web UI
-
-1. **Open** `http://127.0.0.1:8085` on the device and use the Web UI password set during
-   installation. The service listens on localhost by default. From another computer, create an
-   SSH tunnel with `ssh -L 8085:127.0.0.1:8085 <user>@<device-ip>`, then open the same URL.
-   A fresh install prompts for a unique password; no shared default password is shipped.
-   Rotate it later with the secure helper in [`installer/README.md`](installer/README.md).
-2. **Upload** your `.knxproj` export or JSON dump
-3. **Preview** the building structure before processing
-4. **Review** generated files, diffs, and reports
-5. **Deploy** when satisfied (copies files to live OpenHAB directory)
-
-### What Gets Generated
-
-For each KNX project, the generator produces:
-
-| File | Contents |
-|------|----------|
-| `yaml/knx.yaml` | Native openHAB 5.2 model containing Things, Items, links, metadata, and Sitemap (when `output_format` is `yaml`) |
-| `knx.items` | Item definitions with types, icons, semantics, HomeKit/Alexa metadata |
-| `knx.things` | Thing definitions with KNX bridge and channel mappings |
-| `knx.sitemap` | Sitemap with floor/room hierarchy and labeled widgets |
-| `influxdb.persist` | InfluxDB persistence rules for items tagged with `influx` |
-
-The three legacy model files are mutually exclusive with `yaml/knx.yaml`. Persistence remains textual because openHAB 5.2 does not expose persistence as a YAML top-level entity. See the [YAML migration guide](docs/USER_GUIDE.md#openhab-52-yaml-output).
-
-### Reports & Auto-Placement
-
-The UI surfaces reports for anything that couldn't be fully placed:
-
-- **`unknown_report.json`** — Group addresses with no matching floor/room (generated even when auto-place is disabled)
-- **`partial_report.json`** — Incomplete multi-address components (e.g., dimmer missing status GA)
-- **`completeness_report.json`** — Generated Things missing required channels per device type
-
-Enable auto-placement in **Settings → Auto-place unknown addresses** or set `general.auto_place_unknown = true` in `config.json`.
-
----
-
-## UI Overview
-
-**Home — Job List & Upload**
-
-![UI overview](docs/images/ui-home.png)
-
-**Settings — Auto-Place Toggle**
-
-![UI settings](docs/images/ui-settings.png)
-
----
-
-## Uninstallation
-
-```bash
-curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/uninstall.sh | bash
-```
-
----
-
-## License
-
-This project is open-source.
+[Lizenztext](LICENSE.txt).

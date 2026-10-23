@@ -8,6 +8,10 @@
 
 > **Betriebsgrenze:** Es wurde kein produktives Gerät angesprochen. Die Runtime-Migration besteht automatisierte Tests, aber es gab keine Probe mit einem Abbild einer realen Bestandsinstallation und keinen Wiederherstellungslauf. Deshalb ist der Branch kein freigegebenes Bestands-Upgrade.
 
+## Nachtrag: Qualitätsrunde auf dem Integrationsbranch
+
+Die aktuelle Runde überarbeitet die GitHub-README und den Einstieg in die Anwenderanleitung, ergänzt eine Setup-Sperre für erkannte Bestandsinstallationen vor Systemänderungen und ersetzt die allgemeine Deploy-Bestätigung durch eine Dateiliste mit Diff und ausdrücklicher Freigabe. Neue Guardrail- und Browserprüfungen gehören zur Runde; der Browserlauf erzeugt zusätzlich `test-results/feature-upgrade/deploy-review.png` für das CI-Artefakt. **Die nachstehenden erfolgreichen CI-Zahlen gelten für den vorherigen Integrationsstand und noch nicht für diesen Nachtrag.** Der neue CI-Lauf und die ausstehende reale Migrations-/Restore-Probe sind getrennt zu bewerten. Eine Freigabe für produktive Bestandsanlagen gibt es nicht.
+
 ## Ergebnis
 
 Dieser Branch sammelt die Änderungen zur gemeinsamen Prüfung. `main` bleibt unverändert. Die Quell-PRs bleiben auf GitHub offen; ihre Änderungen sind in diesem Integrationsbranch enthalten. Der Branch ist kein Release und wurde nicht auf ein echtes openHAB-System ausgerollt.

@@ -8,6 +8,8 @@
 > [!CAUTION]
 > **Nicht auf einer bestehenden produktiven Installation installieren oder `setup.sh` ausführen.** Dieser Branch enthält noch nicht auf einer repräsentativen Bestandsanlage geprüfte Änderungen an Installation, Laufzeitdaten und Systemdiensten. Die Tests auf GitHub belegen die Softwaretests, aber keine sichere Migration oder Wiederherstellung eines realen Geräts. Diese Arbeit hat keine vorhandene Anlage verändert.
 
+**Aktuelle Qualitätsrunde:** Die [README](../README.md) führt jetzt durch den Anwenderablauf. Das Setup beendet sich bei erkannter Bestandsinstallation vor Systemänderungen; ausschließlich für eine wegwerfbare Laborkopie gibt es einen ausdrücklich benannten Override. Im Web-UI zeigt ein Deploy-Dialog die betroffenen Dateien und deren Diff und verlangt eine ausdrückliche Bestätigung. Für diese Änderungen sind die neuen Browserprüfungen und ein Screenshot des Dialogs im CI-Artefakt vorgesehen. Eine reale Bestandsmigration und Wiederherstellung fehlen weiterhin.
+
 Für Anwender reicht diese Seite: Sie zeigt die sichtbaren Änderungen und ihre Bedienung. Technische Prüf- und Installationsdetails stehen in den Admin-/Entwicklerdokumenten am Seitenende.
 
 ## Kurz für Anwender
@@ -94,6 +96,8 @@ Ein Setup auf einem vorhandenen Gerät würde unter anderem:
 - Dateieigentümer, OpenHAB-Ausgaberechte und die sudoers-Policy auf dem Host ändern.
 
 Das sind absichtliche Upgrade-Änderungen des integrierten Codes, aber keine folgenlose Installation. Ein Backup allein belegt keinen sicheren Rollback. Vor einer Freigabe fehlen eine Probe mit einer Kopie repräsentativer Bestandsdaten, ein geprüfter Wiederherstellungslauf, eine klare Vorab-Anzeige der Änderungen sowie ein dokumentierter Abbruch-/Rollback-Pfad. Bis diese Nachweise vorliegen, den Branch nur zur Prüfung verwenden und nicht auf produktiven Bestandsgeräten installieren oder dessen Setup-/Migrationsskripte ausführen.
+
+Das Setup stoppt jetzt bei einer erkannten Bestandsinstallation vor Änderungen. Die genannten Schritte beschreiben ausschließlich den noch nicht freigegebenen Migrationspfad einer ausdrücklich autorisierten Laborkopie; sie wurden auf keinem produktiven Gerät ausgeführt.
 
 Die bisherigen Anlagen wurden im Rahmen dieser Integration nicht angesprochen oder verändert. `main` ist unverändert; der Branch selbst ändert keine Installation, solange sein Code nicht auf einem Gerät ausgeführt wird.
 

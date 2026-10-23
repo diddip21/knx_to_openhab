@@ -1,37 +1,31 @@
 # KNX → OpenHAB Web UI
 
 For the complete user-visible overview of the integrated feature set, compatibility notes,
-upgrade steps and before/after screenshots, see [`docs/FEATURE_UPGRADE.md`](../docs/FEATURE_UPGRADE.md).
+upgrade status and before/after screenshots, see [`docs/FEATURE_UPGRADE.md`](../docs/FEATURE_UPGRADE.md).
 
 Lightweight Flask web interface for `knxproject_to_openhab.py`. Upload KNX project files, preview the building structure, generate OpenHAB configuration, review diffs, and deploy — all from a browser.
 
-## Quick Start
+## Start safely
 
-```bash
-# On Raspberry Pi / DietPi (production)
-curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install.sh | bash
-
-# Default access on the Pi: http://127.0.0.1:8085
-# Remote access: use an SSH tunnel or explicitly configure a LAN bind / HTTPS proxy.
-```
+This integration branch is only for development and disposable test systems. Its setup script blocks existing installations. For local development use the instructions below. For a fresh `main` installation see the [Production Guide](../docs/PRODUCTION_GUIDE.md). New installations listen on `127.0.0.1:8085` by default; remote access uses an SSH tunnel or an explicitly configured LAN bind / HTTPS proxy.
 
 ## Architecture
 
 ```
 web_ui/
 ├── backend/
-│   ├── app.py              # Flask routes, auth, SSE (1071 lines)
-│   ├── jobs.py             # Job queue, staging, deploy, backup (1233 lines)
+│   ├── app.py              # Flask routes, auth, SSE
+│   ├── jobs.py             # Job queue, staging, deploy, backup
 │   ├── storage.py          # JSON persistence, atomic writes
 │   ├── updater.py          # Git-based self-update via GitHub API
 │   ├── service_manager.py  # systemd service control
 │   ├── config.json         # Local development defaults only
 │   └── gunicorn_conf.py    # Production gunicorn config
 ├── templates/
-│   └── index.html          # Single-page application (368 lines)
+│   └── index.html          # Single-page application
 ├── static/
-│   ├── app.js              # Frontend logic, SSE, diff viewer (1978 lines)
-│   └── style.css           # CSS with custom properties (1892 lines)
+│   ├── app.js              # Frontend logic, SSE, diff viewer
+│   └── style.css           # CSS with custom properties
 └── api_schema.json         # API documentation
 ```
 

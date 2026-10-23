@@ -49,6 +49,22 @@ const backupSelect = document.getElementById('backupSelect')
 const rollbackStatusEl = document.getElementById('rollbackStatus')
 const logLevelFilterEl = document.getElementById('logLevelFilter')
 const servicesListEl = document.getElementById('servicesList')
+const deployReviewDialog = document.getElementById('deployReviewDialog')
+const deployReviewAck = document.getElementById('deployReviewAck')
+const deployReviewConfirm = document.getElementById('deployReviewConfirm')
+const deployReviewStatus = document.getElementById('deployReviewStatus')
+let pendingDeployJobId = null
+
+deployReviewAck.addEventListener('change', () => {
+  deployReviewConfirm.disabled = !deployReviewAck.checked || !pendingDeployJobId
+})
+document.getElementById('deployReviewCancel').addEventListener('click', () => deployReviewDialog.close())
+deployReviewDialog.addEventListener('close', () => {
+  pendingDeployJobId = null
+  deployReviewAck.checked = false
+  deployReviewConfirm.disabled = true
+})
+deployReviewConfirm.addEventListener('click', confirmDeploy)
 
 function updateExpertToggleVisibility(stats) {
   if (!expertToggleEl) return
@@ -294,15 +310,46 @@ async function deleteJob(jobId) {
 }
 
 async function deployJob(jobId) {
-  if (!confirm('Really deploy? The existing configuration will be overwritten!')) return
+  pendingDeployJobId = null
+  deployReviewConfirm.textContent = 'Deploy now'
+  document.getElementById('deployReviewCancel').textContent = 'Cancel'
+  deployReviewAck.checked = false
+  deployReviewConfirm.disabled = true
+  deployReviewStatus.textContent = 'Loading changes …'
+  document.getElementById('deployReviewFiles').textContent = ''
+  deployReviewDialog.showModal()
 
-  const btn = event.target || document.querySelector(`button[onclick="deployJob('${jobId}')"]`)
-  const originalText = btn ? btn.textContent : 'Deploy'
-  if (btn) {
-    btn.disabled = true
-    btn.textContent = 'Processing...'
+  try {
+    const [jobResponse, diffResponse] = await Promise.all([
+      apiFetch(`/api/job/${jobId}`), apiFetch(`/api/job/${jobId}/diff`)
+    ])
+    if (!jobResponse.ok || !diffResponse.ok) throw new Error('Preview unavailable. Please process the project again.')
+    const job = await jobResponse.json()
+    const diffs = await diffResponse.json()
+    if (!job.staged || job.deployed || job.status !== 'completed') throw new Error('This job is no longer ready for deployment.')
+    const files = Object.keys(diffs)
+    if (!files.length) throw new Error('No files available to review.')
+    const stats = job.stats || {}
+    document.getElementById('deployReviewFiles').innerHTML = files.map(name => {
+      const entries = diffs[name]
+      if (!Array.isArray(entries)) throw new Error('Invalid diff data. Deployment blocked.')
+      const removed = !!stats[name]?.retired
+      const label = removed ? 'Will be removed' : 'Will be written'
+      return `<details><summary>${escapeHtml(name)} · ${label}</summary>${renderBackendDiff(entries)}</details>`
+    }).join('')
+    pendingDeployJobId = jobId
+    deployReviewStatus.textContent = `${files.length} affected file(s). Open a filename to inspect its diff.`
+  } catch (error) {
+    pendingDeployJobId = null
+    deployReviewStatus.textContent = `Deployment blocked: ${error.message}`
   }
+}
 
+async function confirmDeploy() {
+  const jobId = pendingDeployJobId
+  if (!jobId || !deployReviewAck.checked) return
+  deployReviewConfirm.disabled = true
+  deployReviewStatus.textContent = 'Creating backup and deploying …'
   try {
     const res = await apiFetch(`/api/job/${jobId}/deploy`, {
       method: 'POST',
@@ -310,21 +357,18 @@ async function deployJob(jobId) {
     })
     const data = await res.json()
     if (res.ok && data.success) {
-      alert('Successfully deployed: ' + data.message)
-      refreshJobs()
+      deployReviewStatus.textContent = `Deployment completed: ${data.message}`
+      pendingDeployJobId = null
+      await refreshJobs()
+      deployReviewConfirm.textContent = 'Completed'
+      document.getElementById('deployReviewCancel').textContent = 'Close'
     } else {
-      alert('Deploy error: ' + (data.error || 'Unknown error'))
-      if (btn) {
-        btn.textContent = originalText
-        btn.disabled = false
-      }
+      deployReviewStatus.textContent = 'Deployment failed: ' + (data.error || 'Unknown error')
+      deployReviewConfirm.disabled = false
     }
-  } catch (e) {
-    alert('Error: ' + e.message)
-    if (btn) {
-      btn.textContent = originalText
-      btn.disabled = false
-    }
+  } catch (error) {
+    deployReviewStatus.textContent = 'Deployment failed: ' + error.message
+    deployReviewConfirm.disabled = false
   }
 }
 

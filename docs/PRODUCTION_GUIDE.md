@@ -7,6 +7,8 @@ A lightweight, browser-based web interface to execute the KNX-to-OpenHAB generat
 > [!CAUTION]
 > This document is part of the `developer/feature-upgrade` integration branch. **Do not use this branch to install or upgrade a productive existing system.** The candidate setup changes system services and permissions and migrates runtime data. Those steps have not been validated on a representative existing installation or through a restore drill. No existing installation was changed during this integration.
 
+**Choose your path:** [First project and safe deploy](USER_GUIDE.md#first-project-review-before-deploy) · [Changes on this branch](FEATURE_UPGRADE.md) · [Technical test status](FEATURE_UPGRADE_TESTS.md). The installer rejects detected existing installations before stopping services or changing files. An explicit lab-only acknowledgement is reserved for a disposable test system and is not an upgrade procedure for production.
+
 **Technology Stack:**
 - **Backend:** Flask (Python) with Server-Sent Events (SSE) for live updates
 - **Frontend:** Vanilla HTML/CSS/JavaScript (no external dependencies)
@@ -48,7 +50,7 @@ A lightweight, browser-based web interface to execute the KNX-to-OpenHAB generat
 
 ### Step 1: One-Command Installer
 
-There is no install or upgrade command for this candidate branch. The quick-start command in the repository README points to `main`, which remains unchanged and is not this candidate. Do not use it to test FeatureUpgrade, and do not run candidate installer scripts on a productive existing installation.
+There is no install or upgrade command for this candidate branch on a productive system. The repository README deliberately provides no one-command candidate installer. The `main` installer may repair an existing main installation in place; it is unsuitable for testing this branch.
 
 For a disposable test system, an administrator can check out this branch and run its setup script. That will configure the test system. The intended fresh-install flow is:
 1.  Check for system dependencies
@@ -58,7 +60,7 @@ For a disposable test system, an administrator can check out this branch and run
 5.  Install systemd services and restricted sudoers policy
 6.  Print the access URL
 
-When run against existing state, setup also stops and restarts services, migrates data, changes permissions and sudoers, and can change the Web UI bind address. A migration copy is not yet a demonstrated rollback. The default external paths are `/etc/knx_to_openhab` for settings and secrets,
+The branch setup blocks existing state before changing the system. With its explicit lab-only override on a disposable system, setup stops and restarts services, migrates data, changes permissions and sudoers, and can change the Web UI bind address. A migration copy is not yet a demonstrated rollback. The default external paths are `/etc/knx_to_openhab` for settings and secrets,
 `/var/lib/knx_to_openhab` for jobs and staging, and
 `/var/backups/knx_to_openhab` for archives. Existing configuration and user data
 are copied before the new paths are activated. Active values are recorded in

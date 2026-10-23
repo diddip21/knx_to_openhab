@@ -590,6 +590,36 @@ dialog::backdrop {
   background-color: rgba(44, 62, 80, 0.5);
 }
 
+.workflow-intro {
+  margin: -20px 0 28px;
+  color: var(--text-medium);
+  line-height: 1.6;
+}
+
+.deploy-review-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-width: 720px;
+  max-height: 85vh;
+  overflow: auto;
+  box-sizing: border-box;
+}
+
+.deploy-review-files {
+  max-height: 38vh;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.deploy-review-files details { margin: 8px 0; }
+.deploy-review-files summary { cursor: pointer; font-weight: 600; }
+.deploy-review-files .diff-line { font-size: 12px; }
+.deploy-review-ack { display: flex; align-items: flex-start; gap: 10px; margin-top: 18px; }
+.deploy-review-ack input { margin-top: 3px; }
+.deploy-review-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
 dialog button {
   margin-top: 15px;
   margin-right: 10px;

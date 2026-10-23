@@ -76,6 +76,19 @@ echo "Using configuration directory: $CONFIG_DIR"
 echo "Using runtime data directory: $DATA_DIR"
 echo "Using backup directory: $BACKUP_DIR"
 
+# The integration branch has not passed an upgrade/restore rehearsal on a
+# representative installed system. Keep the gate before *any* service, package,
+# permission or data changes. A disposable lab copy can opt in explicitly.
+if [[ -e "$BASE/venv" || -e "$BASE/jobs" || -e "$CONFIG_DIR/secrets.env" || -e "$PATHS_FILE" ]]; then
+    if [[ "${KNXOH_LAB_UPGRADE_ACK:-}" != "I_ACCEPT_CHANGES_TO_THIS_TEST_SYSTEM" ]]; then
+        echo "Existing installation detected. This candidate cannot upgrade it yet." >&2
+        echo "No service or installation data was changed by this setup run." >&2
+        echo "Only on a disposable lab copy, set KNXOH_LAB_UPGRADE_ACK=I_ACCEPT_CHANGES_TO_THIS_TEST_SYSTEM." >&2
+        exit 3
+    fi
+    echo "LAB UPGRADE: running against existing state; never use this override on production." >&2
+fi
+
 stop_unit_if_active() {
     local unit="$1"
     if sudo systemctl is-active --quiet "$unit"; then

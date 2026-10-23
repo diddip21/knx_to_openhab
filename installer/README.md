@@ -4,6 +4,8 @@ This directory contains installation and maintenance scripts for the web UI.
 
 > **Integration-branch warning:** These scripts include a system migration. Do not run them on a productive existing installation from `developer/feature-upgrade`. The migration has not been rehearsed and restored on a representative device. No installed system was touched during this work.
 
+`setup.sh` stops before system changes when it detects an installed environment. The override `KNXOH_LAB_UPGRADE_ACK=I_ACCEPT_CHANGES_TO_THIS_TEST_SYSTEM` is reserved for a disposable lab copy; it does **not** make a production upgrade safe. The detection checks an installed venv, job directory, secrets file or saved paths. Back up a lab system before using the override and verify its data after the run.
+
 ## Files
 
 - **`setup.sh`** — Main installer script (run once as sudo)
@@ -81,7 +83,7 @@ The root-owned helper hashes the new password with Argon2id, resolves the
 configured secrets path from `paths.env`, preserves other secret values, and
 does not put the password in shell history.
 
-See `WEBUI_INSTALLATION.md` for full documentation.
+See the [Production Guide](../docs/PRODUCTION_GUIDE.md) for operational details and the current release boundary.
 
 ## Service user privileges
 

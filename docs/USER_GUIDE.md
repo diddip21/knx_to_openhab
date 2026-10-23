@@ -1,26 +1,28 @@
 # User Guide — KNX to OpenHAB Generator
 
-This guide explains how to prepare your ETS project, configure the generator, and understand how KNX data types are mapped to OpenHAB items.
+This guide explains the everyday workflow first. Mapping rules and advanced settings follow below. This integration branch is not approved for upgrades of existing productive installations; see the [current status](FEATURE_UPGRADE.md#status-für-bestehende-installationen).
 
 For a complete overview of the integrated changes, usage notes, and before/after screenshots, see the [Feature Upgrade Guide](FEATURE_UPGRADE.md).
 
-## Quick Start
+## First project: review before deploy
 
-1. **Upload** your `.knxproj` (or JSON dump) via the Web UI or CLI
-2. **Preview** the building structure to verify floors/rooms
-3. **Process** and check Generated Files + Reports (unknown, partial, completeness)
-4. **Fix ETS naming** or **enable Auto-Place** if you want quick placement
-5. **Deploy** when you're happy with the output
+1. **Select** a `.knxproj`, `.knxprojarchive` or supported JSON dump. Add its project password if needed. Use **Preview structure** to check floors and rooms without processing.
+2. Choose **Process project**. This stages the generated result; it does not deploy to the running openHAB configuration.
+3. In **Review results and changes**, open the job. Check the generated files, the **Diff**, and reports of unrecognized or incomplete addresses. Correct ETS naming and process again if needed. Auto-place is optional and off by default.
+4. Choose **Deploy** only after the result makes sense. The review dialog lists every affected file; open the file names for the diff, tick the acknowledgement, then press **Deploy now**. The service makes a backup before writing managed output.
+5. If the result is wrong, choose **Rollback**, select the backup and check the restored output. Manually maintained files outside the managed output are not part of this rollback.
 
-![UI overview](../docs/images/ui-home.png)
+![Authenticated dashboard with project upload and job history](screenshots/feature-upgrade/after-authenticated-dashboard.png)
 
 ## Table of Contents
 
 1. [Command Line Usage (CLI)](#command-line-usage)
-1. [Configuration (`config.json`)](#configuration-configjson)
-1. [ETS Project Preparation](#ets-project-preparation)
-1. [Logic & Mappings](#logic--mappings)
-1. [Troubleshooting](#troubleshooting)
+2. [Web UI vs CLI](#web-ui-vs-cli)
+3. [Configuration (`config.json`)](#configuration-configjson)
+4. [openHAB 5.2 YAML Output](#openhab-52-yaml-output)
+5. [ETS Project Preparation](#ets-project-preparation)
+6. [Logic & Mappings](#logic--mappings)
+7. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -65,14 +67,6 @@ The Web UI exposes **reports** in the *Expert* panel (View / Download / Copy):
   - rollershutter → one of `stopMove` or `position`
   - switch/number → status feedback (`ga` with `+<` status binding)
   - number with HVAC DPT 20.102 → status feedback if missing
-
-## First-Run (Recommended Flow)
-
-1. **Upload** your `.knxproj` (or JSON dump)
-2. **Preview Structure** to verify floors/rooms
-3. **Process** and check **Generated Files** + **Reports**
-4. **Fix ETS naming** or **enable Auto‑Place** if you want quick placement
-5. **Deploy** when you’re happy with the output
 
 ## Configuration (`config.json`)
 

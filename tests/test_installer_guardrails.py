@@ -43,3 +43,32 @@ def test_setup_stops_service_before_migration_and_restarts_after_unit_reload():
     assert "sudo systemctl enable --now knxohui.service" not in setup
     assert 'sudo install -o root -g root -m 0755 "$BASE/installer/set_ui_password.py" ' in setup
     assert '"$REPO_ROOT/installer/retire_managed_outputs.py"' in setup
+
+
+@pytest.mark.parametrize("marker", ["venv", "jobs"])
+def test_setup_blocks_existing_install_before_any_system_changes(tmp_path, marker):
+    existing = tmp_path / "installed"
+    (existing / marker).mkdir(parents=True)
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "KNXOH_INSTALL_DIR": str(existing),
+            "KNXOH_CONFIG_DIR": str(tmp_path / "config"),
+            "KNXOH_DATA_DIR": str(tmp_path / "data"),
+            "KNXOH_BACKUP_DIR": str(tmp_path / "backups"),
+        }
+    )
+    environment.pop("KNXOH_LAB_UPGRADE_ACK", None)
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "installer" / "setup.sh")],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 3
+    assert "Existing installation detected" in result.stderr
+    assert (existing / marker).is_dir()
+    assert not (tmp_path / "config").exists()

@@ -97,6 +97,16 @@ def _setup_e2e_routes(page: Page):
         if re.search(r"/api/job/[^/]+/preview$", url):
             return _fulfill(route, preview_payload)
 
+        if re.search(r"/api/job/[^/]+/diff$", url):
+            return _fulfill(
+                route,
+                {
+                    "openhab/items/knx.items": [
+                        {"type": "added", "line": "Switch test", "curr_ln": 1}
+                    ]
+                },
+            )
+
         if re.search(r"/api/job/[^/]+/deploy$", url) and method == "POST":
             state["deployed"] = True
             return _fulfill(route, {"success": True, "message": "Deployed 1 files."})
@@ -215,12 +225,16 @@ class TestJobLifecycleE2E:
         expect(page.locator("#detail-section")).to_be_visible(timeout=20000)
         expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
 
-        page.once("dialog", lambda dialog: dialog.accept())
+        page.locator(".job-item button:has-text('Deploy')").click()
+        expect(page.locator("#deployReviewDialog[open]")).to_be_visible()
+        expect(page.locator("#deployReviewFiles")).to_contain_text("openhab/items/knx.items")
+        expect(page.locator("#deployReviewConfirm")).to_be_disabled()
+        page.locator("#deployReviewAck").check()
         with page.expect_response(
             lambda response: response.request.method == "POST"
             and re.search(r"/api/job/[^/]+/deploy$", response.url) is not None
         ) as deploy_response:
-            page.locator(".job-item button:has-text('Deploy')").click()
+            page.locator("#deployReviewConfirm").click()
 
         response = deploy_response.value
         assert response.status == 200
@@ -241,7 +255,12 @@ class TestJobLifecycleE2E:
         page.on("dialog", lambda d: d.accept())
 
         page.locator(".job-item button:has-text('Deploy')").click()
+        expect(page.locator("#deployReviewDialog[open]")).to_be_visible()
+        page.locator("#deployReviewAck").check()
+        page.locator("#deployReviewConfirm").click()
         page.wait_for_timeout(1000)
+
+        page.locator("#deployReviewCancel").click()
 
         page.locator(".job-item button:has-text('Rollback')").click()
         expect(page.locator("#rollbackDialog[open]")).to_be_visible()

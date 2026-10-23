@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -169,10 +170,20 @@ class TestJobActions:
         page.on("dialog", handle_dialog)
 
         page.locator(".job-item button:has-text('Deploy')").click()
+        expect(page.locator("#deployReviewDialog[open]")).to_be_visible()
+        expect(page.locator("#deployReviewConfirm")).to_be_disabled()
+        expect(page.locator("#deployReviewFiles")).to_contain_text("openhab/items.items")
+        screenshot_dir = Path("test-results/feature-upgrade")
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.locator("#deployReviewDialog").screenshot(
+            path=str(screenshot_dir / "deploy-review.png")
+        )
+        page.locator("#deployReviewAck").check()
+        page.locator("#deployReviewConfirm").click()
         expect(page.locator(".job-item button:has-text('Deploy')")).to_have_count(0)
         page.wait_for_timeout(100)
-        assert any("Really deploy" in msg for msg in dialog_messages)
-        assert any("Successfully deployed" in msg for msg in dialog_messages)
+        expect(page.locator("#deployReviewStatus")).to_contain_text("Deployment completed")
+        page.locator("#deployReviewCancel").click()
 
         page.locator(".job-item button:has-text('Rollback')").click()
         rollback_dialog = page.locator("#rollbackDialog[open]")

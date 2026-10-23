@@ -1,13 +1,14 @@
-# UI Tests
+# Web UI Tests
 
-Automated browser tests using Playwright and pytest.
+Playwright regression tests cover authentication, uploads, previews, job lifecycle,
+settings, package updates, deployment and rollback flows.
 
 ## Setup
 
 1. Install dependencies:
    ```bash
    pip install -r requirements-dev.txt
-   playwright install
+   python -m playwright install chromium
    ```
 
 2. Run tests:
@@ -27,9 +28,9 @@ Automated browser tests using Playwright and pytest.
 
 ## Test Structure
 
-- `conftest.py`: Pytest fixtures for starting Flask server and configuring Playwright
-- `test_ui_smoke.py`: Basic smoke tests to verify UI loads and critical elements exist
-- Future: `test_ui_upload.py`, `test_ui_jobs.py`, etc.
+- `conftest.py`: Fixtures for starting the Flask test server and configuring Playwright
+- `test_ui_smoke.py`: Homepage, upload form, navigation and status endpoint smoke checks
+- Other `test_*.py` files: Focused browser regression suites for each user flow
 
 ## Writing Tests
 
@@ -41,8 +42,8 @@ Automated browser tests using Playwright and pytest.
 ### Fixtures Available
 
 - `page`: Playwright Page object (provided by pytest-playwright)
-- `flask_server`: Base URL of running Flask server
-- `base_url`: Same as flask_server (alternative name)
+- `flask_server`: Starts the Flask test server and provides its base URL
+- `base_url`: Configured UI URL (defaults to `http://127.0.0.1:8085`)
 
 ### Example Test
 
@@ -60,14 +61,14 @@ def test_example(page: Page, flask_server):
 
 ### Server doesn't start
 
-- Check if port 8080 is already in use
+- Check if port 8085 is already in use (or the port configured by `UI_BASE_URL`)
 - Ensure Flask and all dependencies are installed
 - Check logs in test output
 
 ### Tests timeout
 
 - Increase timeout in conftest.py `max_retries`
-- Check if server is actually starting (run manually: `python -m web_ui.backend.app`)
+- Check if server is actually starting (run manually: `python -m web_ui.backend`)
 
 ### Elements not found
 

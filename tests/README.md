@@ -1,36 +1,15 @@
 # Testing Guide for knx_to_openhab
 
-This repository contains automated tests to ensure the application works reliably across platforms (especially Raspberry Pi with DietPi).
+The test suite covers the KNX parser and generators, installer and migration helpers,
+Web UI APIs, security boundaries and browser workflows.
 
 ## Test Structure
 
-```
-tests/
-├── conftest.py              # Shared pytest fixtures
-├── integration/             # Integration tests
-│   ├── test_output_validation.py  # Golden file comparison
-│   ├── test_business_logic.py     # Log/warning verification
-│   ├── test_file_import.py        # JSON and .knxproj import
-│   └── test_installer.py          # Installer script validation
-├── ui/                      # UI tests with Playwright
-│   ├── test_web_interface.py
-│   ├── test_upload_flow.py
-│   ├── test_job_actions.py
-│   └── ...
-├── fixtures/                # Test data
-│   ├── Charne.knxproj       # KNX binary project file
-│   ├── mini_project.json    # Minimal test project
-│   └── expected_output/     # Golden files (Charne, Mini, UploadJson)
-├── test_address_selection.py
-├── test_auto_place_unknowns.py
-├── test_core_functionality.py
-├── test_ets_helpers.py
-├── test_full_generation.py
-├── test_output_config.py
-├── test_things_completeness.py
-├── test_web_ui_job_endpoints.py
-└── README.md               # This file
-```
+Test files are organized under `tests/`, `tests/integration/` and `tests/ui/`.
+Input fixtures live under `tests/fixtures/` and reference output is under
+`tests/fixtures/expected_output/`. Some historical reference outputs were generated
+from a private KNX project that is intentionally not included; those tests skip when
+their input is unavailable.
 
 ## Prerequisites
 
@@ -42,7 +21,7 @@ pip install -r requirements-dev.txt
 
 ### For UI Tests
 ```bash
-playwright install chromium
+python -m playwright install chromium
 ```
 
 ## Running Tests
@@ -62,9 +41,13 @@ pytest -m unit -v
 pytest tests/integration -v
 ```
 
+### Core Tests (without browser tests)
+```bash
+pytest -q -m "not ui" --ignore=tests/ui
+```
+
 ### UI Tests (Chromium required)
 ```bash
-# Test fixtures start the Flask server as needed.
 pytest tests/ui/ -v -m ui --tb=short
 ```
 
@@ -93,7 +76,7 @@ Tests run automatically on every push via GitHub Actions:
 - **Core Tests:** Python 3.12 + 3.13 matrix on ubuntu-latest
 - **UI Tests:** Playwright with Chromium (depends on core tests passing)
 
-Status: [![CI Tests](https://github.com/diddip21/knx_to_openhab/workflows/CI%20Tests/badge.svg)](https://github.com/diddip21/knx_to_openhab/actions)
+Status: [![CI](https://github.com/diddip21/knx_to_openhab/actions/workflows/ci.yml/badge.svg)](https://github.com/diddip21/knx_to_openhab/actions/workflows/ci.yml)
 
 ## Golden File Testing
 

@@ -57,6 +57,7 @@ def test_api_status_endpoint(page: Page, flask_server):
     assert response.ok, f"Status endpoint failed with {response.status}"
     data = response.json()
     assert "version" in data or "status" in data, "Status response missing expected fields"
+    assert "jobs_total" in data, "Status response missing job count"
 
 
 @pytest.mark.ui

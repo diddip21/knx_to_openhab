@@ -7,7 +7,6 @@ expected output by comparing generated files with reference "Golden Files".
 
 import difflib
 import filecmp
-import json
 import os
 import sys
 from pathlib import Path
@@ -52,50 +51,6 @@ class TestOutputValidation:
         knxproject_to_openhab.RoomNameAsItIs = False
         knxproject_to_openhab.ADD_MISSING_ITEMS = True
 
-    def _generate_openhab_files(self, tmp_path, project_path: Path):
-        """Helper to generate OpenHAB files from test project"""
-        # Load test project
-        with open(project_path, encoding="utf-8") as f:
-            project = json.load(f)
-
-        # Generate building structure and addresses
-        building = knxproject_to_openhab.create_building(project)
-        addresses = knxproject_to_openhab.get_addresses(project)
-        house = knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
-
-        # Set module variables for ets_to_openhab
-        ets_to_openhab.floors = house[0]["floors"]
-        ets_to_openhab.all_addresses = addresses
-        ets_to_openhab.GWIP = knxproject_to_openhab.get_gateway_ip(project)
-        ets_to_openhab.B_HOMEKIT = knxproject_to_openhab.is_homekit_enabled(project)
-        ets_to_openhab.B_ALEXA = knxproject_to_openhab.is_alexa_enabled(project)
-        ets_to_openhab.PRJ_NAME = house[0]["name_long"]
-
-        # Generate items, sitemap, things
-        items, sitemap, things = ets_to_openhab.gen_building()
-
-        # Temporarily override config paths to write to tmp_path
-        original_paths = {
-            "items_path": config["items_path"],
-            "things_path": config["things_path"],
-            "sitemaps_path": config["sitemaps_path"],
-            "influx_path": config["influx_path"],
-        }
-
-        config["items_path"] = str(tmp_path / "knx.items")
-        config["things_path"] = str(tmp_path / "knx.things")
-        config["sitemaps_path"] = str(tmp_path / "knx.sitemap")
-        config["influx_path"] = str(tmp_path / "influxdb.persist")
-
-        # Export files
-        ets_to_openhab.export_output(items, sitemap, things)
-
-        # Restore original paths
-        for key, value in original_paths.items():
-            config[key] = value
-
-        return tmp_path
-
     def _compare_files(self, generated_file, golden_file):
         """Compare two files and return diff if they differ"""
         if not golden_file.exists():
@@ -128,9 +83,11 @@ class TestOutputValidation:
             )
 
     @pytest.mark.parametrize("case_name, project_path", GOLDEN_CASES)
-    def test_generate_items_file(self, tmp_path, case_name, project_path):
+    def test_generate_items_file(
+        self, tmp_path, case_name, project_path, generate_output_from_json
+    ):
         """Test that generated items file matches golden file"""
-        output_dir = self._generate_openhab_files(tmp_path, project_path)
+        output_dir = generate_output_from_json(project_path, tmp_path)
 
         generated = output_dir / "knx.items"
         golden = TESTS_DIR / "fixtures" / "expected_output" / case_name / "knx.items"
@@ -138,9 +95,11 @@ class TestOutputValidation:
         self._compare_files(generated, golden)
 
     @pytest.mark.parametrize("case_name, project_path", GOLDEN_CASES)
-    def test_generate_things_file(self, tmp_path, case_name, project_path):
+    def test_generate_things_file(
+        self, tmp_path, case_name, project_path, generate_output_from_json
+    ):
         """Test that generated things file matches golden file"""
-        output_dir = self._generate_openhab_files(tmp_path, project_path)
+        output_dir = generate_output_from_json(project_path, tmp_path)
 
         generated = output_dir / "knx.things"
         golden = TESTS_DIR / "fixtures" / "expected_output" / case_name / "knx.things"
@@ -148,9 +107,11 @@ class TestOutputValidation:
         self._compare_files(generated, golden)
 
     @pytest.mark.parametrize("case_name, project_path", GOLDEN_CASES)
-    def test_generate_sitemap_file(self, tmp_path, case_name, project_path):
+    def test_generate_sitemap_file(
+        self, tmp_path, case_name, project_path, generate_output_from_json
+    ):
         """Test that generated sitemap file matches golden file"""
-        output_dir = self._generate_openhab_files(tmp_path, project_path)
+        output_dir = generate_output_from_json(project_path, tmp_path)
 
         generated = output_dir / "knx.sitemap"
         golden = TESTS_DIR / "fixtures" / "expected_output" / case_name / "knx.sitemap"
@@ -158,9 +119,11 @@ class TestOutputValidation:
         self._compare_files(generated, golden)
 
     @pytest.mark.parametrize("case_name, project_path", GOLDEN_CASES)
-    def test_generate_persistence_file(self, tmp_path, case_name, project_path):
+    def test_generate_persistence_file(
+        self, tmp_path, case_name, project_path, generate_output_from_json
+    ):
         """Test that generated persistence file matches golden file"""
-        output_dir = self._generate_openhab_files(tmp_path, project_path)
+        output_dir = generate_output_from_json(project_path, tmp_path)
 
         generated = output_dir / "influxdb.persist"
         golden = TESTS_DIR / "fixtures" / "expected_output" / case_name / "influxdb.persist"
@@ -168,9 +131,11 @@ class TestOutputValidation:
         self._compare_files(generated, golden)
 
     @pytest.mark.parametrize("case_name, project_path", GOLDEN_CASES)
-    def test_all_files_generated(self, tmp_path, case_name, project_path):
+    def test_all_files_generated(
+        self, tmp_path, case_name, project_path, generate_output_from_json
+    ):
         """Test that all expected files are generated"""
-        output_dir = self._generate_openhab_files(tmp_path, project_path)
+        output_dir = generate_output_from_json(project_path, tmp_path)
 
         expected_files = ["knx.items", "knx.things", "knx.sitemap", "influxdb.persist"]
 

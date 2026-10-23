@@ -67,7 +67,7 @@ Die aufgelösten Merge-Commits und die zusätzlichen Integrationskorrekturen sin
 
 ## Prüfmethoden und Grenzen
 
-Der [gemeinsame CI-Lauf #522](https://github.com/diddip21/knx_to_openhab/actions/runs/40032134387) prüfte den integrierten Code mit Core- und Integrationstests auf Python 3.12/3.13, Black, isort, Flake8, Mypy und 109 erfolgreichen Browser-Tests in Chromium. Die früheren PR-Einzelergebnisse sind keine Gesamtabnahme. Nach diesem Lauf wurden ausschließlich Dokumentation und die hier erläuterten Bildbelege bereinigt.
+Der [gemeinsame CI-Lauf #522](https://github.com/diddip21/knx_to_openhab/actions/runs/40032134387) prüfte den integrierten Code mit Core- und Integrationstests auf Python 3.12/3.13, Black, isort, Flake8, Mypy und 109 erfolgreichen Browser-Tests in Chromium. Die früheren PR-Einzelergebnisse sind keine Gesamtabnahme. Spätere Aufräumarbeiten strichen eine redundante UI-Smoke-Testdatei; ihre nützliche API-Statusprüfung wurde in die gepflegte Smoke-Suite übernommen. Produktionslogik blieb dabei unverändert.
 
 Der [Anwendervergleich](FEATURE_UPGRADE.md) verlinkt die eingecheckten Screenshots und kennzeichnet Bereiche ohne authentische Vorher-Aufnahme. Der neue Deploy-Dialog wurde im [CI-Screenshot-Artefakt](https://github.com/diddip21/knx_to_openhab/actions/runs/40032134387/artifacts/12535542421) aufgenommen. Die Bilder nutzen synthetische Testdaten; ein Video wurde nicht erzeugt.
 

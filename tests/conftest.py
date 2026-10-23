@@ -43,6 +43,62 @@ def temp_output_dir(tmp_path):
     return output_dir
 
 
+@pytest.fixture
+def generate_output_from_json():
+    """Generate KNX output from a JSON project into a test-owned directory."""
+    import json
+
+    import ets_to_openhab
+    import knxproject_to_openhab
+    from config import config
+
+    def generate(project_path, output_dir):
+        with open(project_path, encoding="utf-8") as project_file:
+            project = json.load(project_file)
+
+        building = knxproject_to_openhab.create_building(project)
+        addresses = knxproject_to_openhab.get_addresses(project)
+        house = knxproject_to_openhab.put_addresses_in_building(building, addresses, project)
+
+        ets_to_openhab.floors = house[0]["floors"]
+        ets_to_openhab.all_addresses = addresses
+        ets_to_openhab.GWIP = knxproject_to_openhab.get_gateway_ip(project)
+        ets_to_openhab.B_HOMEKIT = knxproject_to_openhab.is_homekit_enabled(project)
+        ets_to_openhab.B_ALEXA = knxproject_to_openhab.is_alexa_enabled(project)
+        ets_to_openhab.PRJ_NAME = house[0]["name_long"]
+
+        items, sitemap, things = ets_to_openhab.gen_building()
+        path_keys = (
+            "items_path",
+            "things_path",
+            "sitemaps_path",
+            "influx_path",
+            "fenster_path",
+            "openhab_path",
+            "output_format",
+        )
+        original_paths = {key: config[key] for key in path_keys}
+        config.update(
+            {
+                "items_path": str(output_dir / "knx.items"),
+                "things_path": str(output_dir / "knx.things"),
+                "sitemaps_path": str(output_dir / "knx.sitemap"),
+                "influx_path": str(output_dir / "influxdb.persist"),
+                "fenster_path": str(output_dir / "fenster.rules"),
+                "openhab_path": str(output_dir),
+                "output_format": "legacy",
+            }
+        )
+        try:
+            ets_to_openhab.export_output(items, sitemap, things, configuration=config)
+        finally:
+            config.update(original_paths)
+
+        return output_dir
+
+    return generate
+
+
 @pytest.fixture(scope="session")
 def skip_if_no_web_server():
     """Skip tests if web server is not running."""

@@ -16,7 +16,7 @@ This guide helps you set up a local development environment to work on the KNX t
 
 ## Quick Start
 
-> **Note:** Default test runs ignore `tests/ui` (Playwright). See **Running Tests** for how to enable UI tests.
+> **Note:** The full test collection includes Playwright browser tests. Use the explicit core and UI commands under **Running Tests** to run either suite separately.
 
 ### Windows
 
@@ -106,68 +106,15 @@ python -m app
 
 ## Project Structure
 
-```
-knx_to_openhab/
-├── README.md                       # Main project readme
-├── CONTRIBUTING.md                 # Contributing guidelines
-├── AGENTS.md                       # AI agent instructions
-├── requirements.txt                # Python dependencies
-├── config.json                     # Main KNX parser configuration
-├── config.py                       # Config loader (executes on import!)
-│
-├── knxproject_to_openhab.py        # Core: KNX project parser
-├── ets_to_openhab.py               # Core: OpenHAB file generator
-├── ets_helpers.py                  # Extracted helper functions
-├── completeness.py                 # Post-generation validation
-├── utils.py                        # Shared utilities
-│
-├── web_ui/                         # Web UI application
-│   ├── backend/
-│   │   ├── app.py                  # Flask routes & SSE
-│   │   ├── jobs.py                 # Job manager & backup logic
-│   │   ├── storage.py              # JSON persistence
-│   │   ├── updater.py              # Git-based self-update
-│   │   ├── service_manager.py      # systemctl wrapper
-│   │   └── config.json             # Web UI config
-│   ├── templates/
-│   │   └── index.html              # Main UI template
-│   └── static/
-│       ├── app.js                  # Frontend logic
-│       └── style.css               # Styling
-│
-├── installer/                      # Production installation
-│   ├── setup.sh                    # systemd installer (Linux)
-│   ├── backup_cleanup.sh           # Cleanup script
-│   ├── knxohui.service             # systemd unit
-│   └── ...
-│
-├── scripts/                        # Development helper scripts
-│   ├── dev-setup.ps1               # Windows setup
-│   ├── dev-setup.sh                # Linux/macOS setup
-│   ├── dev-run.ps1                 # Windows dev server
-│   ├── dev-run.sh                  # Linux/macOS dev server
-│   ├── regenerate_golden.py        # Golden file regeneration
-│   └── verify-setup.ps1/sh         # Setup verification
-│
-├── tests/                          # Test files
-│   ├── integration/                # Integration tests
-│   ├── ui/                         # UI tests (Playwright)
-│   ├── fixtures/                   # Test data and golden files
-│   ├── conftest.py                 # Shared fixtures
-│   └── test_*.py                   # Unit tests
-│
-├── docs/                           # Documentation
-│   ├── USER_GUIDE.md               # End-user guide
-│   ├── DEVELOPER_GUIDE.md          # This file
-│   ├── PRODUCTION_GUIDE.md         # Production installation
-│   └── images/                     # Screenshots
-│
-└── openhab/                        # Generated OpenHAB output
-    ├── items/
-    ├── things/
-    ├── sitemaps/
-    └── persistence/
-```
+- The KNX parser and legacy/YAML generators live at the repository root.
+- `web_ui/backend/`, `web_ui/templates/` and `web_ui/static/` contain the Web UI.
+- `installer/` contains Linux service setup and narrowly scoped privileged helpers.
+- `scripts/` contains development and golden-file tools.
+- `tests/` contains core, integration and Playwright tests plus input/reference fixtures.
+- `docs/` contains user, production, developer and security guidance.
+- `openhab/` contains sample output and icon assets; tests write temporary outputs separately.
+
+For the maintained file-level map, see [AI agent instructions](../AGENTS.md#key-files).
 
 ---
 
@@ -321,12 +268,18 @@ pytest --cov=. --cov-report=html
 
 ### Generating Golden Files
 
-Golden files are reference outputs used for regression testing.
+Golden files are checked-in reference outputs used for regression testing. After an
+intentional output change, inspect the diff before updating these references.
 
 ```bash
-python scripts/generate_golden_files.py --project tests/MyProject.knxproj.json --name MyProject
-python scripts/generate_golden_files.py --project tests/Charne.knxproj.json --name Charne --force
+# Regenerate the three checked-in fixture sets from their available JSON inputs
+python scripts/regenerate_golden.py
 ```
+
+To add a reference set for a separate, verified project, use
+`scripts/generate_golden_files.py --project <project-file> --name <fixture-name>`.
+That command refuses to overwrite an existing set unless `--force` is supplied. Keep
+private customer projects out of the repository.
 
 ### Manual Testing Checklist
 

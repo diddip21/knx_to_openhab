@@ -155,6 +155,17 @@ class TestJobActions:
         expect(page.locator("#preview-section")).to_be_visible()
         expect(page.locator("#status")).to_contain_text("✓ Structure loaded from job history")
 
+    def test_cancel_deploy_leaves_job_untouched(self, page: Page, base_url):
+        jobs = _setup_job_routes(page)
+        ensure_authenticated(page, base_url)
+        page.evaluate("refreshJobs()")
+        page.locator(".job-item button:has-text('Deploy')").click()
+        expect(page.locator("#deployReviewDialog[open]")).to_be_visible()
+        page.locator("#deployReviewCancel").click()
+
+        expect(page.locator("#deployReviewDialog[open]")).to_have_count(0)
+        assert jobs[0]["deployed"] is False
+
     def test_job_action_deploy_rollback_delete(self, page: Page, base_url):
         _setup_job_routes(page)
         ensure_authenticated(page, base_url)

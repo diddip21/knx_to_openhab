@@ -146,6 +146,12 @@ class Updater:
             Dictionary with update status and information
         """
         current = self.get_current_version()
+        if current.get("branch") != self.branch:
+            return {
+                "update_available": False,
+                "current_commit": current.get("commit_short", "unknown"),
+                "error": "Automatic updates are only available on main. Update this preview branch manually in a disposable test environment.",
+            }
         success, remote = self.check_github_version()
 
         if not success:
@@ -184,6 +190,11 @@ class Updater:
         Returns:
             Tuple of (success, message)
         """
+        if self.get_current_version().get("branch") != self.branch:
+            return (
+                False,
+                "Automatic updates are only available on main; this branch cannot self-update.",
+            )
         try:
             update_script = os.path.join(self.base_path, "update.sh")
 

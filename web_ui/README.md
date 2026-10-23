@@ -9,6 +9,8 @@ Lightweight Flask web interface for `knxproject_to_openhab.py`. Upload KNX proje
 
 This integration branch is only for development and disposable test systems. Its setup script blocks existing installations. For local development use the instructions below. For a fresh `main` installation see the [Production Guide](../docs/PRODUCTION_GUIDE.md). New installations listen on `127.0.0.1:8085` by default; remote access uses an SSH tunnel or an explicitly configured LAN bind / HTTPS proxy.
 
+The self-update action is limited to a checkout of `main`. A preview checkout cannot automatically switch to `main`; update it manually only in a disposable test environment. This is separate from the APT package actions for openHAB and evcc.
+
 ## Architecture
 
 ```

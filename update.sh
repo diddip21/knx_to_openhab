@@ -29,6 +29,14 @@ if ! cd "$INSTALL_DIR"; then
     exit 1
 fi
 
+# This script pulls origin/main. Never let a test or feature checkout silently
+# switch its code when the Web UI's update action is used.
+CURRENT_BRANCH=$(git -c "safe.directory=$INSTALL_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+if [[ "$CURRENT_BRANCH" != "main" ]]; then
+    log "ERROR: Automatic updates are only available on main; current branch: ${CURRENT_BRANCH:-detached/unknown}."
+    exit 1
+fi
+
 # The previous release granted passwordless root Git access. A Web UI update
 # cannot safely replace that policy itself, so require the one-time admin
 # migration before allowing another update to proceed.

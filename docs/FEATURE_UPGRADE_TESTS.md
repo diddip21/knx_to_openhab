@@ -10,7 +10,7 @@
 
 ## Nachtrag: Qualitätsrunde auf dem Integrationsbranch
 
-Die aktuelle Runde überarbeitet die GitHub-README und den Einstieg in die Anwenderanleitung, ergänzt eine Setup-Sperre für erkannte Bestandsinstallationen vor Systemänderungen und ersetzt die allgemeine Deploy-Bestätigung durch eine Dateiliste mit Diff und ausdrücklicher Freigabe. Neue Guardrail- und Browserprüfungen gehören zur Runde; der Browserlauf erzeugt zusätzlich `test-results/feature-upgrade/deploy-review.png` für das CI-Artefakt. **Die nachstehenden erfolgreichen CI-Zahlen gelten für den vorherigen Integrationsstand und noch nicht für diesen Nachtrag.** Der neue CI-Lauf und die ausstehende reale Migrations-/Restore-Probe sind getrennt zu bewerten. Eine Freigabe für produktive Bestandsanlagen gibt es nicht.
+Die aktuelle Runde überarbeitet die GitHub-README und den Einstieg in die Anwenderanleitung, ergänzt eine Setup-Sperre für erkannte Bestandsinstallationen vor Systemänderungen, sperrt die `main`-Selbstaktualisierung für Vorschau-Branches und ersetzt die allgemeine Deploy-Bestätigung durch eine Dateiliste mit Diff und ausdrücklicher Freigabe. Neue Guardrail- und Browserprüfungen gehören zur Runde; der Browserlauf erzeugt zusätzlich `test-results/feature-upgrade/deploy-review.png` für das CI-Artefakt. **Die nachstehenden erfolgreichen CI-Zahlen gelten für den vorherigen Integrationsstand und noch nicht für diesen Nachtrag.** Der neue CI-Lauf und die ausstehende reale Migrations-/Restore-Probe sind getrennt zu bewerten. Eine Freigabe für produktive Bestandsanlagen gibt es nicht.
 
 ## Ergebnis
 

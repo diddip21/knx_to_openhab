@@ -474,9 +474,9 @@ Flask's debug mode watches Python files, but not templates/static by default. Fo
 ## Integrated Feature Upgrade Branch
 
 The isolated branch `developer/feature-upgrade` is the integration target for the open PR
-stack; it does not replace `main`. Its user-visible overview, compatibility notes, migration
-steps and screenshots are in the [Feature Upgrade Guide](FEATURE_UPGRADE.md). The technical
-merge and test record is in [Feature Upgrade Tests](FEATURE_UPGRADE_TESTS.md).
+stack; it does not replace `main`. The user-visible overview, before/after screenshots and
+current no-upgrade warning are in the [Feature Upgrade Guide](FEATURE_UPGRADE.md). The
+technical merge and test record is in [Feature Upgrade Tests](FEATURE_UPGRADE_TESTS.md).
 
 Keep these invariants when extending the integrated features:
 
@@ -500,6 +500,11 @@ CI also runs Black, isort, flake8, mypy, Python 3.12/3.13 tests, and Playwright 
 Real-device package updates, migration on a representative installed system, and a running
 openHAB 5.2 YAML smoke-load are separate release checks and must not be described as passed
 until performed.
+
+The setup migration currently stops services, relocates runtime data, changes ownership and
+sudoers policy, may switch an existing LAN bind to loopback, and restarts the Web UI. Do not
+recommend it for a productive existing installation until a representative upgrade rehearsal
+and restore test pass. Automated migration tests alone do not satisfy this release gate.
 
 ---
 

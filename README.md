@@ -22,13 +22,9 @@ Includes a **Web UI** for browser-based management and a **CLI** for automated w
 
 ## Documentation
 
-| Guide | For whom | What's in it |
-|-------|----------|--------------|
-| **[User Guide](docs/USER_GUIDE.md)** | End users | Configuration, ETS preparation, DPT mappings, troubleshooting |
-| **[Production Guide](docs/PRODUCTION_GUIDE.md)** | Raspberry Pi admins | Installation, systemd, API reference, security |
-| **[Developer Guide](docs/DEVELOPER_GUIDE.md)** | Contributors | Local setup, architecture, testing, coding conventions |
-| **[Feature Upgrade Guide](docs/FEATURE_UPGRADE.md)** | Users and operators | Before/after screenshots, all integrated PR changes, usage and upgrade steps |
-| **[Contributing](CONTRIBUTING.md)** | Contributors | Branch naming, commit style, PR checklist |
+**For users:** Start with the [User Guide](docs/USER_GUIDE.md) for everyday use. The [Feature Upgrade Guide](docs/FEATURE_UPGRADE.md) shows the before/after screenshots and summarizes what is changing in the current integration branch. That branch is not a release; its warning explains the status for existing installations.
+
+**For admins and contributors:** The [Production Guide](docs/PRODUCTION_GUIDE.md) covers installation and operation; the [Developer Guide](docs/DEVELOPER_GUIDE.md) and [Contributing Guide](CONTRIBUTING.md) cover code and project workflow. Detailed test results and upload-security internals are linked from the Feature Upgrade Guide for readers who need them.
 
 ---
 

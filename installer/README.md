@@ -2,6 +2,8 @@
 
 This directory contains installation and maintenance scripts for the web UI.
 
+> **Integration-branch warning:** These scripts include a system migration. Do not run them on a productive existing installation from `developer/feature-upgrade`. The migration has not been rehearsed and restored on a representative device. No installed system was touched during this work.
+
 ## Files
 
 - **`setup.sh`** — Main installer script (run once as sudo)
@@ -10,14 +12,14 @@ This directory contains installation and maintenance scripts for the web UI.
 - **`knxohui-backup-cleanup.service`** — systemd unit for cleanup oneshot
 - **`knxohui-backup-cleanup.timer`** — systemd timer (runs cleanup daily)
 
-## Quick Install
+## Fresh test installation only
 
 ```bash
 # Run from the repository root.
 sudo bash installer/setup.sh
 ```
 
-This will:
+On a disposable test system this will:
 1. Install the application under `/opt/knx_to_openhab` by default
 2. Migrate settings and runtime data out of the application tree
 3. Provision the service user and only the generated OpenHAB output files
@@ -97,21 +99,13 @@ installer preserves an existing `web_ui/backend/config.json` when copying new co
 
 ### Existing installations
 
-The old policy allowed the service user to run arbitrary Git commands as root.
-The Web UI cannot safely use that old permission to replace its own sudoers file.
-After the source update has been applied, an administrator must run the installer
-once before using package updates or starting another Web UI update:
-
-```bash
-cd /opt/knx_to_openhab
-sudo bash installer/setup.sh
-```
-
-The installer preserves the existing runtime configuration while installing the
-root-owned package helper and its exact sudoers entries. It also replaces and
-validates the old policy. If only the least-privilege migration is needed, use
-`sudo bash installer/migrate_sudoers.sh`; that script changes only the sudoers
-file.
+There is no approved migration command for productive existing installations on
+this integration branch. `setup.sh` stops and restarts services, moves runtime
+data, changes ownership and system permissions, and can change the Web UI network
+binding. Do not run `setup.sh`, `fix_permissions.sh`, or `migrate_sudoers.sh` on a
+productive device until an upgrade rehearsal and restore test have been completed.
+The detailed status and remaining release checks are in
+[`docs/FEATURE_UPGRADE.md`](../docs/FEATURE_UPGRADE.md#status-für-bestehende-installationen).
 
 > **Note:** For local development without systemd installation, see [DEVELOPMENT.md](../DEVELOPMENT.md)
 

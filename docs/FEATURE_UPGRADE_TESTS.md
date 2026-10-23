@@ -6,9 +6,13 @@
 **Umfang:** alle elf zu diesem Zeitpunkt offenen PRs #33, #35, #37, #39, #42, #43, #44, #45, #46, #47 und #48. PR #39 ist ein Draft.  
 **Benutzerübersicht:** [FeatureUpgrade: Änderungen und Bedienung](FEATURE_UPGRADE.md)
 
+> **Betriebsgrenze:** Es wurde kein produktives Gerät angesprochen. Die Runtime-Migration besteht automatisierte Tests, aber es gab keine Probe mit einem Abbild einer realen Bestandsinstallation und keinen Wiederherstellungslauf. Deshalb ist der Branch kein freigegebenes Bestands-Upgrade.
+
 ## Ergebnis
 
 Dieser Branch sammelt die Änderungen zur gemeinsamen Prüfung. `main` bleibt unverändert. Die Quell-PRs bleiben auf GitHub offen; ihre Änderungen sind in diesem Integrationsbranch enthalten. Der Branch ist kein Release und wurde nicht auf ein echtes openHAB-System ausgerollt.
+
+Der Diff enthält 68 neu hinzugefügte Repository-Dateien: 31 Testdateien, 13 Installer-/Systemhelfer, 9 Programmdateien, 12 Screenshot-Dateien und 3 technische Dokumente. Diese Liste beschreibt den Quellcode und die Prüfbelege im GitHub-Repository; sie entspricht nicht der Anzahl neuer openHAB-Ausgabedateien. Die normale `legacy`-Ausgabe bleibt der Standard.
 
 Der vollständige integrierte Softwarestand wurde in [GitHub Actions Run #516](https://github.com/diddip21/knx_to_openhab/actions/runs/40021087430) auf Commit `3340ad2` geprüft. Core-, Lint-/Typprüfungen und Browser-Suite sind erfolgreich. Der zusätzliche Dokumentations-Commit auf diesem Stand lässt dieselbe vollständige CI-Suite erneut laufen.
 
@@ -72,7 +76,7 @@ Der integrierte CI-Workflow führt aus:
 | Lokale Playwright-UI-Suite | Nicht ausgeführt: der lokale Chromium-Download lieferte ein ungültiges, leeres Archiv. Der integrierte Browserlauf wurde erfolgreich auf dem GitHub-Actions-Runner abgeschlossen. |
 | Reales openHAB-5.2-YAML-Smoke-Load | Nicht ausgeführt; erfordert eine passende laufende openHAB-Instanz. |
 | Echtes APT-Paketupdate | Nicht ausgeführt; es wurde kein Zielgerät verändert. |
-| Upgrade-/Datenmigration einer repräsentativen Installation | Nicht ausgeführt; die Migration ist durch automatisierte Tests abgedeckt, aber noch nicht auf einem Bestandsgerät erprobt. |
+| Upgrade-/Datenmigration einer repräsentativen Installation samt Wiederherstellung | **Nicht ausgeführt.** Automatisierte Tests prüfen Codepfade und Konfliktfälle, belegen aber keinen verlustfreien Upgrade- und Rollback-Ablauf auf einer realistischen Bestandsinstallation. |
 
 Die getrennten CI-Ergebnisse aus den Quell-PRs sind im jeweiligen PR verlinkt und nicht als Gesamtergebnis dieses FeatureUpgrade-Branches zu verstehen. Run #516 ist der gemeinsame Testnachweis für den integrierten Softwarestand; ein reiner Dokumentations-Commit danach wird ebenfalls durch CI geprüft.
 

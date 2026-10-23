@@ -76,48 +76,29 @@ pip install -r requirements.txt
 
 ### 3. Configure Web UI (Optional)
 
-For development, you can create a custom config:
-
-```bash
-cp web_ui/backend/config.json web_ui/backend/config.dev.json
-```
-
-Edit `config.dev.json` to disable authentication for easier local testing:
-
-```json
-{
-  "openhab_path": "openhab",
-  "jobs_dir": "var/lib/knx_to_openhab",
-  "backups_dir": "var/backups/knx_to_openhab",
-  "bind_host": "127.0.0.1",
-  "port": 5000,
-  "auth": {
-    "enabled": false
-  },
-  "retention": {
-    "days": 14,
-    "max_backups": 50,
-    "max_backups_size_mb": 500
-  }
-}
-```
+For local development and browser tests, set `FLASK_ENV=testing`. This disables
+authentication only for that explicitly marked test process; production does
+not use this setting.
 
 ### 4. Start Development Server
 
 **Using Flask CLI** (recommended):
 ```bash
 # Activate venv first (see step 1)
+export FLASK_ENV=testing
 flask --app web_ui.backend.app:app run --debug
 ```
 
 **Or using Python directly**:
 ```bash
+FLASK_ENV=testing \
 python -m flask --app web_ui.backend.app:app run --debug
 ```
 
 **Or run the app module**:
 ```bash
 cd web_ui/backend
+export FLASK_ENV=testing
 python -m app
 ```
 
@@ -219,13 +200,22 @@ Flask application providing:
 - **RESTful API** for job management
 - **SSE (Server-Sent Events)** for live log streaming
 - **Backup & Rollback** functionality
-- **Service management** (restart OpenHAB)
+- **Service management** (restart and APT package update actions)
+- **Authentication** (Argon2id credentials, persistent sessions, CSRF, login throttling)
+- **Upload validation** (streamed KNX input, archive limits and safe extraction)
+- **Deployment policy** (exact managed output allowlist and protected manual files)
 
 **Key files:**
 - `app.py` - Flask routes, authentication, SSE endpoints
 - `jobs.py` - Job creation, execution, backup management
-- `storage.py` - JSON-based persistence for jobs
-- `service_manager.py` - systemctl interaction
+- `auth.py`, `session_store.py` - password verification, sessions and login throttling
+- `upload_security.py`, `project_preview.py` - guarded uploads and passphrase-free previews
+- `deploy_policy.py` - managed output path checks, deployment, retirement and rollback
+- `storage.py` - runtime paths, JSON persistence, and session secrets
+- `service_manager.py`, `service_updates.py` - service status and restricted APT actions
+
+Installed runtime paths are resolved centrally by `knxoh_paths.py`. Production config and
+secrets are external to the repository; local development keeps the repository-local paths.
 
 ### 4. Web UI Frontend (`web_ui/templates/`, `web_ui/static/`)
 
@@ -246,7 +236,7 @@ Vanilla HTML/CSS/JavaScript interface:
 
 Example:
 ```bash
-curl -u admin:logihome http://localhost:5000/api/status
+curl http://127.0.0.1:5000/api/status
 ```
 
 ### Frontend Changes
@@ -261,7 +251,13 @@ curl -u admin:logihome http://localhost:5000/api/status
 - **Web UI config**: `web_ui/backend/config.json`
 - **KNX parser config**: `config.json` (root)
 
-After changing config, restart the Flask server.
+These are the repository-local development files. In an installed system,
+`KNXOH_CONFIG_DIR` from `/etc/knx_to_openhab/paths.env` points to persistent
+Web UI settings in `config.json`; credentials are kept in `secrets.env`.
+Generator rules are stored in `/var/lib/knx_to_openhab/generator.json` with
+jobs and staging. Backups are under `/var/backups/knx_to_openhab`. The installer
+migrates the old files and the API saves generator settings to the external
+file. Restart the Flask server after changing local development config.
 
 ### Testing a KNX Project Locally
 
@@ -386,7 +382,7 @@ pip install -r requirements.txt
 - Kill existing Flask process
 - Or use a different port:
   ```bash
-  flask --app web_ui.backend.app:app run --port 5001
+  FLASK_ENV=testing flask --app web_ui.backend.app:app run --port 5001
   ```
 
 ### Import Errors in `web_ui.backend.app`
@@ -397,7 +393,7 @@ pip install -r requirements.txt
 Run Flask from the project root, not from `web_ui/backend/`:
 ```bash
 cd /path/to/knx_to_openhab  # project root
-flask --app web_ui.backend.app:app run
+FLASK_ENV=testing flask --app web_ui.backend.app:app run
 ```
 
 ---
@@ -468,10 +464,42 @@ Flask's debug mode watches Python files, but not templates/static by default. Fo
 | **Python Env** | `.venv` in project | `/opt/knx_to_openhab/venv` |
 | **Server** | Flask dev server | systemd service |
 | **Port** | 5000 | 8085 |
-| **Host** | 127.0.0.1 | 0.0.0.0 |
+| **Host** | 127.0.0.1 | 127.0.0.1 |
 | **Auth** | Optional | Enabled |
 | **Auto-start** | Manual | systemd |
 | **Logs** | Terminal | journalctl |
+
+---
+
+## Integrated Feature Upgrade Branch
+
+The isolated branch `developer/feature-upgrade` is the integration target for the open PR
+stack; it does not replace `main`. Its user-visible overview, compatibility notes, migration
+steps and screenshots are in the [Feature Upgrade Guide](FEATURE_UPGRADE.md). The technical
+merge and test record is in [Feature Upgrade Tests](FEATURE_UPGRADE_TESTS.md).
+
+Keep these invariants when extending the integrated features:
+
+- `knxoh_paths.py` is the path source for the app. Do not add independent production path
+  defaults in a new module.
+- `configured_managed_paths()` validates every generated OpenHAB destination. Deployment,
+  rollback and YAML/legacy retirement must stay within this allowlist and must preserve
+  manually maintained files.
+- Production deletion of inactive output formats goes through the root-owned helper and its
+  root-owned managed-output manifest. Never grant write permission on OpenHAB output
+  directories to the service account.
+- The browser UI uses a server-side session and CSRF token. Add API/UI tests for both the
+  enabled-auth path and the `FLASK_ENV=testing` browser suite.
+- Upload limits and archive safety apply to upload, preview and processing paths. Do not
+  reintroduce full-file buffering or persist a KNX project password in job data.
+- Gateway, output-format and other settings must be saved without dropping sibling or future
+  configuration keys.
+
+The integration may be exercised with `pytest -q`, then `pytest tests/ui -v -o addopts=`.
+CI also runs Black, isort, flake8, mypy, Python 3.12/3.13 tests, and Playwright with Chromium.
+Real-device package updates, migration on a representative installed system, and a running
+openHAB 5.2 YAML smoke-load are separate release checks and must not be described as passed
+until performed.
 
 ---
 
@@ -479,6 +507,7 @@ Flask's debug mode watches Python files, but not templates/static by default. Fo
 
 - **Main Docs**: [README.md](../README.md)
 - **Production Install**: [Production Guide](PRODUCTION_GUIDE.md)
+- **Feature change overview**: [Feature Upgrade Guide](FEATURE_UPGRADE.md)
 - **Issues**: Open an issue on GitHub with logs and error messages
 
 ---

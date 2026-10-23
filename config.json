@@ -462,6 +462,7 @@
   },
   "devices": {
     "gateway": {
+      "ip_address": "",
       "hardware_name": [
         "IP Interface Secure",
         "KNX IP Interface",
@@ -476,17 +477,18 @@
     "RoomNameAsItIs": false,
     "RoomNameFromDescription": false,
     "addMissingItems": true,
+    "auto_place_unknown": true,
     "unknown_floorname": "unknown",
     "unknown_roomname": "unknown",
-    "item_Floor_nameshort_prefix": "=",
-    "item_Room_nameshort_prefix": "+",
-    "auto_place_unknown": true,
     "central_function_keyword": "zentral",
     "central_function_group": "Base",
-    "notification_sensor_keyword":"Melden/Sensor"
+    "notification_sensor_keyword": "Melden/Sensor",
+    "item_Floor_nameshort_prefix": "=",
+    "item_Room_nameshort_prefix": "+"
   },
   "influx_path": "openhab/persistence/influxdb.persist",
   "items_path": "openhab/items/knx.items",
+  "output_format": "legacy",
   "regexpattern": {
     "item_Floor": "^=?[1-9\\.A-Z]{1,5}",
     "item_Floor_nameshort": "^=?[a-zA-Z]{1,5}\\b",
@@ -495,6 +497,8 @@
     "items_Name": "[^A-Za-z0-9_]+"
   },
   "sitemaps_path": "openhab/sitemaps/knx.sitemap",
+  "sitemap_label": "MiCasa",
   "things_path": "openhab/things/knx.things",
-  "transform_dir_path": "openhab/transform"
+  "transform_dir_path": "openhab/transform",
+  "yaml_path": "openhab/yaml/knx.yaml"
 }

@@ -2,6 +2,8 @@
 
 This guide explains how to prepare your ETS project, configure the generator, and understand how KNX data types are mapped to OpenHAB items.
 
+For a complete overview of the integrated changes, usage notes, and before/after screenshots, see the [Feature Upgrade Guide](FEATURE_UPGRADE.md).
+
 ## Quick Start
 
 1. **Upload** your `.knxproj` (or JSON dump) via the Web UI or CLI
@@ -78,6 +80,13 @@ The `config.json` file controls global settings for the generator.
 
 ### Key Settings
 
+- **`output_format`**: Selects the model format.
+  - `legacy` (default during the migration period): separate `.things`, `.items`, and `.sitemap` files.
+  - `yaml`: one native openHAB 5.2 `version: 1` model.
+
+- **`yaml_path`**: Target for the native YAML model.
+  - Default: `openhab/yaml/knx.yaml` (or `$OPENHAB_CONF/yaml/knx.yaml` when openHAB is detected).
+
 - **`drop_words`**: A list of words to remove from item labels to keep them short.
   - _Example_: If you have a group address "Kitchen Light Right", and "Light" is in `drop_words`, the label becomes "Kitchen Right" (assuming the icon already indicates it's a light).
   - _Note_: Words are NOT dropped if doing so would result in an empty label.
@@ -96,6 +105,54 @@ The `config.json` file controls global settings for the generator.
 
 - **`switch`**: Configuration for switch detection.
   - `status_suffix`: Suffixes identifying the status GA (e.g., "Status", "Rückmeldung").
+
+## openHAB 5.2 YAML Output
+
+Set `output_format` to `yaml` in the Web UI or `config.json` to generate a native openHAB 5.2 file:
+
+```json
+{
+  "output_format": "yaml",
+  "yaml_path": "openhab/yaml/knx.yaml"
+}
+```
+
+The resulting document contains `version: 1` and the `things`, `items`, and `sitemaps` sections. The generator validates Item names, parent Groups, Bridge references, Item-channel links, and Sitemap Item references before replacing the target file.
+
+Migration is intentionally explicit: never load the generated legacy model files and `knx.yaml` at the same time, because they define the same entity IDs. A Web UI deployment backs up the live configuration and then retires the generated files from the other format. Rollback restores the backed-up configuration.
+
+`influxdb.persist` remains in the persistence directory. The existing stateful `fenster.rules` also remains textual; wrapping its body in a YAML Script action would reset its counters and change the 15-minute notification behavior.
+
+Official format reference: [openHAB YAML Configuration](https://www.openhab.org/docs/configuration/yaml/).
+
+## KNX Gateway Address
+
+The **Devices** settings allow an optional gateway IP override. Enter a valid IPv4 or IPv6
+address, save the configuration, and reprocess the project. Leave the field empty to keep
+ETS-based gateway detection. Invalid addresses are rejected before generated files change.
+Saving the address preserves the other device settings.
+
+## openHAB and evcc Package Updates
+
+The **Services** section can check APT package lists and update openHAB or evcc one at a time.
+The update uses the candidate version shown in the confirmation and stops if that candidate
+changes before installation. Only an already installed package managed by APT is updated;
+Docker and manually installed copies are left alone. Review upstream release notes before
+major upgrades. A package update does not replace generated KNX configuration.
+
+## Login and Remote Access
+
+Sign in with the Web UI username and the password configured during installation. Sessions
+expire and can be revoked with **Log out**. The service listens on `127.0.0.1` by default.
+From another computer, use an SSH tunnel:
+
+```bash
+ssh -L 8085:127.0.0.1:8085 <benutzer>@<geraete-ip>
+```
+
+Then open `http://127.0.0.1:8085` in the local browser. Direct LAN access must be explicitly
+configured by an administrator; use HTTPS through a trusted reverse proxy on untrusted
+networks.
 
 ---
 
@@ -213,9 +270,13 @@ The Web UI shows **reports** for unknown, partial, and completeness checks so yo
 
 ### "Login/401 in Web UI"
 
-- The Web UI uses **Basic Auth** by default.
-- Default credentials: **admin / logihome** (change in Settings).
-- If you disabled auth in `web_ui/backend/config.json`, restart the UI service.
+- The Web UI uses a sign-in form and a protected browser session by default.
+- Use the Web UI password you set during installation. Existing user-chosen
+  passwords are preserved during migration; the shipped default is replaced.
+- For new installs, open `http://127.0.0.1:8085` locally or connect through an SSH
+  tunnel; LAN-wide listening requires an explicit configuration choice.
+- Local development and browser tests can disable authentication with `FLASK_ENV=testing`.
+  Production authentication is configured during installation.
 
 ### "My device shows as a generic Number"
 

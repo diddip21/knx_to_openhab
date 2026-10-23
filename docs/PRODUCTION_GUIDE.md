@@ -2,7 +2,7 @@
 
 ## Overview
 
-A lightweight, browser-based web interface to execute the KNX-to-OpenHAB generator on a Raspberry Pi (DietPi) without Docker. Includes real-time progress streaming, automatic backups, rollback capability, retention policies, and basic HTTP authentication.
+A lightweight, browser-based web interface to execute the KNX-to-OpenHAB generator on a Raspberry Pi (DietPi) without Docker. Includes real-time progress streaming, automatic backups, rollback capability, retention policies, and password-based browser sessions.
 
 **Technology Stack:**
 - **Backend:** Flask (Python) with Server-Sent Events (SSE) for live updates
@@ -21,7 +21,7 @@ A lightweight, browser-based web interface to execute the KNX-to-OpenHAB generat
 ✅ **Rollback Capability** — Restore any previous backup in one click  
 ✅ **Retention Policies** — Auto-cleanup by age (days), count (max backups), and size (MB)  
 ✅ **Service Management** — Restart OpenHAB from the UI  
-✅ **Basic HTTP Auth** — Simple username/password protection (configurable)  
+✅ **Protected Web Sessions** — Argon2id credentials, CSRF protection, session expiry and logout
 ✅ **Job History** — Persistent JSON storage of all jobs and metadata  
 
 ### UI Dashboard
@@ -54,9 +54,16 @@ curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install
 The installer will automatically:
 1.  Check for system dependencies
 2.  Create/Update `/opt/knx_to_openhab`
-3.  Setup the service user and permissions
-4.  Install/Update systemd services
-5.  Print the access URL and credentials
+3.  Migrate settings, jobs, and backups outside the application tree
+4.  Setup the service user and exact OpenHAB output permissions
+5.  Install systemd services and restricted sudoers policy
+6.  Print the access URL
+
+The default external paths are `/etc/knx_to_openhab` for settings and secrets,
+`/var/lib/knx_to_openhab` for jobs and staging, and
+`/var/backups/knx_to_openhab` for archives. Existing configuration and user data
+are copied before the new paths are activated. Active values are recorded in
+`/etc/knx_to_openhab/paths.env`.
 
 ### Step 2: Verify Installation
 
@@ -72,27 +79,32 @@ sudo journalctl -u knxohui.service -f
 curl http://localhost:8085/api/status
 ```
 
-### Step 3: Change Default Credentials
+### Step 3: Verify migrated settings and data
 
-Edit `/opt/knx_to_openhab/web_ui/backend/config.json`:
+The setup step preserves existing user-chosen logins and stores their Argon2id password
+hashes in `/etc/knx_to_openhab/secrets.env` with mode `0640`. A legacy shipped default
+is discarded and setup prompts for a replacement. A fresh install also prompts for a
+unique password; no default password is shipped. Runtime settings are in
+`/etc/knx_to_openhab/config.json`; generator rules edited through the Settings
+screen are in `/var/lib/knx_to_openhab/generator.json`. Jobs and backups remain
+available after migration:
 
 ```bash
-sudo nano /opt/knx_to_openhab/web_ui/backend/config.json
+sudo cat /etc/knx_to_openhab/paths.env
+sudo ls -la /var/lib/knx_to_openhab/jobs /var/backups/knx_to_openhab
 ```
 
-Change:
-```json
-"auth": {
-  "enabled": true,
-  "user": "YOUR_USERNAME",
-  "password": "YOUR_STRONG_PASSWORD"
-}
-```
+To rotate the password without editing tracked configuration or exposing it in
+shell history, run:
 
-Then restart the service:
 ```bash
+sudo /opt/knx_to_openhab/venv/bin/python \
+  /usr/local/libexec/knx_to_openhab/set_ui_password.py
 sudo systemctl restart knxohui.service
 ```
+
+The root-owned helper prompts twice, stores an Argon2id hash in the configured
+secrets file, and preserves other secret values.
 
 ### Uninstallation
 To completely remove the application, use the uninstaller script:
@@ -107,12 +119,18 @@ This will stop services, remove the installation directory, remove the service u
 
 ### Access the Web UI
 
-Open in your browser:
+By default, the Web UI listens only on the Raspberry Pi itself. Open it locally or use an SSH tunnel:
 ```
-http://<pi-ip-address>:8085
+http://127.0.0.1:8085
 ```
 
-You will be prompted for username/password (default: `admin` / `logihome`).
+For example, from your workstation run `ssh -L 8085:127.0.0.1:8085 <user>@<pi-ip>` and
+then open `http://127.0.0.1:8085`. Setup asks before retaining a legacy binding that
+allows LAN access. You can also deliberately set `bind_host` to a private interface
+address in `/etc/knx_to_openhab/config.json`, then restart `knxohui.service`.
+
+Sign in with the Web UI username and password configured during installation. The
+browser keeps a revocable session cookie; write requests include a CSRF token.
 
 ### Upload and Process a KNX Project
 
@@ -132,7 +150,7 @@ You will be prompted for username/password (default: `admin` / `logihome`).
 1. **Find the job** you want to rollback (can be any completed job)
 2. **Click "Rollback"** button (only appears if backups exist)
 3. **Select a backup** from the dropdown (shows timestamp)
-4. **Confirm** — the `openhab/` folder is restored
+4. **Confirm** — generated files are restored; manually maintained OpenHAB configuration remains unchanged
 
 ### Restart OpenHAB
 
@@ -140,24 +158,41 @@ You will be prompted for username/password (default: `admin` / `logihome`).
 2. **Click "Restart OpenHAB"** button
 3. **Wait for confirmation** — shows if restart was successful
 
+### Update openHAB or evcc packages
+
+The **Services** panel can refresh APT package lists and update openHAB or evcc individually.
+Confirm the displayed candidate version. The helper updates only the selected package and
+aborts if APT's candidate changes before installation. Packages installed with Docker or
+outside APT are reported as unsupported and are not changed. No real package upgrade is
+performed by the integration test suite.
+
+### Choose the KNX gateway address
+
+In **Settings → Devices**, enter an IPv4 or IPv6 gateway address to override ETS detection.
+Leave it blank to retain automatic detection. Save and reprocess the project. Re-running
+setup is not required for this setting.
+
 ---
 
 ## Configuration
 
 ### Main Config File
-Location: `/opt/knx_to_openhab/web_ui/backend/config.json`
+Location: `/etc/knx_to_openhab/config.json`
 
 ```json
 {
   "openhab_path": "openhab",                    // Where OpenHAB files are (relative to base)
-  "jobs_dir": "var/lib/knx_to_openhab",         // Job history + uploads
-  "backups_dir": "var/backups/knx_to_openhab",  // Backup tar.gz files
-  "bind_host": "0.0.0.0",                        // Listen address (0.0.0.0 = all interfaces)
-  "port": 8085,                                  // Web server port
+  "jobs_dir": "/var/lib/knx_to_openhab/jobs",   // Job history + uploads
+  "staging_dir": "/var/lib/knx_to_openhab/staging",
+  "generated_dir": "/var/lib/knx_to_openhab/generated",
+  "backups_dir": "/var/backups/knx_to_openhab", // Backup tar.gz files
+  "bind_host": "127.0.0.1",
+  "port": 8085,
+  "trusted_proxy_hops": 0,
+  "session_max_age_seconds": 43200,
   "auth": {
-    "enabled": true,                             // Set to false to disable auth
-    "user": "admin",                             // Basic HTTP username
-    "password": "logihome"                       // Basic HTTP password
+    "enabled": true,
+    "user": "admin"
   },
   "retention": {
     "days": 14,                                  // Delete backups older than N days
@@ -190,7 +225,10 @@ Cleanup happens:
 
 ### Endpoints (JSON)
 
-All endpoints require HTTP Basic Auth unless `auth.enabled` is `false`.
+Browser endpoints require a signed-in session unless `auth.enabled` is `false`.
+The health endpoint `/api/status` remains public. For API writes, send the
+`X-CSRF-Token` header using the value exposed in the signed-in page's
+`csrf-token` meta tag. The browser UI does this automatically.
 
 #### `POST /api/upload`
 Upload a KNX project file.
@@ -198,7 +236,8 @@ Upload a KNX project file.
 **Request:**
 ```
 Content-Type: multipart/form-data
-Authorization: Basic base64(user:password)
+Cookie: knx_session=…
+X-CSRF-Token: <csrf-token>
 File field: "file" (binary)
 ```
 
@@ -308,11 +347,11 @@ Health check (no auth required).
 ## File Structure
 
 ```
-/opt/knx_to_openhab/                    # Installation base
+/opt/knx_to_openhab/                    # Application files
 ├── knxproject_to_openhab.py            # KNX parser (unchanged)
 ├── ets_to_openhab.py                   # OpenHAB generator (unchanged)
 ├── config.py                           # Config loader (unchanged)
-├── config.json                         # Main config (unchanged)
+├── config.json                         # Packaged generator defaults
 ├── requirements.txt                    # Python dependencies
 ├── web_ui/
 │   ├── backend/
@@ -320,7 +359,7 @@ Health check (no auth required).
 │   │   ├── jobs.py                     # Job engine & backup logic
 │   │   ├── storage.py                  # Config & jobs persistence
 │   │   ├── service_manager.py          # systemctl wrapper
-│   │   └── config.json                 # Web UI config
+│   │   └── config.json                 # Local development defaults
 │   ├── templates/
 │   │   └── index.html                  # Web interface
 │   ├── static/
@@ -342,12 +381,18 @@ Health check (no auth required).
 │   └── icons/
 └── venv/                               # Python virtual environment
 
-/var/lib/knx_to_openhab/                # Runtime data
-├── jobs.json                           # Job history
-└── <job-uploads>/                      # Uploaded KNX files (by job ID)
+/etc/knx_to_openhab/                    # Persistent configuration and secrets
+├── config.json                         # Web UI runtime settings
+├── secrets.env                         # Protected credentials
+└── paths.env                           # Canonical installation paths
 
-# Backup archives location depends on configuration, defaulting to:
-/var/backups/knx_to_openhab/            # Default backup archives
+/var/lib/knx_to_openhab/                # Runtime data, outside the application
+├── generator.json                      # User-controlled generator rules
+├── jobs/                               # Job history and uploaded KNX files
+├── staging/                            # Generated files awaiting deployment
+└── generated/                          # Runtime-generated reports
+
+/var/backups/knx_to_openhab/            # Backup archives
 └── <job-id>-<timestamp>.tar.gz         # Backup tarballs
 ```
 
@@ -371,45 +416,45 @@ sudo systemctl restart knxohui.service
 ```
 
 ### Permission Denied Errors
-If you encounter "Permission denied" errors when trying to write to OpenHAB directories:
 
-1. Verify the knxohui user is in the openhab group:
-   ```bash
-   groups knxohui
-   ```
+Deploy writes only the exact files configured for KNX generation. The installer
+removes group and other write access under the effective OpenHAB configuration
+root, reassigns service-owned non-output files to root, and provisions the
+generated files for `knxohui`. File contents remain intact and manually
+maintained files cannot be overwritten by deployment.
 
-2. Check that the openhab group has proper permissions:
-   ```bash
-   ls -la /etc/openhab
-   ```
+If a deploy reports that a managed output is missing or not writable, run the
+administrator repair script:
 
-3. The installer and updater scripts automatically handle these permissions, but if needed, you can verify with:
-   ```bash
-   sudo usermod -a -G openhab knxohui
-   sudo chmod -R 775 /etc/openhab
-   ```
+```bash
+sudo bash /opt/knx_to_openhab/fix_permissions.sh
+```
 
-4. Restart the service to apply changes:
-   ```bash
-   sudo systemctl restart knxohui.service
-   ```
+After changing generator output paths, run `setup.sh` once so the new exact
+output files are provisioned and the root-owned
+`/etc/knx_to_openhab/managed_outputs.json` allowlist is refreshed. Setup also installs the
+root-owned `knxohui-retire-managed-outputs` helper used when switching between YAML and
+legacy model files. Do not grant the service user write access to output directories and do
+not restore broad permissions with
+`chmod -R 775 /etc/openhab`.
 
 ### Update Fails with "Permission denied"
 If the update log shows "Permission denied" or "error: cannot open .git/FETCH_HEAD":
 
 ```bash
-# Fix ownership permissions - adjust backup path as needed based on your configuration
-BACKUP_PATH=$(python3 -c "import json; cfg=json.load(open('/opt/knx_to_openhab/web_ui/backend/config.json')); print(cfg.get('backups_dir','/var/backups/knx_to_openhab'))" 2>/dev/null || echo "/var/backups/knx_to_openhab")
-sudo chown -R knxohui:knxohui /opt/knx_to_openhab "$BACKUP_PATH"
+# Re-apply the managed file permissions and service policy
+sudo bash /opt/knx_to_openhab/fix_permissions.sh
 ```
 
-This usually happens if you manually ran git commands as root or your personal user instead of the service user.
+This can happen if installation files or the external backup directory were
+changed by hand. The repair script reapplies the configured path and permission
+policy; do not recursively change ownership of `/etc/openhab`.
 
 ### Backup/Rollback Issues
 ```bash
-# Check backup folder - adjust path based on your configuration
-BACKUP_PATH=$(python3 -c "import json; cfg=json.load(open('/opt/knx_to_openhab/web_ui/backend/config.json')); print(cfg.get('backups_dir','/var/backups/knx_to_openhab'))" 2>/dev/null || echo "/var/backups/knx_to_openhab")
-ls -lh "$BACKUP_PATH"
+# Check the configured backup folder
+sudo cat /etc/knx_to_openhab/paths.env
+ls -lh /var/backups/knx_to_openhab
 
 # Manual cleanup (if timer not working)
 sudo systemctl start knxohui-backup-cleanup.service
@@ -420,8 +465,8 @@ sudo journalctl -u knxohui-backup-cleanup.service
 
 ### Authentication Problems
 ```bash
-# Change credentials in config
-sudo nano /opt/knx_to_openhab/web_ui/backend/config.json
+# Check the external secret file permissions
+sudo stat -c '%a %U:%G %n' /etc/knx_to_openhab/secrets.env
 
 # Restart to apply
 sudo systemctl restart knxohui.service
@@ -433,7 +478,7 @@ sudo systemctl restart knxohui.service
 pkill -f "knxproject_to_openhab.py" || true
 
 # Check job logs
-tail -100 /var/lib/knx_to_openhab/jobs.json | python3 -m json.tool
+tail -100 /var/lib/knx_to_openhab/jobs/jobs.json | python3 -m json.tool
 ```
 
 ---
@@ -441,7 +486,7 @@ tail -100 /var/lib/knx_to_openhab/jobs.json | python3 -m json.tool
 ## Advanced
 
 ### Disable Authentication
-Edit `/opt/knx_to_openhab/web_ui/backend/config.json`:
+Edit `/etc/knx_to_openhab/config.json`:
 ```json
 "auth": {
   "enabled": false
@@ -449,14 +494,14 @@ Edit `/opt/knx_to_openhab/web_ui/backend/config.json`:
 ```
 
 ### Change Port
-Edit `/opt/knx_to_openhab/web_ui/backend/config.json`:
+Edit `/etc/knx_to_openhab/config.json`:
 ```json
 "port": 9000
 ```
 Then restart: `sudo systemctl restart knxohui.service`
 
 ### Adjust Retention
-Edit `/opt/knx_to_openhab/web_ui/backend/config.json`:
+Edit `/etc/knx_to_openhab/config.json`:
 ```json
 "retention": {
   "days": 7,           // Keep 7 days instead of 14
@@ -465,8 +510,29 @@ Edit `/opt/knx_to_openhab/web_ui/backend/config.json`:
 }
 ```
 
-### HTTPS Setup
-For production, add a reverse proxy (nginx) or use Let's Encrypt. Currently HTTP-only, suitable for local LAN.
+### HTTPS and reverse proxy
+
+Keep the application bound to `127.0.0.1` and terminate TLS in a local reverse
+proxy. Set `trusted_proxy_hops` to the exact number of trusted proxies (usually
+`1`) so Flask can recognize HTTPS from `X-Forwarded-Proto`. Do not accept
+forwarded headers from clients that can reach Flask directly.
+
+Example nginx location:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8085;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+When the proxy reports HTTPS, the session and CSRF cookies receive the `Secure`
+attribute. Restrict access to the proxy and use TLS certificates appropriate for
+your network.
 
 ---
 
@@ -489,25 +555,26 @@ View in the Web UI under "Job Details" > "Live Log"
 
 Or access the JSON:
 ```bash
-cat /var/lib/knx_to_openhab/jobs.json | python3 -m json.tool
+cat /var/lib/knx_to_openhab/jobs/jobs.json | python3 -m json.tool
 ```
 
 ---
 
 ## Security Notes
 
-⚠️ **For Local LAN Use Only**
-- Basic HTTP auth is simple (not encrypted, only base64)
-- No HTTPS by default
-- Suitable for trusted local networks only
-- Do not expose to the internet without additional security (reverse proxy + SSL)
+⚠️ **Network exposure**
+- The default bind address is loopback, so other LAN devices cannot connect directly.
+- Direct LAN access must be explicitly enabled and should be limited to a trusted network.
+- Use HTTPS through a reverse proxy before allowing access over an untrusted network.
 
 ✅ **Best Practices**
-1. Change default credentials immediately
-2. Use a strong password
-3. If exposing remotely, add nginx reverse proxy with SSL
-4. Restrict OpenHAB service restart via sudoers (already done in setup.sh)
-5. Monitor `/var/lib/knx_to_openhab/` and `/var/backups/` for disk usage
+1. Keep `/etc/knx_to_openhab/secrets.env` readable only by root and the service group
+2. Use a strong, unique password
+3. Keep `bind_host` on loopback behind a TLS reverse proxy for remote access
+4. Keep `/etc/knx_to_openhab/managed_outputs.json` root-owned; setup refreshes the exact
+   output allowlist used for provisioning and format retirement
+5. Restrict privileged actions to the helper commands in sudoers (installed by setup.sh)
+6. Monitor `/var/lib/knx_to_openhab/` and `/var/backups/` for disk usage
 
 ---
 
@@ -521,7 +588,7 @@ For issues or feature requests:
 
 ---
 
-**Version:** 1.0  
-**Last Updated:** 2025-11-22  
+**Version:** 1.1
+**Last Updated:** 2026-10-23
 **License:** Same as knx_to_openhab project
 

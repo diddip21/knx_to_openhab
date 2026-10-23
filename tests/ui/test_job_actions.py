@@ -1,19 +1,22 @@
 import json
+import os
 import re
 
 import pytest
 from playwright.sync_api import Page, expect
 
 JOB_ID = "job-1"
-DEFAULT_USERNAME = "admin"
-DEFAULT_PASSWORD = "logihome"
 
 
 def ensure_authenticated(page: Page, base_url: str) -> None:
     page.goto(base_url)
     if page.locator("input[name='username']").count() > 0:
-        page.fill("input[name='username']", DEFAULT_USERNAME)
-        page.fill("input[name='password']", DEFAULT_PASSWORD)
+        username = os.getenv("UI_AUTH_USER")
+        password = os.getenv("UI_AUTH_PASSWORD")
+        if not username or not password:
+            pytest.skip("Set UI_AUTH_USER and UI_AUTH_PASSWORD to test authenticated UI")
+        page.fill("input[name='username']", username)
+        page.fill("input[name='password']", password)
         page.click("button[type='submit']")
         expect(page.locator("#upload-section")).to_be_visible(timeout=10000)
 

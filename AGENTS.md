@@ -16,7 +16,10 @@ Target audience: German-speaking smart home users running OpenHAB on Raspberry P
       get_addresses()        → flat list of group addresses with metadata
       put_addresses_in_building() → addresses placed into building tree
   → ets_to_openhab.py
-      gen_building()         → generates items/things/sitemap strings (500+ lines)
+      gen_building()         → generates legacy strings and a structured openHAB model
+  → openhab_yaml.py
+      validate_model()       → validates IDs and cross-references
+      render_yaml()          → deterministic openHAB 5.2 YAML
       export_output()        → writes files using *.template wrappers
   → openhab/ output directory
       knx.items, knx.things, knx.sitemap, influxdb.persist
@@ -28,6 +31,7 @@ Target audience: German-speaking smart home users running OpenHAB on Raspberry P
 |------|---------|
 | `knxproject_to_openhab.py` | Entry point: parses `.knxproj`, builds building hierarchy, calls generator (789 lines) |
 | `ets_to_openhab.py` | Core generator: `gen_building()` produces items/things/sitemap strings, `export_output()` writes files (1058 lines) |
+| `openhab_yaml.py` | Dependency-free openHAB 5.2 YAML renderer and semantic validator |
 | `config.json` | Central config: regex patterns, device detection rules, datapoint mappings, output paths (500 lines) |
 | `config.py` | Loads `config.json`, normalizes values, detects OpenHAB paths. **Executes on import** — side effects at module level |
 | `utils.py` | Single helper: `get_datapoint_type()` |
@@ -71,6 +75,17 @@ pytest --cov=. --cov-report=html
 # UI tests (requires Playwright + running server)
 pytest tests/ui -v -o addopts=
 ```
+
+## Cross-Task Delivery Rules
+
+- Keep issues actionable and reviewable: describe the user problem, intended behavior, scope, compatibility expectations, acceptance criteria, and relevant dependencies. Link active pull requests and state what remains outstanding; keep an issue open when a pull request covers only part of its scope.
+- Start from the linked issue's acceptance criteria and trace the affected flow through the UI, API, configuration, and generated output. Keep existing defaults and configuration keys working unless the issue explicitly changes them.
+- For a bug fix, add a regression test that fails on the previous behavior. For a feature, cover the normal path, the existing/default path, and invalid input where relevant. Run the focused tests first, then the full applicable suite.
+- UI changes need committed screenshots of the finished interface in `docs/screenshots/`. Screenshots must show real app state, avoid secrets and personal data, and be referenced from the pull request with a short explanation of each view.
+- Before calling work complete, run formatting/lint checks, core tests, relevant UI tests, and `git diff --check`. Report any checks that could not be run; do not state that a check passed without its output.
+- A pull request should summarize user-visible behavior, compatibility/default behavior, tests and their results, and screenshots for UI changes. Keep scope focused and verify that saving one setting does not discard sibling configuration.
+- When integrating several open PRs for combined testing, enumerate all open PRs first (including drafts), create a separate `developer/*` integration branch from the default branch, and merge source branches in dependency order. Do not modify the default branch during integration. Keep source PRs open unless closing them is explicitly requested; record the integrated PR list, conflicts and decisions in a GitHub-visible report.
+- Combined product changes need a user-facing before/after guide linked from the README. Explain defaults, compatibility, setup or migration steps, and how to use each visible feature. Keep security, architecture and test details in the appropriate internal guides and link them from the overview.
 
 ### Test Structure
 

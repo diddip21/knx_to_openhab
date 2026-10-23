@@ -4,6 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <title>KNX → OpenHAB Generator</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="icon" type="image/png" href="/static/favicon.png">
@@ -18,6 +19,9 @@
         <span id="headerCommit">Loading...</span>
         <span class="update-indicator" id="updateIndicator" style="display:none;">🔄</span>
       </div>
+      {% if auth_enabled %}
+      <button id="logoutButton" class="btn-secondary logout-button" type="button">Log out</button>
+      {% endif %}
     </div>
 
     <!-- Upload Section -->
@@ -111,16 +115,30 @@
           <div id="tab-general" class="tab-content active">
             <!-- ETS Export Path removed -->
             <div class="form-group">
-              <label>Items Path</label>
-              <input type="text" id="conf-items-path" class="form-control">
+              <label>OpenHAB Model Format</label>
+              <select id="conf-output-format" class="form-control">
+                <option value="legacy">Legacy DSL (.things/.items/.sitemap)</option>
+                <option value="yaml">openHAB 5.2 YAML</option>
+              </select>
+              <div class="checkbox-help">YAML combines Things, Items and the Sitemap in one versioned file. Persistence and the stateful window rule remain textual.</div>
             </div>
-            <div class="form-group">
-              <label>Things Path</label>
-              <input type="text" id="conf-things-path" class="form-control">
+            <div class="form-group" id="yaml-path-group">
+              <label>YAML Path</label>
+              <input type="text" id="conf-yaml-path" class="form-control">
             </div>
-            <div class="form-group">
-              <label>Sitemaps Path</label>
-              <input type="text" id="conf-sitemaps-path" class="form-control">
+            <div id="legacy-model-paths">
+              <div class="form-group">
+                <label>Items Path</label>
+                <input type="text" id="conf-items-path" class="form-control">
+              </div>
+              <div class="form-group">
+                <label>Things Path</label>
+                <input type="text" id="conf-things-path" class="form-control">
+              </div>
+              <div class="form-group">
+                <label>Sitemaps Path</label>
+                <input type="text" id="conf-sitemaps-path" class="form-control">
+              </div>
             </div>
             <div class="form-group">
               <label>InfluxDB Path</label>
@@ -193,6 +211,11 @@
               <input type="text" id="conf-gateway-names" class="form-control">
               <small>Names to identify the KNX IP Interface/Router</small>
             </div>
+            <div class="form-group">
+              <label for="conf-gateway-ip">KNX Gateway IP Override</label>
+              <input type="text" id="conf-gateway-ip" class="form-control" inputmode="text" autocomplete="off" spellcheck="false" placeholder="Auto-detect from ETS project" aria-describedby="conf-gateway-ip-help">
+              <small id="conf-gateway-ip-help">Enter an IPv4 or IPv6 address to override the ETS value. Leave blank for automatic detection. Save &amp; Reprocess applies changes to the selected job.</small>
+            </div>
           </div>
 
           <!-- Mappings Tab -->
@@ -243,6 +266,9 @@
     <!-- Services Section -->
     <section id="service-section" class="card">
       <h2>🔌 Services</h2>
+      <p class="service-note">APT-Pakete auf diesem Gerät. Die verfügbare Version stammt aus den Paketlisten.</p>
+      <button type="button" id="refreshPackagesBtn" class="service-restart-btn">Paketlisten prüfen</button>
+      <span id="packageOperationStatus" role="status" aria-live="polite"></span>
       <div id="servicesList"></div>
     </section>
 

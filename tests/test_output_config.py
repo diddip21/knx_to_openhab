@@ -73,6 +73,7 @@ class TestOutputConfig:
 
         expected_items = str(Path("/etc/openhab") / "items" / "knx.items")
         assert config.config["items_path"] == expected_items
+        assert config.config["yaml_path"] == str(Path("/etc/openhab") / "yaml" / "knx.yaml")
         assert config.config["target_user"] == "openhab"
         assert config.config["target_group"] == "openhab"
         logger.info(f"✓ OpenHAB CLI detection: items_path={config.config['items_path']}")

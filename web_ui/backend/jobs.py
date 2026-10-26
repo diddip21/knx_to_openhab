@@ -24,6 +24,21 @@ from .storage import ensure_dirs, load_jobs, save_jobs
 logger = logging.getLogger(__name__)
 
 
+def _reload_generator_modules(project_root):
+    """Reload config before generator modules that bind its values at import time."""
+    import importlib
+
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    import config as global_config_module
+
+    importlib.reload(global_config_module)
+    etsmod = importlib.reload(importlib.import_module("ets_to_openhab"))
+    knxmod = importlib.reload(importlib.import_module("knxproject_to_openhab"))
+    return global_config_module, etsmod, knxmod
+
+
 def _password_error_message(error):
     msg = str(error).lower()
     password_markers = [
@@ -238,11 +253,11 @@ class JobManager:
                 },
             )
             import copy
-            import importlib
 
-            knxmod = importlib.import_module("knxproject_to_openhab")
-            etsmod = importlib.import_module("ets_to_openhab")
-            importlib.reload(etsmod)  # Ensure we use the latest code
+            # Reload config before its consumers: both generator modules import the
+            # config dict directly, and config.py replaces that dict on reload.
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            global_config_module, etsmod, knxmod = _reload_generator_modules(project_root)
 
             # Setup Staging
             if os.path.abspath(self.staging_dir) == os.path.abspath(self.jobs_dir):
@@ -251,14 +266,8 @@ class JobManager:
                 staging_dir = os.path.join(self.staging_dir, job_id)
             ensure_dirs([staging_dir])
 
-            # Load main config to base our staged config on
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            if project_root not in sys.path:
-                sys.path.insert(0, project_root)
-            import config as global_config_module
-
-            importlib.reload(global_config_module)  # Reload to get fresh config
-
+            # Resolve the protected output boundary from the freshly reloaded
+            # generator config, so the gateway override and deploy paths share it.
             openhab_path, managed_paths = configured_managed_paths(
                 global_config_module.config, project_root
             )

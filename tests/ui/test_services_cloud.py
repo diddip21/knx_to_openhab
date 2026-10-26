@@ -8,17 +8,13 @@ from playwright.sync_api import Page, expect
 
 
 def _setup_services_routes(page: Page):
-    services = [
-        {"name": "openhab.service", "active": True, "status": "active", "uptime": "2h 30min"},
-        {"name": "evcc.service", "active": False, "status": "inactive", "uptime": ""},
-    ]
-
     cloud_info = {
         "uuid": "abc-123-def-456",
         "secret": "super-secret-value",
         "uuid_path": "/var/lib/openhab/uuid",
         "secret_path": "/var/lib/openhab/openhabcloud/secret",
     }
+    restart_requests = []
 
     def _fulfill(route, data, status=200):
         route.fulfill(status=status, content_type="application/json", body=json.dumps(data))
@@ -29,11 +25,35 @@ def _setup_services_routes(page: Page):
 
         if url.endswith("/api/jobs"):
             return _fulfill(route, [])
-        if url.endswith("/api/services"):
-            return _fulfill(route, services)
-        if re.search(r"/api/service/.+/status$", url):
-            return _fulfill(route, {"active": True, "status": "active", "uptime": "2h 30min"})
+        if url.endswith("/api/service/updates/status"):
+            return _fulfill(route, {"action": None, "state": "idle", "message": ""})
+        if re.search(r"/api/service/(openhab|evcc)/version$", url):
+            return _fulfill(
+                route,
+                {
+                    "installed": "5.0.0-1",
+                    "candidate": "5.0.0-1",
+                    "supported": True,
+                    "update_available": False,
+                    "message": "APT candidate from local package lists.",
+                },
+            )
+        if re.search(r"/api/service/(openhab|evcc)\.service/status$", url):
+            service = re.search(r"/api/service/([^/]+)/status$", url).group(1)
+            active = service == "openhab.service"
+            return _fulfill(
+                route,
+                {
+                    "active": active,
+                    "status": "active" if active else "inactive",
+                    "uptime_str": (
+                        "ActiveEnterTimestamp=Mon 2026-10-26 10:00:00 UTC" if active else None
+                    ),
+                    "last_run_str": None,
+                },
+            )
         if url.endswith("/api/service/restart") and method == "POST":
+            restart_requests.append(json.loads(request.post_data or "{}"))
             return _fulfill(route, {"ok": True, "output": "Service restarted"})
         if url.endswith("/api/openhab/cloud-info"):
             return _fulfill(route, cloud_info)
@@ -49,6 +69,7 @@ def _setup_services_routes(page: Page):
         return _fulfill(route, {"error": f"unmocked {url}"}, status=404)
 
     page.route("**/api/**", handler)
+    return restart_requests
 
 
 @pytest.mark.ui
@@ -71,17 +92,23 @@ class TestServicesSection:
         _setup_services_routes(page)
         page.goto(base_url)
 
-        restart_btns = page.locator(".service-restart-btn")
+        restart_btns = page.locator("#servicesList .restart-btn")
         expect(restart_btns.first).to_be_visible()
 
-    def test_service_restart_triggers_confirm(self, page: Page, base_url, flask_server):
-        _setup_services_routes(page)
+    def test_service_restart_posts_selected_service(self, page: Page, base_url, flask_server):
+        restart_requests = _setup_services_routes(page)
         page.goto(base_url)
 
-        restart_btn = page.locator(".service-restart-btn").first
-        restart_btn.click()
-        page.wait_for_timeout(1000)
-        expect(restart_btn).to_contain_text("Restart", timeout=5000)
+        restart_btn = page.locator("#servicesList .restart-btn").first
+        with page.expect_response("**/api/service/restart") as response_info:
+            restart_btn.click()
+
+        assert response_info.value.status == 200
+        assert json.loads(response_info.value.request.post_data or "{}") == {
+            "service": "openhab.service"
+        }
+        expect(restart_btn).to_have_text("Restart")
+        assert restart_requests == [{"service": "openhab.service"}]
 
 
 @pytest.mark.ui

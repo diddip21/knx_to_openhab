@@ -1,3 +1,5 @@
+import pytest
+
 from web_ui.backend.jobs import JobManager
 
 
@@ -80,3 +82,75 @@ def test_deploy_retires_legacy_model_only_after_backup(tmp_path):
     assert yaml_path.read_text(encoding="utf-8") == "version: 1\n"
     assert not legacy_path.exists()
     assert manager._jobs["job"]["backups"]
+
+
+def test_deploy_rejects_retirement_outside_openhab_before_writing(tmp_path):
+    openhab_path = tmp_path / "openhab"
+    yaml_path = openhab_path / "yaml" / "knx.yaml"
+    staged_yaml = tmp_path / "staging" / "openhab" / "yaml" / "knx.yaml"
+    yaml_path.parent.mkdir(parents=True)
+    staged_yaml.parent.mkdir(parents=True)
+    staged_yaml.write_text("version: 1\n", encoding="utf-8")
+    manual_file = tmp_path / "manual.items"
+    manual_file.write_text("preserve me\n", encoding="utf-8")
+
+    manager = JobManager.__new__(JobManager)
+    manager.cfg = {"openhab_path": str(openhab_path)}
+    manager.backups_dir = str(tmp_path / "backups")
+    manager.jobs_dir = str(tmp_path / "jobs")
+    (tmp_path / "backups").mkdir()
+    (tmp_path / "jobs").mkdir()
+    manager._jobs = {
+        "job": {
+            "id": "job",
+            "staged": True,
+            "backups": [],
+            "stage_mapping": {str(staged_yaml): str(yaml_path)},
+            "retired_paths": [str(manual_file)],
+        }
+    }
+
+    with pytest.raises(ValueError, match="under the OpenHAB"):
+        manager.deploy("job")
+
+    assert not yaml_path.exists()
+    assert manual_file.read_text(encoding="utf-8") == "preserve me\n"
+    assert list((tmp_path / "backups").iterdir()) == []
+
+
+def test_deploy_rejects_symlinked_retired_file_before_writing(tmp_path):
+    openhab_path = tmp_path / "openhab"
+    retired_path = openhab_path / "items" / "knx.items"
+    yaml_path = openhab_path / "yaml" / "knx.yaml"
+    staged_yaml = tmp_path / "staging" / "openhab" / "yaml" / "knx.yaml"
+    retired_path.parent.mkdir(parents=True)
+    yaml_path.parent.mkdir(parents=True)
+    staged_yaml.parent.mkdir(parents=True)
+    staged_yaml.write_text("version: 1\n", encoding="utf-8")
+    external_file = tmp_path / "manual.items"
+    external_file.write_text("preserve me\n", encoding="utf-8")
+    retired_path.symlink_to(external_file)
+
+    manager = JobManager.__new__(JobManager)
+    manager.cfg = {"openhab_path": str(openhab_path)}
+    manager.backups_dir = str(tmp_path / "backups")
+    manager.jobs_dir = str(tmp_path / "jobs")
+    (tmp_path / "backups").mkdir()
+    (tmp_path / "jobs").mkdir()
+    manager._jobs = {
+        "job": {
+            "id": "job",
+            "staged": True,
+            "backups": [],
+            "stage_mapping": {str(staged_yaml): str(yaml_path)},
+            "retired_paths": [str(retired_path)],
+        }
+    }
+
+    with pytest.raises(ValueError, match="single-link regular file"):
+        manager.deploy("job")
+
+    assert retired_path.is_symlink()
+    assert external_file.read_text(encoding="utf-8") == "preserve me\n"
+    assert not yaml_path.exists()
+    assert list((tmp_path / "backups").iterdir()) == []

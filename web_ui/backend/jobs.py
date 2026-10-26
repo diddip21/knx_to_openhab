@@ -5,6 +5,7 @@ import os
 import queue
 import re
 import shutil
+import stat as stat_module
 import subprocess
 import sys
 import tarfile
@@ -18,6 +19,105 @@ from completeness import check_completeness, iter_thing_lines
 from .storage import ensure_dirs, load_jobs, save_jobs
 
 logger = logging.getLogger(__name__)
+
+_RETIRABLE_MODEL_SUFFIXES = {
+    "items": (".items",),
+    "things": (".things",),
+    "sitemaps": (".sitemap", ".sitemaps"),
+    "yaml": (".yaml", ".yml"),
+}
+_DIR_FD_RETIREMENT = (
+    hasattr(os, "O_NOFOLLOW")
+    and os.open in os.supports_dir_fd
+    and os.stat in os.supports_dir_fd
+    and os.unlink in os.supports_dir_fd
+)
+
+
+def _validate_retired_model_paths(retired_paths, deployed_targets, openhab_root):
+    """Validate old model outputs before deployment can change any live files."""
+    root = os.path.abspath(openhab_root)
+    deployed = {os.path.normcase(os.path.abspath(path)) for path in deployed_targets}
+    targets = []
+
+    for value in retired_paths:
+        if not isinstance(value, (str, os.PathLike)):
+            raise ValueError("Retired model output must be a filesystem path")
+        raw_path = os.fspath(value)
+        if not raw_path or "\x00" in raw_path or ".." in raw_path.split(os.sep):
+            raise ValueError("Retired model output contains an invalid path")
+
+        target = os.path.abspath(raw_path)
+        try:
+            common = os.path.commonpath([root, target])
+        except ValueError as error:
+            raise ValueError("Retired model output must be under the OpenHAB directory") from error
+        if os.path.normcase(common) != os.path.normcase(root):
+            raise ValueError("Retired model output must be under the OpenHAB directory")
+
+        relative = os.path.relpath(target, root)
+        parts = relative.replace("\\", "/").split("/")
+        if len(parts) != 2 or parts[0] not in _RETIRABLE_MODEL_SUFFIXES:
+            raise ValueError(
+                "Only configured model files directly under OpenHAB model folders may retire"
+            )
+        if not parts[1].lower().endswith(_RETIRABLE_MODEL_SUFFIXES[parts[0]]):
+            raise ValueError("Retired model output has an unsupported file extension")
+        if os.path.normcase(target) in deployed:
+            continue
+
+        _inspect_retired_model_file(root, relative, remove=False)
+        targets.append(relative)
+
+    return root, targets
+
+
+def _inspect_retired_model_file(root, relative, *, remove):
+    """Inspect and optionally unlink a model file without following symlinks."""
+    folder, filename = relative.split(os.sep) if os.sep in relative else relative.split("/")
+    if _DIR_FD_RETIREMENT:
+        directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW
+        root_fd = None
+        folder_fd = None
+        try:
+            root_fd = os.open(root, directory_flags)
+            folder_fd = os.open(folder, directory_flags, dir_fd=root_fd)
+            try:
+                info = os.stat(filename, dir_fd=folder_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                return False
+            if not stat_module.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise ValueError("Retired model output must be a single-link regular file")
+            if remove:
+                os.unlink(filename, dir_fd=folder_fd)
+            return True
+        except FileNotFoundError:
+            return False
+        except OSError as error:
+            raise ValueError("Retired model output has an unsafe directory or file") from error
+        finally:
+            if folder_fd is not None:
+                os.close(folder_fd)
+            if root_fd is not None:
+                os.close(root_fd)
+
+    root_info = os.lstat(root)
+    folder_path = os.path.join(root, folder)
+    folder_info = os.lstat(folder_path)
+    if stat_module.S_ISLNK(root_info.st_mode) or not stat_module.S_ISDIR(root_info.st_mode):
+        raise ValueError("OpenHAB directory must be a real directory")
+    if stat_module.S_ISLNK(folder_info.st_mode) or not stat_module.S_ISDIR(folder_info.st_mode):
+        raise ValueError("Retired model output directory must be a real directory")
+    target = os.path.join(folder_path, filename)
+    try:
+        info = os.lstat(target)
+    except FileNotFoundError:
+        return False
+    if not stat_module.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise ValueError("Retired model output must be a single-link regular file")
+    if remove:
+        os.remove(target)
+    return True
 
 
 def _password_error_message(error):
@@ -826,6 +926,14 @@ class JobManager:
         # Ideally yes, but maybe user wants quick deploy.
         # Making a backup is safer.
         openhab_path = self.cfg.get("openhab_path", "openhab")
+        deployed_targets = {
+            os.path.abspath(path)
+            for path in mapping.values()
+            if isinstance(path, (str, os.PathLike))
+        }
+        retirement_root, retirement_targets = _validate_retired_model_paths(
+            job.get("retired_paths", []), deployed_targets, openhab_path
+        )
         ts = __import__("time").strftime("%Y%m%d-%H%M%S")
         backup_name = f"pre-deploy-{job_id}-{ts}.tar.gz"
         backup_path = os.path.join(self.backups_dir, backup_name)
@@ -858,15 +966,8 @@ class JobManager:
                 else:
                     logger.warning(f"Staged file missing: {staged_path}")
 
-            deployed_targets = {
-                os.path.normpath(os.path.abspath(path)) for path in mapping.values()
-            }
-            for retired_path in job.get("retired_paths", []):
-                target = os.path.normpath(os.path.abspath(retired_path))
-                if target in deployed_targets:
-                    continue
-                if os.path.isfile(target):
-                    os.remove(target)
+            for relative_path in retirement_targets:
+                if _inspect_retired_model_file(retirement_root, relative_path, remove=True):
                     retired_count += 1
 
             job["deployed"] = True

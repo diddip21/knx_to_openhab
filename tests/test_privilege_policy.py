@@ -22,6 +22,8 @@ def test_sudoers_policy_only_allows_named_service_actions():
     for service in ("openhab.service", "knxohui.service", "evcc.service"):
         for action in ("restart", "is-active"):
             assert f"systemctl {action} {service}" in policy
+    for action in ("refresh", "openhab", "evcc"):
+        assert f"/usr/local/sbin/knxohui-service-update {action}" in policy
 
 
 def test_installer_scripts_install_and_validate_the_restricted_policy():
@@ -31,11 +33,14 @@ def test_installer_scripts_install_and_validate_the_restricted_policy():
 
     assert "installer/migrate_sudoers.sh" in setup
     assert "migrate_sudoers.sh" in repair
+    assert "/usr/local/sbin/knxohui-service-update" in setup
+    assert "/usr/local/sbin/knxohui-service-update" in repair
     assert "knxohui.sudoers" in migration
     assert 'visudo -cf "$TEMP_POLICY"' in migration
 
     assert 'REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"' in setup
     assert '"$REPO_ROOT/requirements.txt"' in setup
+    assert "--exclude web_ui/backend/config.json" in setup
 
 
 def test_installer_runs_provisioner_from_installed_tree():

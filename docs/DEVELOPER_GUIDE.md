@@ -76,48 +76,29 @@ pip install -r requirements.txt
 
 ### 3. Configure Web UI (Optional)
 
-For development, you can create a custom config:
-
-```bash
-cp web_ui/backend/config.json web_ui/backend/config.dev.json
-```
-
-Edit `config.dev.json` to disable authentication for easier local testing:
-
-```json
-{
-  "openhab_path": "openhab",
-  "jobs_dir": "var/lib/knx_to_openhab",
-  "backups_dir": "var/backups/knx_to_openhab",
-  "bind_host": "127.0.0.1",
-  "port": 5000,
-  "auth": {
-    "enabled": false
-  },
-  "retention": {
-    "days": 14,
-    "max_backups": 50,
-    "max_backups_size_mb": 500
-  }
-}
-```
+For local development and browser tests, set `FLASK_ENV=testing`. This disables
+authentication only for that explicitly marked test process; production does
+not use this setting.
 
 ### 4. Start Development Server
 
 **Using Flask CLI** (recommended):
 ```bash
 # Activate venv first (see step 1)
+export FLASK_ENV=testing
 flask --app web_ui.backend.app:app run --debug
 ```
 
 **Or using Python directly**:
 ```bash
+FLASK_ENV=testing \
 python -m flask --app web_ui.backend.app:app run --debug
 ```
 
 **Or run the app module**:
 ```bash
 cd web_ui/backend
+export FLASK_ENV=testing
 python -m app
 ```
 
@@ -246,7 +227,7 @@ Vanilla HTML/CSS/JavaScript interface:
 
 Example:
 ```bash
-curl -u admin:logihome http://localhost:5000/api/status
+curl http://127.0.0.1:5000/api/status
 ```
 
 ### Frontend Changes
@@ -261,7 +242,13 @@ curl -u admin:logihome http://localhost:5000/api/status
 - **Web UI config**: `web_ui/backend/config.json`
 - **KNX parser config**: `config.json` (root)
 
-After changing config, restart the Flask server.
+These are the repository-local development files. In an installed system,
+`KNXOH_CONFIG_DIR` from `/etc/knx_to_openhab/paths.env` points to persistent
+Web UI settings in `config.json`; credentials are kept in `secrets.env`.
+Generator rules are stored in `/var/lib/knx_to_openhab/generator.json` with
+jobs and staging. Backups are under `/var/backups/knx_to_openhab`. The installer
+migrates the old files and the API saves generator settings to the external
+file. Restart the Flask server after changing local development config.
 
 ### Testing a KNX Project Locally
 
@@ -386,7 +373,7 @@ pip install -r requirements.txt
 - Kill existing Flask process
 - Or use a different port:
   ```bash
-  flask --app web_ui.backend.app:app run --port 5001
+  FLASK_ENV=testing flask --app web_ui.backend.app:app run --port 5001
   ```
 
 ### Import Errors in `web_ui.backend.app`
@@ -397,7 +384,7 @@ pip install -r requirements.txt
 Run Flask from the project root, not from `web_ui/backend/`:
 ```bash
 cd /path/to/knx_to_openhab  # project root
-flask --app web_ui.backend.app:app run
+FLASK_ENV=testing flask --app web_ui.backend.app:app run
 ```
 
 ---
@@ -468,7 +455,7 @@ Flask's debug mode watches Python files, but not templates/static by default. Fo
 | **Python Env** | `.venv` in project | `/opt/knx_to_openhab/venv` |
 | **Server** | Flask dev server | systemd service |
 | **Port** | 5000 | 8085 |
-| **Host** | 127.0.0.1 | 0.0.0.0 |
+| **Host** | 127.0.0.1 | 127.0.0.1 |
 | **Auth** | Optional | Enabled |
 | **Auto-start** | Manual | systemd |
 | **Logs** | Terminal | journalctl |

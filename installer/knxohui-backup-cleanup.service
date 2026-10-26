@@ -6,7 +6,8 @@ After=network.target
 Type=oneshot
 User=knxohui
 Group=knxohui
-ExecStart=/opt/knx_to_openhab/installer/backup_cleanup.sh
+EnvironmentFile=/etc/knx_to_openhab/paths.env
+ExecStart=/usr/local/libexec/knx_to_openhab/launch_backup_cleanup.sh
 
 [Install]
 WantedBy=multi-user.target

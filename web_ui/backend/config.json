@@ -6,8 +6,7 @@
   "port": 8085,
   "auth": {
     "enabled": true,
-    "user": "admin",
-    "password": "logihome"
+    "user": "admin"
   },
   "retention": {
     "days": 14,

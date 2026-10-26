@@ -9,6 +9,7 @@ import pytest
 
 import installer.migrate_runtime_data as migration
 from installer.migrate_runtime_data import migrate_runtime_data
+from web_ui.backend.auth import hash_password, verify_password
 from web_ui.backend.storage import load_config
 
 
@@ -101,7 +102,9 @@ def test_migration_preserves_runtime_config_and_data_outside_install(monkeypatch
     }
     assert (config_dir / "secrets.env").stat().st_mode & 0o777 == 0o640
     secret_line = (config_dir / "secrets.env").read_text(encoding="utf-8").strip()
-    assert base64.b64decode(secret_line.split("=", 1)[1]).decode() == "existing-pass"
+    assert secret_line.startswith("KNXOH_UI_PASSWORD_HASH_B64=")
+    password_hash = base64.b64decode(secret_line.split("=", 1)[1]).decode()
+    assert verify_password(password_hash, "existing-pass")
     assert (data_dir / "jobs/upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
     assert (data_dir / "jobs/job-1/staging/openhab/items/knx.items").is_file()
     assert (backup_dir / "job-1.tar.gz").read_bytes() == b"fixture backup"
@@ -124,9 +127,40 @@ def test_migration_preserves_runtime_config_and_data_outside_install(monkeypatch
     monkeypatch.setenv("KNXOH_INSTALL_DIR", str(source_root))
     monkeypatch.setenv("KNXOH_PATHS_FILE", str(config_dir.parent / "paths.env"))
     loaded = load_config(source_root)
-    assert loaded["auth"]["password"] == "existing-pass"
+    assert verify_password(loaded["auth"]["password_hash"], "existing-pass")
+    assert "password" not in loaded["auth"]
     assert loaded["jobs_dir"] == str(data_dir / "jobs")
     assert loaded["backups_dir"] == str(backup_dir)
+
+
+@pytest.mark.parametrize("credential_source", ["config", "legacy_secret", "hashed_secret"])
+def test_migration_discards_shipped_default_and_leaves_setup_to_prompt(tmp_path, credential_source):
+    paths = _fixture(tmp_path)
+    source_root, _, config_dir, _, _, *_ = paths
+    legacy_config = source_root / "web_ui/backend/config.json"
+    config = json.loads(legacy_config.read_text(encoding="utf-8"))
+    if credential_source == "config":
+        config["auth"]["password"] = "logihome"
+    else:
+        config["auth"].pop("password")
+        config_dir.mkdir(parents=True, exist_ok=True)
+        if credential_source == "legacy_secret":
+            encoded = base64.b64encode(b"logihome").decode("ascii")
+            secret_value = f"KNXOH_UI_PASSWORD_B64={encoded}\n"
+        else:
+            encoded = base64.b64encode(hash_password("logihome").encode()).decode("ascii")
+            secret_value = f"KNXOH_UI_PASSWORD_HASH_B64={encoded}\n"
+        (config_dir / "secrets.env").write_text(secret_value, encoding="utf-8")
+    legacy_config.write_text(json.dumps(config), encoding="utf-8")
+
+    _run_migration(paths)
+
+    migrated = json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
+    secrets = (config_dir / "secrets.env").read_text(encoding="utf-8")
+    assert "password" not in migrated["auth"]
+    assert "KNXOH_UI_PASSWORD_HASH_B64=" not in secrets
+    assert "KNXOH_UI_PASSWORD_B64=" not in secrets
+    assert "logihome" not in secrets
 
 
 def test_migration_is_idempotent_and_keeps_existing_external_values(tmp_path):
@@ -138,7 +172,10 @@ def test_migration_is_idempotent_and_keeps_existing_external_values(tmp_path):
 
     _run_migration(paths)
 
-    assert secret_file.read_text(encoding="utf-8") == "KNXOH_UI_PASSWORD_B64=bmV3LXBhc3M=\n"
+    secret_line = secret_file.read_text(encoding="utf-8").strip()
+    assert secret_line.startswith("KNXOH_UI_PASSWORD_HASH_B64=")
+    password_hash = base64.b64decode(secret_line.split("=", 1)[1]).decode()
+    assert verify_password(password_hash, "new-pass")
     assert json.loads((paths[3] / "generator.json").read_text(encoding="utf-8")) == {
         "rules": "custom"
     }
@@ -182,6 +219,11 @@ def test_failed_path_publication_keeps_legacy_sources_and_can_retry(monkeypatch,
     assert old_backups.is_dir()
     copied_config = json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
     assert copied_config["jobs_dir"] == "var/lib/knx_to_openhab"
+    assert "password" not in copied_config["auth"]
+    secret_line = (config_dir / "secrets.env").read_text(encoding="utf-8").strip()
+    assert secret_line.startswith("KNXOH_UI_PASSWORD_HASH_B64=")
+    password_hash = base64.b64decode(secret_line.split("=", 1)[1]).decode("utf-8")
+    assert verify_password(password_hash, "existing-pass")
     assert paths_file.exists() is False
 
     monkeypatch.setattr(migration, "_write_paths_file", original_path_writer)

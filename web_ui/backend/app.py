@@ -11,6 +11,7 @@ try:
     from flask import (
         Flask,
         Response,
+        g,
         jsonify,
         render_template,
         request,
@@ -23,6 +24,7 @@ except Exception:
     # allow module import when Flask is not installed (for static analysis/tests)
     Flask: Any = None  # type: ignore[no-redef]
     request: Any = None  # type: ignore[no-redef]
+    g: Any = None  # type: ignore[no-redef]
     jsonify: Callable[..., Any] = (  # type: ignore[no-redef]
         lambda *args, **kwargs: args[0] if args else None
     )
@@ -34,6 +36,7 @@ except Exception:
     secure_filename: Callable[[str], str] = lambda n: n  # type: ignore[no-redef]
     FLASK_AVAILABLE = False
 
+from .auth import AuthRateLimiter, verify_password
 from .jobs import JobManager
 from .service_manager import get_service_status, restart_service
 from .storage import load_config, load_generator_config, save_generator_config
@@ -86,9 +89,12 @@ if FLASK_AVAILABLE:
     updater = Updater(base_path=project_root)
 
     # Session-based authentication -------------------------------------------------
+    import hmac
     import secrets
     import time
     from base64 import b64decode
+
+    _auth_rate_limiter = AuthRateLimiter()
 
     class _Session(TypedDict):
         user: str
@@ -102,17 +108,37 @@ if FLASK_AVAILABLE:
     def _auth_failed():
         return ("Unauthorized", 401, {"WWW-Authenticate": 'Basic realm="KNX UI"'})
 
-    def _check_auth_header(auth_header: str) -> bool:
+    def _check_auth_header(auth_header: str) -> tuple[str | None, bool]:
+        """Return the authenticated user, plus whether this client was rate-limited."""
+        if not auth_header or not auth_header.lower().startswith("basic "):
+            return None, False
+        client = request.remote_addr or "unknown"
+        if _auth_rate_limiter.is_limited(client):
+            return None, True
         try:
-            if not auth_header or not auth_header.lower().startswith("basic "):
-                return False
             token = auth_header.split(None, 1)[1]
-            decoded = b64decode(token).decode("utf-8")
+            decoded = b64decode(token, validate=True).decode("utf-8")
             user, pwd = decoded.split(":", 1)
             acfg = cfg.get("auth", {})
-            return acfg.get("user") == user and acfg.get("password") == pwd
+            if acfg.get("user") != user:
+                _auth_rate_limiter.record_failure(client)
+                return None, False
+            password_hash = acfg.get("password_hash")
+            if password_hash:
+                valid = verify_password(password_hash, pwd)
+            else:
+                legacy_password = acfg.get("legacy_password")
+                valid = isinstance(legacy_password, str) and hmac.compare_digest(
+                    legacy_password.encode(), pwd.encode()
+                )
+            if valid:
+                _auth_rate_limiter.reset(client)
+                return user, False
+            _auth_rate_limiter.record_failure(client)
+            return None, False
         except Exception:
-            return False
+            _auth_rate_limiter.record_failure(client)
+            return None, False
 
     def _check_session_cookie() -> bool:
         """Check if request has a valid session cookie."""
@@ -153,6 +179,11 @@ if FLASK_AVAILABLE:
         # health/status endpoint allowed
         if path == "/api/status":
             return None
+        if not acfg.get("password_hash") and not acfg.get("legacy_password"):
+            return (
+                "Web UI credentials are not configured. Run installer/setup.sh as an administrator.",
+                503,
+            )
 
         # Check for valid session cookie first (for fetch() calls)
         if _check_session_cookie():
@@ -160,7 +191,11 @@ if FLASK_AVAILABLE:
 
         # Check Basic Auth header
         auth = request.headers.get("Authorization")
-        if _check_auth_header(auth):
+        user, limited = _check_auth_header(auth)
+        if limited:
+            return ("Too many failed login attempts. Try again in a minute.", 429)
+        if user:
+            g.authenticated_user = user
             return None
         return _auth_failed()
 
@@ -170,10 +205,9 @@ if FLASK_AVAILABLE:
         # Only set cookie if auth was successful and no session exists yet
         if response.status_code < 400:
             if not request.cookies.get("knx_session"):
-                auth = request.headers.get("Authorization")
-                if _check_auth_header(auth):
-                    acfg = cfg.get("auth", {})
-                    token = _create_session(acfg.get("user", "admin"))
+                user = getattr(g, "authenticated_user", None)
+                if user:
+                    token = _create_session(user)
                     response.set_cookie(
                         "knx_session",
                         token,
@@ -499,6 +533,19 @@ if FLASK_AVAILABLE:
     @app.route("/api/version/update", methods=["POST"])
     def trigger_update():
         """Trigger the self-update process."""
+        acfg = cfg.get("auth", {})
+        if acfg.get("enabled") and not acfg.get("password_hash"):
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            "A migrated Web UI password hash is required before updating. "
+                            f"Run 'sudo bash {project_root}/installer/setup.sh' as an administrator."
+                        )
+                    }
+                ),
+                409,
+            )
         try:
             # Check if running on Windows (dev) or Linux (prod)
             if sys.platform == "win32":

@@ -6,6 +6,8 @@ import tempfile
 
 from knxoh_paths import get_paths
 
+from .auth import is_password_hash
+
 
 def load_config(project_root=None):
     paths = get_paths(project_root)
@@ -32,6 +34,11 @@ def load_config(project_root=None):
         if not isinstance(config.get(key), dict):
             raise ValueError(f"Web UI configuration field '{key}' must be an object")
 
+    auth = config["auth"]
+    legacy_password = auth.pop("password", None)
+    if legacy_password is not None:
+        auth["legacy_password"] = str(legacy_password)
+
     for key, fallback in (
         ("jobs_dir", paths.jobs_dir),
         ("staging_dir", paths.staging_dir),
@@ -50,17 +57,37 @@ def load_config(project_root=None):
     config["openhab_path"] = os.path.abspath(openhab_path)
 
     if paths.secrets_file and paths.secrets_file.is_file():
-        password_b64 = None
+        password_values = {}
         for line in paths.secrets_file.read_text(encoding="utf-8").splitlines():
-            if line.startswith("KNXOH_UI_PASSWORD_B64="):
-                password_b64 = line.split("=", 1)[1].strip()
-                break
-        if password_b64:
+            name, separator, value = line.partition("=")
+            if separator and name in (
+                "KNXOH_UI_PASSWORD_HASH_B64",
+                "KNXOH_UI_PASSWORD_B64",
+            ):
+                password_values[name] = value.strip()
+        hash_b64 = password_values.get("KNXOH_UI_PASSWORD_HASH_B64")
+        legacy_b64 = password_values.get("KNXOH_UI_PASSWORD_B64")
+        if hash_b64:
             try:
-                password = base64.b64decode(password_b64, validate=True).decode("utf-8")
+                password_hash = base64.b64decode(hash_b64, validate=True).decode("utf-8")
             except (binascii.Error, UnicodeDecodeError) as error:
-                raise ValueError("The stored Web UI secret is invalid") from error
-            config["auth"]["password"] = password
+                raise ValueError("The stored Web UI password hash is invalid") from error
+            if not is_password_hash(password_hash):
+                raise ValueError("The stored Web UI password hash is invalid")
+            auth["password_hash"] = password_hash
+            auth.pop("legacy_password", None)
+        elif legacy_b64 and "legacy_password" not in auth:
+            try:
+                auth["legacy_password"] = base64.b64decode(legacy_b64, validate=True).decode(
+                    "utf-8"
+                )
+            except (binascii.Error, UnicodeDecodeError) as error:
+                raise ValueError("The stored legacy Web UI password is invalid") from error
+
+    # The browser suite starts the app as a local test server. It must not rely
+    # on a production credential stored in the repository or external config.
+    if os.environ.get("FLASK_ENV") == "testing":
+        auth["enabled"] = False
     return config
 
 

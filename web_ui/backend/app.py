@@ -49,6 +49,7 @@ except Exception:
 from .auth import verify_password
 from .jobs import JobManager
 from .service_manager import get_service_status, restart_service
+from .service_updates import PACKAGES, ServiceUpdates, package_version
 from .session_store import SESSION_MAX_AGE, SessionStore
 from .storage import get_session_secret, load_config, load_generator_config, save_generator_config
 from .updater import Updater
@@ -108,6 +109,7 @@ if FLASK_AVAILABLE:
     job_mgr = JobManager(cfg)
     # Use project root directory as base path for updater
     updater = Updater(base_path=project_root)
+    service_updates = ServiceUpdates()
 
     # Durable session and CSRF handling -------------------------------------------
     import hmac
@@ -480,6 +482,38 @@ if FLASK_AVAILABLE:
     def service_status(service_name):
         status = get_service_status(service_name)
         return jsonify(status)
+
+    @app.route("/api/service/<package>/version", methods=["GET"])
+    def service_version(package):
+        if package not in PACKAGES:
+            return jsonify({"error": "Unsupported service"}), 404
+        return jsonify(package_version(package))
+
+    @app.route("/api/service/updates/status", methods=["GET"])
+    def service_update_status():
+        return jsonify(service_updates.status())
+
+    @app.route("/api/service/updates/<action>", methods=["POST"])
+    def service_update_start(action):
+        if action not in (*PACKAGES, "refresh"):
+            return jsonify({"error": "Unsupported action"}), 404
+        # Package installation grants system privileges; require a non-default password hash.
+        acfg = cfg.get("auth", {})
+        password_hash = acfg.get("password_hash")
+        if (
+            not acfg.get("enabled")
+            or not isinstance(password_hash, str)
+            or verify_password(password_hash, "logihome")
+        ):
+            return (
+                jsonify({"error": "Set a personal Web UI password before using package updates."}),
+                403,
+            )
+        if request.headers.get("X-Requested-With") != "XMLHttpRequest":
+            return jsonify({"error": "Missing request header"}), 403
+        data = request.get_json(silent=True) or {}
+        ok, message = service_updates.start(action, data.get("version"))
+        return jsonify({"ok": ok, "message": message}), 202 if ok else 409
 
     @app.route("/api/status")
     def status():

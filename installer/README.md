@@ -91,23 +91,27 @@ grant a shell, arbitrary Git commands, or wildcard command arguments. Re-running
 `setup.sh` or `fix_permissions.sh` replaces the prior policy and checks it with
 `visudo -cf`.
 
+The package update buttons use the root-owned `/usr/local/sbin/knxohui-service-update`
+helper. Sudoers allows only its `refresh`, `openhab`, and `evcc` actions. The
+installer preserves an existing `web_ui/backend/config.json` when copying new code.
+
 ### Existing installations
 
 The old policy allowed the service user to run arbitrary Git commands as root.
 The Web UI cannot safely use that old permission to replace its own sudoers file.
-Do not use the Web UI updater for the first transition. After this change has
-been merged, an administrator should pull the source as the service user and
-then install the new policy:
+After the source update has been applied, an administrator must run the installer
+once before using package updates or starting another Web UI update:
 
 ```bash
-sudo -u knxohui git -C /opt/knx_to_openhab pull --ff-only origin main
-sudo bash /opt/knx_to_openhab/installer/migrate_sudoers.sh
+cd /opt/knx_to_openhab
+sudo bash installer/setup.sh
 ```
 
-The migration only replaces `/etc/sudoers.d/knxohui` and validates the resulting
-policy; it does not copy
-application files or modify configuration and job data. The new updater stops
-and prints the migration command while the old Git wildcard policy remains.
+The installer preserves the existing runtime configuration while installing the
+root-owned package helper and its exact sudoers entries. It also replaces and
+validates the old policy. If only the least-privilege migration is needed, use
+`sudo bash installer/migrate_sudoers.sh`; that script changes only the sudoers
+file.
 
 > **Note:** For local development without systemd installation, see [DEVELOPMENT.md](../DEVELOPMENT.md)
 

@@ -104,11 +104,14 @@ sudo "$BASE/venv/bin/pip" install -r "$REPO_ROOT/requirements.txt"
 
 echo "Installing application files while preserving runtime configuration"
 sudo rsync -a --exclude .git --exclude /config.json \
-    --exclude /web_ui/backend/config.json "$REPO_ROOT/" "$BASE/"
+    --exclude web_ui/backend/config.json "$REPO_ROOT/" "$BASE/"
 if [[ ! -f "$BASE/config.json" ]]; then
     sudo install -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0640 \
         "$REPO_ROOT/config.json" "$BASE/config.json"
 fi
+sudo install -o root -g root -m 0755 \
+    "$REPO_ROOT/installer/service_update.sh" \
+    /usr/local/sbin/knxohui-service-update
 
 echo "Migrating configuration, jobs, staging data and backups"
 sudo "$BASE/venv/bin/python" "$BASE/installer/migrate_runtime_data.py" \

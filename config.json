@@ -462,6 +462,7 @@
   },
   "devices": {
     "gateway": {
+      "ip_address": "",
       "hardware_name": [
         "IP Interface Secure",
         "KNX IP Interface",

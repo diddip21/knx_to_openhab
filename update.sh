@@ -44,50 +44,28 @@ if ! cd "$INSTALL_DIR"; then
     exit 1
 fi
 
-# Ensure proper group permissions for OpenHAB access
-log "Ensuring OpenHAB group permissions..."
-# Check if openhab group exists, create if needed
-if ! getent group openhab > /dev/null 2>&1; then
-    sudo groupadd openhab 2>/dev/null || true
+# The previous release granted passwordless root Git access. A Web UI update
+# cannot safely replace that policy itself, so require the one-time admin
+# migration before allowing another update to proceed.
+if ! SUDO_POLICY=$(sudo -n -l 2>/dev/null); then
+    log "ERROR: Cannot verify the service user's sudoers policy. Run 'sudo bash $INSTALL_DIR/installer/migrate_sudoers.sh' as an administrator, then retry."
+    exit 1
 fi
-# Add knxohui user to openhab group
-sudo usermod -a -G openhab knxohui 2>/dev/null || true
-# Set proper permissions on OpenHAB directory if it exists
-if [ -d "/etc/openhab" ]; then
-    sudo chmod -R 775 /etc/openhab 2>/dev/null || true
+if printf '%s\n' "$SUDO_POLICY" | grep -Eq '(/usr/bin/git|/bin/git)[[:space:]]+\\*|NOPASSWD:[[:space:]]+ALL'; then
+    log "ERROR: The legacy broad sudoers policy is still installed. Run 'sudo bash $INSTALL_DIR/installer/migrate_sudoers.sh' as an administrator before updating again."
+    exit 1
 fi
 
-# Check permissions and attempt to fix them if needed
+# The updater runs as the service user. It must not elevate to repair ownership.
 if [[ ! -w ".git" ]]; then
-    log "Permission issue detected with .git directory."
-    log "Attempting to fix file ownership..."
-    if sudo chown -R knxohui:knxohui "$INSTALL_DIR/.git" 2>/dev/null; then
-        log "Git directory ownership fixed successfully."
-    else
-        log "ERROR: Permission denied. Cannot write to .git directory."
-        log "The likely cause is incorrect file ownership."
-        log "Please fix it by running:"
-        log "  sudo chown -R knxohui:knxohui $INSTALL_DIR $BACKUP_DIR"
-        exit 1
-    fi
+    log "ERROR: The service user cannot write to $INSTALL_DIR/.git. Run fix_permissions.sh as an administrator."
+    exit 1
 fi
 
 if [[ -d "$BACKUP_DIR" ]] && [[ ! -w "$BACKUP_DIR" ]]; then
-    log "Permission issue detected with backup directory."
-    log "Attempting to fix backup directory ownership..."
-    if sudo chown -R knxohui:knxohui "$BACKUP_DIR" 2>/dev/null; then
-        log "Backup directory ownership fixed successfully."
-    else
-        log "ERROR: Permission denied. Cannot write to backup directory: $BACKUP_DIR"
-        log "Please fix it by running:"
-        log "  sudo chown -R knxohui:knxohui $BACKUP_DIR"
-        exit 1
-    fi
+    log "ERROR: The service user cannot write to backup directory $BACKUP_DIR. Run fix_permissions.sh as an administrator."
+    exit 1
 fi
-
-# Mark the installation directory as safe for git operations
-log "Ensuring git directory is marked as safe..."
-sudo -u knxohui git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
 
 # If backup directory doesn't exist, create it with proper permissions
 if [[ ! -d "$BACKUP_DIR" ]]; then
@@ -136,40 +114,28 @@ fi
 
 # Stash any local changes
 log "Stashing local changes..."
-if ! git -c safe.directory='*' stash; then
+if ! git -c "safe.directory=$INSTALL_DIR" stash; then
     log "WARNING: Git stash failed, continuing anyway..."
 fi
 
 # Verify git repository is properly configured
 log "Verifying git repository configuration..."
-if ! git -c safe.directory='*' rev-parse --git-dir > /dev/null 2>&1; then
+if ! git -c "safe.directory=$INSTALL_DIR" rev-parse --git-dir > /dev/null 2>&1; then
     log "ERROR: Not a valid git repository or access denied."
     log "Please verify the installation directory and permissions."
     exit 1
 fi
 
-# Mark directory as safe if not already done
-sudo -u knxohui git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
-
 # Fetch latest changes from GitHub
 log "Fetching latest changes from GitHub..."
-if ! git -c safe.directory='*' fetch origin; then
-    log "Attempting to fix git permissions and retry..."
-    # Try to fix common git permission issues
-    sudo chown -R knxohui:knxohui "$INSTALL_DIR/.git" 2>/dev/null || true
-    sudo chmod -R u+w "$INSTALL_DIR/.git" 2>/dev/null || true
-    
-    # Retry the fetch operation
-    if ! git -c safe.directory='*' fetch origin; then
-        log "ERROR: Failed to fetch from GitHub after permission fix attempts"
-        exit 1
-    fi
-    log "Successfully fetched after fixing permissions"
+if ! git -c "safe.directory=$INSTALL_DIR" fetch origin; then
+    log "ERROR: Failed to fetch from GitHub. Check network access and repository permissions."
+    exit 1
 fi
 
 # Get current and remote commit hashes
-CURRENT_COMMIT=$(git -c safe.directory='*' rev-parse HEAD)
-REMOTE_COMMIT=$(git -c safe.directory='*' rev-parse origin/main)
+CURRENT_COMMIT=$(git -c "safe.directory=$INSTALL_DIR" rev-parse HEAD)
+REMOTE_COMMIT=$(git -c "safe.directory=$INSTALL_DIR" rev-parse origin/main)
 
 log "Current commit: $CURRENT_COMMIT"
 log "Remote commit: $REMOTE_COMMIT"
@@ -181,10 +147,10 @@ fi
 
 # Pull latest changes
 log "Pulling latest changes..."
-if ! git -c safe.directory='*' pull origin main; then
+if ! git -c "safe.directory=$INSTALL_DIR" pull origin main; then
     log "ERROR: Git pull failed"
     log "Attempting to restore from backup..."
-    git -c safe.directory='*' reset --hard "$CURRENT_COMMIT"
+    git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"
     exit 1
 fi
 
@@ -195,7 +161,7 @@ if [[ -f "$INSTALL_DIR/venv/bin/pip" ]]; then
     if ! "$INSTALL_DIR/venv/bin/pip" install -r requirements.txt -q; then
         log "ERROR: Failed to install dependencies"
         log "Attempting to restore from backup..."
-        git -c safe.directory='*' reset --hard "$CURRENT_COMMIT"
+        git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"
         exit 1
     fi
 else
@@ -204,7 +170,7 @@ fi
 
 # Update version.json with new commit hash
 log "Updating version.json..."
-NEW_COMMIT=$(git -c safe.directory='*' rev-parse HEAD)
+NEW_COMMIT=$(git -c "safe.directory=$INSTALL_DIR" rev-parse HEAD)
 if [[ -f "version.json" ]]; then
     # Use Python to update the JSON file
     python3 -c "
@@ -230,7 +196,7 @@ fi
 sleep 2
 
 # Check if service is running
-if sudo systemctl is-active --quiet "$SERVICE_NAME"; then
+if sudo systemctl is-active "$SERVICE_NAME" > /dev/null; then
     log "Service restarted successfully"
 else
     log "WARNING: Service may not be running properly"

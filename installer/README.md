@@ -13,8 +13,8 @@ This directory contains installation and maintenance scripts for the web UI.
 ## Quick Install
 
 ```bash
-chmod +x setup.sh backup_cleanup.sh
-sudo ./setup.sh
+# Run from the repository root.
+sudo bash installer/setup.sh
 ```
 
 This will:
@@ -22,8 +22,37 @@ This will:
 2. Create system user and directories
 3. Install systemd services and timer
 4. Start the Flask web server on port 8080
+5. Install and validate a restricted sudoers policy with `visudo`
 
 See `WEBUI_INSTALLATION.md` for full documentation.
+
+## Service user privileges
+
+The web UI runs as the unprivileged `knxohui` service user. Git-based application
+updates run as that user; Git is not granted through sudo. The sudoers policy in
+`knxohui.sudoers` permits only exact `systemctl restart` and `systemctl is-active`
+commands for `openhab.service`, `knxohui.service`, and `evcc.service`. It does not
+grant a shell, arbitrary Git commands, or wildcard command arguments. Re-running
+`setup.sh` or `fix_permissions.sh` replaces the prior policy and checks it with
+`visudo -cf`.
+
+### Existing installations
+
+The old policy allowed the service user to run arbitrary Git commands as root.
+The Web UI cannot safely use that old permission to replace its own sudoers file.
+Do not use the Web UI updater for the first transition. After this change has
+been merged, an administrator should pull the source as the service user and
+then install the new policy:
+
+```bash
+sudo -u knxohui git -C /opt/knx_to_openhab pull --ff-only origin main
+sudo bash /opt/knx_to_openhab/installer/migrate_sudoers.sh
+```
+
+The migration only replaces `/etc/sudoers.d/knxohui` and validates the resulting
+policy; it does not copy
+application files or modify configuration and job data. The new updater stops
+and prints the migration command while the old Git wildcard policy remains.
 
 > **Note:** For local development without systemd installation, see [DEVELOPMENT.md](../DEVELOPMENT.md)
 

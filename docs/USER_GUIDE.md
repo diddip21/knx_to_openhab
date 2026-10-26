@@ -117,7 +117,7 @@ Set `output_format` to `yaml` in the Web UI or `config.json` to generate a nativ
 
 The resulting document contains `version: 1` and the `things`, `items`, and `sitemaps` sections. The generator validates Item names, parent Groups, Bridge references, Item-channel links, and Sitemap Item references before replacing the target file.
 
-Migration is intentionally explicit: never load the generated legacy model files and `knx.yaml` at the same time, because they define the same entity IDs. A Web UI deployment backs up the live configuration and then retires the generated files from the other format. Rollback restores the backed-up configuration.
+Migration is intentionally explicit: never load the generated legacy model files and `knx.yaml` at the same time, because they define the same entity IDs. A Web UI deployment backs up the live configuration and clears the generated model files from the other format. The empty files remain in place so deployment does not need directory-delete permissions; rollback restores their backed-up contents.
 
 `influxdb.persist` remains in the persistence directory. The existing stateful `fenster.rules` also remains textual; wrapping its body in a YAML Script action would reset its counters and change the 15-minute notification behavior.
 
@@ -239,9 +239,13 @@ The Web UI shows **reports** for unknown, partial, and completeness checks so yo
 
 ### "Login/401 in Web UI"
 
-- The Web UI uses **Basic Auth** by default.
-- Default credentials: **admin / logihome** (change in Settings).
-- If you disabled auth in `web_ui/backend/config.json`, restart the UI service.
+- The Web UI uses a sign-in form and a protected browser session by default.
+- Use the Web UI password you set during installation. Existing user-chosen
+  passwords are preserved during migration; the shipped default is replaced.
+- For new installs, open `http://127.0.0.1:8085` locally or connect through an SSH
+  tunnel; LAN-wide listening requires an explicit configuration choice.
+- Local development and browser tests can disable authentication with `FLASK_ENV=testing`.
+  Production authentication is configured during installation.
 
 ### "My device shows as a generic Number"
 

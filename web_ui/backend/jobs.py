@@ -4,7 +4,6 @@ import logging
 import os
 import queue
 import re
-import shutil
 import stat as stat_module
 import subprocess
 import sys
@@ -16,6 +15,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 from completeness import check_completeness, iter_thing_lines
 
+from .deploy_policy import (
+    configured_managed_paths,
+    deploy_staged_files,
+    restore_managed_files,
+)
 from .storage import ensure_dirs, load_jobs, save_jobs
 
 logger = logging.getLogger(__name__)
@@ -27,10 +31,7 @@ _RETIRABLE_MODEL_SUFFIXES = {
     "yaml": (".yaml", ".yml"),
 }
 _DIR_FD_RETIREMENT = (
-    hasattr(os, "O_NOFOLLOW")
-    and os.open in os.supports_dir_fd
-    and os.stat in os.supports_dir_fd
-    and os.unlink in os.supports_dir_fd
+    hasattr(os, "O_NOFOLLOW") and os.open in os.supports_dir_fd and os.stat in os.supports_dir_fd
 )
 
 
@@ -66,14 +67,14 @@ def _validate_retired_model_paths(retired_paths, deployed_targets, openhab_root)
         if os.path.normcase(target) in deployed:
             continue
 
-        _inspect_retired_model_file(root, relative, remove=False)
-        targets.append(relative)
+        if _inspect_retired_model_file(root, relative):
+            targets.append(relative)
 
-    return root, targets
+    return targets
 
 
-def _inspect_retired_model_file(root, relative, *, remove):
-    """Inspect and optionally unlink a model file without following symlinks."""
+def _inspect_retired_model_file(root, relative):
+    """Validate a model file without following symlinks."""
     folder, filename = relative.split(os.sep) if os.sep in relative else relative.split("/")
     if _DIR_FD_RETIREMENT:
         directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW
@@ -88,8 +89,6 @@ def _inspect_retired_model_file(root, relative, *, remove):
                 return False
             if not stat_module.S_ISREG(info.st_mode) or info.st_nlink != 1:
                 raise ValueError("Retired model output must be a single-link regular file")
-            if remove:
-                os.unlink(filename, dir_fd=folder_fd)
             return True
         except FileNotFoundError:
             return False
@@ -115,8 +114,6 @@ def _inspect_retired_model_file(root, relative, *, remove):
         return False
     if not stat_module.S_ISREG(info.st_mode) or info.st_nlink != 1:
         raise ValueError("Retired model output must be a single-link regular file")
-    if remove:
-        os.remove(target)
     return True
 
 
@@ -145,6 +142,7 @@ class JobManager:
         self.cfg = cfg
         # Use the configured backup directory from config, with a sensible default
         jobs_dir_config = cfg.get("jobs_dir", "var/lib/knx_to_openhab")
+        staging_dir_config = cfg.get("staging_dir", jobs_dir_config)
         backups_dir_config = cfg.get("backups_dir", "var/backups/knx_to_openhab")
 
         # If paths are relative, make them relative to project root
@@ -154,12 +152,17 @@ class JobManager:
         else:
             self.jobs_dir = jobs_dir_config
 
+        if not os.path.isabs(staging_dir_config):
+            self.staging_dir = os.path.join(project_root, staging_dir_config)
+        else:
+            self.staging_dir = staging_dir_config
+
         if not os.path.isabs(backups_dir_config):
             self.backups_dir = os.path.join(project_root, backups_dir_config)
         else:
             self.backups_dir = backups_dir_config
 
-        ensure_dirs([self.jobs_dir, self.backups_dir])
+        ensure_dirs([self.jobs_dir, self.staging_dir, self.backups_dir])
         self._jobs = load_jobs(self.jobs_dir)
         self.queues = {}
         self.executor = ThreadPoolExecutor(max_workers=2)
@@ -260,55 +263,6 @@ class JobManager:
         job["status"] = "running"
         save_jobs(self.jobs_dir, self._jobs)
 
-        # create backup of current openhab folder
-        openhab_path = self.cfg.get("openhab_path", "openhab")
-        ts = __import__("time").strftime("%Y%m%d-%H%M%S")
-        backup_name = f"{job_id}-{ts}.tar.gz"
-        backup_path = os.path.join(self.backups_dir, backup_name)
-        try:
-            if os.path.exists(openhab_path):
-                with tarfile.open(backup_path, "w:gz") as tar:
-                    tar.add(openhab_path, arcname=os.path.basename(openhab_path))
-                job["backups"].append({"name": backup_name, "path": backup_path, "ts": ts})
-                save_jobs(self.jobs_dir, self._jobs)
-                self._log_to_queue(
-                    job_id,
-                    q,
-                    {
-                        "type": "backup",
-                        "level": "info",
-                        "message": f"backup created: {backup_name}",
-                    },
-                )
-                # enforce retention immediately after creating backup
-                try:
-                    self.enforce_retention()
-                    self._log_to_queue(
-                        job_id,
-                        q,
-                        {
-                            "type": "info",
-                            "level": "debug",
-                            "message": "retention enforced",
-                        },
-                    )
-                except Exception as re:
-                    self._log_to_queue(
-                        job_id,
-                        q,
-                        {
-                            "type": "error",
-                            "level": "warning",
-                            "message": f"retention error: {re}",
-                        },
-                    )
-        except Exception as e:
-            self._log_to_queue(
-                job_id,
-                q,
-                {"type": "error", "level": "error", "message": f"backup failed: {e}"},
-            )
-
         # Process logic
         original_openhab_path = None
         try:
@@ -329,7 +283,10 @@ class JobManager:
             importlib.reload(etsmod)  # Ensure we use the latest code
 
             # Setup Staging
-            staging_dir = os.path.join(self.jobs_dir, job_id, "staging")
+            if os.path.abspath(self.staging_dir) == os.path.abspath(self.jobs_dir):
+                staging_dir = os.path.join(self.jobs_dir, job_id, "staging")
+            else:
+                staging_dir = os.path.join(self.staging_dir, job_id)
             ensure_dirs([staging_dir])
 
             # Load main config to base our staged config on
@@ -340,6 +297,54 @@ class JobManager:
 
             importlib.reload(global_config_module)  # Reload to get fresh config
 
+            openhab_path, managed_paths = configured_managed_paths(
+                global_config_module.config, project_root
+            )
+            job["openhab_root"] = openhab_path
+            job["managed_targets"] = sorted(set(managed_paths.values()))
+
+            # Back up the same effective OpenHAB root that generation and deploy use.
+            ts = __import__("time").strftime("%Y%m%d-%H%M%S")
+            backup_name = f"{job_id}-{ts}.tar.gz"
+            backup_path = os.path.join(self.backups_dir, backup_name)
+            try:
+                if os.path.isdir(openhab_path):
+                    with tarfile.open(backup_path, "w:gz") as tar:
+                        tar.add(openhab_path, arcname=os.path.basename(openhab_path))
+                    job["backups"].append({"name": backup_name, "path": backup_path, "ts": ts})
+                    save_jobs(self.jobs_dir, self._jobs)
+                    self._log_to_queue(
+                        job_id,
+                        q,
+                        {
+                            "type": "backup",
+                            "level": "info",
+                            "message": f"backup created: {backup_name}",
+                        },
+                    )
+                    try:
+                        self.enforce_retention()
+                    except Exception as retention_error:
+                        self._log_to_queue(
+                            job_id,
+                            q,
+                            {
+                                "type": "error",
+                                "level": "warning",
+                                "message": f"retention error: {retention_error}",
+                            },
+                        )
+            except Exception as backup_error:
+                self._log_to_queue(
+                    job_id,
+                    q,
+                    {
+                        "type": "error",
+                        "level": "error",
+                        "message": f"backup failed: {backup_error}",
+                    },
+                )
+
             # Create a copy of the config dict to modify
             staged_config = copy.copy(global_config_module.config)
             staged_config["openhab_path"] = os.path.join(staging_dir, "openhab")
@@ -349,7 +354,7 @@ class JobManager:
             global_config_module.config["openhab_path"] = staged_config["openhab_path"]
             knxmod.config["openhab_path"] = staged_config["openhab_path"]
 
-            # Define output keys to override
+            # Stage the selected model output and an empty file for the retired format.
             output_format = str(staged_config.get("output_format", "legacy")).casefold()
             model_output_keys = (
                 ["yaml_path"]
@@ -361,8 +366,17 @@ class JobManager:
                 if output_format == "yaml"
                 else ["yaml_path"]
             )
-            retired_paths = [staged_config[key] for key in retired_keys if staged_config.get(key)]
-            output_keys = model_output_keys + ["influx_path", "fenster_path"]
+            retired_paths = [
+                os.path.join(openhab_path, *managed_paths[key].split("/"))
+                for key in retired_keys
+                if key in managed_paths and key in global_config_module.config
+            ]
+            job["output_format"] = output_format
+            output_keys = [
+                key
+                for key in (*model_output_keys, *retired_keys, "influx_path", "fenster_path")
+                if key in managed_paths and key in global_config_module.config
+            ]
             stage_mapping = {}  # staged_path -> real_absolute_path
 
             q.put(
@@ -374,28 +388,11 @@ class JobManager:
             )
 
             for key in output_keys:
-                real_path = staged_config.get(key)
-                if real_path:
-                    # Determine target subpath structure
-                    if os.path.isabs(real_path):
-                        # Try to find a common root with openhab_path if possible, or just use basename
-                        # Heuristic: if path contains 'openhab', take suffix
-                        norm_real = real_path.replace("\\", "/")
-                        if "openhab/" in norm_real:
-                            subpath = norm_real.split("openhab/", 1)[1]
-                            staged_path = os.path.join(staging_dir, "openhab", subpath)
-                        else:
-                            # Just use basename inside key-named folder to avoid collisions
-                            staged_path = os.path.join(
-                                staging_dir, key, os.path.basename(real_path)
-                            )
-                    else:
-                        staged_path = os.path.join(staging_dir, real_path)
-
-                    # Ensure dir exists
-                    os.makedirs(os.path.dirname(staged_path), exist_ok=True)
-                    staged_config[key] = staged_path
-                    stage_mapping[staged_path] = real_path
+                relative = managed_paths[key]
+                staged_path = os.path.join(staging_dir, "openhab", *relative.split("/"))
+                os.makedirs(os.path.dirname(staged_path), exist_ok=True)
+                staged_config[key] = staged_path
+                stage_mapping[staged_path] = os.path.join(openhab_path, *relative.split("/"))
 
             # Capture stdout/stderr for ENTIRE generation process
             old_stdout = sys.stdout
@@ -491,6 +488,14 @@ class JobManager:
                 # ets_to_openhab.main() writes output files to STAGING via injected config
                 generation_result = etsmod.main(configuration=staged_config)
 
+                # The service account can write managed files, but cannot unlink
+                # entries from OpenHAB directories. An empty staged model file
+                # retires the previous format while preserving rollback capability.
+                for key in retired_keys:
+                    if key in staged_config and key in managed_paths:
+                        with open(staged_config[key], "w", encoding="utf-8"):
+                            pass
+
                 # Generate completeness report from staged knx.things
                 try:
                     report_path = self._write_completeness_report(
@@ -520,14 +525,14 @@ class JobManager:
                     )
 
                 # Add reports to stage mapping if present
-                for report in [
+                for report in (
                     "unknown_report.json",
                     "partial_report.json",
                     "completeness_report.json",
-                ]:
+                ):
                     staged_report = os.path.join(staged_config.get("openhab_path", ""), report)
                     if staged_report and os.path.exists(staged_report):
-                        real_report = os.path.join(openhab_path, report)
+                        real_report = os.path.join(openhab_path, *managed_paths[report].split("/"))
                         stage_mapping[staged_report] = real_report
 
             finally:
@@ -795,7 +800,7 @@ class JobManager:
         if not job:
             return None
 
-        openhab_path = self.cfg.get("openhab_path", "openhab")
+        openhab_path = job.get("openhab_root", self.cfg.get("openhab_path", "openhab"))
 
         # 1. Original = Live Running Config
         orig_lines = []
@@ -883,6 +888,11 @@ class JobManager:
         return diff_lines
 
     def rollback(self, job_id, backup_name=None):
+        """Restore a job's managed files, serialized with deployments."""
+        with self.lock:
+            return self._rollback_locked(job_id, backup_name)
+
+    def _rollback_locked(self, job_id, backup_name=None):
         job = self._jobs.get(job_id)
         if not job:
             raise ValueError("job not found")
@@ -894,23 +904,40 @@ class JobManager:
             backup = next((b for b in job["backups"] if b["name"] == backup_name), None)
         if not backup:
             raise ValueError("backup not found")
-        # extract backup into temp and move to openhab_path
-        tmp = os.path.join(self.backups_dir, f"tmp-restore-{uuid.uuid4().hex}")
-        os.makedirs(tmp, exist_ok=True)
-        try:
-            with tarfile.open(backup["path"], "r:gz") as tar:
-                tar.extractall(path=tmp)
-            extracted = os.path.join(tmp, os.listdir(tmp)[0])
-            dst = self.cfg.get("openhab_path", "openhab")
-            if os.path.exists(dst):
-                shutil.rmtree(dst)
-            shutil.move(extracted, dst)
-            return True, f'restored {backup["name"]}'
-        finally:
-            shutil.rmtree(tmp, ignore_errors=True)
+        import importlib
+
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+        config_module = importlib.reload(importlib.import_module("config"))
+        openhab_root, managed = configured_managed_paths(config_module.config, project_root)
+        job_root = os.path.realpath(job.get("openhab_root", openhab_root))
+        if job_root != openhab_root:
+            raise ValueError(
+                "OpenHAB path changed since this job; generate a new job before rollback"
+            )
+
+        configured_relatives = set(managed.values())
+        job_relatives = set(job.get("managed_targets", configured_relatives))
+        restore_relatives = configured_relatives.intersection(job_relatives)
+        backup_path = backup.get("path")
+        if not backup_path or os.path.islink(backup_path):
+            raise ValueError("backup path is invalid")
+        backup_path = os.path.abspath(backup_path)
+        if os.path.commonpath([backup_path, os.path.abspath(self.backups_dir)]) != os.path.abspath(
+            self.backups_dir
+        ):
+            raise ValueError("backup path is outside the configured backup directory")
+
+        restore_managed_files(backup_path, openhab_root, restore_relatives)
+        return True, f'restored managed files from {backup["name"]}'
 
     def deploy(self, job_id):
         """Deploy staged files to live environment."""
+        with self.lock:
+            return self._deploy_locked(job_id)
+
+    def _deploy_locked(self, job_id):
         job = self._jobs.get(job_id)
         if not job:
             raise ValueError("Job not found")
@@ -922,53 +949,59 @@ class JobManager:
         if not mapping:
             raise ValueError("No staged files found")
 
-        # Create a safety backup before deploying?
-        # Ideally yes, but maybe user wants quick deploy.
-        # Making a backup is safer.
-        openhab_path = self.cfg.get("openhab_path", "openhab")
+        import importlib
+
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+        config_module = importlib.reload(importlib.import_module("config"))
+        openhab_path, managed_paths = configured_managed_paths(config_module.config, project_root)
+        job_root = os.path.realpath(job.get("openhab_root", openhab_path))
+        if job_root != openhab_path:
+            raise ValueError(
+                "OpenHAB path changed since generation; generate a new job before deploy"
+            )
+
+        # Ignore the staged empty files for the old format when checking which
+        # model outputs are being actively deployed.
+        retired_absolute = {
+            os.path.normcase(os.path.abspath(path)) for path in job.get("retired_paths", [])
+        }
         deployed_targets = {
-            os.path.abspath(path)
+            os.path.normcase(os.path.abspath(path))
             for path in mapping.values()
             if isinstance(path, (str, os.PathLike))
+            and os.path.normcase(os.path.abspath(path)) not in retired_absolute
         }
-        retirement_root, retirement_targets = _validate_retired_model_paths(
+        retirement_targets = _validate_retired_model_paths(
             job.get("retired_paths", []), deployed_targets, openhab_path
         )
+        # Keep a full backup for download and recovery. Rollback restores only
+        # the managed files listed by the current deployment policy.
         ts = __import__("time").strftime("%Y%m%d-%H%M%S")
         backup_name = f"pre-deploy-{job_id}-{ts}.tar.gz"
         backup_path = os.path.join(self.backups_dir, backup_name)
         try:
-            # Basic backup of openhab dir
-            if os.path.exists(openhab_path):
-                with tarfile.open(backup_path, "w:gz") as tar:
-                    tar.add(openhab_path, arcname=os.path.basename(openhab_path))
-                job["backups"].append({"name": backup_name, "path": backup_path, "ts": ts})
-                save_jobs(self.jobs_dir, self._jobs)
+            if not os.path.isdir(openhab_path):
+                raise ValueError(f"OpenHAB configuration root is missing: {openhab_path}")
+            with tarfile.open(backup_path, "w:gz") as tar:
+                tar.add(openhab_path, arcname=os.path.basename(openhab_path))
+            job["backups"].append({"name": backup_name, "path": backup_path, "ts": ts})
+            save_jobs(self.jobs_dir, self._jobs)
         except Exception as e:
             logger.error(f"Failed to create pre-deploy backup: {e}")
             # Proceed? Or abort? Abort is safer.
             raise Exception(f"Backup failed, aborting deploy: {e}")
 
         deployed_count = 0
-        retired_count = 0
+        retired_count = len(retirement_targets)
         try:
-            for staged_path, real_path in mapping.items():
-                if os.path.exists(staged_path):
-                    # Ensure target dir exists
-                    # resolve real_path absolute
-                    target = real_path
-                    if not os.path.isabs(target):
-                        target = os.path.abspath(target)
-
-                    os.makedirs(os.path.dirname(target), exist_ok=True)
-                    shutil.copy2(staged_path, target)
-                    deployed_count += 1
-                else:
-                    logger.warning(f"Staged file missing: {staged_path}")
-
-            for relative_path in retirement_targets:
-                if _inspect_retired_model_file(retirement_root, relative_path, remove=True):
-                    retired_count += 1
+            deployed_count = deploy_staged_files(
+                mapping,
+                job.get("staging_dir", ""),
+                openhab_path,
+                managed_paths,
+            )
 
             job["deployed"] = True
             save_jobs(self.jobs_dir, self._jobs)
@@ -979,6 +1012,12 @@ class JobManager:
 
         except Exception as e:
             logger.error(f"Deploy failed: {e}")
+            try:
+                restore_managed_files(backup_path, openhab_path, managed_paths.values())
+            except Exception as restore_error:
+                logger.error(
+                    "Failed to restore managed outputs after deploy failure: %s", restore_error
+                )
             raise
 
     def enforce_retention(self):

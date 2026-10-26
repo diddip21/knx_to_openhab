@@ -7,9 +7,8 @@ Wants=knxohui-backup-cleanup.timer
 Type=notify
 User=knxohui
 Group=knxohui
-WorkingDirectory=/opt/knx_to_openhab
-Environment="PATH=/opt/knx_to_openhab/venv/bin:/usr/bin:/bin"
-ExecStart=/opt/knx_to_openhab/venv/bin/gunicorn -c /opt/knx_to_openhab/web_ui/backend/gunicorn_conf.py web_ui.backend.app:app
+EnvironmentFile=/etc/knx_to_openhab/paths.env
+ExecStart=/usr/local/libexec/knx_to_openhab/launch_web.sh
 Restart=on-failure
 RestartSec=10s
 

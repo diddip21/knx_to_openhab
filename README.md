@@ -75,7 +75,7 @@ flask --app web_ui.backend.app:app run --debug
 
 ## Using the Web UI
 
-1. **Open** `http://<your-ip>:8085` (default: `admin` / `logihome` — change in Settings!)
+1. **Open** `http://<your-ip>:8085` (default: `admin` / `logihome`; rotate it with the secure helper in [`installer/README.md`](installer/README.md))
 2. **Upload** your `.knxproj` export or JSON dump
 3. **Preview** the building structure before processing
 4. **Review** generated files, diffs, and reports

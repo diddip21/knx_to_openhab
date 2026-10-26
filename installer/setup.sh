@@ -120,6 +120,10 @@ sudo "$BASE/venv/bin/python" "$BASE/installer/migrate_runtime_data.py" \
     --install-dir "$BASE" \
     --paths-file "$PATHS_FILE"
 
+echo "Checking the Web UI network binding"
+sudo "$BASE/venv/bin/python" "$BASE/installer/configure_bind.py" \
+    "$CONFIG_DIR/config.json"
+
 export KNXOH_INSTALL_DIR="$BASE"
 export KNXOH_CONFIG_DIR="$CONFIG_DIR"
 export KNXOH_DATA_DIR="$DATA_DIR"

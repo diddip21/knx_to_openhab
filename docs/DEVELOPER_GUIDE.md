@@ -227,7 +227,7 @@ Vanilla HTML/CSS/JavaScript interface:
 
 Example:
 ```bash
-curl -u '<user>:<password>' http://localhost:5000/api/status
+curl http://127.0.0.1:5000/api/status
 ```
 
 ### Frontend Changes
@@ -455,7 +455,7 @@ Flask's debug mode watches Python files, but not templates/static by default. Fo
 | **Python Env** | `.venv` in project | `/opt/knx_to_openhab/venv` |
 | **Server** | Flask dev server | systemd service |
 | **Port** | 5000 | 8085 |
-| **Host** | 127.0.0.1 | 0.0.0.0 |
+| **Host** | 127.0.0.1 | 127.0.0.1 |
 | **Auth** | Optional | Enabled |
 | **Auto-start** | Manual | systemd |
 | **Logs** | Terminal | journalctl |

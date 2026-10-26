@@ -2,7 +2,7 @@
 
 ## Overview
 
-A lightweight, browser-based web interface to execute the KNX-to-OpenHAB generator on a Raspberry Pi (DietPi) without Docker. Includes real-time progress streaming, automatic backups, rollback capability, retention policies, and basic HTTP authentication.
+A lightweight, browser-based web interface to execute the KNX-to-OpenHAB generator on a Raspberry Pi (DietPi) without Docker. Includes real-time progress streaming, automatic backups, rollback capability, retention policies, and password-based browser sessions.
 
 **Technology Stack:**
 - **Backend:** Flask (Python) with Server-Sent Events (SSE) for live updates
@@ -21,7 +21,7 @@ A lightweight, browser-based web interface to execute the KNX-to-OpenHAB generat
 ✅ **Rollback Capability** — Restore any previous backup in one click  
 ✅ **Retention Policies** — Auto-cleanup by age (days), count (max backups), and size (MB)  
 ✅ **Service Management** — Restart OpenHAB from the UI  
-✅ **Basic HTTP Auth** — Simple username/password protection (configurable)  
+✅ **Protected Web Sessions** — Argon2id credentials, CSRF protection, session expiry and logout
 ✅ **Job History** — Persistent JSON storage of all jobs and metadata  
 
 ### UI Dashboard
@@ -119,14 +119,18 @@ This will stop services, remove the installation directory, remove the service u
 
 ### Access the Web UI
 
-Open in your browser:
+By default, the Web UI listens only on the Raspberry Pi itself. Open it locally or use an SSH tunnel:
 ```
-http://<pi-ip-address>:8085
+http://127.0.0.1:8085
 ```
 
-Use the Web UI password entered during installation. Existing installations
-keep their password while setup replaces the stored cleartext value with an
-Argon2id hash.
+For example, from your workstation run `ssh -L 8085:127.0.0.1:8085 <user>@<pi-ip>` and
+then open `http://127.0.0.1:8085`. Setup asks before retaining a legacy binding that
+allows LAN access. You can also deliberately set `bind_host` to a private interface
+address in `/etc/knx_to_openhab/config.json`, then restart `knxohui.service`.
+
+Sign in with the Web UI username and password configured during installation. The
+browser keeps a revocable session cookie; write requests include a CSRF token.
 
 ### Upload and Process a KNX Project
 
@@ -168,11 +172,13 @@ Location: `/etc/knx_to_openhab/config.json`
   "staging_dir": "/var/lib/knx_to_openhab/staging",
   "generated_dir": "/var/lib/knx_to_openhab/generated",
   "backups_dir": "/var/backups/knx_to_openhab", // Backup tar.gz files
-  "bind_host": "0.0.0.0",                        // Listen address (0.0.0.0 = all interfaces)
-  "port": 8085,                                  // Web server port
+  "bind_host": "127.0.0.1",
+  "port": 8085,
+  "trusted_proxy_hops": 0,
+  "session_max_age_seconds": 43200,
   "auth": {
-    "enabled": true,                             // Set to false to disable auth
-    "user": "admin"                              // Basic HTTP username
+    "enabled": true,
+    "user": "admin"
   },
   "retention": {
     "days": 14,                                  // Delete backups older than N days
@@ -205,7 +211,10 @@ Cleanup happens:
 
 ### Endpoints (JSON)
 
-All endpoints require HTTP Basic Auth unless `auth.enabled` is `false`.
+Browser endpoints require a signed-in session unless `auth.enabled` is `false`.
+The health endpoint `/api/status` remains public. For API writes, send the
+`X-CSRF-Token` header using the value exposed in the signed-in page's
+`csrf-token` meta tag. The browser UI does this automatically.
 
 #### `POST /api/upload`
 Upload a KNX project file.
@@ -213,7 +222,8 @@ Upload a KNX project file.
 **Request:**
 ```
 Content-Type: multipart/form-data
-Authorization: Basic base64(user:password)
+Cookie: knx_session=…
+X-CSRF-Token: <csrf-token>
 File field: "file" (binary)
 ```
 
@@ -482,8 +492,29 @@ Edit `/etc/knx_to_openhab/config.json`:
 }
 ```
 
-### HTTPS Setup
-For production, add a reverse proxy (nginx) or use Let's Encrypt. Currently HTTP-only, suitable for local LAN.
+### HTTPS and reverse proxy
+
+Keep the application bound to `127.0.0.1` and terminate TLS in a local reverse
+proxy. Set `trusted_proxy_hops` to the exact number of trusted proxies (usually
+`1`) so Flask can recognize HTTPS from `X-Forwarded-Proto`. Do not accept
+forwarded headers from clients that can reach Flask directly.
+
+Example nginx location:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8085;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+When the proxy reports HTTPS, the session and CSRF cookies receive the `Secure`
+attribute. Restrict access to the proxy and use TLS certificates appropriate for
+your network.
 
 ---
 
@@ -513,16 +544,15 @@ cat /var/lib/knx_to_openhab/jobs/jobs.json | python3 -m json.tool
 
 ## Security Notes
 
-⚠️ **For Local LAN Use Only**
-- Basic HTTP auth is simple (not encrypted, only base64)
-- No HTTPS by default
-- Suitable for trusted local networks only
-- Do not expose to the internet without additional security (reverse proxy + SSL)
+⚠️ **Network exposure**
+- The default bind address is loopback, so other LAN devices cannot connect directly.
+- Direct LAN access must be explicitly enabled and should be limited to a trusted network.
+- Use HTTPS through a reverse proxy before allowing access over an untrusted network.
 
 ✅ **Best Practices**
 1. Keep `/etc/knx_to_openhab/secrets.env` readable only by root and the service group
-2. Use a strong password
-3. If exposing remotely, add nginx reverse proxy with SSL
+2. Use a strong, unique password
+3. Keep `bind_host` on loopback behind a TLS reverse proxy for remote access
 4. Restrict OpenHAB service restart via sudoers (already done in setup.sh)
 5. Monitor `/var/lib/knx_to_openhab/` and `/var/backups/` for disk usage
 

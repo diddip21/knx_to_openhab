@@ -53,6 +53,7 @@ class InstallPaths:
     jobs_dir: Path
     staging_dir: Path
     generated_dir: Path
+    sessions_file: Path
 
 
 def get_paths(project_root: str | Path | None = None) -> InstallPaths:
@@ -94,4 +95,5 @@ def get_paths(project_root: str | Path | None = None) -> InstallPaths:
         jobs_dir=jobs_dir.resolve(),
         staging_dir=staging_dir.resolve(),
         generated_dir=generated_dir.resolve(),
+        sessions_file=(data_dir / "sessions.sqlite3").resolve(),
     )

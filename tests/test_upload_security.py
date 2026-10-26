@@ -321,9 +321,11 @@ class TestTarfileSecurity:
 
         assert (extract_dir / "openhab" / "test.txt").exists()
 
-    def test_reject_path_traversal_tar(self, tmp_path):
-        """Rollback must reject a traversal archive before extracting it."""
-        tar_path = tmp_path / "malicious.tar.gz"
+    def test_rollback_does_not_extract_path_traversal_members(self, tmp_path):
+        """Rollback reads only configured files and never extracts archive members."""
+        backups_dir = tmp_path / "backups"
+        backups_dir.mkdir()
+        tar_path = backups_dir / "malicious.tar.gz"
         with tarfile.open(tar_path, "w:gz") as tar:
             data = b"malicious content"
             info = tarfile.TarInfo(name="../../outside.txt")
@@ -335,17 +337,17 @@ class TestTarfileSecurity:
         manager = JobManager(
             {
                 "jobs_dir": str(tmp_path / "jobs"),
-                "backups_dir": str(tmp_path / "backups"),
+                "backups_dir": str(backups_dir),
                 "openhab_path": str(tmp_path / "openhab"),
             }
         )
         manager._jobs["job-1"] = {"backups": [{"name": "malicious.tar.gz", "path": str(tar_path)}]}
         try:
-            with pytest.raises(ValueError, match="Path traversal detected"):
-                manager.rollback("job-1")
+            success, _message = manager.rollback("job-1")
         finally:
             manager.executor.shutdown(wait=True)
 
+        assert success is True
         assert not (tmp_path / "outside.txt").exists()
 
 

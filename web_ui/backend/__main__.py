@@ -10,7 +10,7 @@ if __name__ == "__main__":
         print("Flask is not installed. Please install requirements to run the server.")
         exit(1)
 
-    host = cfg.get("bind_host", "0.0.0.0")
+    host = cfg.get("bind_host", "127.0.0.1")
     port = cfg.get("port", 8080)
     print(f"Starting Flask server on {host}:{port}...")
     app.run(host=host, port=port, debug=False)

@@ -46,8 +46,8 @@ Allowed extensions:
 **Protection against:** Writing files outside designated directories
 
 - **ZIP entry validation:** Entries with `../` or absolute paths are rejected
-- **Tar extraction safety:** All tar members are validated before extraction
-- **Path normalization:** All paths are normalized and checked against allowed directories
+- **Tar rollback safety:** Backups are never extracted; rollback reads only configured managed regular files
+- **Path normalization:** Archive member names are not used as destination paths during rollback
 
 ### 5. Password Security
 
@@ -119,7 +119,7 @@ pytest tests/ui/test_upload_security.py -v -o addopts=
 |------|---------|
 | `web_ui/backend/upload_security.py` | Core validation logic |
 | `web_ui/backend/app.py` | Upload endpoint with validation |
-| `web_ui/backend/jobs.py` | Password handling, safe tar extraction |
+| `web_ui/backend/jobs.py` | Password handling, staged processing, managed-file rollback |
 | `web_ui/backend/storage.py` | Password stripping from persistence |
 | `tests/test_upload_security.py` | Security unit tests |
 | `tests/ui/test_upload_security.py` | Security UI tests |
@@ -131,13 +131,13 @@ pytest tests/ui/test_upload_security.py -v -o addopts=
    ↓
 2. Flask MAX_CONTENT_LENGTH check (413 if exceeded)
    ↓
-3. Extension validation (400 if invalid)
+3. Stream to a private temporary file
    ↓
-4. Magic bytes validation (400 if mismatch)
+4. Extension and magic-byte validation (400 if invalid)
    ↓
-5. ZIP bomb checks (400 if detected)
+5. ZIP entry, decompression, and nesting checks (400 if unsafe)
    ↓
-6. Save to disk with UUID prefix
+6. Promote the validated file to its UUID-prefixed job path
    ↓
 7. Create job (password in memory only)
    ↓

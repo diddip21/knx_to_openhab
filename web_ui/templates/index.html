@@ -4,6 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <title>KNX → OpenHAB Generator</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="icon" type="image/png" href="/static/favicon.png">
@@ -18,6 +19,9 @@
         <span id="headerCommit">Loading...</span>
         <span class="update-indicator" id="updateIndicator" style="display:none;">🔄</span>
       </div>
+      {% if auth_enabled %}
+      <button id="logoutButton" class="btn-secondary logout-button" type="button">Log out</button>
+      {% endif %}
     </div>
 
     <!-- Upload Section -->
@@ -243,6 +247,9 @@
     <!-- Services Section -->
     <section id="service-section" class="card">
       <h2>🔌 Services</h2>
+      <p class="service-note">APT-Pakete auf diesem Gerät. Die verfügbare Version stammt aus den Paketlisten.</p>
+      <button type="button" id="refreshPackagesBtn" class="service-restart-btn">Paketlisten prüfen</button>
+      <span id="packageOperationStatus" role="status" aria-live="polite"></span>
       <div id="servicesList"></div>
     </section>
 

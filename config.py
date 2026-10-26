@@ -6,6 +6,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict
 
+from knxoh_paths import get_paths
+
 logger = logging.getLogger(__name__)
 
 config: Dict[str, Any] = {}
@@ -18,7 +20,8 @@ def normalize_string(text: str):
 
 def main():
     """Main function"""
-    with open("config.json", encoding="utf8") as f:
+    paths = get_paths(Path(__file__).resolve().parent)
+    with paths.generator_config_file.open(encoding="utf8") as f:
         cfg = json.load(f)
 
     def _normalize(v):
@@ -63,7 +66,7 @@ def main():
         Detects OPENHAB_CONF, User, and Group.
         Priority:
         1. openhab-cli info
-        2. web_ui/backend/config.json
+        2. the configured Web UI runtime config
         3. Default (local 'openhab' dir, current user)
         """
         oh_conf = None
@@ -107,7 +110,7 @@ def main():
 
         # 2. Try web_ui config fallback
         try:
-            web_cfg_path = Path(__file__).parent / "web_ui" / "backend" / "config.json"
+            web_cfg_path = get_paths(Path(__file__).resolve().parent).web_config_file
             if web_cfg_path.exists():
                 with open(web_cfg_path, "r", encoding="utf-8") as f:
                     web_cfg = json.load(f)

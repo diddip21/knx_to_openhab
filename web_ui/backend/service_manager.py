@@ -1,8 +1,18 @@
 import subprocess
 
+ALLOWED_SERVICES = {"openhab.service", "knxohui.service", "evcc.service"}
+
 
 def get_service_status(service_name: str):
     """Get service status (active/inactive/failed/...) and some metadata."""
+    if service_name not in ALLOWED_SERVICES:
+        return {
+            "active": False,
+            "status": "unsupported",
+            "info": "Unsupported service",
+            "uptime_str": None,
+            "last_run_str": None,
+        }
     try:
         # Get service status
         # First try without sudo
@@ -53,21 +63,6 @@ def get_service_status(service_name: str):
             timeout=10,
         )
 
-        # If output is empty or failed, try with sudo (in case user needs privs to see properties)
-        if proc_show.returncode != 0 or not proc_show.stdout.strip():
-            proc_show = subprocess.run(
-                [
-                    "sudo",
-                    "systemctl",
-                    "show",
-                    service_name,
-                    "-p",
-                    "ActiveEnterTimestamp,StateChangeTimestamp,InactiveEnterTimestamp",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
         # Output is like:
         # ActiveEnterTimestamp=Mon 2023-10-23 10:00:00 CEST
         # InactiveEnterTimestamp=...
@@ -148,6 +143,8 @@ def get_service_status(service_name: str):
 
 
 def restart_service(service_name: str):
+    if service_name not in ALLOWED_SERVICES:
+        return False, "Unsupported service"
     try:
         # using sudo; setup script will configure sudoers for the service user
         proc = subprocess.run(

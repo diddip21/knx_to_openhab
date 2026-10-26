@@ -17,6 +17,14 @@ def test_password_hash_is_argon2id_and_verifies_only_matching_password():
     assert not is_password_hash(password_hash + "$trailing")
     assert not is_password_hash(password_hash[:-1])
 
+    # This canonical 32-byte digest stays syntactically valid when its final
+    # base64 character is removed unless the configured digest length is fixed.
+    parts = password_hash.split("$")
+    parts[-1] = base64.b64encode(bytes(32)).decode("ascii").rstrip("=")
+    canonical_digest_hash = "$".join(parts)
+    assert is_password_hash(canonical_digest_hash)
+    assert not is_password_hash(canonical_digest_hash[:-1])
+
 
 def test_rate_limiter_expires_failures_and_bounds_clients():
     now = [0.0]

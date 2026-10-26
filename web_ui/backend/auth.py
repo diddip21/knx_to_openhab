@@ -11,12 +11,15 @@ from argon2 import PasswordHasher, extract_parameters
 from argon2.exceptions import InvalidHashError, VerificationError
 from argon2.low_level import Type
 
+_PASSWORD_HASH_LENGTH = 32
+_PASSWORD_SALT_LENGTH = 16
+
 _PASSWORD_HASHER = PasswordHasher(
     time_cost=3,
     memory_cost=65536,
     parallelism=2,
-    hash_len=32,
-    salt_len=16,
+    hash_len=_PASSWORD_HASH_LENGTH,
+    salt_len=_PASSWORD_SALT_LENGTH,
 )
 
 
@@ -67,9 +70,9 @@ def is_password_hash(value: str) -> bool:
         and parameters.memory_cost <= 262144
         and parameters.parallelism > 0
         and parameters.parallelism <= 8
-        and len(salt) == parameters.salt_len
+        and len(salt) == _PASSWORD_SALT_LENGTH
         and base64.b64encode(salt).decode("ascii").rstrip("=") == parts[4]
-        and len(digest) == parameters.hash_len
+        and len(digest) == _PASSWORD_HASH_LENGTH
         and base64.b64encode(digest).decode("ascii").rstrip("=") == parts[5]
     )
 

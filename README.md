@@ -9,7 +9,7 @@ Includes a **Web UI** for browser-based management and a **CLI** for automated w
 - **Automated Generation** — Creates Things, Items, Sitemaps, and Persistence rules in one step
 - **Smart Detection** — Identifies Dimmers, Rollershutters, Thermostats, and multi-address components by DPT analysis and naming conventions
 - **Web Interface** — Drag-and-drop upload, live progress streaming (SSE), job history, diff viewer, deploy/rollback
-- **Backup & Rollback** — Automatic tar.gz backup before each generation, restore any previous version
+- **Backup & Rollback** — Automatic tar.gz backup before each generation; rollback restores generated files and preserves manual OpenHAB configuration
 - **Reports** — Unknown addresses, partial items, completeness checks (missing required channels)
 - **Auto-Placement** — Optional: automatically create missing floors/rooms for unmatched addresses
 - **Semantic Model** — Auto-tags items for OpenHAB's semantic model
@@ -67,6 +67,7 @@ cd knx_to_openhab
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+export FLASK_ENV=testing
 flask --app web_ui.backend.app:app run --debug
 # → http://localhost:5000
 ```
@@ -75,7 +76,11 @@ flask --app web_ui.backend.app:app run --debug
 
 ## Using the Web UI
 
-1. **Open** `http://<your-ip>:8085` (default: `admin` / `logihome` — change in Settings!)
+1. **Open** `http://127.0.0.1:8085` on the device and use the Web UI password set during
+   installation. The service listens on localhost by default. From another computer, create an
+   SSH tunnel with `ssh -L 8085:127.0.0.1:8085 <user>@<device-ip>`, then open the same URL.
+   A fresh install prompts for a unique password; no shared default password is shipped.
+   Rotate it later with the secure helper in [`installer/README.md`](installer/README.md).
 2. **Upload** your `.knxproj` export or JSON dump
 3. **Preview** the building structure before processing
 4. **Review** generated files, diffs, and reports

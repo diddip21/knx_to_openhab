@@ -213,9 +213,13 @@ The Web UI shows **reports** for unknown, partial, and completeness checks so yo
 
 ### "Login/401 in Web UI"
 
-- The Web UI uses **Basic Auth** by default.
-- Default credentials: **admin / logihome** (change in Settings).
-- If you disabled auth in `web_ui/backend/config.json`, restart the UI service.
+- The Web UI uses a sign-in form and a protected browser session by default.
+- Use the Web UI password you set during installation. Existing user-chosen
+  passwords are preserved during migration; the shipped default is replaced.
+- For new installs, open `http://127.0.0.1:8085` locally or connect through an SSH
+  tunnel; LAN-wide listening requires an explicit configuration choice.
+- Local development and browser tests can disable authentication with `FLASK_ENV=testing`.
+  Production authentication is configured during installation.
 
 ### "My device shows as a generic Number"
 

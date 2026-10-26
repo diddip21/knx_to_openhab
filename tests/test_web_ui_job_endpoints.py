@@ -141,3 +141,21 @@ def test_job_preview_success(client, monkeypatch):
     assert payload["metadata"]["homekit_enabled"] is True
     assert payload["metadata"]["alexa_enabled"] is False
     assert payload["metadata"]["unknown_items"]
+
+
+def test_job_preview_uses_cached_projection_after_password_cleanup(client, monkeypatch):
+    """A completed encrypted job can still show its preview without its password."""
+    cached_preview = {
+        "metadata": {"project_name": "Project", "total_addresses": 1},
+        "buildings": [],
+    }
+    job_mgr = Mock()
+    job_mgr.get_job.return_value = {"id": "abc", "input": "/missing/encrypted.knxproj"}
+    job_mgr.get_job_preview.return_value = cached_preview
+    monkeypatch.setattr(app_module, "job_mgr", job_mgr)
+
+    response = client.get("/api/job/abc/preview")
+
+    assert response.status_code == 200
+    assert response.get_json() == cached_preview
+    job_mgr.get_job_preview.assert_called_once_with("abc")

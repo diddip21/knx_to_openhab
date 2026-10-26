@@ -165,6 +165,7 @@ class JobManager:
         ensure_dirs([self.jobs_dir, self.staging_dir, self.backups_dir])
         self._jobs = load_jobs(self.jobs_dir)
         self.queues = {}
+        self._preview_cache = {}
         self.executor = ThreadPoolExecutor(max_workers=2)
         self.lock = threading.Lock()
 
@@ -226,15 +227,66 @@ class JobManager:
             "backups": [],
             "log": [],
             "stats": {},
-            "password": password,
+            # SECURITY: Do NOT store password in job JSON - keep only in memory
         }
+        # Store password in memory only (for job processing)
+        self._passwords = getattr(self, "_passwords", {})
+        self._passwords[job_id] = password
+
         q = queue.Queue()
-        with self.lock:
-            self._jobs[job_id] = job
-            self.queues[job_id] = q  # Register queue before saving jobs
-            save_jobs(self.jobs_dir, self._jobs)
-        self.executor.submit(self._run_job, job_id)
+        try:
+            with self.lock:
+                self._jobs[job_id] = job
+                self.queues[job_id] = q  # Register queue before saving jobs
+                save_jobs(self.jobs_dir, self._jobs)
+            self.executor.submit(self._run_job, job_id)
+        except Exception:
+            # A worker is not guaranteed to run, so remove the in-memory
+            # secret and roll back the partially created job immediately.
+            with self.lock:
+                self._passwords.pop(job_id, None)
+                self._jobs.pop(job_id, None)
+                self.queues.pop(job_id, None)
+                try:
+                    save_jobs(self.jobs_dir, self._jobs)
+                except Exception:
+                    logger.exception("Failed to persist job rollback for %s", job_id)
+            raise
         return job
+
+    def save_job_preview(self, job_id, preview):
+        """Persist a passphrase-free project preview outside the public job data."""
+        self._preview_cache[job_id] = preview
+        job_dir = os.path.join(self.jobs_dir, job_id)
+        os.makedirs(job_dir, exist_ok=True)
+        preview_path = os.path.join(job_dir, "project-preview.json")
+        temp_path = f"{preview_path}.{uuid.uuid4().hex}.tmp"
+        try:
+            with open(temp_path, "w", encoding="utf-8") as preview_file:
+                json.dump(preview, preview_file, ensure_ascii=False)
+            os.chmod(temp_path, 0o600)
+            os.replace(temp_path, preview_path)
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    def get_job_preview(self, job_id):
+        """Load a cached project preview without reopening the source archive."""
+        if job_id in self._preview_cache:
+            return self._preview_cache[job_id]
+
+        preview_path = os.path.join(self.jobs_dir, job_id, "project-preview.json")
+        try:
+            with open(preview_path, "r", encoding="utf-8") as preview_file:
+                preview = json.load(preview_file)
+        except FileNotFoundError:
+            return None
+        except (OSError, json.JSONDecodeError):
+            logger.exception("Failed to read cached project preview for %s", job_id)
+            return None
+
+        self._preview_cache[job_id] = preview
+        return preview
 
     def _log_to_queue(self, job_id, q, msg):
         """Helper to both send to queue and persist in job log."""
@@ -263,6 +315,9 @@ class JobManager:
         job["status"] = "running"
         save_jobs(self.jobs_dir, self._jobs)
 
+        # Retrieve password from in-memory store (not from job JSON)
+        passwords = getattr(self, "_passwords", {})
+        pwd = passwords.get(job_id)
         # Process logic
         original_openhab_path = None
         try:
@@ -433,7 +488,6 @@ class JobManager:
                         },
                     )
                     sys.stdout = captured_output
-                    pwd = job.get("password")
                     knxproj = XKNXProj(path=job["input"], password=pwd, language="de-DE")
                     project = knxproj.parse()
                     sys.stdout = old_stdout
@@ -460,6 +514,27 @@ class JobManager:
                 sys.stdout = captured_output
 
                 house = knxmod.put_addresses_in_building(building, addresses, project)
+                from .project_preview import build_project_preview
+
+                try:
+                    self.save_job_preview(
+                        job_id,
+                        build_project_preview(
+                            project,
+                            knxmod,
+                            parsed=(building, addresses, house),
+                        ),
+                    )
+                except Exception as preview_error:
+                    self._log_to_queue(
+                        job_id,
+                        q,
+                        {
+                            "type": "info",
+                            "level": "warning",
+                            "message": f"project structure preview could not be saved: {preview_error}",
+                        },
+                    )
                 prj_name = house[0].get("name_long") if house else None
                 ip = knxmod.get_gateway_ip(project)
                 homekit_enabled = knxmod.is_homekit_enabled(project)
@@ -636,6 +711,9 @@ class JobManager:
                     knxmod.config["openhab_path"] = original_openhab_path
                 except Exception:
                     pass
+            # SECURITY: Clear password from memory after job completes
+            passwords = getattr(self, "_passwords", {})
+            passwords.pop(job_id, None)
             save_jobs(self.jobs_dir, self._jobs)
             q.put(None)
 
@@ -1090,5 +1168,16 @@ class JobManager:
             del self._jobs[job_id]
             if job_id in self.queues:
                 del self.queues[job_id]
+            # SECURITY: Clear password from memory
+            passwords = getattr(self, "_passwords", {})
+            passwords.pop(job_id, None)
+            self._preview_cache.pop(job_id, None)
+            preview_path = os.path.join(self.jobs_dir, job_id, "project-preview.json")
+            try:
+                os.remove(preview_path)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                logger.warning("Failed to remove cached preview for %s", job_id, exc_info=True)
             save_jobs(self.jobs_dir, self._jobs)
         return True

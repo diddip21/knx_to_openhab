@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import os
 import sys
 import tarfile
@@ -53,6 +54,13 @@ from .service_updates import PACKAGES, ServiceUpdates, package_version
 from .session_store import SESSION_MAX_AGE, SessionStore
 from .storage import get_session_secret, load_config, load_generator_config, save_generator_config
 from .updater import Updater
+from .upload_security import (
+    MAX_UPLOAD_SIZE_BYTES,
+    get_zip_validation_options,
+    validate_upload_from_path,
+)
+
+logger = logging.getLogger(__name__)
 
 cfg = load_config()
 
@@ -95,6 +103,12 @@ if FLASK_AVAILABLE:
             x_host=trusted_proxy_hops,
         )
     app.config["UPLOAD_FOLDER"] = cfg.get("jobs_dir", "./var/lib/knx_to_openhab")
+    app.config["MAX_CONTENT_LENGTH"] = cfg.get("max_upload_size_bytes", MAX_UPLOAD_SIZE_BYTES)
+
+    @app.errorhandler(413)
+    def request_too_large(_error):
+        limit = app.config.get("MAX_CONTENT_LENGTH", MAX_UPLOAD_SIZE_BYTES)
+        return jsonify({"error": f"Upload exceeds the maximum allowed size ({limit} bytes)"}), 413
 
     # Fix openhab_path to be absolute if it's relative and based on project root
 
@@ -341,13 +355,44 @@ if FLASK_AVAILABLE:
         f = request.files["file"]
         if f.filename == "":
             return jsonify({"error": "no selected file"}), 400
+
         fn = secure_filename(f.filename)
-        os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
-        saved_path = os.path.join(app.config["UPLOAD_FOLDER"], f"{uuid.uuid4().hex}-{fn}")
-        f.save(saved_path)
         password = request.form.get("password") or None
-        job = job_mgr.create_job(saved_path, original_name=fn, password=password)
-        return jsonify(job), 201
+        os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+        upload_id = uuid.uuid4().hex
+        temp_path = os.path.join(app.config["UPLOAD_FOLDER"], f".upload-{upload_id}-{fn}")
+        saved_path = os.path.join(app.config["UPLOAD_FOLDER"], f"{upload_id}-{fn}")
+        try:
+            # Werkzeug's FileStorage streams to disk; do not materialize the
+            # full upload (or a second copy for ZIP inspection) in process RAM.
+            f.save(temp_path)
+            result = validate_upload_from_path(
+                temp_path,
+                max_size=app.config["MAX_CONTENT_LENGTH"],
+                **get_zip_validation_options(cfg.get("security", {})),
+                password=password,
+            )
+            if not result.valid:
+                logger.warning("Upload rejected: %s (file: %s)", result.error_message, fn)
+                return jsonify({"error": result.error_message}), 400
+
+            os.replace(temp_path, saved_path)
+            job = job_mgr.create_job(saved_path, original_name=fn, password=password)
+            saved_path = ""
+            return jsonify(job), 201
+        except OSError as e:
+            logger.error("Failed to save or validate uploaded file: %s", e)
+            return jsonify({"error": "Failed to save uploaded file"}), 500
+        except Exception:
+            logger.exception("Failed to create processing job for uploaded file")
+            return jsonify({"error": "Failed to create processing job"}), 500
+        finally:
+            for path in (temp_path, saved_path):
+                if path and os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except OSError as e:
+                        logger.warning("Failed to remove temporary upload %s: %s", path, e)
 
     @app.route("/api/jobs", methods=["GET"])
     def jobs():
@@ -387,7 +432,11 @@ if FLASK_AVAILABLE:
 
     @app.route("/api/job/<job_id>/rerun", methods=["POST"])
     def rerun_job(job_id):
-        """Create a new job based on an existing job's input."""
+        """Create a new job based on an existing job's input.
+
+        Note: Passwords are not stored for security reasons.
+        For password-protected projects, the user must re-upload with the password.
+        """
         job = job_mgr.get_job(job_id)
         if not job:
             return jsonify({"error": "job not found"}), 404
@@ -397,10 +446,8 @@ if FLASK_AVAILABLE:
             return jsonify({"error": "original input file not found"}), 404
 
         try:
-            # Create a new job with the same input and password
-            new_job = job_mgr.create_job(
-                input_path, original_name=job.get("name"), password=job.get("password")
-            )
+            # SECURITY: Password is not stored - user must re-enter if needed
+            new_job = job_mgr.create_job(input_path, original_name=job.get("name"), password=None)
             return jsonify(new_job), 201
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -730,7 +777,17 @@ if FLASK_AVAILABLE:
         requested_path = os.path.normpath(os.path.abspath(file_path))
 
         # Check if requested path is safe (within allowed directories)
-        is_safe = requested_path.startswith(openhab_base) or requested_path.startswith(jobs_base)
+        # Use os.path.commonpath to prevent prefix-based bypasses
+        def _is_path_under(path: str, base: str) -> bool:
+            """Check if path is safely under base directory."""
+            try:
+                return os.path.commonpath([path, base]) == base
+            except ValueError:
+                return False
+
+        is_safe = _is_path_under(requested_path, openhab_base) or _is_path_under(
+            requested_path, jobs_base
+        )
 
         # Enhanced security: If job_id is provided, whitelist paths from job stats
         if not is_safe and job_id:
@@ -820,6 +877,11 @@ if FLASK_AVAILABLE:
                     # Backup contains directory named 'openhab', so prepend it
                     member_path = f"openhab/{rel_path}"
                     try:
+                        # Validate member path to prevent path traversal
+                        normalized_member = os.path.normpath(member_path)
+                        if ".." in normalized_member.split(os.sep) or os.path.isabs(member_path):
+                            return jsonify({"error": "invalid path in backup"}), 400
+
                         member = tar.getmember(member_path)
                         f = tar.extractfile(member)
                         if f:
@@ -921,13 +983,21 @@ if FLASK_AVAILABLE:
         if f.filename == "":
             return jsonify({"error": "no selected file"}), 400
 
-        # Save to temporary location
         fn = secure_filename(f.filename)
+        password = request.form.get("password") or None
         temp_path = os.path.join(app.config["UPLOAD_FOLDER"], f"temp_{uuid.uuid4().hex}_{fn}")
-        f.save(temp_path)
-
         try:
-            password = request.form.get("password") or None
+            # Save to Werkzeug's spooled stream target, then inspect the file
+            # on disk so large projects are not copied into process RAM.
+            f.save(temp_path)
+            result = validate_upload_from_path(
+                temp_path,
+                max_size=app.config["MAX_CONTENT_LENGTH"],
+                **get_zip_validation_options(cfg.get("security", {})),
+                password=password,
+            )
+            if not result.valid:
+                return jsonify({"error": result.error_message}), 400
 
             # Load project (json dump or parse knxproj)
             if temp_path.lower().endswith(".json"):
@@ -1049,11 +1119,12 @@ if FLASK_AVAILABLE:
                 return jsonify({"error": friendly_msg}), 400
             return jsonify({"error": str(e)}), 500
         finally:
-            # Clean up temp file
+            # Clean up temp file safely
             try:
-                os.remove(temp_path)
-            except:
-                pass
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except OSError as e:
+                logger.warning("Failed to remove temp file %s: %s", temp_path, e)
 
     @app.route("/api/job/<job_id>/deploy", methods=["POST"])
     def job_deploy(job_id):
@@ -1074,12 +1145,20 @@ if FLASK_AVAILABLE:
         if not job:
             return jsonify({"error": "job not found"}), 404
 
+        # A completed password-protected project cannot be parsed again after
+        # its passphrase has been cleared. Prefer the safe, cached projection.
+        cached_preview = job_mgr.get_job_preview(job_id)
+        if isinstance(cached_preview, dict):
+            return jsonify(cached_preview)
+
         input_path = job.get("input")
         if not input_path or not os.path.exists(input_path):
             return jsonify({"error": "job input file not found"}), 404
 
         try:
-            password = job.get("password")
+            # SECURITY: Get password from in-memory store (not from job JSON)
+            passwords = getattr(job_mgr, "_passwords", {})
+            password = passwords.get(job_id)
 
             # Load project (json dump or parse knxproj)
             if input_path.lower().endswith(".json"):

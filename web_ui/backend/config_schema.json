@@ -384,6 +384,12 @@
           "type": "object",
           "title": "Gateway Configuration",
           "properties": {
+            "ip_address": {
+              "type": "string",
+              "title": "KNX Gateway IP Override",
+              "description": "Optional IPv4 or IPv6 override. Leave blank to detect the address from the ETS project.",
+              "default": ""
+            },
             "hardware_name": {
               "type": "array",
               "title": "Gateway Hardware Names",

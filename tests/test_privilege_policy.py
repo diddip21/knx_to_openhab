@@ -43,12 +43,38 @@ def test_installer_scripts_install_and_validate_the_restricted_policy():
     assert "--exclude web_ui/backend/config.json" in setup
 
 
+def test_installer_runs_provisioner_from_installed_tree():
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+
+    assert '"$BASE/installer/provision_managed_files.py"' in setup
+    assert '"$REPO_ROOT/installer/provision_managed_files.py"' not in setup
+
+
+def test_permission_repair_restores_external_runtime_data_ownership():
+    repair = (ROOT / "fix_permissions.sh").read_text(encoding="utf-8")
+
+    assert "get_paths; print(get_paths().data_dir)" in repair
+    assert 'sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$DATA_DIR"' in repair
+
+
 def test_web_updater_stops_until_legacy_sudoers_policy_is_migrated():
     update = (ROOT / "update.sh").read_text(encoding="utf-8")
 
     assert "sudo -n -l" in update
     assert "/usr/bin/git|/bin/git" in update
     assert "installer/migrate_sudoers.sh" in update
+
+
+def test_web_updater_checks_external_credentials_before_backup_or_git_changes():
+    update = (ROOT / "update.sh").read_text(encoding="utf-8")
+
+    preflight = update.index("CREDENTIAL_CHECK=")
+    assert "external Web UI config.json or secrets.env is missing" in update
+    assert "valid external Argon2id password hash is required" in update
+    assert "sudo bash $INSTALL_DIR/installer/setup.sh" in update
+    assert preflight < update.index("Creating backup of current installation")
+    assert preflight < update.index('git -c "safe.directory=$INSTALL_DIR" stash')
+    assert preflight < update.index('git -c "safe.directory=$INSTALL_DIR" fetch origin')
 
 
 def test_update_script_never_elevates_git_or_uses_a_global_safe_directory():

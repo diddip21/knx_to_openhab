@@ -1,19 +1,29 @@
+import hashlib
 import json
 import os
 import sys
 import tarfile
 import uuid
-from typing import Any, Callable, TypedDict
+from typing import Any, Callable
+from urllib.parse import urlsplit, urlunsplit
+
+from knxoh_paths import get_paths
 
 try:
     from flask import (
         Flask,
         Response,
+        g,
         jsonify,
+        make_response,
+        redirect,
         render_template,
         request,
         stream_with_context,
+        url_for,
     )
+    from itsdangerous import BadData, URLSafeTimedSerializer
+    from werkzeug.middleware.proxy_fix import ProxyFix
     from werkzeug.utils import secure_filename
 
     FLASK_AVAILABLE = True
@@ -21,6 +31,10 @@ except Exception:
     # allow module import when Flask is not installed (for static analysis/tests)
     Flask: Any = None  # type: ignore[no-redef]
     request: Any = None  # type: ignore[no-redef]
+    g: Any = None  # type: ignore[no-redef]
+    make_response: Any = None  # type: ignore[no-redef]
+    redirect: Any = None  # type: ignore[no-redef]
+    url_for: Any = None  # type: ignore[no-redef]
     jsonify: Callable[..., Any] = (  # type: ignore[no-redef]
         lambda *args, **kwargs: args[0] if args else None
     )
@@ -32,10 +46,12 @@ except Exception:
     secure_filename: Callable[[str], str] = lambda n: n  # type: ignore[no-redef]
     FLASK_AVAILABLE = False
 
+from .auth import verify_password
 from .jobs import JobManager
 from .service_manager import get_service_status, restart_service
 from .service_updates import PACKAGES, ServiceUpdates, package_version
-from .storage import load_config
+from .session_store import SESSION_MAX_AGE, SessionStore
+from .storage import get_session_secret, load_config, load_generator_config, save_generator_config
 from .updater import Updater
 
 cfg = load_config()
@@ -68,6 +84,16 @@ if FLASK_AVAILABLE:
         static_folder=os.path.join(os.path.dirname(__file__), "..", "static"),
         static_url_path="/static",
     )
+    trusted_proxy_hops = int(cfg.get("trusted_proxy_hops", 0))
+    if trusted_proxy_hops < 0 or trusted_proxy_hops > 5:
+        raise ValueError("trusted_proxy_hops must be between 0 and 5")
+    if trusted_proxy_hops:
+        app.wsgi_app = ProxyFix(  # type: ignore[method-assign]
+            app.wsgi_app,
+            x_for=trusted_proxy_hops,
+            x_proto=trusted_proxy_hops,
+            x_host=trusted_proxy_hops,
+        )
     app.config["UPLOAD_FOLDER"] = cfg.get("jobs_dir", "./var/lib/knx_to_openhab")
 
     # Fix openhab_path to be absolute if it's relative and based on project root
@@ -85,107 +111,228 @@ if FLASK_AVAILABLE:
     updater = Updater(base_path=project_root)
     service_updates = ServiceUpdates()
 
-    # Session-based authentication -------------------------------------------------
+    # Durable session and CSRF handling -------------------------------------------
+    import hmac
     import secrets
-    import time
-    from base64 import b64decode
 
-    class _Session(TypedDict):
-        user: str
-        created: float
+    _session_store: SessionStore | None = None
+    session_max_age = max(
+        300, min(int(cfg.get("session_max_age_seconds", SESSION_MAX_AGE)), 604800)
+    )
 
-    # In-memory session store (simple implementation)
-    # Key: session_token, Value: {'user': username, 'created': timestamp}
-    _sessions: dict[str, _Session] = {}
-    SESSION_MAX_AGE = 24 * 60 * 60  # 24 hours
+    def _sessions() -> SessionStore:
+        global _session_store
+        if _session_store is None:
+            _session_store = SessionStore(cfg["sessions_file"], get_session_secret(project_root))
+        return _session_store
 
-    def _auth_failed():
-        return ("Unauthorized", 401, {"WWW-Authenticate": 'Basic realm="KNX UI"'})
+    def _credential_version() -> str:
+        auth_config = cfg.get("auth", {})
+        password_hash = auth_config.get("password_hash")
+        if password_hash:
+            credential = [str(auth_config.get("user", "")), "hash", str(password_hash)]
+        else:
+            credential = [
+                str(auth_config.get("user", "")),
+                "legacy",
+                str(auth_config.get("legacy_password", "")),
+            ]
+        payload = json.dumps(
+            [bool(auth_config.get("enabled")), *credential],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hmac.new(
+            get_session_secret(project_root), b"credential-version:" + payload, hashlib.sha256
+        ).hexdigest()
 
-    def _check_auth_header(auth_header: str) -> bool:
+    def _login_csrf_serializer() -> URLSafeTimedSerializer:
+        return URLSafeTimedSerializer(get_session_secret(project_root), salt="knx-login-csrf")
+
+    def _render_login(error: str | None = None, status: int = 200):
+        token = _login_csrf_serializer().dumps(secrets.token_urlsafe(32))
+        response = make_response(
+            render_template(
+                "login.html",
+                csrf_token=token,
+                error=error,
+                next_url=request.args.get("next", "/"),
+            ),
+            status,
+        )
+        response.set_cookie(
+            "knx_login_csrf",
+            token,
+            max_age=600,
+            httponly=False,
+            secure=request.is_secure,
+            samesite="Lax",
+            path="/",
+        )
+        return response
+
+    def _valid_login_csrf() -> bool:
+        cookie_token = request.cookies.get("knx_login_csrf", "")
+        form_token = request.form.get("csrf_token", "")
+        if not cookie_token or not form_token or not hmac.compare_digest(cookie_token, form_token):
+            return False
         try:
-            if not auth_header or not auth_header.lower().startswith("basic "):
-                return False
-            token = auth_header.split(None, 1)[1]
-            decoded = b64decode(token).decode("utf-8")
-            user, pwd = decoded.split(":", 1)
-            acfg = cfg.get("auth", {})
-            return acfg.get("user") == user and acfg.get("password") == pwd
-        except Exception:
-            return False
-
-    def _check_session_cookie() -> bool:
-        """Check if request has a valid session cookie."""
-        session_token = request.cookies.get("knx_session")
-        if not session_token:
-            return False
-        session = _sessions.get(session_token)
-        if not session:
-            return False
-        # Check if session is expired
-        if time.time() - session.get("created", 0) > SESSION_MAX_AGE:
-            del _sessions[session_token]
+            _login_csrf_serializer().loads(form_token, max_age=600)
+        except BadData:
             return False
         return True
 
-    def _create_session(user: str) -> str:
-        """Create a new session and return the token."""
-        # Clean up old sessions periodically
-        now = time.time()
-        expired = [k for k, v in _sessions.items() if now - v.get("created", 0) > SESSION_MAX_AGE]
-        for k in expired:
-            del _sessions[k]
-        # Create new session
-        token = secrets.token_hex(32)
-        _sessions[token] = {"user": user, "created": now}
-        return token
+    def _safe_redirect_target(value: str | None) -> str:
+        if not value or not value.startswith("/") or "\\" in value:
+            return "/"
+        try:
+            parsed = urlsplit(value)
+        except ValueError:
+            return "/"
+        if parsed.scheme or parsed.netloc or parsed.path.startswith("//"):
+            return "/"
+        return urlunsplit(("", "", parsed.path, parsed.query, parsed.fragment))
+
+    def _verify_login(username: str, password: str) -> bool:
+        acfg = cfg.get("auth", {})
+        password_hash = acfg.get("password_hash")
+        legacy_password = acfg.get("legacy_password")
+        user_matches = hmac.compare_digest(
+            str(acfg.get("user", "")).encode("utf-8"), username.encode("utf-8")
+        )
+        if password_hash:
+            password_matches = verify_password(password_hash, password)
+        elif isinstance(legacy_password, str):
+            password_matches = hmac.compare_digest(
+                legacy_password.encode("utf-8"), password.encode("utf-8")
+            )
+        else:
+            password_matches = False
+        return user_matches and password_matches
 
     @app.before_request
     def require_auth():
-        # if auth disabled, allow
         acfg = cfg.get("auth", {})
         if not acfg.get("enabled"):
             return None
-        # allow static files without auth (CSS/JS/templates served under /static)
         path = request.path or ""
         if path.startswith("/static"):
             return None
-        # health/status endpoint allowed
-        if path == "/api/status":
+        if path in ("/api/status", "/login"):
             return None
+        if not acfg.get("password_hash") and not acfg.get("legacy_password"):
+            return (
+                "Web UI credentials are not configured. Run installer/setup.sh as an administrator.",
+                503,
+            )
 
-        # Check for valid session cookie first (for fetch() calls)
-        if _check_session_cookie():
-            return None
+        session_token = request.cookies.get("knx_session", "")
+        session = (
+            _sessions().get(session_token, credential_version=_credential_version())
+            if session_token
+            else None
+        )
+        if session is None:
+            if path.startswith("/api/"):
+                return jsonify({"error": "authentication required"}), 401
+            return redirect(url_for("login", next=request.full_path))
 
-        # Check Basic Auth header
-        auth = request.headers.get("Authorization")
-        if _check_auth_header(auth):
-            return None
-        return _auth_failed()
+        g.authenticated_user = session.username
+        g.session_token = session_token
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            csrf_cookie = request.cookies.get("knx_csrf", "")
+            csrf_header = request.headers.get("X-CSRF-Token", "")
+            if not csrf_header:
+                csrf_header = request.form.get("csrf_token", "")
+            if (
+                not csrf_cookie
+                or not csrf_header
+                or not hmac.compare_digest(csrf_cookie, csrf_header)
+                or not _sessions().verify_csrf(session_token, csrf_header)
+            ):
+                return jsonify({"error": "valid CSRF token required"}), 403
+        return None
 
-    @app.after_request
-    def set_session_cookie(response):
-        """Set session cookie after successful Basic Auth."""
-        # Only set cookie if auth was successful and no session exists yet
-        if response.status_code < 400:
-            if not request.cookies.get("knx_session"):
-                auth = request.headers.get("Authorization")
-                if _check_auth_header(auth):
-                    acfg = cfg.get("auth", {})
-                    token = _create_session(acfg.get("user", "admin"))
-                    response.set_cookie(
-                        "knx_session",
-                        token,
-                        httponly=True,
-                        samesite="Lax",
-                        max_age=SESSION_MAX_AGE,
-                    )
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        acfg = cfg.get("auth", {})
+        if not acfg.get("enabled"):
+            return redirect("/")
+        if not acfg.get("password_hash") and not acfg.get("legacy_password"):
+            return (
+                "Web UI credentials are not configured. Run installer/setup.sh as an administrator.",
+                503,
+            )
+        if request.method == "GET":
+            session_token = request.cookies.get("knx_session", "")
+            if session_token and _sessions().get(
+                session_token, credential_version=_credential_version()
+            ):
+                return redirect("/")
+            return _render_login()
+
+        if not _valid_login_csrf():
+            return _render_login("The sign-in request expired. Please try again.", 400)
+
+        identity = request.remote_addr or "unknown"
+        session_store = _sessions()
+        if not session_store.is_login_allowed(identity):
+            return _render_login("Too many attempts. Please try again later.", 429)
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        if not _verify_login(username, password):
+            session_store.record_login_failure(identity)
+            return _render_login("Username or password is incorrect.", 401)
+
+        session_store.clear_login_failures(identity)
+        token, csrf_token = session_store.create(
+            username,
+            max_age=session_max_age,
+            credential_version=_credential_version(),
+        )
+        response = make_response(redirect(_safe_redirect_target(request.args.get("next"))))
+        response.set_cookie(
+            "knx_session",
+            token,
+            max_age=session_max_age,
+            httponly=True,
+            secure=request.is_secure,
+            samesite="Lax",
+            path="/",
+        )
+        response.set_cookie(
+            "knx_csrf",
+            csrf_token,
+            max_age=session_max_age,
+            httponly=False,
+            secure=request.is_secure,
+            samesite="Lax",
+            path="/",
+        )
+        response.delete_cookie("knx_login_csrf", path="/", samesite="Lax")
+        return response
+
+    @app.route("/api/logout", methods=["POST"])
+    def logout():
+        session_token = request.cookies.get("knx_session", "")
+        if session_token:
+            _sessions().revoke(session_token)
+        response = jsonify({"ok": True})
+        response.delete_cookie(
+            "knx_session", path="/", httponly=True, secure=request.is_secure, samesite="Lax"
+        )
+        response.delete_cookie(
+            "knx_csrf", path="/", httponly=False, secure=request.is_secure, samesite="Lax"
+        )
         return response
 
     @app.route("/")
     def index():
-        return render_template("index.html")
+        return render_template(
+            "index.html",
+            csrf_token=request.cookies.get("knx_csrf", ""),
+            auth_enabled=cfg.get("auth", {}).get("enabled", False),
+        )
 
     @app.route("/api/upload", methods=["POST"])
     def upload():
@@ -350,9 +497,14 @@ if FLASK_AVAILABLE:
     def service_update_start(action):
         if action not in (*PACKAGES, "refresh"):
             return jsonify({"error": "Unsupported action"}), 404
-        # Package installation grants system privileges; the shipped demo password is insufficient.
+        # Package installation grants system privileges; require a non-default password hash.
         acfg = cfg.get("auth", {})
-        if not acfg.get("enabled") or acfg.get("password") in (None, "", "logihome"):
+        password_hash = acfg.get("password_hash")
+        if (
+            not acfg.get("enabled")
+            or not isinstance(password_hash, str)
+            or verify_password(password_hash, "logihome")
+        ):
             return (
                 jsonify({"error": "Set a personal Web UI password before using package updates."}),
                 403,
@@ -387,9 +539,9 @@ if FLASK_AVAILABLE:
 
         # Check configured paths
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        main_config_path = os.path.join(project_root, "config.json")
+        main_config_path = get_paths(project_root).generator_config_file
 
-        if os.path.exists(main_config_path):
+        if main_config_path.exists():
             with open(main_config_path, "r", encoding="utf-8") as f:
                 main_config = json.load(f)
         else:
@@ -473,10 +625,10 @@ if FLASK_AVAILABLE:
 
         # Get the main config (from the main config.json)
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        main_config_path = os.path.join(project_root, "config.json")
+        main_config_path = get_paths(project_root).generator_config_file
 
         main_config = {}
-        if os.path.exists(main_config_path):
+        if main_config_path.exists():
             with open(main_config_path, "r", encoding="utf-8") as f:
                 main_config = json.load(f)
 
@@ -501,7 +653,7 @@ if FLASK_AVAILABLE:
                     "fenster_path": main_config.get("fenster_path", "openhab/rules/fenster.rules"),
                 },
                 "project_root": project_root,
-                "main_config_exists": os.path.exists(main_config_path),
+                "main_config_exists": main_config_path.exists(),
             }
         )
 
@@ -526,6 +678,19 @@ if FLASK_AVAILABLE:
     @app.route("/api/version/update", methods=["POST"])
     def trigger_update():
         """Trigger the self-update process."""
+        acfg = cfg.get("auth", {})
+        if acfg.get("enabled") and not acfg.get("password_hash"):
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            "A migrated Web UI password hash is required before updating. "
+                            f"Run 'sudo bash {project_root}/installer/setup.sh' as an administrator."
+                        )
+                    }
+                ),
+                409,
+            )
         try:
             # Check if running on Windows (dev) or Linux (prod)
             if sys.platform == "win32":
@@ -712,12 +877,7 @@ if FLASK_AVAILABLE:
         """Get the current configuration."""
         try:
             # Load the main config.json file which contains knxproject_to_openhab settings
-            main_config_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                "config.json",
-            )
-            with open(main_config_path, "r", encoding="utf-8") as f:
-                main_config = json.load(f)
+            main_config = load_generator_config(project_root)
             return jsonify(main_config)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -735,12 +895,7 @@ if FLASK_AVAILABLE:
                 return jsonify({"error": "Config must be a JSON object"}), 400
 
             # Save to the main config file (which contains knxproject_to_openhab settings)
-            main_config_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                "config.json",
-            )
-            with open(main_config_path, "w", encoding="utf-8") as f:
-                json.dump(new_config, f, indent=2, ensure_ascii=False)
+            save_generator_config(new_config, project_root)
 
             return jsonify({"message": "Configuration updated successfully"})
         except Exception as e:

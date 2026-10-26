@@ -4,6 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <title>KNX → OpenHAB Generator</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="icon" type="image/png" href="/static/favicon.png">
@@ -18,6 +19,9 @@
         <span id="headerCommit">Loading...</span>
         <span class="update-indicator" id="updateIndicator" style="display:none;">🔄</span>
       </div>
+      {% if auth_enabled %}
+      <button id="logoutButton" class="btn-secondary logout-button" type="button">Log out</button>
+      {% endif %}
     </div>
 
     <!-- Upload Section -->

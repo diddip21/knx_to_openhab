@@ -8,21 +8,20 @@ import time
 import pytest
 from playwright.sync_api import Page, expect
 
-DEFAULT_USERNAME = "admin"
-DEFAULT_PASSWORD = "logihome"
-
 
 @pytest.fixture(scope="session")
 def browser_context_args(browser_context_args):
     """Configure browser context for testing."""
-    username = os.getenv("UI_AUTH_USER", "admin")
-    password = os.getenv("UI_AUTH_PASSWORD", "logihome")
-    return {
+    username = os.getenv("UI_AUTH_USER")
+    password = os.getenv("UI_AUTH_PASSWORD")
+    config = {
         **browser_context_args,
         "viewport": {"width": 1920, "height": 1080},
         "ignore_https_errors": True,
-        "http_credentials": {"username": username, "password": password},
     }
+    if username and password:
+        config["http_credentials"] = {"username": username, "password": password}
+    return config
 
 
 @pytest.fixture
@@ -32,8 +31,12 @@ def authenticated_page(page: Page, base_url):
 
     # Check if already logged in, if not, login
     if "login" in page.url.lower() or page.locator("input[name='username']").count() > 0:
-        page.fill("input[name='username']", DEFAULT_USERNAME)
-        page.fill("input[name='password']", DEFAULT_PASSWORD)
+        username = os.getenv("UI_AUTH_USER")
+        password = os.getenv("UI_AUTH_PASSWORD")
+        if not username or not password:
+            pytest.skip("Set UI_AUTH_USER and UI_AUTH_PASSWORD to test authenticated UI")
+        page.fill("input[name='username']", username)
+        page.fill("input[name='password']", password)
         page.click("button[type='submit']")
         expect(page.locator("#upload-section")).to_be_visible(timeout=10000)
 
@@ -61,8 +64,12 @@ class TestAuthentication:
             assert "login" not in page.url.lower()
             return
 
-        page.fill("input[name='username']", DEFAULT_USERNAME)
-        page.fill("input[name='password']", DEFAULT_PASSWORD)
+        username = os.getenv("UI_AUTH_USER")
+        password = os.getenv("UI_AUTH_PASSWORD")
+        if not username or not password:
+            pytest.skip("Set UI_AUTH_USER and UI_AUTH_PASSWORD to test authenticated UI")
+        page.fill("input[name='username']", username)
+        page.fill("input[name='password']", password)
         page.click("button[type='submit']")
 
         expect(page.locator("#upload-section")).to_be_visible(timeout=10000)

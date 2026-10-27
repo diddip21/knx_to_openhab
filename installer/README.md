@@ -138,35 +138,30 @@ sudo systemctl status knxohui-backup-cleanup.timer
 
 ## Uninstall
 
-Use the repository's `uninstall.sh` when the safe uninstall/purge workflow from
-Issue #28 is available. Until that work lands, the manual commands below are
-destructive: remove the configuration and backups only if you intend to erase
-them permanently.
+Download and run the uninstaller as a regular user with `sudo` access:
 
 ```bash
-# Stop and disable services
-sudo systemctl stop knxohui.service
-sudo systemctl disable knxohui.service
-sudo systemctl stop knxohui-backup-cleanup.timer
-sudo systemctl disable knxohui-backup-cleanup.timer
-
-# Remove service files
-sudo rm /etc/systemd/system/knxohui.service
-sudo rm /etc/systemd/system/knxohui-backup-cleanup.service
-sudo rm /etc/systemd/system/knxohui-backup-cleanup.timer
-sudo systemctl daemon-reload
-
-# Remove installation
-sudo rm -rf /opt/knx_to_openhab
-sudo rm -rf /var/lib/knx_to_openhab
-sudo rm -rf /var/backups/knx_to_openhab
-
-# Remove sudoers entry
-sudo rm /etc/sudoers.d/knxohui
-
-# Remove system user
-sudo userdel knxohui
+curl -fsSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/uninstall.sh \
+  -o /tmp/knxohui-uninstall.sh
+bash /tmp/knxohui-uninstall.sh
 ```
+
+The default mode lists its actions, asks you to type `UNINSTALL`, and removes
+application releases and service files only. Configuration (`/etc/knx_to_openhab`),
+jobs/runtime data (`/var/lib/knx_to_openhab`), backups
+(`/var/backups/knx_to_openhab`), and the `knxohui` service account are retained.
+The paths recorded in `/etc/knx_to_openhab/paths.env` are used when they differ
+from these defaults.
+
+To also delete configuration, jobs, backups, and the service account, explicitly
+request purge. The uninstaller asks for both `UNINSTALL` and `PURGE` before it
+does anything:
+
+```bash
+bash /tmp/knxohui-uninstall.sh --purge
+```
+
+Do not use `--purge` unless those user data directories should be permanently erased.
 
 ## OpenHAB output permissions
 

@@ -107,11 +107,20 @@ The root-owned helper prompts twice, stores an Argon2id hash in the configured
 secrets file, and preserves other secret values.
 
 ### Uninstallation
-To completely remove the application, use the uninstaller script:
+The safe default removes the application and service files but retains configuration,
+jobs, runtime data, backups, and the service account. Run the downloaded script as a
+regular user with `sudo` access:
+
 ```bash
-curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/uninstall.sh \
+  -o /tmp/knxohui-uninstall.sh
+bash /tmp/knxohui-uninstall.sh
 ```
-This will stop services, remove the installation directory, remove the service user, and clean up logs/backups.
+
+The uninstaller lists its actions and requires you to type `UNINSTALL`. Use
+`bash /tmp/knxohui-uninstall.sh --purge` only if you also want to permanently delete
+the configured paths for `/etc/knx_to_openhab`, `/var/lib/knx_to_openhab`, and
+`/var/backups/knx_to_openhab`; purge requires a second typed `PURGE` confirmation.
 
 ---
 

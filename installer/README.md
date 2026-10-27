@@ -2,6 +2,20 @@
 
 This directory contains installation and maintenance scripts for the web UI.
 
+## Versioned release artifacts
+
+`VERSION` is the single semantic-version source. Maintainers publish a release
+by creating and pushing a matching `v<VERSION>` Git tag. The release workflow
+builds `knx_to_openhab-<VERSION>.tar.gz` and its `.sha256` sidecar from tracked
+application source; tests, generated OpenHAB output, runtime data, local
+secrets, and ETS project files are excluded. The checksum must be verified by
+installers and updaters before extracting or activating an artifact.
+
+Prerelease tags such as `v0.2.0-beta.1` and `v0.2.0-rc.1` are published as
+GitHub prereleases. Stable releases remain the default channel; selecting a
+prerelease is an explicit installer/updater choice. Creating or pushing a tag
+is a maintainer action and is not performed by the build script.
+
 ## Files
 
 - **`setup.sh`** — Main installer script (run once as sudo)

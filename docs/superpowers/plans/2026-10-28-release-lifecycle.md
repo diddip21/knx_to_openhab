@@ -42,10 +42,10 @@
 **Interfaces:**
 - `scripts/build_release.py --version VERSION --output-dir DIR` produces a versioned source `.tar.gz` and `.sha256` file, excluding runtime/config/test artifacts.
 
-- [ ] Test SemVer/tag validation, deterministic archive contents, exclusions, and checksum output.
-- [ ] Run `python -m pytest -q tests/test_release_artifacts.py`; observe failures for missing release tooling.
-- [ ] Implement the version source, initial changelog, artifact builder, and tag-triggered stable/prerelease workflow.
-- [ ] Run artifact tests twice and verify byte-identical output and a matching SHA-256 digest.
+- [x] Test SemVer/tag validation, deterministic archive contents, exclusions, and checksum output.
+- [x] Run `python -m pytest -q tests/test_release_artifacts.py`; observe failures for missing release tooling.
+- [x] Implement the version source, initial changelog, artifact builder, and tag-triggered stable/prerelease workflow.
+- [x] Run artifact tests twice and verify byte-identical output and a matching SHA-256 digest.
 - [ ] Commit: `feat: add semantic release artifacts`.
 
 ### Task 2: Make paths and services release-layout aware (#24)

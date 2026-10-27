@@ -1025,6 +1025,8 @@ def _retire_existing_model_files(paths, active_paths=()):
             continue
         if os.path.islink(path) or not os.path.isfile(path):
             raise ValueError(f"Refusing to retire a non-regular model output: {path}")
+        if os.stat(path).st_nlink > 1:
+            raise ValueError(f"Refusing to retire a model output with multiple hard links: {path}")
         with open(path, "w", encoding="utf8"):
             pass
 

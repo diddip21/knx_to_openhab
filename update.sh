@@ -177,6 +177,15 @@ if ! git -c "safe.directory=$INSTALL_DIR" fetch origin; then
     exit 1
 fi
 
+# Provision on every updater run, including no-op retries after a previous
+# provisioning failure. The fixed root helper reads its protected config and
+# does not depend on files from the incoming Git revision.
+if ! sudo -n /usr/local/sbin/knxohui-service-update provision-yaml; then
+    log "ERROR: Could not provision the configured OpenHAB YAML target."
+    log "Run 'sudo bash $INSTALL_DIR/installer/setup.sh' as an administrator, then retry."
+    exit 1
+fi
+
 # Get current and remote commit hashes
 CURRENT_COMMIT=$(git -c "safe.directory=$INSTALL_DIR" rev-parse HEAD)
 REMOTE_COMMIT=$(git -c "safe.directory=$INSTALL_DIR" rev-parse origin/main)
@@ -210,14 +219,6 @@ if [[ -f "$INSTALL_DIR/venv/bin/pip" ]]; then
     fi
 else
     log "WARNING: Virtual environment not found, skipping dependency update"
-fi
-
-# Provision the one configured managed YAML target through the fixed root helper.
-# Older installations must run setup.sh once to install the helper and sudoers action.
-if ! sudo -n /usr/local/sbin/knxohui-service-update provision-yaml; then
-    log "ERROR: Could not provision the configured OpenHAB YAML target."
-    log "Run 'sudo bash $INSTALL_DIR/installer/setup.sh' as an administrator, then retry."
-    exit 1
 fi
 
 # Update version.json with new commit hash

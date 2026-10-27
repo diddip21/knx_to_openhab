@@ -246,6 +246,22 @@ def test_legacy_export_retires_existing_yaml_model_file(tmp_path):
     )
 
 
+def test_retiring_model_file_rejects_hard_link_alias(tmp_path):
+    protected_file = tmp_path / "keep.txt"
+    inactive_model = tmp_path / "stale.items"
+    protected_file.write_text("must remain intact", encoding="utf-8")
+    try:
+        inactive_model.hardlink_to(protected_file)
+    except OSError as error:
+        pytest.skip(f"hard-link creation is unavailable: {error}")
+
+    with pytest.raises(ValueError, match="hard link"):
+        ets_to_openhab._retire_existing_model_files((inactive_model,))
+
+    assert protected_file.read_text(encoding="utf-8") == "must remain intact"
+    assert inactive_model.read_text(encoding="utf-8") == "must remain intact"
+
+
 def test_metadata_conversion_preserves_value_and_configuration():
     assert parse_metadata(
         ', stateDescription=""[options="1=Comfort,2=Standby"], alexa="Switch"'

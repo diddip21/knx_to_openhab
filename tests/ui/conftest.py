@@ -24,8 +24,11 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture(autouse=True)
-def configure_playwright_timeouts(page):
+def configure_playwright_timeouts(request):
     """Set default Playwright timeouts for more reliable CI runs."""
+    if "page" not in request.fixturenames:
+        return
+    page = request.getfixturevalue("page")
     default_timeout = int(os.getenv("PLAYWRIGHT_TIMEOUT", "10000"))
     nav_timeout = int(os.getenv("PLAYWRIGHT_NAV_TIMEOUT", "30000"))
     expect_timeout = int(os.getenv("PLAYWRIGHT_EXPECT_TIMEOUT", "10000"))

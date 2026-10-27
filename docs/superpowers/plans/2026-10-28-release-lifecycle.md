@@ -57,12 +57,13 @@
 - Modify: `knxoh_paths.py`
 - Modify: `tests/test_knxoh_paths.py`
 - Modify: `tests/test_installer_guardrails.py`
+- Update: `installer/README.md`, `docs/PRODUCTION_GUIDE.md`, `docs/DEVELOPER_GUIDE.md`
 
-- [ ] Add tests for `current -> releases/<version>`, legacy flat fallback, custom `KNXOH_INSTALL_DIR`, and path values that must remain outside releases.
-- [ ] Run the focused tests and observe the current release layout is unsupported.
-- [ ] Install application code into a version-named release, atomically publish `current`, and keep the existing environment-file contract.
-- [ ] Test launch scripts against both new-layout and legacy-layout paths; run Bash syntax checks.
-- [ ] Commit: `feat: install immutable versioned releases`.
+- [x] Add tests for `current -> releases/<version>`, legacy flat fallback, custom `KNXOH_INSTALL_DIR`, and path values that must remain outside releases.
+- [x] Run the focused tests and observe the current release layout is unsupported.
+- [x] Install application code into a version-named release, atomically publish `current`, and keep the existing environment-file contract.
+- [x] Test launch scripts against both new-layout and legacy-layout paths; run Bash syntax checks.
+- [x] Commit: `feat: install immutable versioned releases`.
 
 ### Task 3: Add schema-versioned, snapshot-backed migrations (#27)
 

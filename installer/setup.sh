@@ -71,6 +71,55 @@ CONFIG_DIR="${NORMALIZED_PATH_LIST[1]}"
 DATA_DIR="${NORMALIZED_PATH_LIST[2]}"
 BACKUP_DIR="${NORMALIZED_PATH_LIST[3]}"
 
+RELEASE_VERSION="$(tr -d '\r\n' < "$REPO_ROOT/VERSION")"
+python3 - "$REPO_ROOT" "$RELEASE_VERSION" <<'PY'
+import sys
+
+sys.path.insert(0, sys.argv[1])
+from scripts.build_release import ReleaseArtifactError, validate_semver
+
+try:
+    validate_semver(sys.argv[2])
+except ReleaseArtifactError as error:
+    raise SystemExit(f"Invalid VERSION file: {error}") from error
+PY
+
+RELEASES_DIR="$BASE/releases"
+RELEASE_DIR="$BASE/releases/$RELEASE_VERSION"
+STAGING_DIR="$BASE/releases/.${RELEASE_VERSION}.staging.$$"
+CURRENT_LINK_TMP="$BASE/.current.$$"
+if [[ -e "$RELEASE_DIR" || -L "$RELEASE_DIR" ]]; then
+    echo "Release $RELEASE_VERSION already exists at $RELEASE_DIR; refusing to overwrite it." >&2
+    exit 2
+fi
+if [[ -e "$BASE/current" && ! -L "$BASE/current" ]]; then
+    echo "Refusing to replace non-symlink path $BASE/current." >&2
+    exit 2
+fi
+if [[ -L "$BASE/current" ]]; then
+    if [[ ! -e "$BASE/current" ]]; then
+        echo "Refusing to replace broken current symlink $BASE/current." >&2
+        exit 2
+    fi
+    CURRENT_TARGET="$(readlink -f "$BASE/current")"
+    case "$CURRENT_TARGET/" in
+        "$RELEASES_DIR/"*) ;;
+        *)
+            echo "Refusing current symlink outside the release directory: $CURRENT_TARGET" >&2
+            exit 2
+            ;;
+    esac
+fi
+if [[ -e "$STAGING_DIR" || -L "$STAGING_DIR" ]]; then
+    echo "Refusing to reuse existing release staging path $STAGING_DIR." >&2
+    exit 2
+fi
+
+cleanup_staging() {
+    sudo rm -rf -- "$STAGING_DIR" "$CURRENT_LINK_TMP" 2>/dev/null || true
+}
+trap cleanup_staging EXIT
+
 echo "Using application directory: $BASE"
 echo "Using configuration directory: $CONFIG_DIR"
 echo "Using runtime data directory: $DATA_DIR"
@@ -95,28 +144,32 @@ if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
     sudo useradd -r -g "$SERVICE_USER" -s /usr/sbin/nologin "$SERVICE_USER"
 fi
 
-sudo mkdir -p "$BASE"
-sudo chown "$SERVICE_USER":"$SERVICE_USER" "$BASE"
+sudo mkdir -p "$BASE" "$RELEASES_DIR"
+sudo chown "$SERVICE_USER":"$SERVICE_USER" "$BASE" "$RELEASES_DIR"
 
-sudo python3 -m venv "$BASE/venv"
-sudo "$BASE/venv/bin/pip" install --upgrade pip
-sudo "$BASE/venv/bin/pip" install -r "$REPO_ROOT/requirements.txt"
+sudo mkdir -p "$STAGING_DIR"
+sudo chown "$SERVICE_USER":"$SERVICE_USER" "$STAGING_DIR"
+sudo python3 -m venv "$STAGING_DIR/venv"
+sudo "$STAGING_DIR/venv/bin/pip" install --upgrade pip
+sudo "$STAGING_DIR/venv/bin/pip" install -r "$REPO_ROOT/requirements.txt"
 
 echo "Installing application files while preserving runtime configuration"
-sudo rsync -a --exclude .git --exclude /config.json \
-    --exclude web_ui/backend/config.json "$REPO_ROOT/" "$BASE/"
-if [[ ! -f "$BASE/config.json" ]]; then
-    sudo install -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0640 \
-        "$REPO_ROOT/config.json" "$BASE/config.json"
-fi
+sudo rsync -a \
+    --exclude .git --exclude .github --exclude .superpowers --exclude tests \
+    --exclude .pytest_cache --exclude .venv --exclude venv --exclude var \
+    --exclude openhab --exclude test-results --exclude dist --exclude __pycache__ \
+    --exclude docs/screenshots --exclude requirements-dev.txt --exclude pytest.ini \
+    --exclude .env --exclude secrets.env --exclude '*.knxproj' --exclude '*.knxprojarchive' \
+    --exclude '*.tar.gz' --exclude '*.sha256' \
+    "$REPO_ROOT/" "$STAGING_DIR/"
 sudo install -o root -g root -m 0755 \
-    "$REPO_ROOT/installer/service_update.sh" \
+    "$STAGING_DIR/installer/service_update.sh" \
     /usr/local/sbin/knxohui-service-update
 
 echo "Migrating configuration, jobs, staging data and backups"
-sudo "$BASE/venv/bin/python" "$BASE/installer/migrate_runtime_data.py" \
+sudo "$STAGING_DIR/venv/bin/python" "$STAGING_DIR/installer/migrate_runtime_data.py" \
     --source-root "$BASE" \
-    --template-root "$REPO_ROOT" \
+    --template-root "$STAGING_DIR" \
     --config-dir "$CONFIG_DIR" \
     --data-dir "$DATA_DIR" \
     --backup-dir "$BACKUP_DIR" \
@@ -124,7 +177,7 @@ sudo "$BASE/venv/bin/python" "$BASE/installer/migrate_runtime_data.py" \
     --paths-file "$PATHS_FILE"
 
 echo "Checking the Web UI network binding"
-sudo "$BASE/venv/bin/python" "$BASE/installer/configure_bind.py" \
+sudo "$STAGING_DIR/venv/bin/python" "$STAGING_DIR/installer/configure_bind.py" \
     "$CONFIG_DIR/config.json"
 
 export KNXOH_INSTALL_DIR="$BASE"
@@ -147,7 +200,7 @@ sudo chown root:"$SERVICE_USER" "$CONFIG_DIR" "$PATHS_FILE"
 sudo chmod 0750 "$CONFIG_DIR"
 sudo chmod 0644 "$PATHS_FILE"
 echo "Configuring Web UI credentials"
-sudo "$BASE/venv/bin/python" "$BASE/installer/configure_auth.py" \
+sudo "$STAGING_DIR/venv/bin/python" "$STAGING_DIR/installer/configure_auth.py" \
     --config "$CONF" --secrets "$CONFIG_DIR/secrets.env"
 sudo chown root:"$SERVICE_USER" "$CONF" "$CONFIG_DIR/secrets.env"
 sudo chmod 0640 "$CONF" "$CONFIG_DIR/secrets.env"
@@ -157,28 +210,32 @@ if ! getent group openhab >/dev/null 2>&1; then
 fi
 sudo usermod -a -G openhab "$SERVICE_USER"
 echo "Restricting OpenHAB writes to generated output files"
-sudo "$BASE/venv/bin/python" "$BASE/installer/provision_managed_files.py" \
+sudo "$STAGING_DIR/venv/bin/python" "$STAGING_DIR/installer/provision_managed_files.py" \
     --service-user "$SERVICE_USER" --openhab-group openhab
 
 echo "Installing restricted sudoers policy for service operations"
-sudo bash "$BASE/installer/migrate_sudoers.sh"
+sudo bash "$STAGING_DIR/installer/migrate_sudoers.sh"
 
 echo "Installing systemd launch helpers"
 sudo install -d -o root -g root -m 0755 /usr/local/libexec/knx_to_openhab
-sudo install -o root -g root -m 0755 "$BASE/installer/launch_web.sh" \
+sudo install -o root -g root -m 0755 "$STAGING_DIR/installer/launch_web.sh" \
     /usr/local/libexec/knx_to_openhab/launch_web.sh
-sudo install -o root -g root -m 0755 "$BASE/installer/launch_backup_cleanup.sh" \
+sudo install -o root -g root -m 0755 "$STAGING_DIR/installer/launch_backup_cleanup.sh" \
     /usr/local/libexec/knx_to_openhab/launch_backup_cleanup.sh
-sudo install -o root -g root -m 0755 "$BASE/installer/set_ui_password.py" \
+sudo install -o root -g root -m 0755 "$STAGING_DIR/installer/set_ui_password.py" \
     /usr/local/libexec/knx_to_openhab/set_ui_password.py
 
 echo "Installing systemd units and timers"
-sudo install -o root -g root -m 0644 "$BASE/installer/knxohui.service" \
+sudo install -o root -g root -m 0644 "$STAGING_DIR/installer/knxohui.service" \
     /etc/systemd/system/knxohui.service
-sudo install -o root -g root -m 0644 "$BASE/installer/knxohui-backup-cleanup.service" \
+sudo install -o root -g root -m 0644 "$STAGING_DIR/installer/knxohui-backup-cleanup.service" \
     /etc/systemd/system/knxohui-backup-cleanup.service
-sudo install -o root -g root -m 0644 "$BASE/installer/knxohui-backup-cleanup.timer" \
+sudo install -o root -g root -m 0644 "$STAGING_DIR/installer/knxohui-backup-cleanup.timer" \
     /etc/systemd/system/knxohui-backup-cleanup.timer
+
+sudo mv "$STAGING_DIR" "$RELEASE_DIR"
+sudo ln -s "releases/$RELEASE_VERSION" "$CURRENT_LINK_TMP"
+sudo mv -Tf "$CURRENT_LINK_TMP" "$BASE/current"
 sudo systemctl daemon-reload
 sudo systemctl enable knxohui.service
 sudo systemctl restart knxohui.service

@@ -1,3 +1,5 @@
+import pytest
+
 from installer.migrate_runtime_data import _write_paths_file
 from knxoh_paths import get_paths
 from web_ui.backend.storage import load_generator_config, save_generator_config
@@ -25,6 +27,47 @@ def test_development_paths_keep_repository_layout(monkeypatch, tmp_path):
     assert paths.jobs_dir == (tmp_path / "checkout/var/lib/knx_to_openhab").resolve()
     assert paths.backup_dir == (tmp_path / "checkout/var/backups/knx_to_openhab").resolve()
     assert paths.secrets_file is None
+
+
+def test_release_code_resolves_shared_install_root_outside_version_directory(monkeypatch, tmp_path):
+    _clear_path_environment(monkeypatch, tmp_path)
+    install_dir = tmp_path / "opt/knx_to_openhab"
+    release_dir = install_dir / "releases" / "1.2.3"
+    release_dir.mkdir(parents=True)
+
+    paths = get_paths(release_dir)
+
+    assert paths.project_root == release_dir.resolve()
+    assert paths.install_dir == install_dir.resolve()
+
+
+def test_current_release_symlink_keeps_custom_user_paths_outside_release(monkeypatch, tmp_path):
+    _clear_path_environment(monkeypatch, tmp_path)
+    install_dir = tmp_path / "custom install"
+    release_dir = install_dir / "releases" / "2.1.0"
+    release_dir.mkdir(parents=True)
+    current = install_dir / "current"
+    try:
+        current.symlink_to(release_dir, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("directory symlinks are unavailable")
+    config_dir = tmp_path / "etc/knxoh"
+    data_dir = tmp_path / "var/lib/knxoh"
+    backup_dir = tmp_path / "var/backups/knxoh"
+    monkeypatch.setenv("KNXOH_INSTALL_DIR", str(install_dir))
+    monkeypatch.setenv("KNXOH_CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("KNXOH_BACKUP_DIR", str(backup_dir))
+
+    paths = get_paths(current)
+
+    assert paths.project_root == release_dir.resolve()
+    assert paths.install_dir == install_dir.resolve()
+    assert paths.web_config_file == (config_dir / "config.json").resolve()
+    assert paths.generator_config_file == (data_dir / "generator.json").resolve()
+    assert paths.backup_dir == backup_dir.resolve()
+    for user_path in (paths.web_config_file, paths.generator_config_file, paths.backup_dir):
+        assert release_dir.resolve() not in user_path.parents
 
 
 def test_installed_paths_use_external_config_and_data(monkeypatch, tmp_path):

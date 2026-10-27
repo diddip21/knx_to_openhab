@@ -49,7 +49,7 @@ the application directory.
 
 | Data | Default location |
 |------|------------------|
-| Application code | `/opt/knx_to_openhab` |
+| Application code | `/opt/knx_to_openhab/current` (versions under `releases/<version>`) |
 | Web UI settings | `/etc/knx_to_openhab/config.json` |
 | Generator rules | `/var/lib/knx_to_openhab/generator.json` |
 | Web UI secrets | `/etc/knx_to_openhab/secrets.env` |
@@ -84,7 +84,7 @@ To set or rotate it, run the helper, enter the new password twice, then restart
 the service:
 
 ```bash
-sudo /opt/knx_to_openhab/venv/bin/python \
+sudo /opt/knx_to_openhab/current/venv/bin/python \
   /usr/local/libexec/knx_to_openhab/set_ui_password.py
 sudo systemctl restart knxohui.service
 ```

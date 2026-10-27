@@ -53,7 +53,8 @@ curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install
 
 The installer will automatically:
 1.  Check for system dependencies
-2.  Create/Update `/opt/knx_to_openhab`
+2.  Stage a version under `/opt/knx_to_openhab/releases/<version>` and atomically
+    activate it through `/opt/knx_to_openhab/current`
 3.  Migrate settings, jobs, and backups outside the application tree
 4.  Setup the service user and exact OpenHAB output permissions
 5.  Install systemd services and restricted sudoers policy
@@ -98,7 +99,7 @@ To rotate the password without editing tracked configuration or exposing it in
 shell history, run:
 
 ```bash
-sudo /opt/knx_to_openhab/venv/bin/python \
+sudo /opt/knx_to_openhab/current/venv/bin/python \
   /usr/local/libexec/knx_to_openhab/set_ui_password.py
 sudo systemctl restart knxohui.service
 ```
@@ -342,39 +343,15 @@ Health check (no auth required).
 ## File Structure
 
 ```
-/opt/knx_to_openhab/                    # Application files
-├── knxproject_to_openhab.py            # KNX parser (unchanged)
-├── ets_to_openhab.py                   # OpenHAB generator (unchanged)
-├── config.py                           # Config loader (unchanged)
-├── config.json                         # Packaged generator defaults
-├── requirements.txt                    # Python dependencies
-├── web_ui/
-│   ├── backend/
-│   │   ├── app.py                      # Flask application & routes
-│   │   ├── jobs.py                     # Job engine & backup logic
-│   │   ├── storage.py                  # Config & jobs persistence
-│   │   ├── service_manager.py          # systemctl wrapper
-│   │   └── config.json                 # Local development defaults
-│   ├── templates/
-│   │   └── index.html                  # Web interface
-│   ├── static/
-│   │   ├── app.js                      # Frontend logic & SSE
-│   │   └── style.css                   # Styling
-│   └── README.md                       # Web UI
-├── installer/
-│   ├── setup.sh                        # Installation script
-│   ├── backup_cleanup.sh               # Cleanup script
-│   ├── knxohui.service                 # systemd unit (Flask)
-│   ├── knxohui-backup-cleanup.service  # systemd unit (cleanup)
-│   └── knxohui-backup-cleanup.timer    # systemd timer (daily)
-├── openhab/                            # OpenHAB output folder (backed up before each job)
-│   ├── items/
-│   ├── things/
-│   ├── sitemaps/
-│   ├── persistence/
-│   ├── rules/
-│   └── icons/
-└── venv/                               # Python virtual environment
+/opt/knx_to_openhab/
+├── current -> releases/<version>       # Atomically selected application version
+└── releases/
+    └── <version>/                      # Application source and matching venv
+        ├── config.json                 # Packaged generator defaults
+        ├── requirements.txt            # Python dependencies
+        ├── installer/                  # Installer helpers and systemd unit templates
+        ├── web_ui/                     # Flask application and static assets
+        └── venv/                       # Version-specific Python environment
 
 /etc/knx_to_openhab/                    # Persistent configuration and secrets
 ├── config.json                         # Web UI runtime settings
@@ -422,7 +399,7 @@ If a deploy reports that a managed output is missing or not writable, run the
 administrator repair script:
 
 ```bash
-sudo bash /opt/knx_to_openhab/fix_permissions.sh
+sudo bash /opt/knx_to_openhab/current/fix_permissions.sh
 ```
 
 After changing generator output paths, run `setup.sh` once so the new exact
@@ -434,7 +411,7 @@ If the update log shows "Permission denied" or "error: cannot open .git/FETCH_HE
 
 ```bash
 # Re-apply the managed file permissions and service policy
-sudo bash /opt/knx_to_openhab/fix_permissions.sh
+sudo bash /opt/knx_to_openhab/current/fix_permissions.sh
 ```
 
 This can happen if installation files or the external backup directory were

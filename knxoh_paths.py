@@ -57,12 +57,13 @@ class InstallPaths:
 
 
 def get_paths(project_root: str | Path | None = None) -> InstallPaths:
-    """Return consistent paths for production or the existing local dev layout."""
+    """Return canonical paths, inferring the shared root for versioned releases."""
     load_saved_path_environment()
     root = Path(project_root or Path(__file__).resolve().parent).resolve()
     external_config = bool(os.environ.get("KNXOH_CONFIG_DIR"))
 
-    install_dir = Path(os.environ.get("KNXOH_INSTALL_DIR", root)).expanduser()
+    inferred_install_dir = root.parent.parent if root.parent.name == "releases" else root
+    install_dir = Path(os.environ.get("KNXOH_INSTALL_DIR", inferred_install_dir)).expanduser()
     config_dir = Path(
         os.environ.get(
             "KNXOH_CONFIG_DIR",

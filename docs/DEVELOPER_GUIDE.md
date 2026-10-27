@@ -452,7 +452,7 @@ Flask's debug mode watches Python files, but not templates/static by default. Fo
 | Aspect | Development | Production |
 |--------|-------------|------------|
 | **Environment** | Windows/macOS/Linux | Raspberry Pi / DietPi |
-| **Python Env** | `.venv` in project | `/opt/knx_to_openhab/venv` |
+| **Python Env** | `.venv` in project | `/opt/knx_to_openhab/current/venv` |
 | **Server** | Flask dev server | systemd service |
 | **Port** | 5000 | 8085 |
 | **Host** | 127.0.0.1 | 127.0.0.1 |

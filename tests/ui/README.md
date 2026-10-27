@@ -47,9 +47,8 @@ temporary authenticated instance for screenshot tests.
   reprocessing and deletion flows.
 - `test_sse_streaming.py`: event-stream delivery, status updates and log
   filtering.
-- `test_settings_config.py`, `test_settings_advanced.py`,
-  `test_output_format_config.py`: configuration tabs, advanced controls and
-  legacy/YAML output settings.
+- `test_settings_config.py`, `test_settings_advanced.py`: configuration tabs,
+  advanced controls, filters, mappings and definitions.
 - `test_services_cloud.py`, `test_service_update_polling.py`,
   `test_update_system.py`: service/cloud controls, package polling and update
   behavior.

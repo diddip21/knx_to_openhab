@@ -112,6 +112,10 @@ fi
 sudo install -o root -g root -m 0755 \
     "$REPO_ROOT/installer/service_update.sh" \
     /usr/local/sbin/knxohui-service-update
+sudo install -d -o root -g root -m 0755 /usr/local/libexec/knx_to_openhab
+sudo install -o root -g root -m 0755 \
+    "$BASE/installer/provision_managed_outputs.py" \
+    /usr/local/libexec/knx_to_openhab/provision_managed_outputs.py
 
 echo "Migrating configuration, jobs, staging data and backups"
 sudo "$BASE/venv/bin/python" "$BASE/installer/migrate_runtime_data.py" \

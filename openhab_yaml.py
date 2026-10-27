@@ -18,7 +18,10 @@ OPENHAB_YAML_VERSION = 1
 KNX_BRIDGE_UID = "knx:ip:bridge"
 KNX_DEVICE_UID = "knx:device:bridge:generic"
 
-_ASSIGNMENT = re.compile(r'(\w+)\s*=\s*"([^"]*)"\s*(?:\[\s*([^]]*)\s*\])?')
+_ASSIGNMENT = re.compile(
+    r'(?P<key>\w+)\s*=\s*(?:"(?P<quoted>[^"]*)"|(?P<unquoted>[^,\]\s]+))'
+    r"\s*(?:\[\s*(?P<config>[^]]*)\s*\])?"
+)
 _ITEM_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SITEMAP_NAME = re.compile(r"^[A-Za-z0-9_]+$")
 _PLAIN_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_.:-]*$")
@@ -72,7 +75,14 @@ def new_model(project_name: str, gateway_ip: str | None, sitemap_label: str) -> 
 
 def parse_assignments(fragment: str) -> dict[str, str]:
     """Parse the key/value subset emitted for KNX channel configuration."""
-    return {match.group(1): match.group(2) for match in _ASSIGNMENT.finditer(fragment)}
+    assignments: dict[str, str] = {}
+    for match in _ASSIGNMENT.finditer(fragment):
+        value = match.group("quoted")
+        if value is None:
+            value = match.group("unquoted")
+        assert value is not None
+        assignments[match.group("key")] = value
+    return assignments
 
 
 def parse_metadata(*fragments: str) -> dict[str, dict[str, Any]]:
@@ -80,7 +90,12 @@ def parse_metadata(*fragments: str) -> dict[str, dict[str, Any]]:
     metadata: dict[str, dict[str, Any]] = {}
     for fragment in fragments:
         for match in _ASSIGNMENT.finditer(fragment or ""):
-            namespace, value, config_fragment = match.groups()
+            namespace = match.group("key")
+            value = match.group("quoted")
+            if value is None:
+                value = match.group("unquoted")
+            assert value is not None
+            config_fragment = match.group("config")
             entry: dict[str, Any] = {"value": value}
             if config_fragment:
                 entry["config"] = parse_assignments(config_fragment)
@@ -109,13 +124,13 @@ def normalize_icon(icon: str | None) -> str | None:
     return icon.removeprefix("<").removesuffix(">") or None
 
 
-def parse_visibility(fragment: str) -> dict[str, str] | None:
+def parse_visibility(fragment: str) -> list[dict[str, Any]] | None:
     """Convert the simple sitemap visibility expression emitted by this project."""
     match = _VISIBILITY.search(fragment or "")
     if not match:
         return None
     item, operator, argument = match.groups()
-    return {"item": item, "operator": operator, "argument": argument.strip()}
+    return [{"conditions": [{"item": item, "condition": operator, "value": argument.strip()}]}]
 
 
 def add_item(model: dict[str, Any], name: str, item: Mapping[str, Any]) -> None:

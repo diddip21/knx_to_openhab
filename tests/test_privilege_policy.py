@@ -50,6 +50,43 @@ def test_installer_runs_provisioner_from_installed_tree():
     assert '"$REPO_ROOT/installer/provision_managed_files.py"' not in setup
 
 
+def test_yaml_provisioning_uses_one_fixed_root_owned_action():
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+    service_update = (ROOT / "installer" / "service_update.sh").read_text(encoding="utf-8")
+    helper = (ROOT / "installer" / "provision_managed_outputs.py").read_text(encoding="utf-8")
+    setup_provisioner = (ROOT / "installer" / "provision_managed_files.py").read_text(
+        encoding="utf-8"
+    )
+    repair = (ROOT / "fix_permissions.sh").read_text(encoding="utf-8")
+    policy = (ROOT / "installer" / "knxohui.sudoers").read_text(encoding="utf-8")
+    update = (ROOT / "update.sh").read_text(encoding="utf-8")
+
+    assert '"$BASE/installer/provision_managed_outputs.py"' in setup
+    assert "/usr/local/libexec/knx_to_openhab/provision_managed_outputs.py" in setup
+    assert "sudo install -o root -g root -m 0755" in setup
+    assert "/usr/local/libexec/knx_to_openhab/provision_managed_outputs.py" in repair
+    assert "sudo install -o root -g root -m 0755" in repair
+    assert "provision-yaml)" in service_update
+    assert "/usr/bin/python3 -I /usr/local/libexec/knx_to_openhab/provision_managed_outputs.py" in (
+        service_update
+    )
+    assert '"$@"' not in service_update
+    assert "/usr/local/sbin/knxohui-service-update provision-yaml" in policy
+    assert "sudo -n /usr/local/sbin/knxohui-service-update provision-yaml" in update
+    assert "Run 'sudo bash $INSTALL_DIR/installer/setup.sh' as an administrator" in update
+    assert update.index("provision-yaml") < update.index("# Restart the service")
+    assert "managed_openhab_root" in setup_provisioner
+    assert "os.fchown(descriptor, 0, service_gid)" in setup_provisioner
+    assert "os.fchmod(descriptor, 0o640)" in setup_provisioner
+    assert 'config_dir / "managed_openhab_root"' in helper
+    assert "_require_trusted_directory_chain" in helper
+
+    lowered_helper = helper.casefold()
+    assert "import config" not in lowered_helper
+    assert "web_ui" not in lowered_helper
+    assert "sys.path" not in lowered_helper
+
+
 def test_permission_repair_restores_external_runtime_data_ownership():
     repair = (ROOT / "fix_permissions.sh").read_text(encoding="utf-8")
 
@@ -96,6 +133,7 @@ def test_privilege_scripts_have_valid_bash_syntax():
     for path in (
         ROOT / "installer" / "setup.sh",
         ROOT / "installer" / "migrate_sudoers.sh",
+        ROOT / "installer" / "service_update.sh",
         ROOT / "fix_permissions.sh",
         ROOT / "update.sh",
     ):

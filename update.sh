@@ -212,6 +212,14 @@ else
     log "WARNING: Virtual environment not found, skipping dependency update"
 fi
 
+# Provision the one configured managed YAML target through the fixed root helper.
+# Older installations must run setup.sh once to install the helper and sudoers action.
+if ! sudo -n /usr/local/sbin/knxohui-service-update provision-yaml; then
+    log "ERROR: Could not provision the configured OpenHAB YAML target."
+    log "Run 'sudo bash $INSTALL_DIR/installer/setup.sh' as an administrator, then retry."
+    exit 1
+fi
+
 # Update version.json with new commit hash
 log "Updating version.json..."
 NEW_COMMIT=$(git -c "safe.directory=$INSTALL_DIR" rev-parse HEAD)

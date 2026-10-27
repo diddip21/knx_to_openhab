@@ -14,6 +14,7 @@ from openhab_yaml import (
     add_item,
     new_model,
     parse_metadata,
+    parse_visibility,
     render_yaml,
     validate_model,
 )
@@ -186,6 +187,65 @@ def test_yaml_export_is_mutually_exclusive_with_legacy_model_files(tmp_path):
     assert (tmp_path / "rules" / "fenster.rules").is_file()
 
 
+def test_yaml_export_retires_existing_legacy_model_files(tmp_path):
+    model = _mini_yaml_model()
+    cfg = copy.deepcopy(config)
+    paths = {
+        "items_path": tmp_path / "items" / "knx.items",
+        "things_path": tmp_path / "things" / "knx.things",
+        "sitemaps_path": tmp_path / "sitemaps" / "knx.sitemap",
+    }
+    for path in paths.values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("stale legacy model", encoding="utf-8")
+    cfg.update(
+        {
+            "output_format": "yaml",
+            "yaml_path": str(tmp_path / "yaml" / "knx.yaml"),
+            **{key: str(path) for key, path in paths.items()},
+            "influx_path": str(tmp_path / "persistence" / "influxdb.persist"),
+            "fenster_path": str(tmp_path / "rules" / "fenster.rules"),
+            "openhab_path": str(tmp_path),
+        }
+    )
+
+    ets_to_openhab.export_output("", "", "", configuration=cfg, yaml_model=model)
+
+    assert (tmp_path / "yaml" / "knx.yaml").is_file()
+    assert all(path.read_text(encoding="utf-8") == "" for path in paths.values())
+
+
+def test_legacy_export_retires_existing_yaml_model_file(tmp_path):
+    cfg = copy.deepcopy(config)
+    yaml_path = tmp_path / "yaml" / "knx.yaml"
+    yaml_path.parent.mkdir(parents=True)
+    yaml_path.write_text("stale YAML model", encoding="utf-8")
+    cfg.update(
+        {
+            "output_format": "legacy",
+            "yaml_path": str(yaml_path),
+            "items_path": str(tmp_path / "items" / "knx.items"),
+            "things_path": str(tmp_path / "things" / "knx.things"),
+            "sitemaps_path": str(tmp_path / "sitemaps" / "knx.sitemap"),
+            "influx_path": str(tmp_path / "persistence" / "influxdb.persist"),
+            "fenster_path": str(tmp_path / "rules" / "fenster.rules"),
+            "openhab_path": str(tmp_path),
+        }
+    )
+
+    ets_to_openhab.export_output("items", "sitemap", "things", configuration=cfg)
+
+    assert yaml_path.read_text(encoding="utf-8") == ""
+    assert all(
+        (tmp_path / directory / filename).is_file()
+        for directory, filename in (
+            ("items", "knx.items"),
+            ("things", "knx.things"),
+            ("sitemaps", "knx.sitemap"),
+        )
+    )
+
+
 def test_metadata_conversion_preserves_value_and_configuration():
     assert parse_metadata(
         ', stateDescription=""[options="1=Comfort,2=Standby"], alexa="Switch"'
@@ -196,6 +256,44 @@ def test_metadata_conversion_preserves_value_and_configuration():
         },
         "alexa": {"value": "Switch"},
     }
+
+
+def test_metadata_conversion_preserves_unquoted_homekit_instance():
+    assert parse_metadata(', homekit="Switchable" [Instance=2]') == {
+        "homekit": {"value": "Switchable", "config": {"Instance": "2"}}
+    }
+
+
+def test_visibility_uses_openhab_52_rule_and_condition_dtos():
+    assert parse_visibility("visibility=[extended_view==ON]") == [
+        {"conditions": [{"item": "extended_view", "condition": "==", "value": "ON"}]}
+    ]
+
+
+def test_visibility_preserves_non_default_condition_operator():
+    assert parse_visibility("visibility=[temperature>=18]") == [
+        {"conditions": [{"item": "temperature", "condition": ">=", "value": "18"}]}
+    ]
+
+
+def test_generated_debug_visibility_uses_openhab_52_sitemap_schema(tmp_path):
+    project = json.loads(MINI_PROJECT.read_text(encoding="utf-8"))
+    project["locations"]["loc1"]["spaces"]["floor1"]["spaces"]["room1"][
+        "description"
+    ] = "Living;debug"
+    project_path = tmp_path / "debug-project.json"
+    project_path.write_text(json.dumps(project), encoding="utf-8")
+
+    model = _yaml_generation(project_path)[3]
+    room_widget = model["sitemaps"]["knx"]["widgets"][0]["widgets"][0]
+    serialized_widget = yaml.safe_load(render_yaml(model))["sitemaps"]["knx"]["widgets"][0][
+        "widgets"
+    ][0]
+
+    expected_rules = [{"conditions": [{"item": "extended_view", "condition": "==", "value": "ON"}]}]
+    assert room_widget["visibilityRules"] == expected_rules
+    assert "visibility" not in room_widget
+    assert serialized_widget["visibilityRules"] == expected_rules
 
 
 def test_model_validation_rejects_orphaned_groups():

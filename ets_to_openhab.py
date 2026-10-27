@@ -361,7 +361,7 @@ def gen_building(include_yaml_model=False):
                 "label": room_name,
             }
             if visibility := parse_visibility(room_variables["visibility"]):
-                yaml_room_widget["visibility"] = visibility
+                yaml_room_widget["visibilityRules"] = visibility
             yaml_floor_widget["widgets"].append(yaml_room_widget)
 
             addresses = room["Addresses"]
@@ -857,7 +857,7 @@ def gen_building(include_yaml_model=False):
                             "label": item_label,
                         }
                         if visibility := parse_visibility(item_variables["visibility"]):
-                            yaml_widget["visibility"] = visibility
+                            yaml_widget["visibilityRules"] = visibility
                         yaml_room_widget.setdefault("widgets", []).append(yaml_widget)
 
                         if homekit_accessorie >= HOMEKIT_MAX_ACCESSORIES_PER_INSTANCE:
@@ -1015,6 +1015,20 @@ def _export_legacy_model(items, sitemap, things, cfg):
         raise
 
 
+def _retire_existing_model_files(paths, active_paths=()):
+    """Empty existing inactive model files without creating missing targets."""
+    active_paths = {os.path.normcase(os.path.abspath(path)) for path in active_paths if path}
+    for path in paths:
+        if not path or not os.path.lexists(path):
+            continue
+        if os.path.normcase(os.path.abspath(path)) in active_paths:
+            continue
+        if os.path.islink(path) or not os.path.isfile(path):
+            raise ValueError(f"Refusing to retire a non-regular model output: {path}")
+        with open(path, "w", encoding="utf8"):
+            pass
+
+
 def export_output(items, sitemap, things, configuration=None, yaml_model=None):
     """Export the generated openHAB model plus legacy persistence/rules files."""
     cfg = configuration if configuration is not None else config
@@ -1029,9 +1043,17 @@ def export_output(items, sitemap, things, configuration=None, yaml_model=None):
             raise ValueError("yaml_model is required when output_format is yaml")
         yaml_path = cfg.get("yaml_path", "openhab/yaml/knx.yaml")
         write_yaml(yaml_path, yaml_model)
+        _retire_existing_model_files(
+            (cfg.get("items_path"), cfg.get("things_path"), cfg.get("sitemaps_path")),
+            active_paths=(yaml_path,),
+        )
         logger.info("Successfully wrote openHAB 5.2 YAML configuration to %s", yaml_path)
     else:
         _export_legacy_model(items, sitemap, things, cfg)
+        _retire_existing_model_files(
+            (cfg.get("yaml_path", "openhab/yaml/knx.yaml"),),
+            active_paths=(cfg.get("items_path"), cfg.get("things_path"), cfg.get("sitemaps_path")),
+        )
 
     # export persistent
     private_persistence = ""

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import posixpath
 import shlex
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Mapping
+from typing import Callable, Mapping, Sequence, TextIO
 
 PATH_DEFAULTS = {
     "KNXOH_INSTALL_DIR": "/opt/knx_to_openhab",
@@ -41,13 +44,22 @@ class UninstallPaths:
     backup_dir: PurePosixPath
 
 
+@dataclass(frozen=True)
+class RemovalAction:
+    description: str
+    command: tuple[str, ...]
+    best_effort: bool = False
+
+
 def _read_saved_paths(paths_file: Path) -> dict[str, str]:
     try:
         lines = paths_file.read_text(encoding="utf-8").splitlines()
     except FileNotFoundError:
         return {}
     except OSError as error:
-        raise UninstallError(f"Cannot read saved path configuration {paths_file}: {error}") from error
+        raise UninstallError(
+            f"Cannot read saved path configuration {paths_file}: {error}"
+        ) from error
 
     saved: dict[str, str] = {}
     for line_number, line in enumerate(lines, start=1):
@@ -62,9 +74,13 @@ def _read_saved_paths(paths_file: Path) -> dict[str, str]:
         try:
             values = shlex.split(raw_value, posix=True)
         except ValueError as error:
-            raise UninstallError(f"Invalid quoting for {name} in {paths_file}:{line_number}") from error
+            raise UninstallError(
+                f"Invalid quoting for {name} in {paths_file}:{line_number}"
+            ) from error
         if len(values) != 1 or not values[0]:
-            raise UninstallError(f"Expected one non-empty path for {name} in {paths_file}:{line_number}")
+            raise UninstallError(
+                f"Expected one non-empty path for {name} in {paths_file}:{line_number}"
+            )
         saved[name] = values[0]
     return saved
 
@@ -119,9 +135,7 @@ def resolve_uninstall_paths(
     )
     for index, (left_name, left) in enumerate(named_external_dirs):
         if _overlaps(install_dir, left):
-            raise UninstallError(
-                f"The {left_name} path overlaps the application directory: {left}"
-            )
+            raise UninstallError(f"The {left_name} path overlaps the application directory: {left}")
         for right_name, right in named_external_dirs[index + 1 :]:
             if _overlaps(left, right):
                 raise UninstallError(
@@ -134,3 +148,198 @@ def resolve_uninstall_paths(
         data_dir=resolved["KNXOH_DATA_DIR"],
         backup_dir=resolved["KNXOH_BACKUP_DIR"],
     )
+
+
+def _removal_actions(paths: UninstallPaths, purge: bool) -> list[RemovalAction]:
+    units = (
+        "knxohui.service",
+        "knxohui-backup-cleanup.service",
+        "knxohui-backup-cleanup.timer",
+        "knxohui-update.service",
+    )
+    actions = [
+        RemovalAction(f"Stop {unit}", ("sudo", "systemctl", "stop", unit), best_effort=True)
+        for unit in units
+    ]
+    actions.extend(
+        RemovalAction(f"Disable {unit}", ("sudo", "systemctl", "disable", unit), best_effort=True)
+        for unit in units
+    )
+    actions.extend(
+        (
+            RemovalAction(
+                "Remove systemd units",
+                (
+                    "sudo",
+                    "rm",
+                    "-f",
+                    "--",
+                    "/etc/systemd/system/knxohui.service",
+                    "/etc/systemd/system/knxohui-backup-cleanup.service",
+                    "/etc/systemd/system/knxohui-backup-cleanup.timer",
+                    "/etc/systemd/system/knxohui-update.service",
+                ),
+            ),
+            RemovalAction(
+                "Remove installed system helpers",
+                (
+                    "sudo",
+                    "rm",
+                    "-rf",
+                    "--",
+                    "/usr/local/libexec/knx_to_openhab",
+                    "/usr/local/sbin/knxohui-service-update",
+                ),
+            ),
+            RemovalAction(
+                "Remove restricted sudoers policy",
+                ("sudo", "rm", "-f", "--", "/etc/sudoers.d/knxohui"),
+            ),
+            RemovalAction(
+                f"Remove application releases at {paths.install_dir}",
+                ("sudo", "rm", "-rf", "--", str(paths.install_dir)),
+            ),
+            RemovalAction("Reload systemd units", ("sudo", "systemctl", "daemon-reload")),
+        )
+    )
+    if purge:
+        actions.extend(
+            (
+                RemovalAction(
+                    f"Purge configuration at {paths.config_dir}",
+                    ("sudo", "rm", "-rf", "--", str(paths.config_dir)),
+                ),
+                RemovalAction(
+                    f"Purge runtime data at {paths.data_dir}",
+                    ("sudo", "rm", "-rf", "--", str(paths.data_dir)),
+                ),
+                RemovalAction(
+                    f"Purge backups at {paths.backup_dir}",
+                    ("sudo", "rm", "-rf", "--", str(paths.backup_dir)),
+                ),
+                RemovalAction(
+                    "Remove service account",
+                    ("sudo", "userdel", "knxohui"),
+                    best_effort=True,
+                ),
+            )
+        )
+    return actions
+
+
+def _default_command_runner(command: Sequence[str]) -> int:
+    try:
+        return subprocess.run(list(command), check=False).returncode
+    except OSError as error:
+        print(f"Could not run {command[0]}: {error}", file=sys.stderr)
+        return 127
+
+
+def _print_plan(paths: UninstallPaths, purge: bool, output: TextIO) -> None:
+    output.write("Planned uninstall actions:\n")
+    for action in _removal_actions(paths, purge):
+        output.write(f"  - {action.description}\n")
+        if len(action.command) > 4 and action.command[1] == "rm":
+            for target in action.command[4:]:
+                output.write(f"    Path: {target}\n")
+    if purge:
+        output.write("  - Configuration, jobs, runtime data, and backups will be deleted.\n")
+        output.write(f"    Configuration: {paths.config_dir}\n")
+        output.write(f"    Runtime data: {paths.data_dir}\n")
+        output.write(f"    Backups: {paths.backup_dir}\n")
+    else:
+        output.write("  - Configuration, jobs, runtime data, and backups will be retained.\n")
+        output.write(f"    Configuration: {paths.config_dir}\n")
+        output.write(f"    Runtime data: {paths.data_dir}\n")
+        output.write(f"    Backups: {paths.backup_dir}\n")
+        output.write(
+            "  - The knxohui service account will be retained to preserve file ownership.\n"
+        )
+
+
+def run_uninstall(
+    argv: Sequence[str] | None = None,
+    *,
+    env: Mapping[str, str] | None = None,
+    paths_file: Path | None = None,
+    confirm: Callable[[str], str] = input,
+    command_runner: Callable[[Sequence[str]], int] = _default_command_runner,
+    output: TextIO = sys.stdout,
+) -> int:
+    """Run the confirmed, idempotent uninstall or purge lifecycle."""
+    parser = argparse.ArgumentParser(description="Safely remove KNX to OpenHAB")
+    parser.add_argument(
+        "--purge",
+        action="store_true",
+        help="also permanently delete external config, runtime data, backups, and service account",
+    )
+    args = parser.parse_args(list(argv) if argv is not None else None)
+    environment = os.environ if env is None else env
+    saved_paths = paths_file or Path(environment.get("KNXOH_PATHS_FILE", PATHS_FILE))
+    try:
+        paths = resolve_uninstall_paths(environment, saved_paths)
+    except UninstallError as error:
+        output.write(f"Refusing to uninstall: {error}\n")
+        return 2
+
+    _print_plan(paths, args.purge, output)
+    try:
+        response = confirm("Type UNINSTALL to continue: ")
+    except EOFError:
+        response = ""
+    if response != "UNINSTALL":
+        output.write("Uninstallation cancelled; no changes were made.\n")
+        return 0
+
+    if args.purge:
+        try:
+            response = confirm("Type PURGE to permanently delete the listed user data: ")
+        except EOFError:
+            response = ""
+        if response != "PURGE":
+            output.write("Purge cancelled; no changes were made.\n")
+            return 0
+
+    actions = _removal_actions(paths, args.purge)
+    failures: list[str] = []
+    purge_actions_started = False
+    for action in actions:
+        if (
+            action.description.startswith("Purge ")
+            or action.description == "Remove service account"
+        ):
+            purge_actions_started = True
+        status = command_runner(action.command)
+        if status != 0 and not action.best_effort:
+            failures.append(action.description)
+            # Stop at the first failed required action. In particular, never
+            # continue deleting other user-data trees after a partial purge.
+            break
+    if failures:
+        output.write("Uninstallation finished with errors: " + "; ".join(failures) + "\n")
+        if args.purge and purge_actions_started:
+            output.write("Purge may be partial; inspect the configured paths before retrying.\n")
+        else:
+            output.write("External configuration, runtime data, and backups were retained.\n")
+        return 1
+
+    if args.purge:
+        output.write("Uninstallation and purge complete; configured user data was deleted.\n")
+    else:
+        output.write(
+            "Uninstallation complete; configuration, runtime data, and backups were retained.\n"
+        )
+    return 0
+
+
+def main() -> int:
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        print(
+            "Run this uninstaller as a regular user with sudo access, not as root.", file=sys.stderr
+        )
+        return 2
+    return run_uninstall()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

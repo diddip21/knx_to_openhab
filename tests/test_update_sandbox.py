@@ -1,6 +1,7 @@
 """Adapter contract tests never launch systemd, pip, or change host policy."""
 
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -118,6 +119,50 @@ def test_invalid_stage_and_path_do_not_launch():
         with pytest.raises(ValueError):
             worker.run_child(stage, paths, workspace, None)
     assert not calls
+
+
+@pytest.mark.parametrize("syntax", ["${LANG}", "${NAME}", "$$"])
+@pytest.mark.parametrize(
+    "field",
+    ["releases", "current", "config_dir", "data_dir", "backup_dir", "workspace", "candidate"],
+)
+def test_dollar_paths_rejected_before_any_runner_call(monkeypatch, syntax, field):
+    monkeypatch.delenv("NAME", raising=False)
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="ActiveState=inactive\nControlGroup=\n")
+
+    worker = adapter(run)
+    paths = protected_paths()
+    workspace = Path("/run/work")
+    if field not in ("workspace", "candidate"):
+        paths = replace(paths, **{field: getattr(paths, field) / syntax})
+    candidate = paths.releases / "1.2.3"
+    if field == "workspace":
+        workspace /= syntax
+    elif field == "candidate":
+        candidate = paths.releases / syntax
+    with pytest.raises(ValueError, match="Unsafe sandbox path"):
+        worker.run_child("dependencies", paths, workspace, candidate)
+    assert calls == []
+
+
+def test_spaces_preserved_in_property_and_command_paths():
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="ActiveState=inactive\nControlGroup=\n")
+
+    adapter(run).run_child(
+        "dependencies", protected_paths(), Path("/run/work space"), Path("/opt/r/candidate space")
+    )
+    argv = calls[0]
+    assert argv[argv.index("--workspace") + 1] == "/run/work space"
+    assert argv[argv.index("--candidate") + 1] == "/opt/r/candidate space"
+    assert ('--property=ReadWritePaths="/run/work space/output" "/opt/r/candidate space"') in argv
 
 
 def test_missing_external_paths_fail_closed_before_launch():

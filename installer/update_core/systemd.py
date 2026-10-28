@@ -21,6 +21,12 @@ class ServiceState:
 
 
 def _path(path: Path) -> str:
+    """Reject controls, backslashes, quotes, percent specifiers and dollar signs.
+
+    Dollar syntax is intentionally unsupported: systemd expands ExecStart
+    environment references even without a shell. Refuse it before launch rather
+    than requiring systemd 254's --expand-environment option. Spaces remain valid.
+    """
     value = path.as_posix()
     parsed = PurePosixPath(value)
     if (
@@ -28,7 +34,7 @@ def _path(path: Path) -> str:
         or str(parsed) != value
         or ".." in parsed.parts
         or value == "/"
-        or any(ord(c) < 32 or c in '\\"%\x7f' for c in value)
+        or any(ord(c) < 32 or c in '\\"%$\x7f' for c in value)
     ):
         raise ValueError("Unsafe sandbox path")
     return value

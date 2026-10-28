@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -58,14 +59,78 @@ def _absolute_path(path: str | Path) -> Path:
     return candidate
 
 
-def create_snapshot(paths: Iterable[str | Path], backup_dir: str | Path) -> Path:
+def _ensure_private_directory(path: Path, *, require_private_parent: bool = False) -> Path:
+    path = Path(os.path.abspath(path.expanduser()))
+    parent = path.parent
+    chain = [*reversed(path.parents), path]
+    for component in chain:
+        if component.is_symlink():
+            raise ValueError(f"Refusing to use a symlink in secure snapshot path: {component}")
+    if require_private_parent:
+        if not parent.is_dir():
+            raise ValueError(f"Secure snapshot parent must already exist: {parent}")
+        try:
+            import pwd
+
+            service = pwd.getpwnam("knxohui")
+            service_uid = service.pw_uid
+            service_gids = set(os.getgrouplist(service.pw_name, service.pw_gid))
+        except (ImportError, KeyError):
+            service_uid = None
+            service_gids = set()
+        for ancestor, child in zip(chain[:-1], chain[1:]):
+            metadata = ancestor.lstat()
+            mode = stat.S_IMODE(metadata.st_mode)
+            service_can_write = (
+                metadata.st_uid == service_uid
+                if service_uid is not None and metadata.st_uid == service_uid
+                else bool(
+                    mode & stat.S_IWGRP
+                    if service_uid is not None and metadata.st_gid in service_gids
+                    else mode & stat.S_IWOTH
+                )
+            )
+            if not service_can_write:
+                continue
+            child_stat = child.lstat() if child.exists() else None
+            protected_owner = service_uid if service_uid is not None else os.geteuid()
+            if (
+                metadata.st_mode & stat.S_ISVTX
+                and metadata.st_uid != protected_owner
+                and child_stat is not None
+                and child_stat.st_uid != service_uid
+            ):
+                continue
+            raise ValueError(f"Secure snapshot path has a service-writable ancestor: {ancestor}")
+        parent_stat = parent.lstat()
+        if parent_stat.st_uid != os.geteuid() or stat.S_IMODE(parent_stat.st_mode) & 0o022:
+            raise ValueError(f"Secure snapshot parent is writable by other users: {parent}")
+    if not path.exists():
+        path.mkdir(mode=0o700)
+    metadata = path.lstat()
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise ValueError(f"Secure snapshot path is not a directory: {path}")
+    if metadata.st_uid != os.geteuid():
+        raise ValueError(f"Secure snapshot directory is not owned by the current user: {path}")
+    if stat.S_IMODE(metadata.st_mode) & 0o077:
+        raise ValueError(f"Secure snapshot directory must have private permissions: {path}")
+    return path
+
+
+def create_snapshot(
+    paths: Iterable[str | Path], backup_dir: str | Path, *, secure: bool = False
+) -> Path:
     """Save only the named files (and missing-file state) for later rollback."""
     unique_paths = sorted({_absolute_path(path) for path in paths}, key=str)
     if not unique_paths:
         raise ValueError("A migration snapshot requires at least one target path")
 
-    snapshot_root = Path(backup_dir).expanduser().resolve() / "config-migrations"
-    snapshot_root.mkdir(parents=True, exist_ok=True)
+    if secure:
+        private_root = _ensure_private_directory(Path(backup_dir), require_private_parent=True)
+        snapshot_root = _ensure_private_directory(private_root / "config-migrations")
+    else:
+        snapshot_root = Path(backup_dir).expanduser().resolve() / "config-migrations"
+        snapshot_root.mkdir(parents=True, exist_ok=True)
     snapshot_dir = snapshot_root / (
         datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ") + "-" + uuid.uuid4().hex
     )
@@ -234,3 +299,14 @@ def migrate_config(
         restore_snapshot(snapshot_dir)
         raise
     return current_version
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--restore-snapshot", type=Path, required=True)
+    args = parser.parse_args()
+    restore_snapshot(args.restore_snapshot)
+
+
+if __name__ == "__main__":
+    main()

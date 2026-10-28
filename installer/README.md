@@ -18,7 +18,7 @@ is a maintainer action and is not performed by the build script.
 
 ## Files
 
-- **`setup.sh`** — Main installer script (run once as sudo)
+- **`setup.sh`** — Privileged setup implementation called by the verified bootstrap; do not run it directly
 - **`backup_cleanup.sh`** — Backup retention enforcement script
 - **`knxohui.service`** — systemd unit for Flask web server
 - **`knxohui-backup-cleanup.service`** — systemd unit for cleanup oneshot
@@ -27,11 +27,52 @@ is a maintainer action and is not performed by the build script.
 ## Quick Install
 
 ```bash
-# Run from the repository root.
-sudo bash installer/setup.sh
+curl -fsSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install.sh | bash
 ```
 
-This will:
+The installer must run as a regular user with `sudo` access. It selects the
+latest stable GitHub release by default, downloads the source archive and its
+SHA-256 sidecar, verifies the checksum, validates archive paths, then stages
+the immutable release before changing `current`. Git is not used to install or
+update application code.
+
+For an explicit prerelease install, download the bootstrap script and select
+the prerelease channel:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install.sh \
+  -o /tmp/knxoh-install.sh
+bash /tmp/knxoh-install.sh --channel prerelease
+```
+
+When an installation already exists, the installer offers **Update**,
+**Repair**, **Reinstall**, and **Cancel**. In non-interactive use, choose one
+explicitly (`--update`, `--repair`, `--reinstall`, or `--cancel`) or use
+`--plan` to inspect the action without making changes. Repair restores missing
+system components only; it does not migrate, overwrite, or delete configuration,
+secrets, jobs, runtime data, or backups. Update and reinstall preserve those
+external paths while installing a new release. Release directories are
+root-owned and not writable by the service account. If the selected version is
+already active, reinstall performs a system-component repair instead of
+replacing its files. The bootstrap refuses to run privileged repair code from a
+release tree the service account can modify.
+
+`setup.sh` is called by the verified bootstrap installer. Run repairs through
+the bootstrap as a regular user with `sudo` access; do not run a release-owned
+setup script directly as root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install.sh \
+  -o /tmp/knxoh-install.sh
+bash /tmp/knxoh-install.sh --repair
+```
+
+Legacy flat installations cannot be safely repaired in place because their
+application files may be writable by the service account. Choose `--update` to
+migrate them into a verified immutable release; external settings and runtime
+data remain in their existing paths.
+
+The normal setup process will:
 1. Install the application under `/opt/knx_to_openhab` by default
 2. Migrate settings and runtime data out of the application tree
 3. Provision the service user and only the generated OpenHAB output files
@@ -44,6 +85,13 @@ The installation directories can be selected with `KNXOH_INSTALL_DIR`,
 `setup.sh`. Existing values are saved in `/etc/knx_to_openhab/paths.env` and
 reused on later setup runs. The paths must be absolute, separate, and outside
 the application directory.
+
+If setup is interrupted after a release directory is prepared but before
+`current` is switched, the release carries a `.install-incomplete` marker.
+Choosing Repair validates the release, restores missing system integration,
+atomically activates it, and removes the marker after successful service setup.
+Incomplete hidden staging directories are discarded only inside
+`releases/`; external user data is never part of that cleanup.
 
 ### Runtime paths and migration
 
@@ -97,35 +145,35 @@ See `WEBUI_INSTALLATION.md` for full documentation.
 
 ## Service user privileges
 
-The web UI runs as the unprivileged `knxohui` service user. Git-based application
-updates run as that user; Git is not granted through sudo. The sudoers policy in
+The web UI runs as the unprivileged `knxohui` service user. The installer
+downloads and verifies release artifacts; Git is not granted through sudo. The sudoers policy in
 `knxohui.sudoers` permits only exact `systemctl restart` and `systemctl is-active`
 commands for `openhab.service`, `knxohui.service`, and `evcc.service`. It does not
-grant a shell, arbitrary Git commands, or wildcard command arguments. Re-running
-`setup.sh` or `fix_permissions.sh` replaces the prior policy and checks it with
-`visudo -cf`.
+grant a shell, arbitrary Git commands, or wildcard command arguments. Each
+verified-bootstrap install or repair replaces the prior policy and checks it
+with `visudo -cf`; do not invoke `setup.sh` directly.
 
 The package update buttons use the root-owned `/usr/local/sbin/knxohui-service-update`
 helper. Sudoers allows only its `refresh`, `openhab`, and `evcc` actions. The
-installer preserves an existing `web_ui/backend/config.json` when copying new code.
+installer keeps Web UI settings, secrets, jobs, and backups in canonical external paths.
 
 ### Existing installations
 
 The old policy allowed the service user to run arbitrary Git commands as root.
 The Web UI cannot safely use that old permission to replace its own sudoers file.
-After the source update has been applied, an administrator must run the installer
-once before using package updates or starting another Web UI update:
+An administrator can run the release-aware installer once to apply the current
+stable release and install the restricted service policy:
 
 ```bash
-cd /opt/knx_to_openhab
-sudo bash installer/setup.sh
+curl -fsSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install.sh \
+  -o /tmp/knxoh-install.sh
+bash /tmp/knxoh-install.sh --update
 ```
 
-The installer preserves the existing runtime configuration while installing the
-root-owned package helper and its exact sudoers entries. It also replaces and
-validates the old policy. If only the least-privilege migration is needed, use
-`sudo bash installer/migrate_sudoers.sh`; that script changes only the sudoers
-file.
+The installer preserves external runtime configuration while installing missing
+system components and applying the restricted sudoers policy. Run this migration
+through the release-aware bootstrap even when no application update is otherwise
+needed; do not invoke a release-owned migration script directly as root.
 
 > **Note:** For local development without systemd installation, see [DEVELOPMENT.md](../DEVELOPMENT.md)
 
@@ -190,5 +238,6 @@ Deploy accepts only the configured generated outputs in their expected OpenHAB
 directories. It rejects traversal, symlinks, and missing pre-provisioned files.
 Backups still contain the full OpenHAB configuration tree, while rollback
 restores only generator-managed files so manual configuration is preserved.
-Re-run `setup.sh` after changing output paths so the new exact files can be
-provisioned; the Web UI updater does not change system file permissions.
+Changing configured output paths requires explicit permission provisioning; do
+not rerun the privileged `setup.sh` directly. The Web UI updater does not change
+system file permissions.

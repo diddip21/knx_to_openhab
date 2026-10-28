@@ -2,6 +2,7 @@ import base64
 import json
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -311,6 +312,108 @@ def test_legacy_runtime_sources_can_be_deferred_until_release_activation(tmp_pat
 
     assert not old_jobs.exists()
     assert not old_backups.exists()
+
+
+def test_migration_publishes_snapshot_path_under_configured_secure_root(tmp_path):
+    paths = _fixture(tmp_path)
+    source_root, template_root, config_dir, data_dir, backup_dir, old_jobs, old_backups = paths
+    snapshot_root = config_dir / ".installer-state"
+    snapshot_pointer = tmp_path / "staging/migration-snapshot-path"
+    snapshot_pointer.parent.mkdir()
+
+    migration.migrate_runtime_data(
+        source_root,
+        template_root,
+        config_dir,
+        data_dir,
+        backup_dir,
+        source_root,
+        config_dir.parent / "paths.env",
+        cleanup_legacy=False,
+        snapshot_backup_dir=snapshot_root,
+        snapshot_path_file=snapshot_pointer,
+    )
+
+    snapshot_dir = Path(snapshot_pointer.read_text(encoding="utf-8").strip())
+    assert snapshot_dir.is_relative_to(snapshot_root / "config-migrations")
+    assert (snapshot_dir / "manifest.json").is_file()
+    if os.name == "posix":
+        assert snapshot_pointer.stat().st_mode & 0o777 == 0o600
+    assert old_jobs.exists() and old_backups.exists()
+
+    migration.cleanup_legacy_runtime_data(
+        source_root,
+        data_dir,
+        backup_dir,
+        snapshot_backup_dir=snapshot_root,
+    )
+    assert not old_jobs.exists() and not old_backups.exists()
+
+
+def test_default_migration_cleanup_uses_custom_snapshot_root(tmp_path):
+    paths = _fixture(tmp_path)
+    source_root, template_root, config_dir, data_dir, backup_dir, old_jobs, old_backups = paths
+    snapshot_root = config_dir / ".installer-state"
+
+    migration.migrate_runtime_data(
+        source_root,
+        template_root,
+        config_dir,
+        data_dir,
+        backup_dir,
+        source_root,
+        config_dir.parent / "paths.env",
+        snapshot_backup_dir=snapshot_root,
+    )
+
+    assert not old_jobs.exists() and not old_backups.exists()
+
+
+def test_legacy_generator_config_is_restored_by_migration_snapshot(tmp_path):
+    paths = _fixture(tmp_path)
+    source_root, template_root, config_dir, data_dir, backup_dir, _, _ = paths
+    source_generator = source_root / "config.json"
+    original_generator = source_generator.read_bytes()
+    snapshot_pointer = tmp_path / "migration-snapshot-path"
+
+    migration.migrate_runtime_data(
+        source_root,
+        template_root,
+        config_dir,
+        data_dir,
+        backup_dir,
+        source_root,
+        config_dir.parent / "paths.env",
+        cleanup_legacy=False,
+        snapshot_path_file=snapshot_pointer,
+    )
+    assert source_generator.read_bytes() != original_generator
+
+    migration.restore_snapshot(Path(snapshot_pointer.read_text(encoding="utf-8").strip()))
+
+    assert source_generator.read_bytes() == original_generator
+
+
+def test_migration_snapshot_cli_restores_published_snapshot(tmp_path):
+    source_file = tmp_path / "config.json"
+    source_file.write_text('{"before":true}\n', encoding="utf-8")
+    snapshot_dir = migration.create_snapshot([source_file], tmp_path / "secure-state")
+    source_file.write_text('{"after":true}\n', encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve().parents[1] / "installer/config_migrations.py"),
+            "--restore-snapshot",
+            str(snapshot_dir),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert source_file.read_text(encoding="utf-8") == '{"before":true}\n'
 
 
 def test_migration_refuses_conflicting_existing_data_without_deleting_legacy(tmp_path):

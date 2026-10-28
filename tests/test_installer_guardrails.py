@@ -7,9 +7,16 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _bash_script_copy(tmp_path, source: Path) -> Path:
+    script = tmp_path / source.name
+    script.write_text(source.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+    return script
+
+
 @pytest.mark.parametrize("system_path", ["/etc", "/usr", "/var", "/home"])
 @pytest.mark.skipif(os.name != "posix", reason="installer Bash requires POSIX")
 def test_setup_rejects_system_wide_application_directory_before_writes(tmp_path, system_path):
+    setup_script = _bash_script_copy(tmp_path, ROOT / "installer" / "setup.sh")
     environment = os.environ.copy()
     environment.update(
         {
@@ -21,7 +28,7 @@ def test_setup_rejects_system_wide_application_directory_before_writes(tmp_path,
     )
 
     result = subprocess.run(
-        ["bash", str(ROOT / "installer" / "setup.sh")],
+        ["bash", str(setup_script)],
         env=environment,
         capture_output=True,
         text=True,
@@ -34,14 +41,15 @@ def test_setup_rejects_system_wide_application_directory_before_writes(tmp_path,
 
 def test_setup_stops_service_before_migration_and_restarts_after_unit_reload():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+    normal_setup = setup[setup.index('sudo touch "$STAGING_DIR/.install-incomplete"') :]
 
-    stop_index = setup.index("stop_unit_if_active knxohui.service")
-    migration_index = setup.index("migrate_runtime_data.py")
-    daemon_reload_index = setup.index("sudo systemctl daemon-reload")
-    restart_index = setup.index("sudo systemctl restart knxohui.service")
+    stop_index = normal_setup.index("stop_unit_if_active knxohui.service")
+    migration_index = normal_setup.index("migrate_runtime_data.py")
+    daemon_reload_index = normal_setup.index("sudo systemctl daemon-reload")
+    restart_index = normal_setup.index("sudo systemctl restart knxohui.service")
 
     assert stop_index < migration_index < daemon_reload_index < restart_index
-    assert "sudo systemctl enable --now knxohui.service" not in setup
+    assert "sudo systemctl enable --now knxohui.service" not in normal_setup
     assert (
         'sudo install -o root -g root -m 0755 "$STAGING_DIR/installer/set_ui_password.py" ' in setup
     )
@@ -49,16 +57,44 @@ def test_setup_stops_service_before_migration_and_restarts_after_unit_reload():
 
 def test_setup_stages_release_and_switches_current_after_migration():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+    normal_setup = setup[
+        setup.index('transaction_state_temporary="$TRANSACTION_STATE_STAGING_FILE.tmp.$$"') :
+    ]
 
     assert 'RELEASE_DIR="$BASE/releases/$RELEASE_VERSION"' in setup
     assert 'STAGING_DIR="$BASE/releases/.${RELEASE_VERSION}.staging.$$"' in setup
     assert 'sudo mv "$STAGING_DIR" "$RELEASE_DIR"' in setup
     assert 'sudo mv -Tf "$CURRENT_LINK_TMP" "$BASE/current"' in setup
-    migration_index = setup.index("migrate_runtime_data.py")
-    publish_index = setup.index('sudo mv -Tf "$CURRENT_LINK_TMP" "$BASE/current"')
-    cleanup_index = setup.index("--cleanup-legacy")
-    restart_index = setup.index("sudo systemctl restart knxohui.service")
-    assert migration_index < publish_index < cleanup_index < restart_index
+    migration_index = normal_setup.index("migrate_runtime_data.py")
+    publish_index = normal_setup.index('sudo mv -Tf "$CURRENT_LINK_TMP" "$BASE/current"')
+    transaction_state_index = normal_setup.index('>"$transaction_state_temporary"')
+    persist_state_index = normal_setup.index(
+        'sudo mv -Tf "$transaction_state_temporary" "$TRANSACTION_STATE_STAGING_FILE"'
+    )
+    release_move_index = normal_setup.index('sudo mv "$STAGING_DIR" "$RELEASE_DIR"')
+    stop_index = normal_setup.index("stop_unit_if_active knxohui-backup-cleanup.timer")
+    restart_index = normal_setup.index("sudo systemctl restart knxohui.service")
+    health_index = normal_setup.index("The Web UI service did not become healthy")
+    cleanup_index = normal_setup.index("    --cleanup-legacy \\\n")
+    assert publish_index < migration_index < restart_index < health_index < cleanup_index
+    assert (
+        transaction_state_index
+        < persist_state_index
+        < release_move_index
+        < stop_index
+        < publish_index
+    )
+    assert "--secure-snapshot-root" in normal_setup
+
+
+def test_setup_keeps_application_releases_root_owned_and_not_service_writable():
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+
+    assert 'sudo chown root:root "$BASE" "$RELEASES_DIR"' in setup
+    assert 'sudo chown -R root:root "$RELEASES_DIR"' in setup
+    assert 'sudo chown -R root:root "$RELEASE_DIR"' in setup
+    assert 'sudo chmod -R go-w "$RELEASE_DIR"' in setup
+    assert 'sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$BASE"' not in setup
 
 
 @pytest.mark.skipif(os.name != "posix", reason="launch scripts require POSIX process semantics")
@@ -110,12 +146,13 @@ def test_launchers_prefer_current_release_and_fall_back_to_legacy_flat_install(t
             (ROOT / "installer/launch_web.sh", expected_dir),
             (ROOT / "installer/launch_backup_cleanup.sh", expected_cleanup),
         ):
+            launcher_copy = _bash_script_copy(tmp_path, launcher)
             result = subprocess.run(
-                ["bash", str(launcher)],
+                ["bash", str(launcher_copy)],
                 env=environment,
                 capture_output=True,
                 text=True,
                 check=False,
             )
             assert result.returncode == 0, result.stderr
-            assert result.stdout == str(expected)
+            assert result.stdout.rstrip("\n") == str(expected)

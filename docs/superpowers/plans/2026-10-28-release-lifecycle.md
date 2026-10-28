@@ -87,16 +87,17 @@
 ### Task 4: Make installer repeatable and release-aware (#25)
 
 **Files:**
-- Modify: `install.sh`
-- Modify: `installer/setup.sh`
-- Modify: `installer/README.md`
-- Test: `tests/test_installer_lifecycle.py`
+- Modify: `install.sh`, `installer/setup.sh`
+- Modify: `installer/config_migrations.py`, `installer/migrate_runtime_data.py`
+- Modify: `installer/README.md`, `web_ui/README.md`
+- Test: `tests/test_installer_lifecycle.py`, `tests/test_installer_guardrails.py`
+- Test: `tests/test_config_migrations.py`, `tests/test_runtime_data_migration.py`, `tests/test_privilege_policy.py`
 
-- [ ] Add tests for fresh install planning, existing install choices (update/repair/reinstall/cancel), interrupted installation repair, and non-interactive refusal before writes.
-- [ ] Run the tests and observe existing in-place Git update behavior violates the new contract.
-- [ ] Replace in-place branch pulls with stable artifact selection; preserve user configuration and only repair missing system components on repair.
-- [ ] Run installer lifecycle tests and Bash syntax validation.
-- [ ] Commit: `fix: make release installation idempotent`.
+- [x] Add tests for fresh install planning, existing install choices (update/repair/reinstall/cancel), interrupted installation repair, and non-interactive refusal before writes.
+- [x] Run the tests and observe existing in-place Git update behavior violates the new contract.
+- [x] Replace in-place branch pulls with stable artifact selection; preserve user configuration and only repair missing system components on repair.
+- [x] Run installer lifecycle tests and Bash syntax validation; document platform-specific full-suite failures.
+- [x] Commit: `fix: make release installation idempotent`.
 
 ### Task 5: Implement transactional release updater and finish privilege policy (#26/#19)
 

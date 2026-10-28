@@ -1,4 +1,6 @@
 import json
+import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -9,6 +11,60 @@ import installer.config_migrations as config_migrations
 def _snapshots(backup_dir: Path) -> list[Path]:
     root = backup_dir / "config-migrations"
     return sorted(path for path in root.iterdir() if path.is_dir()) if root.exists() else []
+
+
+@pytest.mark.skipif(os.name != "posix", reason="secure snapshot modes require POSIX")
+def test_secure_snapshot_root_rejects_symlink(tmp_path):
+    source = tmp_path / "config.json"
+    source.write_text("{}\n", encoding="utf-8")
+    destination = tmp_path / "secure-state"
+    target = tmp_path / "redirected-state"
+    target.mkdir()
+    destination.symlink_to(target, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="symlink"):
+        config_migrations.create_snapshot([source], destination, secure=True)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="secure snapshot modes require POSIX")
+def test_secure_snapshot_root_rejects_group_or_world_access(tmp_path):
+    source = tmp_path / "config.json"
+    source.write_text("{}\n", encoding="utf-8")
+    destination = tmp_path / "secure-state"
+    destination.mkdir(mode=0o755)
+    destination.chmod(0o755)
+
+    with pytest.raises(ValueError, match="private permissions"):
+        config_migrations.create_snapshot([source], destination, secure=True)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="secure snapshot permissions require POSIX")
+def test_secure_snapshot_root_rejects_service_writable_ancestor(tmp_path):
+    source = tmp_path / "config.json"
+    source.write_text("{}\n", encoding="utf-8")
+    writable_parent = tmp_path / "service-writable"
+    writable_parent.mkdir()
+    writable_parent.chmod(0o777)
+    private_parent = writable_parent / "config"
+    private_parent.mkdir(mode=0o700)
+    destination = private_parent / "secure-state"
+
+    with pytest.raises(ValueError, match="service-writable ancestor"):
+        config_migrations.create_snapshot([source], destination, secure=True)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="secure snapshot modes require POSIX")
+def test_secure_snapshot_root_and_contents_are_private(tmp_path):
+    source = tmp_path / "config.json"
+    source.write_text("{}\n", encoding="utf-8")
+    destination = tmp_path / "secure-state"
+
+    snapshot = config_migrations.create_snapshot([source], destination, secure=True)
+
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o700
+    assert stat.S_IMODE((destination / "config-migrations").stat().st_mode) == 0o700
+    assert stat.S_IMODE(snapshot.stat().st_mode) == 0o700
+    assert stat.S_IMODE((snapshot / "manifest.json").stat().st_mode) == 0o600
 
 
 def test_migrates_unversioned_config_additively_and_snapshots_original_bytes(tmp_path):

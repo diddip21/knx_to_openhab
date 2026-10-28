@@ -396,12 +396,18 @@ def _write_pending_legacy_cleanup(
         _atomic_write(snapshot_dir / "pending-legacy-cleanup.json", contents, 0o600)
 
 
-def cleanup_legacy_runtime_data(source_root: Path, data_dir: Path, backup_dir: Path) -> None:
+def cleanup_legacy_runtime_data(
+    source_root: Path,
+    data_dir: Path,
+    backup_dir: Path,
+    *,
+    snapshot_backup_dir: Path | None = None,
+) -> None:
     """Remove pending, validated in-application runtime trees after activation."""
     source_root = Path(source_root).resolve()
     data_dir = Path(data_dir).resolve()
     backup_dir = Path(backup_dir).resolve()
-    snapshot_root = backup_dir / "config-migrations"
+    snapshot_root = Path(snapshot_backup_dir or backup_dir).resolve() / "config-migrations"
     if not snapshot_root.is_dir():
         return
     for marker in sorted(snapshot_root.glob("*/pending-legacy-cleanup.json")):
@@ -440,6 +446,9 @@ def migrate_runtime_data(
     paths_file: Path,
     *,
     cleanup_legacy: bool = True,
+    snapshot_backup_dir: Path | None = None,
+    snapshot_path_file: Path | None = None,
+    secure_snapshot_root: bool = False,
 ) -> dict[str, Path]:
     """Migrate runtime state transactionally, then clean legacy in-tree copies."""
     source_root = Path(source_root).resolve()
@@ -454,16 +463,24 @@ def migrate_runtime_data(
     secrets_target = config_dir / "secrets.env"
     jobs_index = data_dir / "jobs" / "jobs.json"
 
+    snapshot_paths = [
+        app_config_target,
+        generator_config_target,
+        secrets_target,
+        jobs_index,
+        paths_file,
+    ]
+    source_generator = source_root / "config.json"
+    if source_generator.is_file():
+        snapshot_paths.append(source_generator)
+
     snapshot_dir = create_snapshot(
-        (
-            app_config_target,
-            generator_config_target,
-            secrets_target,
-            jobs_index,
-            paths_file,
-        ),
-        backup_dir,
+        snapshot_paths,
+        snapshot_backup_dir or backup_dir,
+        secure=secure_snapshot_root,
     )
+    if snapshot_path_file is not None:
+        _atomic_write(Path(snapshot_path_file), str(snapshot_dir) + "\n", 0o600)
     try:
         values, old_jobs, old_backups = _migrate_runtime_data(
             source_root,
@@ -480,7 +497,12 @@ def migrate_runtime_data(
         restore_snapshot(snapshot_dir)
         raise
     if cleanup_legacy:
-        cleanup_legacy_runtime_data(source_root, data_dir, backup_dir)
+        cleanup_legacy_runtime_data(
+            source_root,
+            data_dir,
+            backup_dir,
+            snapshot_backup_dir=snapshot_backup_dir,
+        )
     return values
 
 
@@ -496,9 +518,17 @@ def main() -> None:
     cleanup_group = parser.add_mutually_exclusive_group()
     cleanup_group.add_argument("--defer-legacy-cleanup", action="store_true")
     cleanup_group.add_argument("--cleanup-legacy", action="store_true")
+    parser.add_argument("--snapshot-backup-dir", type=Path)
+    parser.add_argument("--snapshot-path-file", type=Path)
+    parser.add_argument("--secure-snapshot-root", action="store_true")
     args = parser.parse_args()
     if args.cleanup_legacy:
-        cleanup_legacy_runtime_data(args.source_root, args.data_dir, args.backup_dir)
+        cleanup_legacy_runtime_data(
+            args.source_root,
+            args.data_dir,
+            args.backup_dir,
+            snapshot_backup_dir=args.snapshot_backup_dir,
+        )
         return
     migrate_runtime_data(
         args.source_root,
@@ -509,6 +539,9 @@ def main() -> None:
         args.install_dir,
         args.paths_file,
         cleanup_legacy=not args.defer_legacy_cleanup,
+        snapshot_backup_dir=args.snapshot_backup_dir,
+        snapshot_path_file=args.snapshot_path_file,
+        secure_snapshot_root=args.secure_snapshot_root,
     )
 
 

@@ -29,6 +29,16 @@ def test_sudoers_policy_only_allows_named_service_actions():
         assert f"/usr/local/sbin/knxohui-service-update {action}" in policy
 
 
+def test_documented_privileged_migrations_use_the_verified_bootstrap():
+    installer_readme = (ROOT / "installer" / "README.md").read_text(encoding="utf-8")
+    web_ui_readme = (ROOT / "web_ui" / "README.md").read_text(encoding="utf-8")
+
+    assert "sudo bash installer/migrate_sudoers.sh" not in installer_readme
+    assert "run once as sudo" not in installer_readme
+    assert "bash /tmp/knxoh-install.sh --update" in installer_readme
+    assert "install.sh --update" in web_ui_readme
+
+
 def test_installer_scripts_install_and_validate_the_restricted_policy():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
     repair = (ROOT / "fix_permissions.sh").read_text(encoding="utf-8")
@@ -45,10 +55,11 @@ def test_installer_scripts_install_and_validate_the_restricted_policy():
     assert '"$REPO_ROOT/requirements.txt"' in setup
 
 
-def test_installer_runs_provisioner_from_release_staging_tree():
+def test_installer_runs_provisioner_from_activated_release():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
 
-    assert '"$STAGING_DIR/installer/provision_managed_files.py"' in setup
+    assert '"$RELEASE_DIR/installer/provision_managed_files.py"' in setup
+    assert '"$STAGING_DIR/installer/provision_managed_files.py"' not in setup
     assert '"$REPO_ROOT/installer/provision_managed_files.py"' not in setup
 
 
@@ -92,7 +103,7 @@ def test_update_script_never_elevates_git_or_uses_a_global_safe_directory():
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Bash syntax checks require POSIX paths")
-def test_privilege_scripts_have_valid_bash_syntax():
+def test_privilege_scripts_have_valid_bash_syntax(tmp_path):
     if shutil.which("bash") is None:
         return
 
@@ -102,19 +113,23 @@ def test_privilege_scripts_have_valid_bash_syntax():
         ROOT / "fix_permissions.sh",
         ROOT / "update.sh",
     ):
+        normalized_path = tmp_path / path.name
+        normalized_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
         result = subprocess.run(
-            ["bash", "-n", str(path)], capture_output=True, text=True, check=False
+            ["bash", "-n", str(normalized_path)], capture_output=True, text=True, check=False
         )
         assert result.returncode == 0, f"{path.name}: {result.stderr}"
 
 
-def test_sudoers_policy_parses_when_visudo_is_available():
+def test_sudoers_policy_parses_when_visudo_is_available(tmp_path):
     visudo = shutil.which("visudo")
     if visudo is None:
         return
 
     policy = ROOT / "installer" / "knxohui.sudoers"
+    normalized_policy = tmp_path / policy.name
+    normalized_policy.write_text(policy.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
     result = subprocess.run(
-        [visudo, "-cf", str(policy)], capture_output=True, text=True, check=False
+        [visudo, "-cf", str(normalized_policy)], capture_output=True, text=True, check=False
     )
     assert result.returncode == 0, result.stderr or result.stdout

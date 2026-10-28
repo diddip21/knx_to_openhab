@@ -10,7 +10,10 @@ created.
 from __future__ import annotations
 
 import json
+import os
 import re
+import secrets
+import stat
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -289,9 +292,60 @@ def render_yaml(model: Mapping[str, Any]) -> str:
 
 
 def write_yaml(path: str | Path, model: Mapping[str, Any]) -> None:
-    """Validate and atomically replace a generated YAML file."""
+    """Write generated YAML atomically when possible, or update a managed inode."""
+    rendered = render_yaml(model)
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = output.with_name(f".{output.name}.tmp")
-    temporary.write_text(render_yaml(model), encoding="utf-8")
-    temporary.replace(output)
+
+    descriptor = None
+    temporary = None
+    for _ in range(10):
+        temporary = output.with_name(f".knxoh-{secrets.token_hex(8)}.tmp")
+        try:
+            descriptor = os.open(
+                temporary,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                0o666,
+            )
+            break
+        except FileExistsError:
+            continue
+        except PermissionError:
+            _write_existing_yaml(output, rendered)
+            return
+    else:
+        raise FileExistsError(f"Could not create a unique temporary YAML file beside {output}")
+
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as temporary_file:
+            descriptor = None
+            temporary_file.write(rendered)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        os.replace(temporary, output)
+    except Exception:
+        if descriptor is not None:
+            os.close(descriptor)
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def _write_existing_yaml(output: Path, rendered: str) -> None:
+    """Update the pre-provisioned file when its protected directory is not writable."""
+    descriptor = os.open(output, os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValueError(f"YAML output must be a single-link regular file: {output}")
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output_file:
+            descriptor = None
+            os.ftruncate(output_file.fileno(), 0)
+            output_file.write(rendered)
+            output_file.flush()
+            os.fsync(output_file.fileno())
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)

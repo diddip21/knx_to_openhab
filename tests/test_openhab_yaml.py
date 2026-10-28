@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ from openhab_yaml import (
     parse_visibility,
     render_yaml,
     validate_model,
+    write_yaml,
 )
 
 MINI_PROJECT = Path(__file__).parent / "fixtures" / "mini_project.json"
@@ -260,6 +262,50 @@ def test_retiring_model_file_rejects_hard_link_alias(tmp_path):
 
     assert protected_file.read_text(encoding="utf-8") == "must remain intact"
     assert inactive_model.read_text(encoding="utf-8") == "must remain intact"
+
+
+@pytest.mark.skipif(
+    os.name != "posix" or not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="requires a non-root POSIX user to enforce directory permissions",
+)
+def test_write_yaml_updates_preprovisioned_file_without_writable_parent(tmp_path):
+    target = tmp_path / "yaml" / "knx.yaml"
+    target.parent.mkdir(parents=True)
+    target.write_text("previous model\n", encoding="utf-8")
+    target.chmod(0o640)
+    original_inode = target.stat().st_ino
+    target.parent.chmod(0o550)
+
+    try:
+        write_yaml(target, _mini_yaml_model())
+    finally:
+        target.parent.chmod(0o750)
+
+    assert target.read_text(encoding="utf-8") == render_yaml(_mini_yaml_model())
+    assert target.stat().st_ino == original_inode
+    assert target.stat().st_mode & 0o777 == 0o640
+
+
+@pytest.mark.skipif(
+    os.name != "posix" or not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="requires a non-root POSIX user to enforce directory permissions",
+)
+def test_write_yaml_refuses_hard_linked_target_without_writable_parent(tmp_path):
+    target = tmp_path / "yaml" / "knx.yaml"
+    alias = tmp_path / "keep.yaml"
+    target.parent.mkdir(parents=True)
+    target.write_text("preserve shared data\n", encoding="utf-8")
+    alias.hardlink_to(target)
+    target.parent.chmod(0o550)
+
+    try:
+        with pytest.raises(ValueError, match="single-link regular file"):
+            write_yaml(target, _mini_yaml_model())
+    finally:
+        target.parent.chmod(0o750)
+
+    assert target.read_text(encoding="utf-8") == "preserve shared data\n"
+    assert alias.read_text(encoding="utf-8") == "preserve shared data\n"
 
 
 def test_metadata_conversion_preserves_value_and_configuration():

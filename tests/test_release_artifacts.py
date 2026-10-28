@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import subprocess
 import tarfile
@@ -19,6 +20,16 @@ def _repository(tmp_path):
         "items.template": "###items###\n",
         "knxproject_to_openhab.py": "print('runtime')\n",
         "installer/setup.sh": "#!/bin/sh\n",
+        "installer/config_migrations.py": "MIGRATIONS = (lambda config: config,)\nLATEST_SCHEMA_VERSION = len(MIGRATIONS)\n",
+        "installer/update_contract.json": json.dumps(
+            {
+                "updater_protocol": 1,
+                "config_copy_protocol": 1,
+                "accepted_input_schema_versions": [0, 1],
+                "output_schema_version": 1,
+                "runtime_backward_compatible": True,
+            }
+        ),
         "web_ui/backend/config.json": '{"auth": {"enabled": true}}\n',
         "tests/test_example.py": "def test_example(): pass\n",
         "docs/screenshots/private.png": "screenshot\n",
@@ -95,6 +106,7 @@ def test_builds_deterministic_archive_and_matching_sha256(tmp_path):
         "items.template",
         "knxproject_to_openhab.py",
         "installer/setup.sh",
+        "installer/update_contract.json",
         "web_ui/backend/config.json",
     ):
         assert prefix + included in members
@@ -117,3 +129,45 @@ def test_rejects_build_version_that_differs_from_version_file(tmp_path):
 
     with pytest.raises(ReleaseArtifactError, match="VERSION file"):
         build_release(root, "9.9.9", tmp_path / "artifacts")
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"output_schema_version": 2},
+        {"accepted_input_schema_versions": [0]},
+        {"runtime_backward_compatible": False},
+        {"updater_protocol": 2},
+    ],
+)
+def test_builder_rejects_incompatible_manifest(tmp_path, change):
+    root = _repository(tmp_path)
+    path = root / "installer/update_contract.json"
+    path.write_text(json.dumps({**json.loads(path.read_text()), **change}))
+    with pytest.raises(ReleaseArtifactError, match="contract"):
+        build_release(root, "1.2.3", tmp_path / "artifacts")
+
+
+def test_builder_requires_packaged_manifest(tmp_path):
+    root = _repository(tmp_path)
+    (root / "installer/update_contract.json").unlink()
+    with pytest.raises(ReleaseArtifactError, match="contract"):
+        build_release(root, "1.2.3", tmp_path / "artifacts")
+
+
+def test_builder_checks_schema_without_executing_migration_source(tmp_path):
+    root = _repository(tmp_path)
+    source = root / "installer/config_migrations.py"
+    source.write_text("raise RuntimeError('must not execute')\n" + source.read_text())
+
+    archive, _checksum = build_release(root, "1.2.3", tmp_path / "artifacts")
+
+    with tarfile.open(archive, "r:gz") as packaged:
+        manifest = packaged.extractfile("knx_to_openhab-1.2.3/installer/update_contract.json")
+        assert json.load(manifest) == {
+            "updater_protocol": 1,
+            "config_copy_protocol": 1,
+            "accepted_input_schema_versions": [0, 1],
+            "output_schema_version": 1,
+            "runtime_backward_compatible": True,
+        }

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -301,11 +302,61 @@ def migrate_config(
     return current_version
 
 
+def migrate_copy(source: Path, output: Path) -> int:
+    """Migrate only a workspace copy to a new file; never snapshot/restore live state.
+
+    Both paths are selected by the coordinator, which must confine this process
+    to its workspace. Embedded application paths are data, never destinations.
+    Existing outputs (including aliases of the input) are refused.
+    """
+    # Support both package import and the fixed standalone script invocation.
+    if __package__:
+        from .update_core.protocol import Limits, parse_contract, parse_object, validate_config_copy
+    else:
+        from update_core.protocol import Limits, parse_contract, parse_object, validate_config_copy
+
+    source = _absolute_path(source)
+    output = _absolute_path(output)
+    if source == output or output.exists():
+        raise ValueError("Copied migration requires a new output file distinct from input")
+    with source.open("rb") as stream:
+        original = parse_object(stream.read(Limits.CONFIG_BYTES + 1), Limits.CONFIG_BYTES)
+    current = _schema_version(original)
+    migrated = copy.deepcopy(original)
+    while current < LATEST_SCHEMA_VERSION:
+        migrated = MIGRATIONS[current](migrated)
+        if not isinstance(migrated, dict):
+            raise ValueError("Copied migration did not return an object")
+        current += 1
+        migrated[SCHEMA_VERSION_KEY] = current
+    contract = parse_contract(Path(__file__).with_name("update_contract.json").read_bytes())
+    validate_config_copy(original, migrated, contract)
+    contents = (json.dumps(migrated, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    if len(contents) > Limits.CONFIG_BYTES:
+        raise ValueError("Migrated configuration exceeds byte limit")
+    # Exclusive creation prevents replacing even a concurrently-created output.
+    with output.open("xb") as destination:
+        destination.write(contents)
+        destination.flush()
+        os.fsync(destination.fileno())
+    return current
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--restore-snapshot", type=Path, required=True)
+    operation = parser.add_mutually_exclusive_group(required=True)
+    operation.add_argument("--restore-snapshot", type=Path)
+    operation.add_argument("--migrate-copy", type=Path)
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    restore_snapshot(args.restore_snapshot)
+    if args.migrate_copy:
+        if args.output is None:
+            parser.error("--migrate-copy requires --output")
+        migrate_copy(args.migrate_copy, args.output)
+    else:
+        if args.output is not None:
+            parser.error("--output is only valid with --migrate-copy")
+        restore_snapshot(args.restore_snapshot)
 
 
 if __name__ == "__main__":

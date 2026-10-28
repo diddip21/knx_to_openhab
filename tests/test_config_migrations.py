@@ -1,6 +1,8 @@
 import json
 import os
 import stat
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -137,3 +139,82 @@ def test_migration_failure_restores_original_bytes_from_snapshot(tmp_path, monke
 
     assert config_path.read_bytes() == original
     assert len(_snapshots(backup_dir)) == 1
+
+
+def test_migrate_copy_leaves_input_and_live_siblings_untouched(tmp_path):
+    source = tmp_path / "workspace/input.json"
+    source.parent.mkdir()
+    original = b'{"general":{"port":8085},"custom":[1,true]}\n'
+    source.write_bytes(original)
+    live = tmp_path / "live/config.json"
+    live.parent.mkdir()
+    live.write_bytes(b"live bytes")
+    output = tmp_path / "workspace/output.json"
+
+    assert config_migrations.migrate_copy(source, output) == 1
+    assert source.read_bytes() == original
+    assert live.read_bytes() == b"live bytes"
+    assert json.loads(output.read_bytes()) == {
+        "general": {"port": 8085},
+        "custom": [1, True],
+        "schema_version": 1,
+        "trusted_proxy_hops": 0,
+        "session_max_age_seconds": 43200,
+    }
+    assert sorted(path.name for path in source.parent.iterdir()) == ["input.json", "output.json"]
+
+
+def test_migrate_copy_refuses_input_alias_or_existing_output(tmp_path):
+    source = tmp_path / "input.json"
+    source.write_bytes(b"{}")
+    with pytest.raises(ValueError):
+        config_migrations.migrate_copy(source, source)
+    output = tmp_path / "live.json"
+    output.write_bytes(b"live")
+    with pytest.raises(ValueError):
+        config_migrations.migrate_copy(source, output)
+    assert source.read_bytes() == b"{}"
+    assert output.read_bytes() == b"live"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [b"[]", b'{"schema_version":true}', b'{"schema_version":42}', b" " * (1024 * 1024 + 1)],
+    ids=["array", "bool-schema", "future-schema", "oversized"],
+)
+def test_migrate_copy_invalid_input_never_creates_output(tmp_path, raw):
+    source = tmp_path / "input.json"
+    source.write_bytes(raw)
+    output = tmp_path / "output.json"
+    with pytest.raises(ValueError):
+        config_migrations.migrate_copy(source, output)
+    assert source.read_bytes() == raw
+    assert not output.exists()
+
+
+def test_copied_migration_cli_and_restore_are_mutually_exclusive(tmp_path):
+    source = tmp_path / "input.json"
+    source.write_bytes(b"{}")
+    output = tmp_path / "output.json"
+    script = Path(config_migrations.__file__)
+    result = subprocess.run(
+        [sys.executable, str(script), "--migrate-copy", str(source), "--output", str(output)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(output.read_bytes())["schema_version"] == 1
+    invalid = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--migrate-copy",
+            str(source),
+            "--output",
+            str(output),
+            "--restore-snapshot",
+            str(tmp_path),
+        ],
+        capture_output=True,
+    )
+    assert invalid.returncode == 2

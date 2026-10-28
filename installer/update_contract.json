@@ -1,0 +1,7 @@
+{
+  "updater_protocol": 1,
+  "config_copy_protocol": 1,
+  "accepted_input_schema_versions": [0, 1],
+  "output_schema_version": 1,
+  "runtime_backward_compatible": true
+}

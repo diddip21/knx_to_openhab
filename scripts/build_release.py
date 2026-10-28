@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import gzip
 import hashlib
 import os
@@ -188,6 +189,41 @@ def _write_archive(repo_root: Path, version: str, archive_path: Path) -> None:
                         archive.addfile(_archive_info(archive_name, mode, size), source)
 
 
+def _validate_update_contract(repo_root: Path) -> None:
+    """Check packaged data against the source migration table without executing it."""
+    from installer.update_core.protocol import parse_contract
+
+    try:
+        contract_path = PurePosixPath("installer/update_contract.json")
+        migration_path = PurePosixPath("installer/config_migrations.py")
+        tracked = {path for path, _mode in _release_file_list(repo_root)}
+        if not {contract_path, migration_path} <= tracked:
+            raise ValueError("manifest and migration source must be tracked")
+        contract = parse_contract(repo_root.joinpath(*contract_path.parts).read_bytes())
+        tree = ast.parse(repo_root.joinpath(*migration_path.parts).read_text(encoding="utf-8"))
+        assignments = {}
+        for node in tree.body:
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        assignments[target.id] = node.value
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                assignments[node.target.id] = node.value
+        migrations = assignments.get("MIGRATIONS")
+        latest = assignments.get("LATEST_SCHEMA_VERSION")
+        if not isinstance(migrations, (ast.Tuple, ast.List)):
+            raise ValueError("migration table must be a literal sequence")
+        schema = len(migrations.elts)
+        if ast.dump(latest) != ast.dump(ast.parse("len(MIGRATIONS)", mode="eval").body):
+            raise ValueError("schema version must derive from the migration table")
+        if contract.output_schema_version != schema or set(
+            contract.accepted_input_schema_versions
+        ) != set(range(schema + 1)):
+            raise ValueError("manifest schema versions disagree with migration source")
+    except (OSError, ValueError, SyntaxError, TypeError) as error:
+        raise ReleaseArtifactError(f"Invalid update contract: {error}") from error
+
+
 def build_release(repo_root: Path, version: str, output_dir: Path) -> tuple[Path, Path]:
     """Build a reproducible source archive and standard sha256sum sidecar."""
     version = validate_semver(version)
@@ -204,6 +240,7 @@ def build_release(repo_root: Path, version: str, output_dir: Path) -> tuple[Path
             f"Requested release version {version} does not match VERSION file {configured_version}"
         )
 
+    _validate_update_contract(repo_root)
     output_dir.mkdir(parents=True, exist_ok=True)
     archive_path = output_dir / f"knx_to_openhab-{version}.tar.gz"
     checksum_path = output_dir / f"{archive_path.name}.sha256"
@@ -254,4 +291,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    sys.path.insert(0, str(PROJECT_ROOT))
     raise SystemExit(main())

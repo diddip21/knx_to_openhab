@@ -89,8 +89,9 @@ def select_release(metadata: object, channel: str, current: str) -> ReleaseInfo 
 
     A listing is either a flat release list or a list of page lists, in HTTP order.
     The HTTP adapter must also bound raw bytes before decoding; this function
-    independently bounds the decoded aggregate. Prerelease opts into prereleases
-    as well as stable releases. Missing assets on the selected release fail closed.
+    independently bounds the decoded aggregate. Each channel selects only its own
+    release kind; metadata flags must agree with semantic prerelease identifiers.
+    Missing assets on the selected release fail closed.
     """
     if channel not in ("stable", "prerelease"):
         raise ValueError("Unsupported update channel")
@@ -125,7 +126,10 @@ def select_release(metadata: object, channel: str, current: str) -> ReleaseInfo 
             raise ValueError("Expected a v-prefixed semantic version tag")
         version = tag[1:]
         key = _precedence(version)
-        if release["draft"] or (channel == "stable" and (release["prerelease"] or not key[3])):
+        is_prerelease = not key[3]
+        if release["prerelease"] != is_prerelease:
+            raise ValueError("Release prerelease flag disagrees with semantic version")
+        if release["draft"] or is_prerelease != (channel == "prerelease"):
             continue
         if key > current_key:
             candidates.append((key, version, release))

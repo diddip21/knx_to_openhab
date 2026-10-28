@@ -151,8 +151,28 @@ def test_prerelease_semver_sorting_and_page_bound():
 def test_stable_excludes_drafts_and_prereleases():
     assert select_release(release("2.0.0", draft=True), "stable", "1.0.0") is None
     assert select_release(release("2.0.0-rc.1", prerelease=True), "stable", "1.0.0") is None
-    assert select_release(release("2.0.0-rc.1"), "stable", "1.0.0") is None
     assert select_release(release("2.0.0"), "stable", "1.0.0").version == "2.0.0"
+
+
+def test_prerelease_channel_ignores_newer_stable_release():
+    metadata = [
+        release("3.0.0"),
+        release("2.0.0-rc.2", prerelease=True),
+        release("2.0.0-rc.10", prerelease=True),
+    ]
+    assert select_release(metadata, "prerelease", "1.0.0").version == "2.0.0-rc.10"
+    assert select_release(metadata, "stable", "1.0.0").version == "3.0.0"
+
+
+def test_prerelease_channel_has_no_update_when_only_stable_releases_exist():
+    assert select_release(release("3.0.0"), "prerelease", "1.0.0") is None
+
+
+@pytest.mark.parametrize("channel", ["stable", "prerelease"])
+@pytest.mark.parametrize("version,flag", [("2.0.0", True), ("2.0.0-rc.1", False)])
+def test_release_rejects_inconsistent_prerelease_flag_and_semver(channel, version, flag):
+    with pytest.raises(ValueError):
+        select_release(release(version, prerelease=flag), channel, "1.0.0")
 
 
 @pytest.mark.parametrize("version", ["01.2.3", "1.2.3-01", "1.2.3\n", "1.٢.3"])
@@ -215,7 +235,7 @@ def test_config_copy_does_not_confuse_boolean_and_numeric_values(old, new):
     "versions,want",
     [
         (["2.0.0-alpha", "2.0.0-1"], "2.0.0-alpha"),
-        (["2.0.0-rc.10", "2.0.0"], "2.0.0"),
+        (["2.0.0-rc.10", "2.0.0"], "2.0.0-rc.10"),
         (["2.0.0-alpha.1", "2.0.0-alpha"], "2.0.0-alpha.1"),
     ],
 )

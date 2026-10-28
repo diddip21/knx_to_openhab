@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from pathlib import Path
 from uuid import UUID
 
 
@@ -37,6 +38,31 @@ class ReleaseContract:
     accepted_input_schema_versions: tuple[int, ...]
     output_schema_version: int
     runtime_backward_compatible: bool
+
+
+@dataclass(frozen=True)
+class Paths:
+    """Protected release parent and activation link, not service-provided paths."""
+
+    releases: Path
+    current: Path
+
+
+@dataclass(frozen=True)
+class Journal:
+    """Candidate provenance supplied only from the protected coordinator journal.
+
+    Record device/inode immediately after exclusive reservation, before granting
+    the preparation child access. Publication is sticky, even after rollback.
+    This is the filesystem subset, not the future transaction state machine.
+    """
+
+    candidate: Path | None
+    prior_target: Path
+    candidate_identity: tuple[int, int] | None
+    candidate_uid: int
+    candidate_created: bool = False
+    candidate_published: bool = False
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict:

@@ -336,16 +336,18 @@ def write_yaml(path: str | Path, model: Mapping[str, Any]) -> None:
 def _write_existing_yaml(output: Path, rendered: str) -> None:
     """Update the pre-provisioned file when its protected directory is not writable."""
     descriptor = os.open(output, os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0))
+    descriptor_owned = True
     try:
         info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             raise ValueError(f"YAML output must be a single-link regular file: {output}")
-        with os.fdopen(descriptor, "w", encoding="utf-8") as output_file:
-            descriptor = None
+        output_file = os.fdopen(descriptor, "w", encoding="utf-8")
+        descriptor_owned = False
+        with output_file:
             os.ftruncate(output_file.fileno(), 0)
             output_file.write(rendered)
             output_file.flush()
             os.fsync(output_file.fileno())
     finally:
-        if descriptor is not None:
+        if descriptor_owned:
             os.close(descriptor)

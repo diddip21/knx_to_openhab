@@ -1,6 +1,7 @@
 # Transactional Release Updater — Task 5 Design
 
-Status: builder-reviewed proposal; implementation requires user approval.
+Status: builder-reviewed and approved by the user; implementation plan in
+`../plans/2026-10-28-transactional-release-updater.md`.
 
 ## Intent and scope
 
@@ -272,8 +273,9 @@ Implementation checklist:
 - [x] Trace existing paths, ownership, migration, API, launcher, and policy.
 - [x] Write this design with explicit engineering decisions.
 - [x] Independent builder check; resolve material gaps (final review: no material questions).
-- [ ] User approval of the reviewed design.
-- [ ] Write the implementation plan, then tests before product code.
+- [x] User approval of the reviewed design.
+- [x] Write the implementation plan.
+- [ ] Write regression tests before product code, following the plan after its review.
 
 Tests must cover default/explicit channel selection and SemVer ordering, bad
 metadata/assets/checksum/archive, timeouts/truncation/limits, no-update, request

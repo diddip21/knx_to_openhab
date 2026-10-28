@@ -101,6 +101,12 @@
 
 ### Task 5: Implement transactional release updater and finish privilege policy (#26/#19)
 
+**Approved architecture amendment:** The all-`knxohui` worker below is superseded
+by a fixed root-owned coordinator with isolated `knxohupdate` preparation children.
+Root-owned releases/config remain protected. Use the approved detailed spec
+`../specs/2026-10-28-transactional-release-updater-design.md` and implementation
+plan `2026-10-28-transactional-release-updater.md`; Task 5 is not yet implemented.
+
 **Files:**
 - Create: `installer/update_release.py`
 - Create: `installer/knxohui-update.service`

@@ -36,6 +36,12 @@ Implement the remaining install, release, migration, updater, and lifecycle-test
 
 ## Constraints
 
+**Task 5 amendment (approved):** The unprivileged-worker choice above is superseded
+for the updater by a protected root-owned coordinator and isolated unprivileged
+`knxohupdate` children, without weakening release/config ownership. See
+`2026-10-28-transactional-release-updater-design.md` for the execution boundary,
+copied-config protocol, startup gates, and durable recovery contract.
+
 - Python 3.12+; Bash/systemd target is Debian-family Linux.
 - Existing path environment and external data layout remain compatible.
 - No arbitrary Git or shell commands are added to sudoers.

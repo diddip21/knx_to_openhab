@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import UUID
 
@@ -42,19 +42,21 @@ class ReleaseContract:
 
 @dataclass(frozen=True)
 class Paths:
-    """Protected release parent and activation link, not service-provided paths."""
+    """Protected paths, never service-provided; config is optional for FS-only users."""
 
     releases: Path
     current: Path
+    config_dir: Path | None = None
 
 
 @dataclass(frozen=True)
 class Journal:
-    """Candidate provenance supplied only from the protected coordinator journal.
+    """Protocol-1 transaction and candidate provenance from protected state only.
 
     Record device/inode immediately after exclusive reservation, before granting
     the preparation child access. Publication is sticky, even after rollback.
-    This is the filesystem subset, not the future transaction state machine.
+    Defaulted transaction fields retain the filesystem-only constructor contract;
+    StateStore requires a canonical request ID before persisting a transaction.
     """
 
     candidate: Path | None
@@ -63,6 +65,12 @@ class Journal:
     candidate_uid: int
     candidate_created: bool = False
     candidate_published: bool = False
+    format_version: int = 1
+    request_id: str | None = None
+    channel: str = "stable"
+    phase: str = "claimed"
+    snapshot_allowlist: tuple[str, ...] = ("config.json",)
+    service_states: dict[str, dict[str, bool]] = field(default_factory=dict)
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict:

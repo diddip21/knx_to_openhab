@@ -22,6 +22,17 @@ class Limits:
     METADATA_PAGES = 10
     HTTP_TIMEOUT_SECONDS = 30
     MAX_VERSION = 2**31 - 1
+    ARCHIVE_BYTES = 128 * 1024 * 1024
+    TREE_BYTES = 512 * 1024 * 1024
+    FILE_BYTES = 64 * 1024 * 1024
+    TREE_ENTRIES = 20_000
+    TREE_DEPTH = 64
+    CHECKSUM_BYTES = 1024
+    DEPENDENCY_TIMEOUT_SECONDS = 900
+    CHILD_TIMEOUT_SECONDS = 300
+    # freeze_tree retains one FD per entry plus protected ancestor descriptors.
+    # Task 7 must apply this to the coordinator; Task 6 must preflight RLIMIT_NOFILE.
+    COORDINATOR_NOFILE = 32768
 
 
 @dataclass(frozen=True)
@@ -47,6 +58,8 @@ class Paths:
     releases: Path
     current: Path
     config_dir: Path | None = None
+    data_dir: Path | None = None
+    backup_dir: Path | None = None
 
 
 @dataclass(frozen=True)

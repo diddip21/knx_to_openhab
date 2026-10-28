@@ -16,7 +16,7 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from .protocol import Journal, Paths
+from .protocol import Journal, Limits, Paths
 
 
 def _identity(info):
@@ -232,17 +232,34 @@ def _tree(stack, parent, name, owners):
     device = os.fstat(parent).st_dev
     root = _open(stack, parent, name, owners, device, directory=True)
     entries = []
+    count = 1
+    total = 0
 
-    def walk(entry):
-        names = sorted(os.listdir(entry.fd))
+    def walk(entry, depth=0):
+        nonlocal count, total
+        if depth > Limits.TREE_DEPTH:
+            raise ValueError("Updater tree exceeds depth limit")
+        # scandir bounds allocation too: listdir could allocate an attacker-sized list.
+        names = []
+        with os.scandir(entry.fd) as children:
+            for child in children:
+                count += 1
+                if count > Limits.TREE_ENTRIES:
+                    raise ValueError("Updater tree exceeds entry limit")
+                names.append(child.name)
+        names.sort()
         for child in names:
             info = os.stat(child, dir_fd=entry.fd, follow_symlinks=False)
+            if stat.S_ISREG(info.st_mode):
+                total += info.st_size
+                if info.st_size > Limits.FILE_BYTES or total > Limits.TREE_BYTES:
+                    raise ValueError("Updater tree exceeds byte limit")
             node = _open(
                 stack, entry.fd, child, owners, device, directory=stat.S_ISDIR(info.st_mode)
             )
             node.ancestors = (*entry.ancestors, entry)
             if stat.S_ISDIR(node.info.st_mode):
-                walk(node)
+                walk(node, depth + 1)
             else:
                 entries.append(node)
         entry.check()

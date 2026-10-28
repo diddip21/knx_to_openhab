@@ -130,7 +130,7 @@ def prepare_dependencies(candidate: Path, *, runner=subprocess.run) -> None:
         stdin=subprocess.DEVNULL,
         timeout=Limits.DEPENDENCY_TIMEOUT_SECONDS,
     )
-    venv = candidate / ".venv"
+    venv = candidate / "venv"
     runner(["/usr/bin/python3", "-I", "-m", "venv", "--copies", str(venv)], **options)
     runner(
         [

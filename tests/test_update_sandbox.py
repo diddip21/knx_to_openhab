@@ -142,7 +142,7 @@ def test_dependencies_fixed_final_path_venv_and_no_root(monkeypatch, tmp_path):
     from installer import update_prepare
 
     calls = []
-    (tmp_path / ".venv").mkdir()
+    (tmp_path / "venv").mkdir()
     monkeypatch.setattr(update_prepare.os, "geteuid", lambda: 0, raising=False)
     with pytest.raises(ValueError, match="unprivileged"):
         update_prepare.prepare_dependencies(tmp_path, runner=lambda *a, **k: calls.append(a))
@@ -156,9 +156,9 @@ def test_dependencies_fixed_final_path_venv_and_no_root(monkeypatch, tmp_path):
         "-m",
         "venv",
         "--copies",
-        str(tmp_path / ".venv"),
+        str(tmp_path / "venv"),
     ]
-    assert calls[1][0][:4] == [str(tmp_path / ".venv/bin/python"), "-I", "-m", "pip"]
+    assert calls[1][0][:4] == [str(tmp_path / "venv/bin/python"), "-I", "-m", "pip"]
     assert str(tmp_path / "requirements.txt") in calls[1][0]
 
 
@@ -183,11 +183,11 @@ def test_dependency_alias_is_normalized_at_actual_venv_location(monkeypatch, tmp
 
     def run(argv, **kwargs):
         if "venv" in argv:
-            (tmp_path / ".venv/lib").mkdir(parents=True)
-            (tmp_path / ".venv/lib64").symlink_to("lib")
+            (tmp_path / "venv/lib").mkdir(parents=True)
+            (tmp_path / "venv/lib64").symlink_to("lib")
 
     update_prepare.prepare_dependencies(tmp_path, runner=run)
-    assert not (tmp_path / ".venv/lib64").is_symlink()
+    assert not (tmp_path / "venv/lib64").is_symlink()
 
 
 def test_capture_fixed_services():
@@ -230,7 +230,7 @@ def test_non_venv_lib64_alias_is_not_normalized(monkeypatch, tmp_path):
     from installer import update_prepare
 
     monkeypatch.setattr(update_prepare.os, "geteuid", lambda: 12345)
-    (tmp_path / ".venv").mkdir()
+    (tmp_path / "venv").mkdir()
     (tmp_path / "lib").mkdir()
     (tmp_path / "lib64").symlink_to("lib")
     with pytest.raises(ValueError):
@@ -303,7 +303,8 @@ def test_real_final_path_venv_scripts_without_root_pip(monkeypatch):
             return subprocess.CompletedProcess(argv, 0)
 
         update_prepare.prepare_dependencies(candidate, runner=run)
-        venv = candidate / ".venv"
+        venv = candidate / "venv"
+        assert not (candidate / ".venv").exists()
         assert not (venv / "bin/python").is_symlink()
         assert not (venv / "lib64").is_symlink()
         shebang = (venv / "bin/pip").read_text().splitlines()[0]

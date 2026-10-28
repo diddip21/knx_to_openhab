@@ -176,8 +176,8 @@ def test_freeze_bounds_entire_dependency_tree_before_chown(monkeypatch, limit):
         pytest.skip("requires isolated root test process")
     with tempfile.TemporaryDirectory(dir="/root") as directory:
         root = Path(directory) / "candidate"
-        (root / ".venv/lib").mkdir(parents=True)
-        (root / ".venv/lib/dependency").write_bytes(b"large dependency")
+        (root / "venv/lib").mkdir(parents=True)
+        (root / "venv/lib/dependency").write_bytes(b"large dependency")
         for path in [root, *root.rglob("*")]:
             os.chown(path, 12345, 12345)
         monkeypatch.setattr(Limits, limit, 1)

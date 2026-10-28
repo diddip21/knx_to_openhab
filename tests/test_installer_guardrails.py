@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.parametrize("system_path", ["/etc", "/usr", "/var", "/home"])
+@pytest.mark.skipif(os.name != "posix", reason="installer Bash requires POSIX")
 def test_setup_rejects_system_wide_application_directory_before_writes(tmp_path, system_path):
     environment = os.environ.copy()
     environment.update(
@@ -55,8 +56,9 @@ def test_setup_stages_release_and_switches_current_after_migration():
     assert 'sudo mv -Tf "$CURRENT_LINK_TMP" "$BASE/current"' in setup
     migration_index = setup.index("migrate_runtime_data.py")
     publish_index = setup.index('sudo mv -Tf "$CURRENT_LINK_TMP" "$BASE/current"')
+    cleanup_index = setup.index("--cleanup-legacy")
     restart_index = setup.index("sudo systemctl restart knxohui.service")
-    assert migration_index < publish_index < restart_index
+    assert migration_index < publish_index < cleanup_index < restart_index
 
 
 @pytest.mark.skipif(os.name != "posix", reason="launch scripts require POSIX process semantics")

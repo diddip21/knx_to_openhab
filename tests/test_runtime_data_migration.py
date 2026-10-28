@@ -97,10 +97,12 @@ def test_migration_preserves_runtime_config_and_data_outside_install(monkeypatch
     assert migrated_config["staging_dir"] == str(data_dir / "staging")
     assert migrated_config["generated_dir"] == str(data_dir / "generated")
     assert migrated_config["backups_dir"] == str(backup_dir)
+    assert migrated_config["schema_version"] == 1
     assert json.loads((data_dir / "generator.json").read_text(encoding="utf-8")) == {
         "rules": "custom"
     }
-    assert (config_dir / "secrets.env").stat().st_mode & 0o777 == 0o640
+    if os.name == "posix":
+        assert (config_dir / "secrets.env").stat().st_mode & 0o777 == 0o640
     secret_line = (config_dir / "secrets.env").read_text(encoding="utf-8").strip()
     assert secret_line.startswith("KNXOH_UI_PASSWORD_HASH_B64=")
     password_hash = base64.b64decode(secret_line.split("=", 1)[1]).decode()
@@ -211,19 +213,13 @@ def test_failed_path_publication_keeps_legacy_sources_and_can_retry(monkeypatch,
     with pytest.raises(OSError, match="simulated config filesystem failure"):
         _run_migration(paths)
 
-    # The original installation data and its job index remain intact until
-    # path publication succeeds, so a retry can still identify every source.
-    copied_job = json.loads((data_dir / "jobs/jobs.json").read_text(encoding="utf-8"))["job-1"]
-    assert copied_job["input"] == str(old_jobs / "upload.knxproj")
+    # Failed publication restores external files and leaves every legacy
+    # source intact so a retry can still identify and copy the original data.
+    assert not (config_dir / "config.json").exists()
+    assert not (config_dir / "secrets.env").exists()
+    assert not (data_dir / "jobs/jobs.json").exists()
     assert old_jobs.is_dir()
     assert old_backups.is_dir()
-    copied_config = json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
-    assert copied_config["jobs_dir"] == "var/lib/knx_to_openhab"
-    assert "password" not in copied_config["auth"]
-    secret_line = (config_dir / "secrets.env").read_text(encoding="utf-8").strip()
-    assert secret_line.startswith("KNXOH_UI_PASSWORD_HASH_B64=")
-    password_hash = base64.b64decode(secret_line.split("=", 1)[1]).decode("utf-8")
-    assert verify_password(password_hash, "existing-pass")
     assert paths_file.exists() is False
 
     monkeypatch.setattr(migration, "_write_paths_file", original_path_writer)
@@ -236,6 +232,85 @@ def test_failed_path_publication_keeps_legacy_sources_and_can_retry(monkeypatch,
     )
     retried_job = json.loads((data_dir / "jobs/jobs.json").read_text(encoding="utf-8"))["job-1"]
     assert retried_job["input"] == str(data_dir / "jobs/upload.knxproj")
+
+
+def test_migration_snapshot_contains_only_changed_config_secrets_and_job_index(tmp_path):
+    paths = _fixture(tmp_path)
+
+    _run_migration(paths)
+
+    backup_dir = paths[4]
+    snapshots = sorted((backup_dir / "config-migrations").iterdir())
+    assert len(snapshots) == 1
+    manifest = json.loads((snapshots[0] / "manifest.json").read_text(encoding="utf-8"))
+    snapshot_names = {Path(entry["path"]).name for entry in manifest["files"]}
+    assert snapshot_names == {
+        "config.json",
+        "secrets.env",
+        "generator.json",
+        "jobs.json",
+        "paths.env",
+    }
+    assert (backup_dir / "job-1.tar.gz").read_bytes() == b"fixture backup"
+
+
+def test_failed_migration_restores_preexisting_external_file_bytes(monkeypatch, tmp_path):
+    paths = _fixture(tmp_path)
+    source_root, _, config_dir, data_dir, backup_dir, old_jobs, old_backups = paths
+    config_dir.mkdir(parents=True)
+    app_config = source_root / "web_ui/backend/config.json"
+    config_target = config_dir / "config.json"
+    config_target.write_bytes(app_config.read_bytes())
+    secrets_target = config_dir / "secrets.env"
+    secrets_target.write_bytes(b"KEEP_THIS=secret\nKNXOH_UI_PASSWORD_B64=b2xkLXBhc3M=\n")
+    generator_target = data_dir / "generator.json"
+    generator_target.parent.mkdir(parents=True)
+    generator_target.write_bytes(b'{"rules":"custom external"}\n')
+    jobs_target = data_dir / "jobs/jobs.json"
+    jobs_target.parent.mkdir(parents=True)
+    jobs_target.write_bytes((old_jobs / "jobs.json").read_bytes())
+    paths_target = config_dir.parent / "paths.env"
+    paths_target.write_bytes(b"# existing path configuration\n")
+    targets = (config_target, secrets_target, generator_target, jobs_target, paths_target)
+    before = {path: path.read_bytes() for path in targets}
+
+    def fail_publication(*_args):
+        raise OSError("injected late migration failure")
+
+    monkeypatch.setattr(migration, "_write_paths_file", fail_publication)
+    with pytest.raises(OSError, match="injected late migration failure"):
+        _run_migration(paths)
+
+    assert {path: path.read_bytes() for path in targets} == before
+    assert old_jobs.is_dir()
+    assert old_backups.is_dir()
+    assert (backup_dir / "job-1.tar.gz").read_bytes() == b"fixture backup"
+
+
+def test_legacy_runtime_sources_can_be_deferred_until_release_activation(tmp_path):
+    paths = _fixture(tmp_path)
+    source_root, template_root, config_dir, data_dir, backup_dir, old_jobs, old_backups = paths
+
+    migration.migrate_runtime_data(
+        source_root,
+        template_root,
+        config_dir,
+        data_dir,
+        backup_dir,
+        source_root,
+        config_dir.parent / "paths.env",
+        cleanup_legacy=False,
+    )
+
+    assert old_jobs.is_dir()
+    assert old_backups.is_dir()
+    assert (data_dir / "jobs/upload.knxproj").is_file()
+    assert (backup_dir / "job-1.tar.gz").is_file()
+
+    migration.cleanup_legacy_runtime_data(source_root, data_dir, backup_dir)
+
+    assert not old_jobs.exists()
+    assert not old_backups.exists()
 
 
 def test_migration_refuses_conflicting_existing_data_without_deleting_legacy(tmp_path):
@@ -252,6 +327,7 @@ def test_migration_refuses_conflicting_existing_data_without_deleting_legacy(tmp
     assert (legacy_jobs / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
 
 
+@pytest.mark.skipif(os.name != "posix", reason="legacy system paths are POSIX-specific")
 @pytest.mark.parametrize("unsafe_path", ["/", "/etc", "/usr", "/var", "/home", "/root"])
 def test_migration_refuses_system_directories_as_legacy_data(tmp_path, unsafe_path):
     paths = _fixture(tmp_path)
@@ -267,6 +343,7 @@ def test_migration_refuses_system_directories_as_legacy_data(tmp_path, unsafe_pa
     assert paths[5].exists()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="symlink migration guard is POSIX-specific")
 def test_migration_refuses_symlinked_legacy_tree(tmp_path):
     paths = _fixture(tmp_path)
     source_root = paths[0]
@@ -300,6 +377,7 @@ def test_migration_refuses_broad_application_subdirectory_as_runtime_data(tmp_pa
     assert config_path.is_file()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="paths.env shell escaping is POSIX-specific")
 def test_saved_paths_round_trip_dollar_signs_and_special_characters(tmp_path):
     path = tmp_path / "paths with $dollar and 'quotes' \\slashes.env"
 
@@ -316,6 +394,7 @@ def test_saved_paths_round_trip_dollar_signs_and_special_characters(tmp_path):
     assert shlex.split(serialized) == [str(tmp_path / "app $cash 'quoted' \\path")]
 
 
+@pytest.mark.skipif(os.name != "posix", reason="backup cleanup script requires POSIX")
 def test_backup_cleanup_uses_canonical_external_paths(tmp_path):
     config_dir = tmp_path / "etc/knx_to_openhab"
     data_dir = tmp_path / "var/lib/knx_to_openhab"

@@ -1,8 +1,11 @@
 """Regression tests for the service user's privileged command policy."""
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -40,13 +43,12 @@ def test_installer_scripts_install_and_validate_the_restricted_policy():
 
     assert 'REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"' in setup
     assert '"$REPO_ROOT/requirements.txt"' in setup
-    assert "--exclude web_ui/backend/config.json" in setup
 
 
-def test_installer_runs_provisioner_from_installed_tree():
+def test_installer_runs_provisioner_from_release_staging_tree():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
 
-    assert '"$BASE/installer/provision_managed_files.py"' in setup
+    assert '"$STAGING_DIR/installer/provision_managed_files.py"' in setup
     assert '"$REPO_ROOT/installer/provision_managed_files.py"' not in setup
 
 
@@ -89,6 +91,7 @@ def test_update_script_never_elevates_git_or_uses_a_global_safe_directory():
     assert "systemctl is-active --quiet" not in update
 
 
+@pytest.mark.skipif(os.name != "posix", reason="Bash syntax checks require POSIX paths")
 def test_privilege_scripts_have_valid_bash_syntax():
     if shutil.which("bash") is None:
         return

@@ -174,7 +174,8 @@ sudo "$STAGING_DIR/venv/bin/python" "$STAGING_DIR/installer/migrate_runtime_data
     --data-dir "$DATA_DIR" \
     --backup-dir "$BACKUP_DIR" \
     --install-dir "$BASE" \
-    --paths-file "$PATHS_FILE"
+    --paths-file "$PATHS_FILE" \
+    --defer-legacy-cleanup
 
 echo "Checking the Web UI network binding"
 sudo "$STAGING_DIR/venv/bin/python" "$STAGING_DIR/installer/configure_bind.py" \
@@ -236,6 +237,15 @@ sudo install -o root -g root -m 0644 "$STAGING_DIR/installer/knxohui-backup-clea
 sudo mv "$STAGING_DIR" "$RELEASE_DIR"
 sudo ln -s "releases/$RELEASE_VERSION" "$CURRENT_LINK_TMP"
 sudo mv -Tf "$CURRENT_LINK_TMP" "$BASE/current"
+sudo "$BASE/current/venv/bin/python" "$BASE/current/installer/migrate_runtime_data.py" \
+    --source-root "$BASE" \
+    --template-root "$BASE/current" \
+    --config-dir "$CONFIG_DIR" \
+    --data-dir "$DATA_DIR" \
+    --backup-dir "$BACKUP_DIR" \
+    --install-dir "$BASE" \
+    --paths-file "$PATHS_FILE" \
+    --cleanup-legacy
 sudo systemctl daemon-reload
 sudo systemctl enable knxohui.service
 sudo systemctl restart knxohui.service

@@ -23,6 +23,11 @@ SHIPPED_DEFAULT_PASSWORD = "logihome"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from installer.config_migrations import (  # noqa: E402
+    create_snapshot,
+    migrate_config,
+    restore_snapshot,
+)
 from web_ui.backend.auth import hash_password, is_password_hash, verify_password  # noqa: E402
 
 
@@ -190,7 +195,7 @@ def _template_contents(source_root: Path, template_root: Path, relative_path: st
     return result.stdout if result.returncode == 0 else None
 
 
-def migrate_runtime_data(
+def _migrate_runtime_data(
     source_root: Path,
     template_root: Path,
     config_dir: Path,
@@ -198,7 +203,8 @@ def migrate_runtime_data(
     backup_dir: Path,
     install_dir: Path,
     paths_file: Path,
-) -> dict[str, Path]:
+    snapshot_dir: Path,
+) -> tuple[dict[str, Path], Path, Path]:
     source_root = source_root.resolve()
     template_root = template_root.resolve()
     config_dir = config_dir.resolve()
@@ -340,11 +346,7 @@ def migrate_runtime_data(
         "KNXOH_DATA_DIR": data_dir,
         "KNXOH_BACKUP_DIR": backup_dir,
     }
-    _write_paths_file(paths_file, values)
-
-    # Publish canonical paths only after all data is copied, and rewrite the
-    # job index before removing legacy data. If path publication fails, both
-    # the old configuration and its source data remain usable for a retry.
+    # Prepare all external references before publishing the canonical paths.
     runtime_config.update(
         {
             "jobs_dir": str(new_jobs),
@@ -354,34 +356,131 @@ def migrate_runtime_data(
         }
     )
     _rewrite_job_paths(new_jobs / "jobs.json", old_jobs, new_jobs, old_backups, backup_dir)
-
     _atomic_write(
         app_config_target, json.dumps(runtime_config, indent=2, ensure_ascii=False) + "\n", 0o640
     )
-    os.chmod(app_config_target, 0o640)
+    migrate_config(app_config_target, backup_dir, snapshot_dir=snapshot_dir)
     os.chmod(generator_config_target, 0o660)
 
-    # Once the external copies and references are complete, remove only legacy
-    # state that lived inside the application tree. Keep custom external sources.
-    for legacy, destination in ((old_jobs, new_jobs), (old_backups, backup_dir)):
-        try:
-            legacy.resolve().relative_to(source_root)
-            inside_install = True
-        except ValueError:
-            inside_install = False
-        try:
-            destination.resolve().relative_to(legacy.resolve())
-            destination_inside_source = True
-        except ValueError:
-            destination_inside_source = False
-        if inside_install and not destination_inside_source and legacy.exists():
-            shutil.rmtree(legacy)
+    # Publish the path contract only after all related files have been written.
+    _write_paths_file(paths_file, values)
 
     source_generator = source_root / "config.json"
     generator_template = _template_contents(source_root, template_root, "config.json")
     if source_generator.is_file() and generator_template is not None:
         _atomic_write(source_generator, generator_template, 0o640)
 
+    return values, old_jobs, old_backups
+
+
+def _is_supported_legacy_location(path: Path, kind: str, source_root: Path) -> bool:
+    try:
+        relative = path.resolve().relative_to(source_root)
+    except ValueError:
+        return False
+    return relative == LEGACY_RUNTIME_PATHS[kind]
+
+
+def _write_pending_legacy_cleanup(
+    snapshot_dir: Path,
+    source_root: Path,
+    old_jobs: Path,
+    old_backups: Path,
+) -> None:
+    pending = []
+    for kind, path in (("jobs", old_jobs), ("backups", old_backups)):
+        if _is_supported_legacy_location(path, kind, source_root) and path.exists():
+            pending.append({"kind": kind, "path": str(path.resolve())})
+    if pending:
+        contents = json.dumps({"source_root": str(source_root), "paths": pending}, indent=2) + "\n"
+        _atomic_write(snapshot_dir / "pending-legacy-cleanup.json", contents, 0o600)
+
+
+def cleanup_legacy_runtime_data(source_root: Path, data_dir: Path, backup_dir: Path) -> None:
+    """Remove pending, validated in-application runtime trees after activation."""
+    source_root = Path(source_root).resolve()
+    data_dir = Path(data_dir).resolve()
+    backup_dir = Path(backup_dir).resolve()
+    snapshot_root = backup_dir / "config-migrations"
+    if not snapshot_root.is_dir():
+        return
+    for marker in sorted(snapshot_root.glob("*/pending-legacy-cleanup.json")):
+        pending = _read_json(marker)
+        if pending.get("source_root") != str(source_root):
+            raise ValueError(f"Legacy cleanup marker belongs to another install: {marker}")
+        entries = pending.get("paths")
+        if not isinstance(entries, list):
+            raise ValueError(f"Invalid legacy cleanup marker: {marker}")
+        for entry in entries:
+            if not isinstance(entry, dict) or entry.get("kind") not in LEGACY_RUNTIME_PATHS:
+                raise ValueError(f"Invalid legacy cleanup entry: {marker}")
+            kind = entry["kind"]
+            legacy = Path(entry.get("path", "")).resolve()
+            _validate_legacy_source(legacy, kind, source_root)
+            if not _is_supported_legacy_location(legacy, kind, source_root):
+                raise ValueError(f"Refusing to clean an unsupported legacy path: {legacy}")
+            destination = data_dir / "jobs" if kind == "jobs" else backup_dir
+            try:
+                destination.relative_to(legacy)
+                destination_inside_source = True
+            except ValueError:
+                destination_inside_source = False
+            if legacy.exists() and not destination_inside_source:
+                shutil.rmtree(legacy)
+        marker.unlink()
+
+
+def migrate_runtime_data(
+    source_root: Path,
+    template_root: Path,
+    config_dir: Path,
+    data_dir: Path,
+    backup_dir: Path,
+    install_dir: Path,
+    paths_file: Path,
+    *,
+    cleanup_legacy: bool = True,
+) -> dict[str, Path]:
+    """Migrate runtime state transactionally, then clean legacy in-tree copies."""
+    source_root = Path(source_root).resolve()
+    template_root = Path(template_root).resolve()
+    config_dir = Path(config_dir).resolve()
+    data_dir = Path(data_dir).resolve()
+    backup_dir = Path(backup_dir).resolve()
+    install_dir = Path(install_dir).resolve()
+    paths_file = Path(paths_file).absolute()
+    app_config_target = config_dir / "config.json"
+    generator_config_target = data_dir / "generator.json"
+    secrets_target = config_dir / "secrets.env"
+    jobs_index = data_dir / "jobs" / "jobs.json"
+
+    snapshot_dir = create_snapshot(
+        (
+            app_config_target,
+            generator_config_target,
+            secrets_target,
+            jobs_index,
+            paths_file,
+        ),
+        backup_dir,
+    )
+    try:
+        values, old_jobs, old_backups = _migrate_runtime_data(
+            source_root,
+            template_root,
+            config_dir,
+            data_dir,
+            backup_dir,
+            install_dir,
+            paths_file,
+            snapshot_dir,
+        )
+        _write_pending_legacy_cleanup(snapshot_dir, source_root, old_jobs, old_backups)
+    except Exception:
+        restore_snapshot(snapshot_dir)
+        raise
+    if cleanup_legacy:
+        cleanup_legacy_runtime_data(source_root, data_dir, backup_dir)
     return values
 
 
@@ -394,7 +493,13 @@ def main() -> None:
     parser.add_argument("--backup-dir", type=Path, required=True)
     parser.add_argument("--install-dir", type=Path, required=True)
     parser.add_argument("--paths-file", type=Path, default=Path("/etc/knx_to_openhab/paths.env"))
+    cleanup_group = parser.add_mutually_exclusive_group()
+    cleanup_group.add_argument("--defer-legacy-cleanup", action="store_true")
+    cleanup_group.add_argument("--cleanup-legacy", action="store_true")
     args = parser.parse_args()
+    if args.cleanup_legacy:
+        cleanup_legacy_runtime_data(args.source_root, args.data_dir, args.backup_dir)
+        return
     migrate_runtime_data(
         args.source_root,
         args.template_root,
@@ -403,6 +508,7 @@ def main() -> None:
         args.backup_dir,
         args.install_dir,
         args.paths_file,
+        cleanup_legacy=not args.defer_legacy_cleanup,
     )
 
 

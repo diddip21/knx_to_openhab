@@ -78,11 +78,11 @@
 - `migrate_config(config_path: Path, backup_dir: Path) -> int` performs ordered, idempotent migrations and returns the resulting schema version.
 - Snapshot only the external config/secrets and rewritten job index before mutation; do not copy or overwrite unrelated user data.
 
-- [ ] Test migration from the unversioned legacy schema, idempotent repeat, snapshot contents, invalid future schema, and injected failure restoring original bytes.
-- [ ] Run the tests and observe failures before implementing the migration functions.
-- [ ] Implement atomic migration and rollback; retain existing path/data migration ordering and preserve all old sources until path publication succeeds.
-- [ ] Run migration/path tests on a POSIX runner; on Windows, report permission/symlink cases separately.
-- [ ] Commit: `feat: add recoverable config migrations`.
+- [x] Test migration from the unversioned legacy schema, idempotent repeat, snapshot contents, invalid future schema, and injected failure restoring original bytes.
+- [x] Run the tests and observe failures before implementing the migration functions.
+- [x] Implement atomic migration and rollback; retain existing path/data migration ordering and preserve all old sources until path publication succeeds.
+- [x] Run migration/path tests on a POSIX runner; on Windows, report permission/symlink cases separately.
+- [x] Commit: `feat: add recoverable config migrations`.
 
 ### Task 4: Make installer repeatable and release-aware (#25)
 

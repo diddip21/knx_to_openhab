@@ -4,6 +4,7 @@ import logging
 import os
 import queue
 import re
+import stat as stat_module
 import subprocess
 import sys
 import tarfile
@@ -22,6 +23,98 @@ from .deploy_policy import (
 from .storage import ensure_dirs, load_jobs, save_jobs
 
 logger = logging.getLogger(__name__)
+
+_RETIRABLE_MODEL_SUFFIXES = {
+    "items": (".items",),
+    "things": (".things",),
+    "sitemaps": (".sitemap", ".sitemaps"),
+    "yaml": (".yaml", ".yml"),
+}
+_DIR_FD_RETIREMENT = (
+    hasattr(os, "O_NOFOLLOW") and os.open in os.supports_dir_fd and os.stat in os.supports_dir_fd
+)
+
+
+def _validate_retired_model_paths(retired_paths, deployed_targets, openhab_root):
+    """Validate old model outputs before deployment can change any live files."""
+    root = os.path.abspath(openhab_root)
+    deployed = {os.path.normcase(os.path.abspath(path)) for path in deployed_targets}
+    targets = []
+
+    for value in retired_paths:
+        if not isinstance(value, (str, os.PathLike)):
+            raise ValueError("Retired model output must be a filesystem path")
+        raw_path = os.fspath(value)
+        if not raw_path or "\x00" in raw_path or ".." in raw_path.split(os.sep):
+            raise ValueError("Retired model output contains an invalid path")
+
+        target = os.path.abspath(raw_path)
+        try:
+            common = os.path.commonpath([root, target])
+        except ValueError as error:
+            raise ValueError("Retired model output must be under the OpenHAB directory") from error
+        if os.path.normcase(common) != os.path.normcase(root):
+            raise ValueError("Retired model output must be under the OpenHAB directory")
+
+        relative = os.path.relpath(target, root)
+        parts = relative.replace("\\", "/").split("/")
+        if len(parts) != 2 or parts[0] not in _RETIRABLE_MODEL_SUFFIXES:
+            raise ValueError(
+                "Only configured model files directly under OpenHAB model folders may retire"
+            )
+        if not parts[1].lower().endswith(_RETIRABLE_MODEL_SUFFIXES[parts[0]]):
+            raise ValueError("Retired model output has an unsupported file extension")
+        if os.path.normcase(target) in deployed:
+            continue
+
+        if _inspect_retired_model_file(root, relative):
+            targets.append(relative)
+
+    return targets
+
+
+def _inspect_retired_model_file(root, relative):
+    """Validate a model file without following symlinks."""
+    folder, filename = relative.split(os.sep) if os.sep in relative else relative.split("/")
+    if _DIR_FD_RETIREMENT:
+        directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW
+        root_fd = None
+        folder_fd = None
+        try:
+            root_fd = os.open(root, directory_flags)
+            folder_fd = os.open(folder, directory_flags, dir_fd=root_fd)
+            try:
+                info = os.stat(filename, dir_fd=folder_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                return False
+            if not stat_module.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise ValueError("Retired model output must be a single-link regular file")
+            return True
+        except FileNotFoundError:
+            return False
+        except OSError as error:
+            raise ValueError("Retired model output has an unsafe directory or file") from error
+        finally:
+            if folder_fd is not None:
+                os.close(folder_fd)
+            if root_fd is not None:
+                os.close(root_fd)
+
+    root_info = os.lstat(root)
+    folder_path = os.path.join(root, folder)
+    folder_info = os.lstat(folder_path)
+    if stat_module.S_ISLNK(root_info.st_mode) or not stat_module.S_ISDIR(root_info.st_mode):
+        raise ValueError("OpenHAB directory must be a real directory")
+    if stat_module.S_ISLNK(folder_info.st_mode) or not stat_module.S_ISDIR(folder_info.st_mode):
+        raise ValueError("Retired model output directory must be a real directory")
+    target = os.path.join(folder_path, filename)
+    try:
+        info = os.lstat(target)
+    except FileNotFoundError:
+        return False
+    if not stat_module.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise ValueError("Retired model output must be a single-link regular file")
+    return True
 
 
 def _reload_generator_modules(project_root):
@@ -325,8 +418,29 @@ class JobManager:
             global_config_module.config["openhab_path"] = staged_config["openhab_path"]
             knxmod.config["openhab_path"] = staged_config["openhab_path"]
 
-            # Define output keys to override
-            output_keys = [key for key in managed_paths if key in global_config_module.config]
+            # Stage the selected model output and an empty file for the retired format.
+            output_format = str(staged_config.get("output_format", "legacy")).casefold()
+            model_output_keys = (
+                ["yaml_path"]
+                if output_format == "yaml"
+                else ["items_path", "things_path", "sitemaps_path"]
+            )
+            retired_keys = (
+                ["items_path", "things_path", "sitemaps_path"]
+                if output_format == "yaml"
+                else ["yaml_path"]
+            )
+            retired_paths = [
+                os.path.join(openhab_path, *managed_paths[key].split("/"))
+                for key in retired_keys
+                if key in managed_paths and key in global_config_module.config
+            ]
+            job["output_format"] = output_format
+            output_keys = [
+                key
+                for key in (*model_output_keys, *retired_keys, "influx_path", "fenster_path")
+                if key in managed_paths and key in global_config_module.config
+            ]
             stage_mapping = {}  # staged_path -> real_absolute_path
 
             q.put(
@@ -456,13 +570,22 @@ class JobManager:
                 sys.stdout = captured_output
 
                 # ets_to_openhab.main() writes output files to STAGING via injected config
-                etsmod.main(configuration=staged_config)
+                generation_result = etsmod.main(configuration=staged_config)
+
+                # The service account can write managed files, but cannot unlink
+                # entries from OpenHAB directories. An empty staged model file
+                # retires the previous format while preserving rollback capability.
+                for key in retired_keys:
+                    if key in staged_config and key in managed_paths:
+                        with open(staged_config[key], "w", encoding="utf-8"):
+                            pass
 
                 # Generate completeness report from staged knx.things
                 try:
                     report_path = self._write_completeness_report(
                         staged_config.get("things_path"),
                         staged_config.get("openhab_path", ""),
+                        things_text=generation_result.get("things"),
                     )
                     if report_path:
                         self._log_to_queue(
@@ -527,11 +650,13 @@ class JobManager:
             # Save staging info to job
             job["staging_dir"] = staging_dir
             job["stage_mapping"] = stage_mapping
+            job["retired_paths"] = retired_paths
             job["staged"] = True
 
             # Compute statistics by comparing STAGED vs LIVE/BACKUP
             try:
                 detailed_stats = self._compute_staged_stats(stage_mapping, openhab_path)
+                detailed_stats.update(self._compute_retired_stats(retired_paths, openhab_path))
                 job["stats"] = detailed_stats
 
                 for fn, stat in sorted(job["stats"].items()):
@@ -614,12 +739,12 @@ class JobManager:
             "label": match.group("label"),
         }
 
-    def _write_completeness_report(self, things_path, openhab_path):
-        if not things_path or not os.path.exists(things_path):
-            return None
-
-        with open(things_path, "r", encoding="utf-8", errors="ignore") as f:
-            things_text = f.read()
+    def _write_completeness_report(self, things_path, openhab_path, things_text=None):
+        if things_text is None:
+            if not things_path or not os.path.exists(things_path):
+                return None
+            with open(things_path, "r", encoding="utf-8", errors="ignore") as f:
+                things_text = f.read()
 
         missing_required_tuples, recommended_missing_tuples = check_completeness(things_text)
 
@@ -718,6 +843,42 @@ class JobManager:
                 "real_path": abs_real_path,
             }
 
+        return stats
+
+    def _compute_retired_stats(self, retired_paths, openhab_path):
+        """Report generated files that will be removed during a format transition."""
+        stats = {}
+        abs_openhab_path = os.path.normpath(os.path.abspath(openhab_path))
+        for path in retired_paths:
+            absolute_path = os.path.normpath(os.path.abspath(path))
+            if not os.path.isfile(absolute_path):
+                continue
+            try:
+                with open(absolute_path, "r", encoding="utf-8", errors="ignore") as file:
+                    before = len(file.readlines())
+            except OSError:
+                continue
+            try:
+                in_openhab = (
+                    os.path.commonpath([absolute_path, abs_openhab_path]) == abs_openhab_path
+                )
+            except ValueError:
+                in_openhab = False
+            relative_path = (
+                os.path.relpath(absolute_path, abs_openhab_path)
+                if in_openhab
+                else os.path.basename(absolute_path)
+            )
+            stats[relative_path.replace("\\", "/")] = {
+                "before": before,
+                "after": 0,
+                "delta": -before,
+                "added": 0,
+                "removed": before,
+                "staged_path": "",
+                "real_path": absolute_path,
+                "retired": True,
+            }
         return stats
 
     def get_file_diff(self, job_id, rel_path):
@@ -888,6 +1049,20 @@ class JobManager:
                 "OpenHAB path changed since generation; generate a new job before deploy"
             )
 
+        # Ignore the staged empty files for the old format when checking which
+        # model outputs are being actively deployed.
+        retired_absolute = {
+            os.path.normcase(os.path.abspath(path)) for path in job.get("retired_paths", [])
+        }
+        deployed_targets = {
+            os.path.normcase(os.path.abspath(path))
+            for path in mapping.values()
+            if isinstance(path, (str, os.PathLike))
+            and os.path.normcase(os.path.abspath(path)) not in retired_absolute
+        }
+        retirement_targets = _validate_retired_model_paths(
+            job.get("retired_paths", []), deployed_targets, openhab_path
+        )
         # Keep a full backup for download and recovery. Rollback restores only
         # the managed files listed by the current deployment policy.
         ts = __import__("time").strftime("%Y%m%d-%H%M%S")
@@ -905,6 +1080,8 @@ class JobManager:
             # Proceed? Or abort? Abort is safer.
             raise Exception(f"Backup failed, aborting deploy: {e}")
 
+        deployed_count = 0
+        retired_count = len(retirement_targets)
         try:
             deployed_count = deploy_staged_files(
                 mapping,
@@ -915,7 +1092,10 @@ class JobManager:
 
             job["deployed"] = True
             save_jobs(self.jobs_dir, self._jobs)
-            return True, f"Deployed {deployed_count} files."
+            return (
+                True,
+                f"Deployed {deployed_count} files; retired {retired_count} old model files.",
+            )
 
         except Exception as e:
             logger.error(f"Deploy failed: {e}")

@@ -92,8 +92,12 @@ grant a shell, arbitrary Git commands, or wildcard command arguments. Re-running
 `visudo -cf`.
 
 The package update buttons use the root-owned `/usr/local/sbin/knxohui-service-update`
-helper. Sudoers allows only its `refresh`, `openhab`, and `evcc` actions. The
-installer preserves an existing `web_ui/backend/config.json` when copying new code.
+helper. Sudoers allows only its `refresh`, `openhab`, `evcc`, and `provision-yaml`
+actions. The YAML action runs a separate root-owned helper that provisions only the
+configured `.yaml` target directly under the protected OpenHAB `yaml/` directory;
+it does not import or execute code from the application tree. The installer preserves
+an existing `web_ui/backend/config.json` when copying new code and records the
+resolved OpenHAB root in protected configuration for that helper.
 
 ### Existing installations
 
@@ -108,10 +112,10 @@ sudo bash installer/setup.sh
 ```
 
 The installer preserves the existing runtime configuration while installing the
-root-owned package helper and its exact sudoers entries. It also replaces and
-validates the old policy. If only the least-privilege migration is needed, use
-`sudo bash installer/migrate_sudoers.sh`; that script changes only the sudoers
-file.
+root-owned package and YAML-provisioning helpers and their exact sudoers entries.
+It also replaces and validates the old policy. If only the least-privilege
+migration is needed, use `sudo bash installer/migrate_sudoers.sh`; that script
+changes only the sudoers file.
 
 > **Note:** For local development without systemd installation, see [DEVELOPMENT.md](../DEVELOPMENT.md)
 

@@ -3,6 +3,19 @@
   "description": "Configuration settings for the KNX to OpenHAB converter",
   "type": "object",
   "properties": {
+    "output_format": {
+      "type": "string",
+      "title": "OpenHAB Model Format",
+      "description": "Use legacy textual files or one native openHAB 5.2 YAML model",
+      "enum": ["legacy", "yaml"],
+      "default": "legacy"
+    },
+    "yaml_path": {
+      "type": "string",
+      "title": "YAML Output Path",
+      "description": "Target path for the native openHAB 5.2 YAML model",
+      "default": "openhab/yaml/knx.yaml"
+    },
     "general": {
       "type": "object",
       "title": "General Settings",

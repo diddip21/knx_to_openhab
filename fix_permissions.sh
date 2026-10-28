@@ -59,6 +59,10 @@ if [[ -f "$INSTALL_DIR/installer/service_update.sh" ]]; then
         "$INSTALL_DIR/installer/service_update.sh" \
         /usr/local/sbin/knxohui-service-update
 fi
+sudo install -d -o root -g root -m 0755 /usr/local/libexec/knx_to_openhab
+sudo install -o root -g root -m 0755 \
+    "$INSTALL_DIR/installer/provision_managed_outputs.py" \
+    /usr/local/libexec/knx_to_openhab/provision_managed_outputs.py
 
 # Replace the sudoers entry so repairs also remove obsolete broad permissions.
 sudo bash "$INSTALL_DIR/installer/migrate_sudoers.sh"

@@ -1,5 +1,6 @@
 import importlib
 import json
+import subprocess
 from types import SimpleNamespace
 from unittest.mock import Mock, mock_open
 
@@ -17,6 +18,103 @@ def client():
         app_module.cfg.setdefault("auth", {})
         app_module.cfg["auth"]["enabled"] = False
     return app_module.app.test_client()
+
+
+def test_config_change_provisions_new_yaml_path_with_fixed_root_action(client, monkeypatch):
+    previous_config = {
+        "output_format": "yaml",
+        "yaml_path": "openhab/yaml/knx.yaml",
+        "sitemap_label": "House",
+    }
+    new_config = {
+        **previous_config,
+        "yaml_path": "openhab/yaml/secondary.yaml",
+        "sitemap_label": "Home",
+    }
+    saved_configs = []
+    provision = Mock(return_value=SimpleNamespace(returncode=0, stdout="", stderr=""))
+    monkeypatch.setattr(app_module, "load_generator_config", lambda _root: previous_config)
+    monkeypatch.setattr(
+        app_module,
+        "get_paths",
+        lambda _root: SimpleNamespace(secrets_file="/etc/knx_to_openhab/secrets.env"),
+    )
+    monkeypatch.setattr(
+        app_module,
+        "save_generator_config",
+        lambda config, _root: saved_configs.append(config.copy()),
+    )
+    monkeypatch.setattr(subprocess, "run", provision)
+
+    response = client.post("/api/config", json=new_config)
+
+    assert response.status_code == 200
+    assert saved_configs == [new_config]
+    provision.assert_called_once()
+    assert provision.call_args.args[0] == [
+        "sudo",
+        "-n",
+        "/usr/local/sbin/knxohui-service-update",
+        "provision-yaml",
+    ]
+
+
+def test_config_change_restores_yaml_path_when_provisioning_fails(client, monkeypatch):
+    previous_config = {
+        "output_format": "yaml",
+        "yaml_path": "openhab/yaml/knx.yaml",
+        "sitemap_label": "House",
+    }
+    new_config = {
+        **previous_config,
+        "yaml_path": "openhab/yaml/secondary.yaml",
+        "sitemap_label": "Home",
+    }
+    saved_configs = []
+    provision = Mock(
+        return_value=SimpleNamespace(returncode=1, stdout="", stderr="target rejected")
+    )
+    monkeypatch.setattr(app_module, "load_generator_config", lambda _root: previous_config)
+    monkeypatch.setattr(
+        app_module,
+        "get_paths",
+        lambda _root: SimpleNamespace(secrets_file="/etc/knx_to_openhab/secrets.env"),
+    )
+    monkeypatch.setattr(
+        app_module,
+        "save_generator_config",
+        lambda config, _root: saved_configs.append(config.copy()),
+    )
+    monkeypatch.setattr(subprocess, "run", provision)
+
+    response = client.post("/api/config", json=new_config)
+
+    assert response.status_code == 500
+    assert [config["yaml_path"] for config in saved_configs] == [
+        "openhab/yaml/secondary.yaml",
+        "openhab/yaml/knx.yaml",
+    ]
+    assert saved_configs[-1]["sitemap_label"] == "Home"
+    assert response.get_json() == {"error": "Unable to provision YAML output: target rejected"}
+
+
+def test_config_change_skips_root_provisioning_in_local_development(client, monkeypatch):
+    previous_config = {"yaml_path": "openhab/yaml/knx.yaml"}
+    new_config = {"yaml_path": "openhab/yaml/secondary.yaml"}
+    provision = Mock()
+    monkeypatch.setattr(app_module, "load_generator_config", lambda _root: previous_config)
+    monkeypatch.setattr(
+        app_module,
+        "get_paths",
+        lambda _root: SimpleNamespace(secrets_file=None),
+    )
+    monkeypatch.setattr(app_module, "save_generator_config", lambda _config, _root: None)
+    monkeypatch.setattr(subprocess, "run", provision)
+
+    response = client.post("/api/config", json=new_config)
+
+    assert response.status_code == 200
+    provision.assert_not_called()
 
 
 def test_job_deploy_success(client, monkeypatch):

@@ -303,6 +303,53 @@ def test_background_service_operation_drains(protected, monkeypatch):
         assert done.wait(2)
 
 
+def test_queued_future_cancellation_releases_only_its_lease_and_password(
+    protected, monkeypatch, tmp_path
+):
+    import threading
+
+    from installer.update_core import maintenance as m
+    from web_ui.backend import jobs
+
+    paths = SimpleNamespace(config_dir=protected.config_dir, secrets_file=Path("external"))
+    monkeypatch.setattr(jobs, "get_paths", lambda: paths)
+    manager = jobs.JobManager({"jobs_dir": str(tmp_path), "backups_dir": str(tmp_path)})
+    release = threading.Event()
+    started = [threading.Event(), threading.Event()]
+    futures = []
+    submit = manager.executor.submit
+
+    def tracked_submit(*args):
+        future = submit(*args)
+        futures.append(future)
+        return future
+
+    def run(job_id):
+        index = 0 if not started[0].is_set() else 1
+        started[index].set()
+        assert release.wait(5)
+
+    monkeypatch.setattr(manager.executor, "submit", tracked_submit)
+    monkeypatch.setattr(manager, "_run_job", run)
+    try:
+        for event in started:
+            manager.create_job("running.json", password="running-secret")
+            assert event.wait(2)
+        queued = manager.create_job("queued.json", password="queued-secret")
+        assert futures[-1].cancel() and futures[-1].cancelled()
+        assert queued["id"] not in manager._passwords
+        assert len(manager._passwords) == 2
+        # Cancelling one job must not release either still-running job's lease.
+        with pytest.raises(TimeoutError):
+            m.wait_for_quiescence(protected, 0.01)
+    finally:
+        release.set()
+        manager.executor.shutdown(wait=True)
+    assert not manager._passwords
+    with m.wait_for_quiescence(protected, 0.1):
+        pass
+
+
 def test_auth_errors_not_masked_by_maintenance(protected, monkeypatch):
     from installer.update_core import maintenance as m
 

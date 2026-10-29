@@ -8,6 +8,15 @@
 
 **Tech Stack:** Python 3.12+, Bash, systemd, stdlib HTTP/JSON/tar/hashlib, Flask, pytest.
 
+**Status (2026-10-30):** Tasks 1–8 implemented and independently task-reviewed.
+Task 9 assembled regressions/harness are implemented; independent Task-9 and
+whole-branch review remain pending. Parent lifecycle Task 5 stays incomplete:
+disposable real-systemd boot/confinement/cgroup/resource-failure acceptance is
+**NOT VERIFIED**. See `../../../tests/integration/README.md` for exact boundaries
+and opt-in prerequisites. A systemd-enabled development WSL host is not disposable.
+Historical unchecked step boxes below are not claims of missing source; this status
+and the task reports distinguish implementation from outstanding acceptance/review.
+
 **Spec:** `docs/superpowers/specs/2026-10-28-transactional-release-updater-design.md` (approved by user).
 
 ## Global Constraints
@@ -133,7 +142,8 @@ modify `web_ui/backend/{app,jobs}.py`, `web_ui/api_schema.json`.
 
 **Interfaces:** `mutation_lease(paths: InstallPaths) -> ContextManager[None]`;
 `maintenance_requested(paths: InstallPaths) -> bool`;
-`wait_for_quiescence(paths: Paths, timeout: float) -> None` (coordinator-side adapter);
+`wait_for_quiescence(paths: Paths, timeout: float, *, request_id=None)` returns an
+already-acquired quiescence context handle, held through commit/rollback;
 GET `/api/health` returns only `{"status": "ready", "version": "<VERSION>"}`.
 
 - [ ] Write failing tests that maintenance blocks new queued/running jobs, config writes, deploy/rollback/delete/service mutations across two processes, while read-only status/log/health remains available. Existing queued/running work drains; active mutation leases prevent coordinator proceeding. Health works without creating a session and reveals no paths/secrets; recovery/version mismatch is not ready.
@@ -154,7 +164,7 @@ CLI modes: `--run`, `--recover-boot`, `--recover-offline`, `--check-clean-state`
 
 - [ ] Write failing adapter-based tests for the spec's full phase sequence, success/no-update/busy, credential and path preflight, insufficient space, unsupported contract, active jobs timeout, migration failure, restart failure, wrong-version/readiness timeout, config/link rollback, and failed rollback blocking future requests. Parameterize simulated crash/restart at every journal/mutation boundary, including coherent startup gate permits.
 - [ ] Run `python -m pytest -q tests/test_release_updater.py tests/test_update_recovery.py`; expect failure.
-- [ ] Implement state machine using Tasks 1–5. Root preflight reads only trusted path environment; no application imports or candidate executables. HTTP readiness uses configured local bind/TLS, system trust verification and no proxy environment; wildcard binds map to loopback. Wait at most 60 seconds for systemd notify plus expected-version health. Before commit keep cleanup denied; mark committed, clear gate, then restore cleanup state. Boot/offline recovery restores but never starts UI. Unknown journals/targets require admin intervention; retain evidence on failure. Reserve/free only this transaction's candidate; retain previous releases and snapshots.
+- [ ] Implement state machine using Tasks 1–5. Root preflight reads only trusted path environment; no application imports or candidate executables. HTTP readiness uses the deployed direct Gunicorn HTTP bind/port, no proxy environment or redirects; wildcard binds map to loopback. Public reverse-proxy HTTPS/unrelated TLS keys are not readiness; direct/custom TLS is not claimed. Wait at most 60 seconds for systemd notify plus expected-version health. Before commit keep cleanup denied; mark committed, clear gate, then restore cleanup state. Boot/offline recovery restores but never starts UI. Unknown journals/targets require admin intervention; retain evidence on failure. Reserve/free only this transaction's candidate; retain previous releases and snapshots.
 - [ ] Run focused tests plus all `tests/test_update_*.py`; expect pass with separate original/rollback errors and byte-identical unrelated runtime data.
 - [ ] Commit: `feat: implement transactional release activation and rollback`.
 
@@ -204,10 +214,24 @@ spec/checklist, and integration test documentation. Do not expand into parent Ta
 ordinary integration tests, and an explicitly opted-in disposable Linux systemd
 VM/container for real sandbox/ownership/ordering tests. Never provision the host.
 
+**Task-9 handoff:** 11 assembled lifecycle tests pass with real protected files,
+demoted stage/application processes and local HTTP; service-manager/notify/cgroup
+effects are explicitly fake. Three guarded real-systemd acceptance tests are
+implemented but skipped: a disposable guest/provider is unavailable, and WSL is
+rejected. Isolated-Python migration imports and pre-pip venv alias normalization
+were fixed after captured assembled failures. Queued-Future cancellation is now
+explicitly covered. Final local core: root 1265 passed/18 skipped, non-root 753
+passed/530 skipped; actual-app Chromium update tests 18 passed. Full source-snapshot
+Black/isort/flake8, Bash, static-unit and sudoers validation passed. These checks
+do not establish real-manager acceptance. See `../../../tests/integration/README.md` for evidence limits,
+root-private pytest temp requirements and exact opt-in prerequisites. Keep the
+combined run/review/completion boxes below open until the missing real acceptance
+and independent Task-9/whole-branch review are supplied.
+
 - [ ] Write regression scenarios: stable/default and explicit prerelease success; already current; bad artifact; failed migration/readiness with old app serving after rollback; custom paths; concurrent installer/update; kill during config/link switch; reboot recovery blocks both writers on corrupt journal; same-boot guard; real child cannot access config/secrets/runtime or sudo and cannot leave a writer descendant. Launch candidate with existing sessions/job index, then rollback and assert prior release reads both. Fail dependency install once, retry same version from a clean candidate, and preserve unrelated sentinel files.
 - [ ] Run `python -m pytest -q tests/integration/test_update_transaction.py -o addopts=` and the documented opt-in systemd suite; capture failed assembled paths before fixing integration defects.
 - [ ] Resolve integration defects without weakening boundaries; update approved design status and parent Task-5 architecture/interfaces, keeping other tasks intact. Record which assertions are mock-only versus exercised with real systemd. Request independent whole-branch review before marking Task 5 done.
-- [ ] Run `python -m black --check .`, `python -m isort --check-only .`, `python -m flake8 .`, `python -m pytest -q`, relevant `tests/ui/test_update_system.py` against a running app, shell/unit/sudoers validators, and `git diff --check`. Report platform skips/failures explicitly; no screenshots unless UI appearance actually changes (then commit real-state screenshots per AGENTS.md).
+- [ ] Run `python -m black --check .`, `python -m isort --check-only .`, `python -m flake8 .`, core `python -m pytest -q --ignore=tests/ui` (root-private base when root), relevant `tests/ui/test_update_system.py` against a running app, shell/unit/sudoers validators, and `git diff --check`. Report platform skips/failures explicitly; no screenshots unless UI appearance actually changes (then commit real-state screenshots per AGENTS.md).
 - [ ] Commit reviewed integration/docs: `test: verify transactional updater recovery and isolation`. Mark parent Task 5 complete only with evidence; do not claim the full feature commit or verification before it exists.
 
 ## Self-review / handoff

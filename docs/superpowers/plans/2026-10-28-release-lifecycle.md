@@ -105,7 +105,11 @@
 by a fixed root-owned coordinator with isolated `knxohupdate` preparation children.
 Root-owned releases/config remain protected. Use the approved detailed spec
 `../specs/2026-10-28-transactional-release-updater-design.md` and implementation
-plan `2026-10-28-transactional-release-updater.md`; Task 5 is not yet implemented.
+plan `2026-10-28-transactional-release-updater.md`. Implementation Tasks 1–8 are
+independently reviewed; assembled Task 9 and whole-branch reviews are pending.
+**Task 5 remains incomplete:** real disposable-systemd boot/confinement/cgroup
+acceptance is NOT VERIFIED. See `../../../tests/integration/README.md` for the
+evidence boundary, guarded harness, and unavailable disposable-guest prerequisites.
 
 **Files:**
 - Create: `installer/update_release.py`
@@ -120,11 +124,19 @@ plan `2026-10-28-transactional-release-updater.md`; Task 5 is not yet implemente
 
 **Interfaces:**
 - `ReleaseUpdater.run() -> UpdateResult` owns lock, stable/prerelease lookup, download/checksum, archive validation, per-release environment, migration snapshot, atomic activation, restart/health check, and rollback.
-- Web UI starts the fixed `knxohui-update.service`; worker runs as `knxohui` outside the Web UI service cgroup.
+- Web UI/CLI publish the bounded UUID/channel request and start only fixed
+  `knxohui-update.service`; matching protected request-ID claim means submitted,
+  not completed. The protected root coordinator survives UI restart; transient
+  `knxohupdate` children execute preparation/migration without sudo/live-state access.
+- Maintenance holds an exclusive lease through commit/rollback; fixed boot recovery
+  gates UI/cleanup, and lock-free startup guards cover same-boot interrupted switches.
+- The browser uses its invocation generation plus protected request ID, and reloads
+  only for a matching committed projection. HTTP readiness probes direct Gunicorn
+  bind/port, not reverse-proxy TLS. Shared jobs/sessions remain backward-readable.
 
 - [ ] Test normal update, already-current, concurrent lock, download/checksum/extraction failures, migration failure, restart failure, health failure, successful rollback, and success.
 - [ ] Run updater and privilege-policy tests; observe failures before implementation.
-- [ ] Implement the worker, root-owned fixed unit, minimal sudoers entries, and shell compatibility entry point; remove Git fetch/stash/pull/reset behavior.
+- [x] Implement the coordinator/isolated children, root-owned fixed units, exact sudoers starts, and unprivileged shell client; remove Git fetch/stash/pull/reset update behavior.
 - [ ] Verify every failure leaves the old release active and that sudoers has no Git, shell, or wildcard grant.
 - [ ] Commit: `feat: add transactional release updater`.
 

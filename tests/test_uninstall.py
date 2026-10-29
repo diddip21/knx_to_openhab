@@ -220,6 +220,22 @@ def _fake_sudo(tmp_path):
                 systemctl|userdel)
                     exit 0
                     ;;
+                test)
+                    [ "$1" = "!" ]
+                    case "$2" in -e|-L) ;; *) exit 99 ;; esac
+                    case "$3" in
+                        "$TEST_ROOT"/*)
+                            /bin/test "$@"
+                            ;;
+                        /usr/local/libexec/knx_to_openhab/update_release.py|\
+                        /etc/systemd/system/knxohui-update.service)
+                            # No installed bundle in this legacy fixture. Never
+                            # inspect or change the real host installation.
+                            exit 0
+                            ;;
+                        *) exit 99 ;;
+                    esac
+                    ;;
                 rm)
                     flags=$1
                     shift
@@ -293,7 +309,8 @@ def test_shell_entrypoint_preserves_external_data_by_default(tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    assert not install_dir.exists()
+    # Ordinary uninstall now deliberately retains the release/recovery chain.
+    assert (install_dir / "keep.txt").read_text(encoding="utf-8") == "retained"
     for directory in (config_dir, data_dir, backup_dir):
         assert (directory / "keep.txt").read_text(encoding="utf-8") == "retained"
 

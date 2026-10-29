@@ -42,6 +42,15 @@ for the updater by a protected root-owned coordinator and isolated unprivileged
 `2026-10-28-transactional-release-updater-design.md` for the execution boundary,
 copied-config protocol, startup gates, and durable recovery contract.
 
+As of 2026-10-30, the coordinator, isolated preparation, provisioning/recovery,
+unprivileged submission and request-correlated UI status consumer are implemented.
+`../../../tests/integration/README.md` distinguishes real filesystem/HTTP lifecycle
+regressions from fake manager effects and documents guarded disposable-systemd
+acceptance. **Task 5 remains incomplete** pending real boot/confinement/cgroup
+evidence and independent assembled/whole-branch review; host WSL systemd must not
+be provisioned to fill that gap. The UI starts only the fixed root coordinator
+unit; candidate code never runs as root, and the coordinator cannot self-update.
+
 - Python 3.12+; Bash/systemd target is Debian-family Linux.
 - Existing path environment and external data layout remain compatible.
 - No arbitrary Git or shell commands are added to sudoers.

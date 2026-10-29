@@ -221,6 +221,24 @@ def test_only_known_venv_alias_removed(tmp_path):
 
 
 @pytest.mark.skipif(__import__("os").name != "posix", reason="POSIX venv alias")
+def test_pip_failure_does_not_leave_known_venv_alias_blocking_safe_retry(monkeypatch, tmp_path):
+    from installer import update_prepare
+
+    monkeypatch.setattr(update_prepare.os, "geteuid", lambda: 12345)
+
+    def run(argv, **kwargs):
+        if "venv" in argv:
+            (tmp_path / "venv/lib").mkdir(parents=True)
+            (tmp_path / "venv/lib64").symlink_to("lib")
+        else:
+            assert not (tmp_path / "venv/lib64").is_symlink()
+            raise subprocess.CalledProcessError(1, argv)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        update_prepare.prepare_dependencies(tmp_path, runner=run)
+
+
+@pytest.mark.skipif(__import__("os").name != "posix", reason="POSIX venv alias")
 def test_dependency_alias_is_normalized_at_actual_venv_location(monkeypatch, tmp_path):
     from installer import update_prepare
 

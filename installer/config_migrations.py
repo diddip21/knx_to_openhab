@@ -313,6 +313,12 @@ def migrate_copy(source: Path, output: Path) -> int:
     if __package__:
         from .update_core.protocol import Limits, parse_contract, parse_object, validate_config_copy
     else:
+        # The coordinator deliberately invokes this candidate script with -I,
+        # which omits its directory from sys.path. Load only its sibling protocol,
+        # not cwd/PYTHONPATH. Candidate migration still runs unprivileged/confined.
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
         from update_core.protocol import Limits, parse_contract, parse_object, validate_config_copy
 
     source = _absolute_path(source)

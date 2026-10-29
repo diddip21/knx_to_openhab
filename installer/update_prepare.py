@@ -132,6 +132,10 @@ def prepare_dependencies(candidate: Path, *, runner=subprocess.run) -> None:
     )
     venv = candidate / "venv"
     runner(["/usr/bin/python3", "-I", "-m", "venv", "--copies", str(venv)], **options)
+    # Normalize CPython's known alias while still unprivileged, before pip can
+    # fail. Otherwise even an ordinary install failure leaves a symlink-bearing
+    # candidate that the coordinator must (correctly) refuse to delete/reuse.
+    normalize_venv(venv)
     runner(
         [
             str(venv / "bin/python"),

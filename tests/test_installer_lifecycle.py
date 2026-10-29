@@ -614,7 +614,7 @@ def test_repair_refuses_to_execute_service_writable_release_setup_as_root(tmp_pa
     )
 
     assert result.returncode != 0
-    assert "Refusing to execute setup from a mutable release tree" in result.stderr
+    assert "release path is writable by the service account" in result.stderr
     assert not marker.exists()
 
 

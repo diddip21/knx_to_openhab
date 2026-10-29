@@ -3,6 +3,18 @@
 Status: builder-reviewed and approved by the user; implementation plan in
 `../plans/2026-10-28-transactional-release-updater.md`.
 
+Implementation status (2026-10-30): Tasks 1–8 are implemented with independent
+task reviews. Task 9 adds assembled real-filesystem, demoted-worker and local HTTP
+regressions plus a guarded disposable-systemd acceptance harness; see
+`../../../tests/integration/README.md`. The assembled test exposed and fixes the
+copied-config CLI's missing sibling import under isolated Python and the need to
+normalize CPython's documented venv alias before a real pip failure. The worker
+change belongs to the protected bootstrap-installed bundle (not candidate-driven
+self-replacement). **Parent Task 5
+is not complete:** disposable real boot/confinement/cgroup acceptance has NOT been
+verified, and independent Task-9/whole-branch review remains required. Development
+WSL systemd is not an authorized disposable test manager.
+
 ## Intent and scope
 
 Complete Task 5 of `../plans/2026-10-28-release-lifecycle.md` (#26/#19): replace
@@ -196,9 +208,11 @@ Do not trust a child's success marker as proof of a checksum or safe tree.
 9. Atomically write migrated config with original ownership/mode, persist the
    rollback intent, then atomically switch `current` to the frozen candidate.
 10. Restart the UI. Require successful systemd notify readiness and a bounded
-    application HTTP readiness probe identifying the expected version. Add a small
-    non-sensitive health endpoint; use the configured local bind/TLS settings and
-    disable environment proxy inheritance. Restore cleanup unit/timer states.
+     application HTTP readiness probe identifying the expected version. Add a small
+     non-sensitive health endpoint; probe the deployed Gunicorn direct HTTP listener
+     using configured bind/port (wildcards map to loopback), without proxy inheritance
+     or redirects. Public reverse-proxy HTTPS and unrelated `tls` config keys are not
+     the readiness contract; direct/custom TLS is not claimed. Restore cleanup states.
 11. Persist committed status durably, then release maintenance and lock. Keep the
     previous release and recovery snapshot; no automatic release pruning in Task 5.
 
@@ -275,7 +289,10 @@ Implementation checklist:
 - [x] Independent builder check; resolve material gaps (final review: no material questions).
 - [x] User approval of the reviewed design.
 - [x] Write the implementation plan.
-- [ ] Write regression tests before product code, following the plan after its review.
+- [x] Implement Tasks 1–8 with focused regression tests and independent task reviews.
+- [x] Add assembled real-FS/demoted-worker/local-HTTP lifecycle tests (Task 9).
+- [ ] Execute disposable real-systemd boot, isolation, teardown and resource-failure acceptance.
+- [ ] Complete independent Task-9 and whole-branch review before parent Task-5 completion.
 
 Tests must cover default/explicit channel selection and SemVer ordering, bad
 metadata/assets/checksum/archive, timeouts/truncation/limits, no-update, request

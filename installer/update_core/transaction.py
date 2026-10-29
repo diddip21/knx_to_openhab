@@ -706,6 +706,17 @@ class ReleaseUpdater:
                 self._restore_units(include_ui=True)
             else:
                 self._remove_candidate()
+                if self.journal.phase == "quiescing":
+                    # No handle means no authority to stop jobs/writers. The
+                    # request-tagged publication may nevertheless have replaced
+                    # its leaf before fsync failed. Reconcile it durably before
+                    # terminal success; unrelated/unsafe intent must block us.
+                    self._effect(
+                        "maintenance-clear",
+                        maintenance.clear_request_intent,
+                        self.paths,
+                        self.journal.request_id,
+                    )
             self._intent("rolled-back")
             self.store.publish_status(
                 "rolled-back", "Update failed; previous release preserved", self.journal.request_id
@@ -751,7 +762,9 @@ class ReleaseUpdater:
             # Capture ALL states before publishing maintenance, even if draining fails.
             self._capture()
             self._intent("quiescing")
-            handle = maintenance.wait_for_quiescence(self.paths, self.drain_timeout)
+            handle = maintenance.wait_for_quiescence(
+                self.paths, self.drain_timeout, request_id=self.journal.request_id
+            )
         except Exception as error:
             return self._abort(_diagnostic(error), held=False)
         with handle:

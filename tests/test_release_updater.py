@@ -3,7 +3,9 @@
 import hashlib
 import json
 import os
+import stat
 import tempfile
+from contextlib import nullcontext
 from pathlib import Path
 from uuid import uuid4
 
@@ -260,6 +262,11 @@ def assert_sentinels(paths):
         assert (paths.data_dir / name).stat().st_uid == 65533
 
 
+def assert_config_metadata(paths):
+    info = (paths.config_dir / "config.json").stat()
+    assert (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (0, 65533, 0o640)
+
+
 def test_success_freezes_final_venv_and_commits_before_cleanup(installation):
     updater, paths, adapter, request_id = installation
     result = updater.run()
@@ -277,6 +284,7 @@ def test_success_freezes_final_venv_and_commits_before_cleanup(installation):
     status = json.loads((paths.config_dir / ".updater-status.json").read_bytes())
     assert status["request_id"] == request_id
     assert adapter.active == dict.fromkeys(SERVICES, True)
+    assert_config_metadata(paths)
     assert_sentinels(paths)
 
 
@@ -303,6 +311,7 @@ def test_failure_restores_pair_and_only_own_unpublished_candidate(installation, 
     assert result.error and result.rollback_status == "succeeded"
     assert paths.current.resolve() == paths.releases / "1.0.0"
     assert (paths.config_dir / "config.json").read_bytes() == original
+    assert_config_metadata(paths)
     assert StateStore(paths).load().phase == "rolled-back"
     assert not (paths.config_dir / ".updater-maintenance.json").exists()
     if failure in ("metadata", "download", "extract", "dependencies", "migrate"):
@@ -484,7 +493,153 @@ def test_activation_filesystem_error_rolls_back_exact_bytes(
     assert failed and result.rollback_status == "succeeded", result
     assert paths.current.resolve() == paths.releases / "1.0.0"
     assert (paths.config_dir / "config.json").read_bytes() == original
+    assert_config_metadata(paths)
     assert_sentinels(paths)
+
+
+@pytest.mark.parametrize("fault", ["publication-fsync", "timeout-unlink", "timeout-fsync"])
+@pytest.mark.parametrize("persistent", [False, True])
+def test_prehandle_maintenance_fault_never_claims_incomplete_rollback(
+    installation, monkeypatch, fault, persistent
+):
+    from installer.update_core import maintenance, secure_fs
+
+    updater, paths, adapter, request_id = installation
+    original = (paths.config_dir / "config.json").read_bytes()
+    current = os.readlink(paths.current)
+    marker = paths.config_dir / maintenance.INTENT_NAME
+    lease = paths.config_dir / maintenance.LEASE_NAME
+    lease_identity = (lease.stat().st_dev, lease.stat().st_ino)
+    replace, unlink, sync = os.replace, os.unlink, os.fsync
+    published = unlinked = False
+    failures = 0
+    absence_synced = False
+    terminal_syncs = []
+    save = StateStore.save
+
+    def save_journal(store, journal):
+        if journal.phase == "rolled-back":
+            terminal_syncs.append(absence_synced)
+        return save(store, journal)
+
+    def replace_marker(source, destination, *args, **kwargs):
+        nonlocal published
+        result = replace(source, destination, *args, **kwargs)
+        if destination == maintenance.INTENT_NAME:
+            published = True
+        return result
+
+    def unlink_marker(name, *args, **kwargs):
+        nonlocal failures, unlinked
+        if name == maintenance.INTENT_NAME:
+            if fault == "timeout-unlink" and (persistent or failures == 0):
+                failures += 1
+                raise OSError("injected maintenance intent unlink failure")
+            result = unlink(name, *args, **kwargs)
+            unlinked = True
+            return result
+        return unlink(name, *args, **kwargs)
+
+    def sync_marker(fd):
+        nonlocal failures, absence_synced
+        is_config_parent = Path(os.readlink(f"/proc/self/fd/{fd}")) == paths.config_dir
+        selected = published if fault == "publication-fsync" else unlinked
+        if is_config_parent and selected and fault != "timeout-unlink":
+            if persistent or failures == 0:
+                failures += 1
+                raise OSError("injected maintenance intent directory fsync failure")
+        result = sync(fd)
+        if is_config_parent and published and not marker.exists():
+            absence_synced = True
+        return result
+
+    context = maintenance.mutation_lease(paths) if fault.startswith("timeout") else nullcontext()
+    with context:
+        with monkeypatch.context() as patch:
+            patch.setattr(secure_fs.os, "replace", replace_marker)
+            patch.setattr(secure_fs.os, "unlink", unlink_marker)
+            patch.setattr(secure_fs.os, "fsync", sync_marker)
+            patch.setattr(StateStore, "save", save_journal)
+            result = updater.run()
+            journal = StateStore(paths).load()
+            assert failures, "fault must hit the actual intent replacement/unlink parent fsync"
+            assert result.status == "failed" and result.error, result
+            if persistent:
+                assert result.rollback_status.startswith("failed:"), result
+                assert "Recovery" in result.rollback_status
+                assert journal.phase == "recovery-failed-pre-mutation"
+                assert not terminal_syncs
+                assert updater.run().status == "blocked"
+            else:
+                assert result.rollback_status == "succeeded", result
+                assert journal.phase == "rolled-back"
+                assert not marker.exists() and absence_synced
+                assert terminal_syncs == [True]  # Absence durable BEFORE terminal journal.
+                # The old ID is replayed, not accepted for a second update.
+                assert updater.run().status == "blocked"
+        assert not any(isinstance(event, tuple) for event in adapter.events)
+        assert (paths.config_dir / "config.json").read_bytes() == original
+        assert_config_metadata(paths)
+        assert os.readlink(paths.current) == current
+        assert journal.request_id == request_id
+        assert journal.candidate_created and not journal.candidate_published
+        assert journal.candidate_identity is not None
+        assert not journal.candidate.exists()
+        assert (lease.stat().st_dev, lease.stat().st_ino) == lease_identity
+        assert_sentinels(paths)
+        if not persistent:
+            with maintenance.mutation_lease(paths):
+                pass  # The original shared job lease is still alive; no writer was stopped.
+
+    if persistent:
+        # Only explicit recovery may reconcile the retained nonterminal evidence.
+        assert updater.recover("boot").status == "recovered"
+        assert not marker.exists()
+        adapter.active["knxohui.service"] = True
+        assert updater.run().status == "blocked"  # Health confirms old pair, then replay refusal.
+        assert StateStore(paths).load().phase == "rolled-back"
+
+    retry_id = str(uuid4())
+    request_path = paths.data_dir / "update/request.json"
+    request_path.write_bytes(
+        json.dumps({"format_version": 1, "request_id": retry_id, "channel": "stable"}).encode()
+    )
+    assert updater.run().status == "updated"  # Fresh candidate, not a resumed partial venv.
+    assert StateStore(paths).load().request_id == retry_id
+    assert_config_metadata(paths)
+    assert_sentinels(paths)
+
+
+@pytest.mark.parametrize("tagged", [False, True])
+def test_prehandle_failure_does_not_clear_unrelated_maintenance_intent(
+    installation, monkeypatch, tagged
+):
+    from installer.update_core import maintenance, secure_fs
+
+    updater, paths, adapter, _ = installation
+    original = (paths.config_dir / "config.json").read_bytes()
+    wait = maintenance.wait_for_quiescence
+    marker = paths.config_dir / maintenance.INTENT_NAME
+    value = {"maintenance": True}
+    if tagged:
+        value["request_id"] = str(uuid4())
+    unrelated = json.dumps(value).encode()
+
+    def other_intent(*args, **kwargs):
+        secure_fs.atomic_write(marker, unrelated, 0, 0, 0o644)
+        return wait(*args, **kwargs)
+
+    monkeypatch.setattr(maintenance, "wait_for_quiescence", other_intent)
+    result = updater.run()
+    assert result.status == "failed" and result.rollback_status.startswith("failed:"), result
+    assert marker.read_bytes() == unrelated
+    assert StateStore(paths).load().phase == "recovery-failed-pre-mutation"
+    assert not (paths.releases / "2.0.0").exists()
+    assert not any(isinstance(event, tuple) for event in adapter.events)
+    assert (paths.config_dir / "config.json").read_bytes() == original
+    assert paths.current.resolve().name == "1.0.0"
+    assert_config_metadata(paths)
+    assert updater.run().status == "blocked"
 
 
 @pytest.mark.parametrize("kind", ["world-readable", "legacy-plaintext"])

@@ -6,6 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
@@ -133,6 +134,40 @@ def test_failed_coordinator_retains_intent_for_recovery(protected):
     with pytest.raises(m.MaintenanceError):
         with m.mutation_lease(protected):
             pytest.fail("failed recovery admitted writes")
+
+
+def test_request_specific_intent_cleanup_refuses_unrelated_owner(protected):
+    from installer.update_core import maintenance as m
+
+    request_id = str(uuid4())
+    marker = protected.config_dir / m.INTENT_NAME
+    lease = protected.config_dir / m.LEASE_NAME
+    identity = (lease.stat().st_dev, lease.stat().st_ino)
+    with m.wait_for_quiescence(protected, 0.1, request_id=request_id):
+        original = marker.read_bytes()
+        with pytest.raises(m.MaintenanceError):
+            m.clear_request_intent(protected, str(uuid4()))
+        assert marker.read_bytes() == original
+    assert not marker.exists()
+    assert (lease.stat().st_dev, lease.stat().st_ino) == identity
+
+
+def test_request_intent_absence_retry_fsyncs_parent_without_touching_lease(protected, monkeypatch):
+    from installer.update_core import maintenance as m
+
+    lease = protected.config_dir / m.LEASE_NAME
+    identity = (lease.stat().st_dev, lease.stat().st_ino)
+    synced = []
+    sync = os.fsync
+
+    def record(fd):
+        synced.append(Path(os.readlink(f"/proc/self/fd/{fd}")))
+        return sync(fd)
+
+    monkeypatch.setattr(os, "fsync", record)
+    m.clear_request_intent(protected, str(uuid4()))
+    assert protected.config_dir in synced
+    assert (lease.stat().st_dev, lease.stat().st_ino) == identity
 
 
 def test_health_is_session_free_and_source_version(monkeypatch):

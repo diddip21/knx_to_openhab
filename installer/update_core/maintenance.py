@@ -14,6 +14,7 @@ import os
 import stat
 import time
 from contextlib import ExitStack, contextmanager
+from uuid import UUID
 
 from . import secure_fs as fs
 
@@ -81,18 +82,52 @@ def mutation_lease(paths):
         yield
 
 
-def _clear_intent(paths):
+def _intent_data(request_id=None):
+    if request_id is None:
+        return b'{"maintenance":true}'
+    if not isinstance(request_id, str) or str(UUID(request_id)) != request_id:
+        raise ValueError("Expected canonical maintenance request UUID")
+    return b'{"maintenance":true,"request_id":"' + request_id.encode("ascii") + b'"}'
+
+
+def _clear_intent(paths, expected_data=None):
     with fs._parent(_config(paths) / INTENT_NAME) as (stack, parent, name, chain):
-        entry = fs._open(stack, parent, name, {0}, os.fstat(parent).st_dev)
+        try:
+            entry = fs._open(stack, parent, name, {0}, os.fstat(parent).st_dev)
+        except FileNotFoundError:
+            fs._check(chain)
+            # Retry an unlink whose directory fsync failed: observed absence
+            # alone is not proof of durable cleanup.
+            os.fsync(parent)
+            return
+        if (
+            expected_data is not None
+            and fs.read_regular(_config(paths) / INTENT_NAME, 4096) != expected_data
+        ):
+            raise MaintenanceError(
+                "Unrelated maintenance intent retained; explicit recovery required"
+            )
         fs._check([*chain, entry])
         os.unlink(name, dir_fd=parent)
         os.fsync(parent)
 
 
+def clear_request_intent(paths, request_id: str):
+    """Root caller holds lifecycle lock; clear ONLY this request or sync absence.
+
+    This is not lease acquisition and must not stop existing writers. Untagged,
+    malformed, unsafe or differently tagged intent is retained for recovery.
+    """
+    if request_id is None:
+        raise ValueError("A request UUID is required for request-specific cleanup")
+    _clear_intent(paths, _intent_data(request_id))
+
+
 class _Quiescence:
-    def __init__(self, paths, lease):
+    def __init__(self, paths, lease, intent_data):
         self.paths = paths
         self.lease = lease
+        self.intent_data = intent_data
 
     def __enter__(self):
         return self
@@ -102,41 +137,45 @@ class _Quiescence:
         # crashed coordinator leaves durable intent denying further mutations.
         try:
             if exc[0] is None:
-                _clear_intent(self.paths)
+                _clear_intent(self.paths, self.intent_data)
         finally:
             self.lease.__exit__(*exc)
 
 
-def wait_for_quiescence(paths, timeout: float = 120.0):
+def wait_for_quiescence(paths, timeout: float = 120.0, *, request_id: str | None = None):
     """Persist intent, drain at most 120s, return an ALREADY HELD exclusive lease.
 
     Use as a context manager; unlike a lazy generator, calling this interface
     itself establishes quiescence. Timeout clears intent without killing jobs.
+    A coordinator request UUID tags publication for safe pre-handle reconciliation.
     """
     import fcntl
 
     if not math.isfinite(timeout) or not 0 <= timeout <= 120:
         raise ValueError("Drain timeout must be between 0 and 120 seconds")
+    intent_data = _intent_data(request_id)
     if maintenance_requested(paths):
         raise MaintenanceError("Maintenance already requested; recover before retrying")
-    fs.atomic_write(_config(paths) / INTENT_NAME, b'{"maintenance":true}', 0, 0, 0o644)
     lease = _lease_fd(paths)
     entered = False
     try:
+        # Replacement may succeed before its directory fsync raises. Keep that
+        # publication inside cleanup ownership, even before a lease FD is held.
+        fs.atomic_write(_config(paths) / INTENT_NAME, intent_data, 0, 0, 0o644)
         fd = lease.__enter__()
         entered = True
         deadline = time.monotonic() + timeout
         while True:
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                return _Quiescence(paths, lease)
+                return _Quiescence(paths, lease, intent_data)
             except BlockingIOError:
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Mutation drain exceeded maintenance timeout")
                 time.sleep(min(0.05, max(0, deadline - time.monotonic())))
     except BaseException:
         try:
-            _clear_intent(paths)
+            _clear_intent(paths, intent_data)
         finally:
             if entered:
                 lease.__exit__(None, None, None)

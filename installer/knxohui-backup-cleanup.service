@@ -1,6 +1,8 @@
 [Unit]
 Description=KNX to OpenHAB Backup Cleanup
 After=network.target
+Requires=knxohui-update-recovery.service
+After=knxohui-update-recovery.service
 
 [Service]
 Type=oneshot

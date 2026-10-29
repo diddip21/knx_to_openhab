@@ -48,7 +48,7 @@ bash /tmp/knxoh-install.sh --channel prerelease
 When an installation already exists, the installer offers **Update**,
 **Repair**, **Reinstall**, and **Cancel**. In non-interactive use, choose one
 explicitly (`--update`, `--repair`, `--reinstall`, or `--cancel`) or use
-`--plan` to inspect the action without making changes. Repair restores missing
+`--plan` to inspect the action without making changes. Repair restores protected
 system components only; it does not migrate, overwrite, or delete configuration,
 secrets, jobs, runtime data, or backups. Update and reinstall preserve those
 external paths while installing a new release. Release directories are
@@ -200,6 +200,52 @@ sudo systemctl status knxohui-backup-cleanup.timer
 
 ## Uninstall
 
+### Protected release updater installations
+
+The verified administrator bootstrap installs the complete root-owned updater
+bundle in `/usr/local/libexec/knx_to_openhab`. Candidate releases never replace
+this bundle or system policy. `--repair` downloads a verified administrator
+payload too; it does not execute bootstrap code from `current`. The old
+`fix_permissions.sh` now directs administrators to this verified repair path.
+
+Updater preparation uses the separate non-login `knxohupdate` account and
+`/var/lib/knxohupdate-preparation` (root:knxohupdate, 0750). Recovery snapshots and
+journals stay private in `CONFIG_DIR/.updater-state` (root, 0700); readable status
+and log projections are separate. The root:knxohui mutation-lock inode is retained.
+
+Setup checks both saved and requested canonical paths while holding the same host
+lifecycle lock as the updater. A pending, malformed or future journal refuses
+repair **before** replacing code, paths or state. Stop the UI and cleanup writers,
+then use the existing installed coordinator for explicit offline recovery:
+
+```bash
+sudo /usr/bin/python3 -I /usr/local/libexec/knx_to_openhab/update_release.py \
+  --recover-offline --paths-file /etc/knx_to_openhab/paths.env
+```
+
+Do not delete the journal or lease files to bypass this refusal. A retained
+terminal journal's replay ledger is not reset by administrator installation:
+use `--repair` to update the trusted coordinator, then the release updater to
+change application versions. Administrator activation of a different target is
+refused while that ledger exists. Canonical path relocation requires a separate
+administrator migration. Spaces are supported; dollar/percent signs, double
+quotes, backslashes and control characters in paths are refused. Paths hidden by
+the service's home/tmp sandbox are also refused.
+
+Recovery is a required, ordered, once-per-boot oneshot for UI, cleanup and updates.
+Bootstrap completes disk mutations under its inherited verified lifecycle lease,
+releases that lease, then starts recovery and services: it never waits for recovery
+while holding recovery's lock. If activation fails, rollback re-acquires the lock
+and verifies that no other operation superseded its protected pair before restoring
+the administrator snapshot. Otherwise evidence is retained for intervention.
+
+Ordinary uninstall stops/disables updater and recovery but **retains releases,
+the protected bundle and recovery units, both accounts, preparation evidence and
+all external user data** for offline recovery. Purge is refused if protected updater
+state or installed updater components exist, even for a terminal journal. Arrange
+explicit administrator recovery and evidence archival first; do not silently erase
+them with `--purge`.
+
 Download and run the uninstaller as a regular user with `sudo` access:
 
 ```bash
@@ -209,7 +255,8 @@ bash /tmp/knxohui-uninstall.sh
 ```
 
 The default mode lists its actions, asks you to type `UNINSTALL`, and removes
-application releases and service files only. Configuration (`/etc/knx_to_openhab`),
+UI/cleanup service files and Web UI sudo permissions. Application releases,
+configuration (`/etc/knx_to_openhab`),
 jobs/runtime data (`/var/lib/knx_to_openhab`), backups
 (`/var/backups/knx_to_openhab`), and the `knxohui` service account are retained.
 The paths recorded in `/etc/knx_to_openhab/paths.env` are used when they differ
@@ -231,8 +278,9 @@ The installer keeps the `openhab` group for read access and removes group and
 other write access under the effective OpenHAB configuration root. Objects
 owned by `knxohui` outside the generated output allowlist are reassigned to
 `root`; configured generated files are provisioned as `knxohui:openhab` with
-mode `0640`. File contents are left intact. The same provisioning runs from
-`fix_permissions.sh` when an administrator repairs an existing installation.
+mode `0640`. File contents are left intact. Use the verified administrator bootstrap
+for permission provisioning; `fix_permissions.sh` no longer changes ownership or
+copies code/policy from an installed application tree.
 
 Deploy accepts only the configured generated outputs in their expected OpenHAB
 directories. It rejects traversal, symlinks, and missing pre-provisioned files.

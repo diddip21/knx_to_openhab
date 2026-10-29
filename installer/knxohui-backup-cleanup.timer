@@ -1,6 +1,8 @@
 [Unit]
 Description=KNX to OpenHAB Daily Backup Cleanup Timer
 Documentation=https://github.com/diddip21/knx_to_openhab
+Requires=knxohui-update-recovery.service
+After=knxohui-update-recovery.service
 
 [Timer]
 OnCalendar=daily

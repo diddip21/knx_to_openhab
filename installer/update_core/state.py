@@ -159,9 +159,40 @@ class LifecycleLock:
             fcntl.flock(entry.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             try:
                 fs._check([*chain, entry])
-                yield
+                yield entry.fd
             finally:
                 fcntl.flock(entry.fd, fcntl.LOCK_UN)
+
+    @contextmanager
+    def inherited(self, fd):
+        """Validate a live inherited exclusive lease, not an environment boolean.
+
+        A separate open description must conflict; flock on the inherited one
+        must succeed. Together these reject an unlocked FD or somebody else's
+        lock, and inode/owner checks prevent substitution. Never unlock here.
+        """
+        import fcntl
+
+        with self._parent() as (stack, parent, name, chain):
+            entry = fs._open(stack, parent, name, {0}, os.fstat(parent).st_dev)
+            info = os.fstat(fd)
+            if (
+                (info.st_dev, info.st_ino) != (entry.info.st_dev, entry.info.st_ino)
+                or info.st_uid != 0
+                or info.st_nlink != 1
+                or stat.S_IMODE(info.st_mode) != 0o600
+            ):
+                raise ValueError("Invalid inherited lifecycle descriptor")
+            try:
+                fcntl.flock(entry.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                pass
+            else:
+                fcntl.flock(entry.fd, fcntl.LOCK_UN)
+                raise ValueError("Inherited lifecycle descriptor is not locked")
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fs._check([*chain, entry])
+            yield fd
 
 
 def _release(path, paths):
@@ -505,13 +536,28 @@ def check_start_allowed(paths: Paths, role: str) -> bool:
             return False
         config = _config_dir(paths)
         current, identity = _current_target(paths)
+        # Administrator setup's root-authored incomplete marker must also gate
+        # same-boot restarts after recovery already reached active (exited).
+        for marker in (
+            current / ".install-incomplete",
+            paths.releases.parent / ".install-incomplete",
+            paths.releases.parent / ".installer-incomplete",
+            config / ".installer-incomplete",
+        ):
+            with fs._parent(marker) as (_, parent, name, chain):
+                try:
+                    os.stat(name, dir_fd=parent, follow_symlinks=False)
+                except FileNotFoundError:
+                    fs._check(chain)
+                else:
+                    return False
         gate = config / ".updater-startup-gate.json"
         try:
             raw = fs.read_regular(gate, 4096)
         except FileNotFoundError:
             # Only the leaf may be absent, never an unsafe/missing parent.
             _directory(config)
-            return True
+            return _current_target(paths) == (current, identity)
         with fs._parent(gate) as (stack, parent, name, chain):
             entry = fs._open(stack, parent, name, {0}, os.fstat(parent).st_dev)
             if entry.info.st_mode & 0o444 != 0o444:

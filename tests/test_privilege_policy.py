@@ -44,10 +44,11 @@ def test_installer_scripts_install_and_validate_the_restricted_policy():
     repair = (ROOT / "fix_permissions.sh").read_text(encoding="utf-8")
     migration = (ROOT / "installer" / "migrate_sudoers.sh").read_text(encoding="utf-8")
 
-    assert "installer/migrate_sudoers.sh" in setup
-    assert "migrate_sudoers.sh" in repair
-    assert "/usr/local/sbin/knxohui-service-update" in setup
-    assert "/usr/local/sbin/knxohui-service-update" in repair
+    bootstrap = (ROOT / "installer/update_bootstrap.py").read_text(encoding="utf-8")
+    assert "provision_updater" in setup
+    assert "verified administrator bootstrap" in repair
+    assert "/usr/local/sbin/knxohui-service-update" in bootstrap
+    assert "install -o" not in repair
     assert "knxohui.sudoers" in migration
     assert 'visudo -cf "$TEMP_POLICY"' in migration
 
@@ -63,11 +64,11 @@ def test_installer_runs_provisioner_from_activated_release():
     assert '"$REPO_ROOT/installer/provision_managed_files.py"' not in setup
 
 
-def test_permission_repair_restores_external_runtime_data_ownership():
+def test_permission_repair_requires_verified_locked_administrator_path():
     repair = (ROOT / "fix_permissions.sh").read_text(encoding="utf-8")
 
-    assert "get_paths; print(get_paths().data_dir)" in repair
-    assert 'sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$DATA_DIR"' in repair
+    assert "bash install.sh --repair" in repair
+    assert "chown -R" not in repair
 
 
 def test_web_updater_stops_until_legacy_sudoers_policy_is_migrated():

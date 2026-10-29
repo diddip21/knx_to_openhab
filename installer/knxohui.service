@@ -1,6 +1,8 @@
 [Unit]
 Description=KNX to OpenHAB Web UI Service
 After=network.target
+Requires=knxohui-update-recovery.service
+After=knxohui-update-recovery.service
 Wants=knxohui-backup-cleanup.timer
 
 [Service]

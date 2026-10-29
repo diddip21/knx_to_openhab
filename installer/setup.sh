@@ -59,6 +59,8 @@ import stat
 import sys
 from pathlib import Path
 
+if any(ord(c) < 32 or c in '\\"%$\x7f' for value in sys.argv[1:] for c in value):
+    raise SystemExit("Unsupported installation path characters")
 raw_paths = [Path(value).expanduser() for value in sys.argv[1:]]
 for path in raw_paths:
     if not path.is_absolute():
@@ -126,6 +128,103 @@ BASE="${NORMALIZED_PATH_LIST[0]}"
 CONFIG_DIR="${NORMALIZED_PATH_LIST[1]}"
 DATA_DIR="${NORMALIZED_PATH_LIST[2]}"
 BACKUP_DIR="${NORMALIZED_PATH_LIST[3]}"
+
+# The verified administrator bootstrap holds ONE lease across all shell writes.
+# Nested calls prove ownership of a live inherited descriptor; no boolean bypass.
+BOOTSTRAP_ARGS=(--base "$BASE" --config-dir "$CONFIG_DIR" --data-dir "$DATA_DIR"
+    --backup-dir "$BACKUP_DIR" --paths-file "$PATHS_FILE")
+if [[ -z "${KNXOH_LIFECYCLE_FD:-}" ]]; then
+    exec /usr/bin/python3 -I "$REPO_ROOT/installer/update_bootstrap.py" \
+        --action setup "${BOOTSTRAP_ARGS[@]}" -- "$@"
+fi
+/usr/bin/python3 -I "$REPO_ROOT/installer/update_bootstrap.py" \
+    --action validate "${BOOTSTRAP_ARGS[@]}"
+
+provision_updater() {
+    /usr/bin/python3 -I "$REPO_ROOT/installer/update_bootstrap.py" \
+        --action provision "${BOOTSTRAP_ARGS[@]}"
+}
+
+mark_installer_blocked() {
+    /usr/bin/python3 -I - "$BASE/.installer-incomplete" <<'PY'
+import os
+import stat
+import sys
+
+path = sys.argv[1]
+parent = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+try:
+    fd = os.open(os.path.basename(path), os.O_RDONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK,
+                 0o600, dir_fd=parent)
+    try:
+        info = os.fstat(fd)
+        if info.st_uid != 0 or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValueError("Unsafe installer deny marker")
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+finally:
+    os.fsync(parent)
+    os.close(parent)
+PY
+}
+
+finish_protected_stage() {
+    local mode="$1" ui_start="$2" ui_enable="$3" cleanup_start="$4" cleanup_enable="$5"
+    local previous="$CURRENT_TARGET"
+    if [[ -n "$previous" ]]; then
+        if [[ "$previous" != /* ]]; then
+            previous="$BASE/$previous"
+        fi
+        previous="$(readlink -f -- "$previous")" || return 1
+    fi
+    # The parent completes disk mutations under its live lease, then releases it
+    # BEFORE starting recovery (which acquires the same lease). No cyclic start.
+    python3 - "$KNXOH_BOOTSTRAP_OUTCOME" "$mode" "$RELEASE_DIR" "$previous" \
+        "$MIGRATION_SNAPSHOT_PATH_FILE" "$ui_start" "$ui_enable" \
+        "$cleanup_start" "$cleanup_enable" \
+        "$UI_WAS_ACTIVE" "$UI_WAS_ENABLED" "$CLEANUP_SERVICE_WAS_ACTIVE" \
+        "$CLEANUP_TIMER_WAS_ACTIVE" "$CLEANUP_TIMER_WAS_ENABLED" <<'PY'
+import json
+import os
+import sys
+
+destination, mode, release, previous, snapshot, *flags = sys.argv[1:]
+names = ("ui_start", "ui_enable", "cleanup_start", "cleanup_enable", "ui_was_active",
+         "ui_was_enabled", "cleanup_service_was_active", "cleanup_timer_was_active",
+         "cleanup_timer_was_enabled")
+value = dict(zip(names, [flag == "1" for flag in flags]))
+value.update(mode=mode, release=release, previous=previous, snapshot_file=snapshot)
+fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+with os.fdopen(fd, "w", encoding="utf-8") as output:
+    json.dump(value, output)
+    output.flush()
+    os.fsync(output.fileno())
+PY
+    if [[ "$mode" == install ]]; then
+        sudo rm -f -- "$RELEASE_DIR/.install-incomplete"
+    fi
+    # Disk preparation succeeded; service-activation rollback belongs to the
+    # trusted parent, after re-acquiring and rechecking the protected contract.
+    MIGRATION_STARTED=0
+    CURRENT_SWITCHED=0
+    SYSTEM_STATE_CAPTURED=0
+}
+
+# Package mutations also remain inside the same verified lifecycle lease.
+packages=(python3 python3-venv python3-pip rsync curl tar)
+missing=()
+for package in "${packages[@]}"; do
+    if ! dpkg -s "$package" 2>/dev/null | grep -q '^Status: install ok installed$'; then
+        missing+=("$package")
+    fi
+done
+if ((${#missing[@]})); then
+    if [[ "$SETUP_MODE" != "repair" ]]; then
+        sudo apt-get update -qq
+    fi
+    sudo apt-get install -y -qq "${missing[@]}"
+fi
 
 if [[ -L "$BASE/releases" ]]; then
     echo "The releases directory must not be a symlink: $BASE/releases" >&2
@@ -283,7 +382,7 @@ recover_interrupted_transaction() {
     CURRENT_TARGET="$previous_target"
     CURRENT_SWITCHED=1
     MIGRATION_SNAPSHOT_PATH_FILE="$source_real/.migration-snapshot-path"
-    MIGRATION_ROLLBACK_SCRIPT="$source_real/installer/config_migrations.py"
+    MIGRATION_ROLLBACK_SCRIPT="$REPO_ROOT/installer/config_migrations.py"
     MIGRATION_STARTED=1
     UI_WAS_ACTIVE="${saved_state[1]}"
     UI_WAS_ENABLED="${saved_state[2]}"
@@ -298,6 +397,24 @@ recover_interrupted_transaction() {
     }
     restore_current_target "$previous_target" || return 1
     MIGRATION_STARTED=0
+    if [[ -n "${KNXOH_BOOTSTRAP_OUTCOME:-}" ]]; then
+        if [[ -z "$previous_target" ]]; then
+            SYSTEM_STATE_CAPTURED=0
+            CURRENT_SWITCHED=0
+            sudo rm -rf -- "$source_real" || return 1
+            echo "Interrupted first installation restored; external snapshots retained. Rerun --update." >&2
+            return 2
+        fi
+        RELEASE_DIR="$source_real"
+        MIGRATION_SNAPSHOT_PATH_FILE=""
+        finish_protected_stage repair "$UI_WAS_ACTIVE" "$UI_WAS_ENABLED" \
+            "$CLEANUP_TIMER_WAS_ACTIVE" "$CLEANUP_TIMER_WAS_ENABLED"
+        # This is the existing installer transaction's positively selected failed
+        # release, not updater candidate cleanup or release pruning. External
+        # snapshots are retained. Removing it allows a fresh verified retry.
+        sudo rm -rf -- "$source_real" || return 1
+        return 0
+    fi
     if ! restore_system_state; then
         echo "Could not restore the pre-install service state; retaining recovery data." >&2
         return 1
@@ -317,16 +434,34 @@ recover_interrupted_transaction() {
 
 cleanup_setup() {
     local setup_status=$?
+    local rollback_failed=0
     trap - EXIT
     if [[ "$setup_status" -ne 0 ]]; then
-        restore_migration_snapshot ||
+        restore_migration_snapshot || {
+            rollback_failed=1
             echo "Failed to restore the pre-migration configuration snapshot." >&2
+        }
         if [[ "$CURRENT_SWITCHED" -eq 1 ]]; then
-            restore_current_target "$CURRENT_TARGET" ||
+            restore_current_target "$CURRENT_TARGET" || {
+                rollback_failed=1
                 echo "Failed to restore the previous active release after setup failure." >&2
+            }
         fi
-        restore_system_state ||
-            echo "Could not restore the pre-install service state; recovery remains required." >&2
+        if [[ -n "${KNXOH_BOOTSTRAP_OUTCOME:-}" ]]; then
+            if [[ "$rollback_failed" -eq 0 ]]; then
+                # Defer even failure-path service restoration until the parent
+                # releases the lease required by boot recovery.
+                finish_protected_stage failed "$UI_WAS_ACTIVE" "$UI_WAS_ENABLED" \
+                    "$CLEANUP_TIMER_WAS_ACTIVE" "$CLEANUP_TIMER_WAS_ENABLED" || true
+            else
+                mark_installer_blocked ||
+                    echo "Could not persist the installer deny marker; manual recovery required." >&2
+                echo "Writers remain stopped; administrator recovery is required." >&2
+            fi
+        else
+            restore_system_state ||
+                echo "Could not restore the pre-install service state; recovery remains required." >&2
+        fi
     fi
     if [[ -n "$STAGING_DIR" ]]; then
         sudo rm -rf -- "$STAGING_DIR" "$CURRENT_LINK_TMP" 2>/dev/null || true
@@ -353,7 +488,9 @@ repair_system_components() {
         echo "Refusing to replace non-symlink path $BASE/current." >&2
         return 2
     fi
-    source_real="$(readlink -f "$REPO_ROOT")"
+    # System components ALWAYS come from this verified administrator payload,
+    # never from the candidate/current release. The target remains immutable.
+    source_real="$(readlink -f "${KNXOH_REPAIR_TARGET:-$REPO_ROOT}")"
     if [[ -L "$BASE/current" ]]; then
         if [[ ! -e "$BASE/current" ]]; then
             echo "Refusing to repair through broken current symlink $BASE/current." >&2
@@ -415,48 +552,28 @@ repair_system_components() {
     fi
     sudo usermod -a -G openhab "$SERVICE_USER"
 
-    if [[ ! -d /usr/local/libexec/knx_to_openhab ]]; then
-        sudo install -d -o root -g root -m 0755 /usr/local/libexec/knx_to_openhab
-    fi
-    local helper
-    for helper in launch_web.sh launch_backup_cleanup.sh; do
-        if [[ ! -e "/usr/local/libexec/knx_to_openhab/$helper" ]]; then
-            sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/$helper" \
-                "/usr/local/libexec/knx_to_openhab/$helper"
-            systemd_changed=1
-        fi
-    done
-    if [[ -f "$REPO_ROOT/installer/set_ui_password.py" && ! -e /usr/local/libexec/knx_to_openhab/set_ui_password.py ]]; then
-        sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/set_ui_password.py" \
-            /usr/local/libexec/knx_to_openhab/set_ui_password.py
-    fi
-    if [[ -f "$REPO_ROOT/installer/service_update.sh" && ! -e /usr/local/sbin/knxohui-service-update ]]; then
-        sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/service_update.sh" \
-            /usr/local/sbin/knxohui-service-update
-    fi
-
     local unit
     for unit in knxohui.service knxohui-backup-cleanup.service knxohui-backup-cleanup.timer; do
         if [[ ! -e "/etc/systemd/system/$unit" ]]; then
-            sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/$unit" \
-                "/etc/systemd/system/$unit"
-            systemd_changed=1
             case "$unit" in
                 knxohui.service) ui_unit_missing=1 ;;
                 knxohui-backup-cleanup.timer) cleanup_timer_missing=1 ;;
             esac
         fi
     done
-    if [[ ! -e /etc/sudoers.d/knxohui && -f "$REPO_ROOT/installer/migrate_sudoers.sh" ]]; then
-        sudo bash "$REPO_ROOT/installer/migrate_sudoers.sh"
+    provision_updater
+    systemd_changed=1
+    if [[ -n "${KNXOH_BOOTSTRAP_OUTCOME:-}" ]]; then
+        # Link activation below still belongs to this protected mutation stage.
+        systemd_changed=0
     fi
     if [[ "$systemd_changed" -eq 1 ]]; then
         sudo systemctl daemon-reload
     fi
-    if [[ "$ui_unit_missing" -eq 1 ]]; then
+    if [[ "$ui_unit_missing" -eq 1 && -z "${KNXOH_BOOTSTRAP_OUTCOME:-}" ]]; then
         sudo systemctl enable knxohui.service
     fi
-    if [[ "$cleanup_timer_missing" -eq 1 ]]; then
+    if [[ "$cleanup_timer_missing" -eq 1 && -z "${KNXOH_BOOTSTRAP_OUTCOME:-}" ]]; then
         sudo systemctl enable knxohui-backup-cleanup.timer
     fi
     if [[ "$needs_activation" -eq 1 ]]; then
@@ -473,6 +590,19 @@ repair_system_components() {
             return 1
         fi
         CURRENT_SWITCHED=1
+    fi
+    if [[ -n "${KNXOH_BOOTSTRAP_OUTCOME:-}" ]]; then
+        RELEASE_DIR="$source_real"
+        local start_ui=0
+        if [[ "$ui_unit_missing" -eq 1 || ( "$release_activated" -eq 1 && "$UI_WAS_ACTIVE" -eq 1 ) ]]; then
+            start_ui=1
+        fi
+        if [[ -f "$source_real/.install-incomplete" ]]; then
+            sudo rm -f -- "$source_real/.install-incomplete"
+        fi
+        finish_protected_stage repair "$start_ui" "$ui_unit_missing" \
+            "$cleanup_timer_missing" "$cleanup_timer_missing"
+        return 0
     fi
     if [[ "$release_activated" -eq 1 ]] && sudo systemctl is-active --quiet knxohui.service; then
         if ! sudo systemctl restart knxohui.service; then
@@ -580,9 +710,6 @@ sudo chown root:"$SERVICE_USER" "$CONFIG_DIR"
 sudo chmod 0750 "$CONFIG_DIR"
 
 sudo mkdir -p "$STAGING_DIR"
-sudo python3 -m venv "$STAGING_DIR/venv"
-sudo "$STAGING_DIR/venv/bin/pip" install --upgrade pip
-sudo "$STAGING_DIR/venv/bin/pip" install -r "$REPO_ROOT/requirements.txt"
 
 echo "Installing application files while preserving runtime configuration"
 sudo rsync -a \
@@ -593,34 +720,11 @@ sudo rsync -a \
     --exclude .env --exclude secrets.env --exclude '*.knxproj' --exclude '*.knxprojarchive' \
     --exclude '*.tar.gz' --exclude '*.sha256' \
     "$REPO_ROOT/" "$STAGING_DIR/"
-sudo install -o root -g root -m 0755 \
-    "$STAGING_DIR/installer/service_update.sh" \
-    /usr/local/sbin/knxohui-service-update
 
 if ! getent group openhab >/dev/null 2>&1; then
     sudo groupadd openhab
 fi
 sudo usermod -a -G openhab "$SERVICE_USER"
-
-echo "Installing restricted sudoers policy for service operations"
-sudo bash "$STAGING_DIR/installer/migrate_sudoers.sh"
-
-echo "Installing systemd launch helpers"
-sudo install -d -o root -g root -m 0755 /usr/local/libexec/knx_to_openhab
-sudo install -o root -g root -m 0755 "$STAGING_DIR/installer/launch_web.sh" \
-    /usr/local/libexec/knx_to_openhab/launch_web.sh
-sudo install -o root -g root -m 0755 "$STAGING_DIR/installer/launch_backup_cleanup.sh" \
-    /usr/local/libexec/knx_to_openhab/launch_backup_cleanup.sh
-sudo install -o root -g root -m 0755 "$STAGING_DIR/installer/set_ui_password.py" \
-    /usr/local/libexec/knx_to_openhab/set_ui_password.py
-
-echo "Installing systemd units and timers"
-sudo install -o root -g root -m 0644 "$STAGING_DIR/installer/knxohui.service" \
-    /etc/systemd/system/knxohui.service
-sudo install -o root -g root -m 0644 "$STAGING_DIR/installer/knxohui-backup-cleanup.service" \
-    /etc/systemd/system/knxohui-backup-cleanup.service
-sudo install -o root -g root -m 0644 "$STAGING_DIR/installer/knxohui-backup-cleanup.timer" \
-    /etc/systemd/system/knxohui-backup-cleanup.timer
 
 transaction_state_temporary="$TRANSACTION_STATE_STAGING_FILE.tmp.$$"
 printf '%s\n' \
@@ -635,6 +739,18 @@ sudo mv -Tf "$transaction_state_temporary" "$TRANSACTION_STATE_STAGING_FILE"
 sudo touch "$STAGING_DIR/.install-incomplete"
 sudo mv "$STAGING_DIR" "$RELEASE_DIR"
 TRANSACTION_STATE_FILE="$RELEASE_DIR/.installer-transaction-state"
+sudo python3 -m venv --copies "$RELEASE_DIR/venv"
+sudo "$RELEASE_DIR/venv/bin/python" -m pip install --upgrade pip
+sudo "$RELEASE_DIR/venv/bin/python" -m pip install -r "$REPO_ROOT/requirements.txt"
+sudo python3 - "$RELEASE_DIR/venv" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+link = Path(sys.argv[1]) / "lib64"
+if link.is_symlink() and os.readlink(link) == "lib":
+    link.unlink()
+PY
 sudo chown -R root:root "$RELEASE_DIR"
 sudo chmod -R go-w "$RELEASE_DIR"
 echo "Stopping the Web UI and backup cleanup during migration"
@@ -686,6 +802,8 @@ sudo env \
     "KNXOH_PATHS_FILE=$PATHS_FILE" \
     "$RELEASE_DIR/venv/bin/python" "$RELEASE_DIR/installer/provision_managed_files.py" \
     --service-user "$SERVICE_USER" --openhab-group openhab
+echo "Provisioning protected updater bundle, launch helpers, policy and units"
+provision_updater
 PORT=$(python3 - "$CONF" <<'PY'
 import json
 import sys
@@ -693,6 +811,10 @@ with open(sys.argv[1], encoding="utf-8") as config_file:
     print(json.load(config_file).get("port", 8085))
 PY
 )
+if [[ -n "${KNXOH_BOOTSTRAP_OUTCOME:-}" ]]; then
+    finish_protected_stage install 1 1 1 1
+    exit 0
+fi
 sudo systemctl daemon-reload
 sudo systemctl enable knxohui.service
 sudo systemctl restart knxohui.service

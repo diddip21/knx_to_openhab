@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Safe uninstaller for KNX to OpenHAB Generator.
+# Ordinary removal retains the protected updater bundle, releases and recovery evidence.
 # Usage: curl -fsSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/uninstall.sh | bash
 
 set -euo pipefail

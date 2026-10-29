@@ -152,10 +152,11 @@ def resolve_uninstall_paths(
 
 def _removal_actions(paths: UninstallPaths, purge: bool) -> list[RemovalAction]:
     units = (
+        "knxohui-update.service",
         "knxohui.service",
         "knxohui-backup-cleanup.service",
         "knxohui-backup-cleanup.timer",
-        "knxohui-update.service",
+        "knxohui-update-recovery.service",
     )
     actions = [
         RemovalAction(f"Stop {unit}", ("sudo", "systemctl", "stop", unit), best_effort=True)
@@ -177,32 +178,20 @@ def _removal_actions(paths: UninstallPaths, purge: bool) -> list[RemovalAction]:
                     "/etc/systemd/system/knxohui.service",
                     "/etc/systemd/system/knxohui-backup-cleanup.service",
                     "/etc/systemd/system/knxohui-backup-cleanup.timer",
-                    "/etc/systemd/system/knxohui-update.service",
-                ),
-            ),
-            RemovalAction(
-                "Remove installed system helpers",
-                (
-                    "sudo",
-                    "rm",
-                    "-rf",
-                    "--",
-                    "/usr/local/libexec/knx_to_openhab",
-                    "/usr/local/sbin/knxohui-service-update",
                 ),
             ),
             RemovalAction(
                 "Remove restricted sudoers policy",
                 ("sudo", "rm", "-f", "--", "/etc/sudoers.d/knxohui"),
             ),
-            RemovalAction(
-                f"Remove application releases at {paths.install_dir}",
-                ("sudo", "rm", "-rf", "--", str(paths.install_dir)),
-            ),
             RemovalAction("Reload systemd units", ("sudo", "systemctl", "daemon-reload")),
         )
     )
     if purge:
+        # No journal/previous release/bundle may be destroyed implicitly. The
+        # installed fixed CLI's validation is not a lease for later rm commands.
+        # Therefore purge is deliberately refused below whenever updater state
+        # exists; administrator recovery + explicit evidence archival is required.
         actions.extend(
             (
                 RemovalAction(
@@ -216,6 +205,10 @@ def _removal_actions(paths: UninstallPaths, purge: bool) -> list[RemovalAction]:
                 RemovalAction(
                     f"Purge backups at {paths.backup_dir}",
                     ("sudo", "rm", "-rf", "--", str(paths.backup_dir)),
+                ),
+                RemovalAction(
+                    f"Purge application releases at {paths.install_dir}",
+                    ("sudo", "rm", "-rf", "--", str(paths.install_dir)),
                 ),
                 RemovalAction(
                     "Remove service account",
@@ -248,6 +241,10 @@ def _print_plan(paths: UninstallPaths, purge: bool, output: TextIO) -> None:
         output.write(f"    Runtime data: {paths.data_dir}\n")
         output.write(f"    Backups: {paths.backup_dir}\n")
     else:
+        output.write(
+            "  - Protected updater/recovery units, bundle, releases, preparation evidence, "
+            "paths and both service accounts will be retained for offline recovery.\n"
+        )
         output.write("  - Configuration, jobs, runtime data, and backups will be retained.\n")
         output.write(f"    Configuration: {paths.config_dir}\n")
         output.write(f"    Runtime data: {paths.data_dir}\n")
@@ -303,7 +300,27 @@ def run_uninstall(
     actions = _removal_actions(paths, args.purge)
     failures: list[str] = []
     purge_actions_started = False
+    purge_checked = False
     for action in actions:
+        if args.purge and not purge_checked and "rm" in action.command:
+            # Stop/disable writers FIRST. Private evidence is checked as root,
+            # without reading it into the unprivileged uninstaller. A managed
+            # updater installation itself also blocks legacy purge: a separate
+            # CLI clean-state check would not reserve a lease for later rm.
+            for retained in (
+                str(paths.config_dir / ".updater-state"),
+                "/usr/local/libexec/knx_to_openhab/update_release.py",
+                "/etc/systemd/system/knxohui-update.service",
+            ):
+                absent = command_runner(("sudo", "test", "!", "-e", retained)) == 0
+                no_link = command_runner(("sudo", "test", "!", "-L", retained)) == 0
+                if not absent or not no_link:
+                    output.write(
+                        "Purge refused: retain updater recovery evidence; run installed offline "
+                        "recovery and arrange explicit administrator archival first.\n"
+                    )
+                    return 2
+            purge_checked = True
         if (
             action.description.startswith("Purge ")
             or action.description == "Remove service account"

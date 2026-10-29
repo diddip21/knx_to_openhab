@@ -275,31 +275,6 @@ check_sudo() {
     log_success "Sudo access confirmed"
 }
 
-install_dependencies() {
-    local repair_mode="${1:-0}"
-    local packages=(python3 python3-venv python3-pip rsync curl tar)
-    local missing=()
-    local package
-    for package in "${packages[@]}"; do
-        if ! dpkg -s "$package" 2>/dev/null | grep -q '^Status: install ok installed$'; then
-            missing+=("$package")
-        fi
-    done
-    if ((${#missing[@]} == 0)); then
-        log_success "All required system dependencies are installed"
-        return 0
-    fi
-    if [[ "$repair_mode" != "1" ]]; then
-        log_info "Refreshing package metadata..."
-        sudo apt-get update -qq
-    fi
-    log_info "Installing missing dependencies: ${missing[*]}"
-    sudo apt-get install -y -qq "${missing[@]}" || {
-        log_error "Failed to install required system dependencies."
-        return 1
-    }
-}
-
 release_api_url() {
     if [[ "$RELEASE_CHANNEL" == "stable" ]]; then
         printf '%s\n' "$STABLE_RELEASE_API_URL"
@@ -538,6 +513,13 @@ run_setup_script() {
         return 2
     fi
     source_root="$(readlink -f -- "$source_dir")"
+    UI_ENDPOINT_HELPER="$source_root/installer/web_ui_endpoint.py"
+    # Administrator provisioning must come from the freshly verified payload,
+    # not a release that an unprivileged update preparation child produced.
+    if [[ -z "$RELEASE_TEMP_DIR" || "$source_root/" != "$RELEASE_TEMP_DIR/"* ]]; then
+        log_error "Protected provisioning requires a freshly verified administrator payload."
+        return 2
+    fi
     sudo env \
         "KNXOH_INSTALL_DIR=$INSTALL_DIR" \
         "KNXOH_CONFIG_DIR=$CONFIG_DIR" \
@@ -545,28 +527,8 @@ run_setup_script() {
         "KNXOH_BACKUP_DIR=$BACKUP_DIR" \
         "KNXOH_PATHS_FILE=$PATHS_FILE" \
         "KNXOH_SETUP_ROOT=$source_root" \
-        bash -s -- "$@" <"$source_root/installer/setup.sh"
-}
-
-remove_abandoned_staging() {
-    local stage
-    local release_path="$INSTALL_DIR/releases"
-    if [[ -L "$release_path" ]]; then
-        log_error "The releases directory must not be a symlink: $release_path"
-        return 2
-    fi
-    [[ -d "$release_path" ]] || return 0
-    for stage in "$release_path"/.*.staging.*; do
-        [[ -e "$stage" || -L "$stage" ]] || continue
-        if [[ -L "$stage" || ! -d "$stage" ]]; then
-            log_error "Refusing to remove non-directory release staging path: $stage"
-            return 1
-        fi
-        case "$stage" in
-            "$release_path"/.*.staging.*) sudo rm -rf -- "$stage" ;;
-            *) log_error "Refusing an unexpected release staging path: $stage"; return 1 ;;
-        esac
-    done
+        "KNXOH_REPAIR_TARGET=${REPAIR_TARGET:-$INSTALL_DIR/current}" \
+        bash -c 'cd /; exec bash -s -- "$@"' bash "$@" <"$source_root/installer/setup.sh"
 }
 
 install_release() {
@@ -594,27 +556,41 @@ install_release() {
     archive_name="knx_to_openhab-$version.tar.gz"
     checksum_name="$archive_name.sha256"
 
-    if [[ "$CURRENT_RELEASE" == "$version" ]]; then
-        log_info "Release $version is already active; repairing only missing system components."
-        run_setup_script "$INSTALL_DIR/current" --repair
-        return $?
+    local setup_options=()
+    if [[ "$ACTION" == "repair" || "$CURRENT_RELEASE" == "$version" ]]; then
+        setup_options=(--repair)
+        if [[ "$ACTION" == "repair" && -n "${REPAIR_TARGET:-}" &&
+            "$(readlink -f -- "$REPAIR_TARGET")" != "$(readlink -f -- "$INSTALL_DIR/current")" ]]; then
+            setup_options+=(--activate-existing)
+        fi
     fi
-    if [[ -e "$INSTALL_DIR/releases/$version" || -L "$INSTALL_DIR/releases/$version" ]]; then
+    if [[ "$ACTION" != "repair" ]] &&
+        [[ -e "$INSTALL_DIR/releases/$version" || -L "$INSTALL_DIR/releases/$version" ]]; then
         if [[ -f "$INSTALL_DIR/releases/$version/.install-incomplete" ]]; then
             log_info "Release $version was interrupted before activation; repairing its system components."
-            run_setup_script "$INSTALL_DIR/releases/$version" --repair --activate-existing
-            return $?
-        fi
-        if [[ -d "$INSTALL_DIR/releases/$version" &&
+            if [[ "$CURRENT_RELEASE" == "$version" ]]; then
+                setup_options=(--repair)
+                REPAIR_TARGET="$INSTALL_DIR/current"
+            else
+                setup_options=(--repair --activate-existing)
+                REPAIR_TARGET="$INSTALL_DIR/releases/$version"
+            fi
+        elif [[ -d "$INSTALL_DIR/releases/$version" &&
             -f "$INSTALL_DIR/releases/$version/installer/setup.sh" &&
             -f "$INSTALL_DIR/releases/$version/VERSION" &&
             "$(tr -d '\r\n' < "$INSTALL_DIR/releases/$version/VERSION")" == "$version" ]]; then
             log_info "Release $version is already installed; activating it without replacing its files."
-            run_setup_script "$INSTALL_DIR/releases/$version" --repair --activate-existing
-            return $?
+            if [[ "$CURRENT_RELEASE" == "$version" ]]; then
+                setup_options=(--repair)
+                REPAIR_TARGET="$INSTALL_DIR/current"
+            else
+                setup_options=(--repair --activate-existing)
+                REPAIR_TARGET="$INSTALL_DIR/releases/$version"
+            fi
+        else
+            log_error "Release $version exists but is not a complete immutable release; refusing to replace it."
+            return 2
         fi
-        log_error "Release $version exists but is not a complete immutable release; refusing to replace it."
-        return 2
     fi
 
     curl -fsSL "$archive_url" -o "$temporary_dir/$archive_name" || {
@@ -662,13 +638,13 @@ PY
         log_error "Release archive failed safe extraction validation."
         return 1
     }
-    run_setup_script "$extracted/knx_to_openhab-$version"
+    run_setup_script "$extracted/knx_to_openhab-$version" "${setup_options[@]}"
 }
 
 repair_installation() {
     local source_dir="" candidate recovery_release=""
     if [[ "$INTERRUPTED_INSTALL" -eq 1 ]]; then
-        remove_abandoned_staging || return $?
+        # Retain staging/recovery evidence; only setup may mutate under its lease.
         if [[ -d "$INSTALL_DIR/releases" ]]; then
             for candidate in "$INSTALL_DIR/releases"/*; do
                 if [[ -d "$candidate" && -f "$candidate/.install-incomplete" ]]; then
@@ -678,8 +654,7 @@ repair_installation() {
         fi
     fi
     if [[ -n "$recovery_release" ]]; then
-        run_setup_script "$recovery_release" --repair --activate-existing
-        return $?
+        REPAIR_TARGET="$recovery_release"
     fi
     if [[ "$CURRENT_RELEASE" == "legacy" ]]; then
         log_error "Legacy flat installations cannot be safely repaired in place. Use --update to migrate into a verified immutable release."
@@ -698,12 +673,16 @@ repair_installation() {
         done
     fi
     if [[ -n "$source_dir" ]]; then
-        run_setup_script "$source_dir" --repair
+        validate_setup_source "$source_dir" || return 2
+        # Existing source is DATA/target only. Never execute its bootstrap code.
+        REPAIR_TARGET="${REPAIR_TARGET:-$source_dir}"
+        install_release
         return $?
     fi
 
     if [[ "$INTERRUPTED_INSTALL" -eq 1 ]]; then
         log_warning "Only incomplete staging data was found; restaging from the selected release channel."
+        ACTION="install"
         install_release
         return $?
     fi
@@ -718,7 +697,7 @@ display_completion() {
     fi
     local ip_addresses="$(hostname -I)"
     local ui_settings
-    ui_settings=$(sudo python3 "$app_dir/installer/web_ui_endpoint.py" \
+    ui_settings=$(sudo python3 "$UI_ENDPOINT_HELPER" \
         --config "$CONFIG_DIR/config.json" --lan-ip "$ip_addresses")
     local -a ui_values=()
     mapfile -t ui_values <<<"$ui_settings"
@@ -751,10 +730,8 @@ main() {
     check_os
     check_sudo
     if [[ "$ACTION" == "repair" ]]; then
-        install_dependencies 1
         repair_installation
     else
-        install_dependencies
         install_release
     fi
     display_completion

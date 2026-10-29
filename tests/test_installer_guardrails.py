@@ -39,6 +39,36 @@ def test_setup_rejects_system_wide_application_directory_before_writes(tmp_path,
     assert f"Refusing a system-wide path as application: {system_path}" in result.stderr
 
 
+@pytest.mark.skipif(os.name != "posix", reason="installer Bash requires POSIX")
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "app\n/etc/injected",
+        "app\rhidden",
+        "app\ttab",
+        "app$HOME",
+        "app%name",
+        'app"name',
+        "app\\name",
+        "app\x7fhidden",
+    ],
+)
+def test_setup_rejects_raw_unsafe_characters_before_line_based_normalization(tmp_path, bad):
+    script = _bash_script_copy(tmp_path, ROOT / "installer/setup.sh")
+    env = os.environ.copy()
+    env.update(
+        KNXOH_INSTALL_DIR="/opt/" + bad,
+        KNXOH_CONFIG_DIR=str(tmp_path / "config"),
+        KNXOH_DATA_DIR=str(tmp_path / "data"),
+        KNXOH_BACKUP_DIR=str(tmp_path / "backups"),
+    )
+    result = subprocess.run(
+        ["bash", str(script)], env=env, capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 2
+    assert "Unsupported installation path characters" in result.stderr
+
+
 def test_setup_stops_service_before_migration_and_restarts_after_unit_reload():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
     normal_setup = setup[setup.index('sudo touch "$STAGING_DIR/.install-incomplete"') :]
@@ -50,9 +80,7 @@ def test_setup_stops_service_before_migration_and_restarts_after_unit_reload():
 
     assert stop_index < migration_index < daemon_reload_index < restart_index
     assert "sudo systemctl enable --now knxohui.service" not in normal_setup
-    assert (
-        'sudo install -o root -g root -m 0755 "$STAGING_DIR/installer/set_ui_password.py" ' in setup
-    )
+    assert "provision_updater" in setup
 
 
 def test_setup_stages_release_and_switches_current_after_migration():
@@ -154,5 +182,9 @@ def test_launchers_prefer_current_release_and_fall_back_to_legacy_flat_install(t
                 text=True,
                 check=False,
             )
+            if install_dir == release_root:
+                assert result.returncode != 0
+                assert "Missing protected updater startup guard" in result.stderr
+                continue
             assert result.returncode == 0, result.stderr
             assert result.stdout.rstrip("\n") == str(expected)

@@ -29,6 +29,7 @@ def _trusted_core(profile="guard"):
     if not script.is_absolute() or ".." in script.parts:
         raise ValueError("Guard path must be absolute")
     bundle = script.parent
+    bundle_identity = os.stat(bundle, follow_symlinks=False)
     names = ("__init__", "protocol", "secure_fs", "state")
     if profile == "coordinator":
         names += ("artifacts", "maintenance", "systemd", "transaction")
@@ -90,6 +91,14 @@ def _trusted_core(profile="guard"):
             sources[path] = bytes(raw)
         finally:
             os.close(fd)
+    after_bundle = os.stat(bundle, follow_symlinks=False)
+    if (bundle_identity.st_dev, bundle_identity.st_ino) != (
+        after_bundle.st_dev,
+        after_bundle.st_ino,
+    ):
+        raise ValueError("Trusted bundle changed during source collection")
+    # Administrator provisioning exchanges whole directories atomically. Never
+    # compile a mixture collected across that exchange, even if both are trusted.
     # Do not load pyc files, including root-unvalidated __pycache__ entries.
     package = "_knxoh_trusted_updater"
     spec = importlib.util.spec_from_file_location(

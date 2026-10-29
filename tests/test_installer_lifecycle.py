@@ -12,6 +12,21 @@ ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = ROOT / "install.sh"
 
 
+def _shell_fixture_text(source):
+    """Shell transaction tests fake the separately tested privileged envelope.
+
+    These fixtures already fake sudo/systemctl/accounts and must NEVER acquire
+    the host lease or provision real policy. Real envelope/FD/provisioning tests
+    live in test_update_units.py with protected disposable paths.
+    """
+    raw = source.read_text(encoding="utf-8")
+    if source.name == "setup.sh":
+        start = raw.index("# The verified administrator bootstrap holds ONE lease")
+        end = raw.index('if [[ -L "$BASE/releases" ]]', start)
+        raw = raw[:start] + "provision_updater() { :; }\n\n" + raw[end:]
+    return raw
+
+
 def _installer_copy(tmp_path: Path) -> Path:
     script = tmp_path / "install.sh"
     script.write_text(INSTALLER.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
@@ -63,6 +78,14 @@ def _release_downloads(
         'setup_root="${KNXOH_SETUP_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"\n'
         'version="$(tr -d \'\\r\\n\' < "$setup_root/VERSION")"\n'
         'release="$KNXOH_INSTALL_DIR/releases/$version"\n'
+        'if [ "${1:-}" = --repair ]; then\n'
+        '  if [ "${2:-}" = --activate-existing ]; then\n'
+        '    ln -s "$KNXOH_REPAIR_TARGET" "$KNXOH_INSTALL_DIR/.current-test"\n'
+        '    mv -Tf "$KNXOH_INSTALL_DIR/.current-test" "$KNXOH_INSTALL_DIR/current"\n'
+        "  fi\n"
+        '  printf \'%s\\n\' "$*" > "$INSTALLER_SETUP_LOG"\n'
+        "  exit 0\n"
+        "fi\n"
         'mkdir -p "$release"\n'
         'cp -a "$setup_root/." "$release/"\n'
         'ln -s "releases/$version" "$KNXOH_INSTALL_DIR/.current-test"\n'
@@ -393,7 +416,46 @@ def test_update_reuses_complete_inactive_release_without_overwriting_it(tmp_path
     assert Path(release_env["INSTALLER_SETUP_LOG"]).read_text(encoding="utf-8") == (
         "--repair --activate-existing\n"
     )
-    assert command_log.read_text(encoding="utf-8").splitlines() == ["https://api.example/stable"]
+    assert command_log.read_text(encoding="utf-8").splitlines() == [
+        "https://api.example/stable",
+        "https://downloads.example/release.tar.gz",
+        "https://downloads.example/release.sha256",
+    ]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="installer lifecycle requires POSIX Bash")
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_verified_repair_preserves_same_version_mode_and_explicit_interrupted_target(
+    tmp_path, interrupted
+):
+    install_dir = tmp_path / "app"
+    active = install_dir / "releases/1.2.3"
+    (active / "installer").mkdir(parents=True)
+    (active / "web_ui").mkdir()
+    (active / "VERSION").write_text("1.2.3\n")
+    (active / "installer/setup.sh").write_text("exit 99\n")
+    (install_dir / "current").symlink_to(active)
+    target = active
+    if interrupted:
+        target = install_dir / "releases/1.2.4"
+        (target / "installer").mkdir(parents=True)
+        (target / "VERSION").write_text("1.2.4\n")
+        (target / "installer/setup.sh").write_text("exit 99\n")
+        (target / ".install-incomplete").write_bytes(b"")
+    script = _installer_copy(tmp_path)
+    release_env = _release_downloads(tmp_path)
+    environment, _ = _install_artifact_environment(tmp_path, install_dir, release_env)
+    result = subprocess.run(
+        ["bash", str(script), "--repair" if interrupted else "--update"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    expected = "--repair --activate-existing\n" if interrupted else "--repair\n"
+    assert Path(release_env["INSTALLER_SETUP_LOG"]).read_text() == expected
+    assert (install_dir / "current").resolve() == target
 
 
 @pytest.mark.skipif(os.name != "posix", reason="installer lifecycle requires POSIX Bash")
@@ -452,7 +514,14 @@ def test_fresh_install_rejects_archive_traversal_even_with_matching_checksum(tmp
 @pytest.mark.parametrize(
     ("option", "expected_urls"),
     [
-        ("--repair", []),
+        (
+            "--repair",
+            [
+                "https://api.example/stable",
+                "https://downloads.example/release.tar.gz",
+                "https://downloads.example/release.sha256",
+            ],
+        ),
         (
             "--update",
             [
@@ -619,7 +688,7 @@ def test_repair_rejects_release_under_service_writable_ancestor(tmp_path):
 
 
 @pytest.mark.skipif(os.name != "posix", reason="installer lifecycle requires POSIX Bash")
-def test_privileged_setup_reads_the_validated_script_before_sudo_path_reopen(tmp_path):
+def test_privileged_repair_uses_verified_payload_not_swapped_installed_setup(tmp_path):
     install_dir = tmp_path / "opt/knx_to_openhab"
     release_dir = install_dir / "releases/1.2.3"
     (release_dir / "installer").mkdir(parents=True)
@@ -668,7 +737,7 @@ def test_privileged_setup_reads_the_validated_script_before_sudo_path_reopen(tmp
 
     assert result.returncode == 0, result.stderr
     assert not malicious_marker.exists()
-    assert setup_log.read_text(encoding="utf-8") == "safe\n"
+    assert setup_log.read_text(encoding="utf-8") == "--repair\n"
 
 
 @pytest.mark.skipif(os.name != "posix", reason="installer lifecycle requires POSIX Bash")
@@ -766,7 +835,7 @@ def test_repair_activates_release_interrupted_before_current_switch_without_touc
     ):
         source = ROOT / "installer" / name
         target = interrupted_release / "installer" / name
-        target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+        target.write_text(_shell_fixture_text(source), encoding="utf-8", newline="\n")
     (interrupted_release / "VERSION").write_text("1.1.0\n", encoding="ascii")
     (interrupted_release / "installer/web_ui_endpoint.py").write_text(
         "print('loopback')\nprint('127.0.0.1')\nprint('8085')\n", encoding="utf-8"
@@ -842,7 +911,12 @@ def test_repair_activates_release_interrupted_before_current_switch_without_touc
     )
 
     result = subprocess.run(
-        ["bash", str(script), "--repair"],
+        [
+            "bash",
+            str(interrupted_release / "installer/setup.sh"),
+            "--repair",
+            "--activate-existing",
+        ],
         env=environment,
         capture_output=True,
         text=True,
@@ -856,7 +930,7 @@ def test_repair_activates_release_interrupted_before_current_switch_without_touc
     assert {path: path.read_bytes() for path in protected_files} == protected_files
     operations = command_log.read_text(encoding="utf-8")
     assert "migrate_runtime_data.py" not in operations
-    assert "dpkg -s python3" in operations
+    assert "migrate_sudoers.sh" not in operations
 
 
 @pytest.mark.skipif(os.name != "posix", reason="installer lifecycle requires POSIX Bash")
@@ -870,7 +944,7 @@ def test_failed_interrupted_repair_keeps_previous_current_release(tmp_path, fail
     (interrupted_release / "installer").mkdir(parents=True)
     setup_path = interrupted_release / "installer/setup.sh"
     setup_path.write_text(
-        (ROOT / "installer/setup.sh").read_text(encoding="utf-8"),
+        _shell_fixture_text(ROOT / "installer/setup.sh"),
         encoding="utf-8",
         newline="\n",
     )
@@ -879,7 +953,7 @@ def test_failed_interrupted_repair_keeps_previous_current_release(tmp_path, fail
     for name in ("knxohui.service", "launch_web.sh"):
         source = ROOT / "installer" / name
         target = interrupted_release / "installer" / name
-        target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+        target.write_text(_shell_fixture_text(source), encoding="utf-8", newline="\n")
     (install_dir / "current").symlink_to("releases/1.0.0")
 
     config_dir = tmp_path / "etc/knx_to_openhab"
@@ -960,7 +1034,7 @@ def test_failed_normal_setup_update_rolls_current_back_and_keeps_recovery_marker
     installer_dir.mkdir(parents=True)
     setup_script = installer_dir / "setup.sh"
     setup_script.write_text(
-        (ROOT / "installer/setup.sh").read_text(encoding="utf-8"),
+        _shell_fixture_text(ROOT / "installer/setup.sh"),
         encoding="utf-8",
         newline="\n",
     )
@@ -1110,7 +1184,7 @@ def test_repair_rolls_back_persisted_interrupted_migration_transaction(
     ):
         source = ROOT / "installer" / relative
         target = interrupted_release / "installer" / relative
-        target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+        target.write_text(_shell_fixture_text(source), encoding="utf-8", newline="\n")
     (interrupted_release / "VERSION").write_text("1.1.0\n", encoding="ascii")
     (interrupted_release / ".install-incomplete").write_text("1.1.0\n", encoding="ascii")
 
@@ -1280,7 +1354,7 @@ def test_successful_repair_preserves_disabled_and_inactive_existing_units(tmp_pa
     ):
         source = ROOT / "installer" / name
         target = installer_dir / name
-        target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+        target.write_text(_shell_fixture_text(source), encoding="utf-8", newline="\n")
     (release / "VERSION").write_text("1.0.0\n", encoding="ascii")
     (install_dir / "current").symlink_to("releases/1.0.0")
     config_dir = tmp_path / "etc/knx_to_openhab"
@@ -1303,9 +1377,9 @@ def test_successful_repair_preserves_disabled_and_inactive_existing_units(tmp_pa
         (unit_dir / name).write_text("# already installed\n", encoding="utf-8")
     setup_script = tmp_path / "setup.sh"
     setup_script.write_text(
-        (ROOT / "installer/setup.sh")
-        .read_text(encoding="utf-8")
-        .replace("/etc/systemd/system", str(unit_dir)),
+        _shell_fixture_text(ROOT / "installer/setup.sh").replace(
+            "/etc/systemd/system", str(unit_dir)
+        ),
         encoding="utf-8",
         newline="\n",
     )
@@ -1425,7 +1499,7 @@ def test_failed_setup_restores_previously_active_ui_and_backup_cleanup_units(tmp
 
     setup_script = tmp_path / "setup.sh"
     setup_script.write_text(
-        (ROOT / "installer/setup.sh").read_text(encoding="utf-8"),
+        _shell_fixture_text(ROOT / "installer/setup.sh"),
         encoding="utf-8",
         newline="\n",
     )
@@ -1564,7 +1638,7 @@ def test_setup_repair_preserves_external_data_and_recovers_interrupted_release(
     (release_dir / "VERSION").write_text("0.1.0\n", encoding="ascii")
     setup_source = ROOT / "installer/setup.sh"
     setup_path = release_dir / "installer/setup.sh"
-    setup_path.write_text(setup_source.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+    setup_path.write_text(_shell_fixture_text(setup_source), encoding="utf-8", newline="\n")
     for name in (
         "knxohui.service",
         "knxohui-backup-cleanup.service",
@@ -1577,7 +1651,7 @@ def test_setup_repair_preserves_external_data_and_recovers_interrupted_release(
     ):
         source = ROOT / "installer" / name
         target = release_dir / "installer" / name
-        target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+        target.write_text(_shell_fixture_text(source), encoding="utf-8", newline="\n")
 
     config_dir = tmp_path / "etc/knx_to_openhab"
     data_dir = tmp_path / "var/lib/knx_to_openhab"

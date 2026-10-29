@@ -108,7 +108,15 @@ The root-owned helper prompts twice, stores an Argon2id hash in the configured
 secrets file, and preserves other secret values.
 
 ### Uninstallation
-The safe default removes the application and service files but retains configuration,
+
+Protected updater installations retain the root-owned libexec bundle, releases,
+recovery units, worker identity and preparation/journal evidence during ordinary
+uninstall, in addition to external configuration, runtime data and backups.
+`--purge` refuses installed updater components or any `.updater-state` evidence;
+administrator recovery and explicit evidence archival are required first. See
+`installer/README.md` for the fixed offline-recovery command and verified repair
+workflow. Never remove updater lock/journal files to bypass recovery refusal.
+The safe default removes UI/cleanup service files and Web UI sudo permissions but retains releases, configuration,
 jobs, runtime data, backups, and the service account. Run the downloaded script as a
 regular user with `sudo` access:
 

@@ -98,7 +98,7 @@ def test_default_uninstall_confirms_and_retains_external_user_data(tmp_path):
     result, commands, output, paths = _run_uninstall(tmp_path, ["UNINSTALL"])
 
     assert result == 0
-    assert ("sudo", "rm", "-rf", "--", str(paths.install_dir)) in commands
+    assert ("sudo", "rm", "-rf", "--", str(paths.install_dir)) not in commands
     assert not any(
         command[-1] in {str(paths.config_dir), str(paths.data_dir), str(paths.backup_dir)}
         for command in commands
@@ -107,10 +107,10 @@ def test_default_uninstall_confirms_and_retains_external_user_data(tmp_path):
     assert all(str(path) in output for path in (paths.config_dir, paths.data_dir, paths.backup_dir))
     for target in (
         "/etc/systemd/system/knxohui.service",
-        "/usr/local/libexec/knx_to_openhab",
         "/etc/sudoers.d/knxohui",
     ):
         assert target in output
+    assert "retained for offline recovery" in output
 
 
 def test_declining_uninstall_runs_no_commands(tmp_path):
@@ -136,6 +136,39 @@ def test_confirmed_purge_removes_only_configured_data_and_service_user(tmp_path)
     for path in (paths.install_dir, paths.config_dir, paths.data_dir, paths.backup_dir):
         assert ("sudo", "rm", "-rf", "--", str(path)) in commands
     assert ("sudo", "userdel", "knxohui") in commands
+
+
+def test_purge_checks_recovery_evidence_after_stopping_updater_before_any_removal(tmp_path):
+    commands = []
+
+    def pending_journal(command):
+        commands.append(tuple(command))
+        return 1 if command[:2] == ("sudo", "test") else 0
+
+    result, _, output, _ = _run_uninstall(
+        tmp_path, ["UNINSTALL", "PURGE"], purge=True, command_runner=pending_journal
+    )
+    assert result == 2
+    check = next(index for index, command in enumerate(commands) if "test" in command)
+    assert commands.index(("sudo", "systemctl", "stop", "knxohui-update.service")) < check
+    assert commands.index(("sudo", "systemctl", "stop", "knxohui-update-recovery.service")) < check
+    assert not any("rm" in command or "userdel" in command for command in commands)
+    assert "evidence" in output
+
+
+def test_purge_retains_dangling_private_state_link_as_unsafe_evidence(tmp_path):
+    commands = []
+
+    def dangling_state(command):
+        commands.append(tuple(command))
+        return 1 if command[:4] == ("sudo", "test", "!", "-L") else 0
+
+    result, _, output, _ = _run_uninstall(
+        tmp_path, ["UNINSTALL", "PURGE"], purge=True, command_runner=dangling_state
+    )
+    assert result == 2
+    assert not any("rm" in command or "userdel" in command for command in commands)
+    assert "evidence" in output
 
 
 def test_failed_config_purge_stops_before_removing_runtime_and_backups(tmp_path):

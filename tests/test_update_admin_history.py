@@ -115,6 +115,7 @@ def test_committed_history_allows_verified_admin_install_and_repeat(history, mon
                     release=str(target),
                     previous=str(previous),
                     snapshot_file="",
+                    release_was_incomplete=False,
                 )
                 Path(kwargs["env"]["KNXOH_BOOTSTRAP_OUTCOME"]).write_text(json.dumps(value))
         return SimpleNamespace(returncode=0)

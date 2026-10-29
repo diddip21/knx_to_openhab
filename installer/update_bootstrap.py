@@ -526,6 +526,7 @@ def read_outcome(path, paths):
         "cleanup_service_was_active",
         "cleanup_timer_was_active",
         "cleanup_timer_was_enabled",
+        "release_was_incomplete",
     }
     if (
         not isinstance(value, dict)
@@ -584,7 +585,13 @@ def rollback_setup(source, paths, outcome):
             fs._check(chain)
             os.unlink(name, dir_fd=parent)
             os.fsync(parent)
-    if outcome["release"] and Path(outcome["release"]).exists():
+    # Component-only repair did not create an application environment. Restore
+    # its prior marker state instead of denying the previously healthy target.
+    if (
+        (outcome["mode"] == "install" or outcome["release_was_incomplete"])
+        and outcome["release"]
+        and Path(outcome["release"]).exists()
+    ):
         fs.atomic_write(Path(outcome["release"]) / ".install-incomplete", b"", 0, 0, 0o600)
     write_gate(paths, "clear", None, None)
 

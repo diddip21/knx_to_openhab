@@ -181,7 +181,7 @@ finish_protected_stage() {
     # The parent completes disk mutations under its live lease, then releases it
     # BEFORE starting recovery (which acquires the same lease). No cyclic start.
     python3 - "$KNXOH_BOOTSTRAP_OUTCOME" "$mode" "$RELEASE_DIR" "$previous" \
-        "$MIGRATION_SNAPSHOT_PATH_FILE" "$ui_start" "$ui_enable" \
+        "$MIGRATION_SNAPSHOT_PATH_FILE" "${RELEASE_WAS_INCOMPLETE:-0}" "$ui_start" "$ui_enable" \
         "$cleanup_start" "$cleanup_enable" \
         "$UI_WAS_ACTIVE" "$UI_WAS_ENABLED" "$CLEANUP_SERVICE_WAS_ACTIVE" \
         "$CLEANUP_TIMER_WAS_ACTIVE" "$CLEANUP_TIMER_WAS_ENABLED" <<'PY'
@@ -189,12 +189,13 @@ import json
 import os
 import sys
 
-destination, mode, release, previous, snapshot, *flags = sys.argv[1:]
+destination, mode, release, previous, snapshot, was_incomplete, *flags = sys.argv[1:]
 names = ("ui_start", "ui_enable", "cleanup_start", "cleanup_enable", "ui_was_active",
          "ui_was_enabled", "cleanup_service_was_active", "cleanup_timer_was_active",
          "cleanup_timer_was_enabled")
 value = dict(zip(names, [flag == "1" for flag in flags]))
 value.update(mode=mode, release=release, previous=previous, snapshot_file=snapshot)
+value["release_was_incomplete"] = was_incomplete == "1"
 fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
 with os.fdopen(fd, "w", encoding="utf-8") as output:
     json.dump(value, output)
@@ -237,6 +238,7 @@ fi
 
 STAGING_DIR=""
 RELEASE_DIR=""
+RELEASE_WAS_INCOMPLETE=0
 CURRENT_LINK_TMP=""
 CURRENT_TARGET=""
 CURRENT_SWITCHED=0
@@ -346,7 +348,7 @@ restore_migration_snapshot() {
 
 recover_interrupted_transaction() {
     local source_real="$1" state_file="$1/.installer-transaction-state"
-    local previous_target current_real previous_real="$BASE" value
+    local previous_target current_real="" previous_real="" value
     local -a saved_state=()
     [[ -f "$state_file" ]] || return 1
     mapfile -t saved_state <"$state_file"
@@ -362,6 +364,11 @@ recover_interrupted_transaction() {
         fi
     done
     if [[ -n "$previous_target" ]]; then
+        # Older transactions persisted readlink's relative releases/<version>.
+        # The verified parent now runs setup from /, not the install base.
+        if [[ "$previous_target" != /* ]]; then
+            previous_target="$BASE/$previous_target"
+        fi
         previous_real="$(readlink -f -- "$previous_target")" || return 2
         case "$previous_real/" in
             "$BASE/releases/"*) ;;
@@ -371,10 +378,15 @@ recover_interrupted_transaction() {
             echo "Recorded previous release is missing: $previous_real" >&2
             return 2
         }
+        previous_target="$previous_real"
     fi
-    current_real="$(readlink -f -- "$BASE/current" 2>/dev/null || true)"
+    # readlink -f can succeed for a nonexistent final leaf. Absence of current
+    # during first-install preparation is distinct from an existing target.
+    if [[ -e "$BASE/current" || -L "$BASE/current" ]]; then
+        current_real="$(readlink -f -- "$BASE/current")" || return 2
+    fi
     if [[ -n "$current_real" && "$current_real" != "$source_real" &&
-        "$current_real" != "$previous_target" ]]; then
+        "$current_real" != "$previous_real" ]]; then
         echo "Current release changed during interrupted transaction recovery: $current_real" >&2
         return 2
     fi
@@ -402,6 +414,10 @@ recover_interrupted_transaction() {
             SYSTEM_STATE_CAPTURED=0
             CURRENT_SWITCHED=0
             sudo rm -rf -- "$source_real" || return 1
+            # There is no application pair (or installed recovery unit) to
+            # activate. Return without an outcome; the parent must not restore
+            # writers, and the EXIT trap must not invent a failed-stage result.
+            trap - EXIT
             echo "Interrupted first installation restored; external snapshots retained. Rerun --update." >&2
             return 2
         fi
@@ -530,6 +546,7 @@ repair_system_components() {
         esac
     fi
     if [[ -f "$source_real/.install-incomplete" ]]; then
+        RELEASE_WAS_INCOMPLETE=1
         release_activated=1
         if [[ -f "$source_real/.installer-transaction-state" ]]; then
             recover_interrupted_transaction "$source_real"

@@ -715,8 +715,12 @@ def test_installer_disk_finalization_precedes_unlocked_activation():
     assert "assert_unchanged" in bootstrap
 
 
-def test_protected_stage_serializes_relative_current_link_as_canonical_target(protected_root):
-    import json
+@pytest.mark.parametrize("was_incomplete", [False, True])
+def test_protected_stage_serializes_relative_current_link_as_canonical_target(
+    protected_root, was_incomplete
+):
+    from installer.update_bootstrap import read_outcome
+    from installer.update_core.protocol import Paths
 
     release = protected_root / "app/releases/1.0.0"
     release.mkdir(parents=True)
@@ -734,6 +738,7 @@ def test_protected_stage_serializes_relative_current_link_as_canonical_target(pr
         "KNXOH_BOOTSTRAP_OUTCOME": str(outcome),
         "CURRENT_TARGET": "releases/1.0.0",
         "RELEASE_DIR": str(release),
+        "RELEASE_WAS_INCOMPLETE": "1" if was_incomplete else "0",
         "MIGRATION_SNAPSHOT_PATH_FILE": "",
     }
     env.update(
@@ -752,7 +757,18 @@ def test_protected_stage_serializes_relative_current_link_as_canonical_target(pr
         ["/bin/bash", str(script)], env=env, cwd="/", capture_output=True, text=True, check=False
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert json.loads(outcome.read_text())["previous"] == str(release)
+    value = read_outcome(
+        outcome,
+        Paths(
+            release.parent,
+            release.parent.parent / "current",
+            protected_root / "config",
+            protected_root / "data",
+            protected_root / "backups",
+        ),
+    )
+    assert value["previous"] == str(release)
+    assert value["release_was_incomplete"] is was_incomplete
 
 
 def test_administrator_venv_uses_final_path_and_copied_interpreters():
@@ -840,6 +856,7 @@ def test_actual_bootstrap_envelope_never_recurses_recovery_lock_or_restores_stal
                 release=str(new),
                 previous=str(old),
                 snapshot_file=str(marker),
+                release_was_incomplete=False,
                 ui_start=True,
                 ui_enable=True,
                 cleanup_start=True,

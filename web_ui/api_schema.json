@@ -1,5 +1,21 @@
 {
   "paths": {
+    "/api/version": {"get": {"description": "Current source VERSION and legacy commit/date/branch/repository fields; unknown when artifact metadata is absent"}},
+    "/api/version/check": {"get": {"description": "Compare strict SemVer release assets, never branch commits. Stable default; prerelease only explicit and highest genuine prerelease. Keeps update_available/current_commit/current_date/latest_commit/latest_date/latest_message/latest_author/repository/branch fields, adds current_version/latest_version. Unknown commits are not synthesized from versions. Metadata/network/local VERSION errors return update_available=false plus error.", "parameters": [{"name": "channel", "in": "query", "required": false, "schema": {"type": "string", "enum": ["stable", "prerelease"], "default": "stable"}}]}},
+    "/api/version/update": {"post": {
+      "description": "Authenticated, CSRF-protected asynchronous release submission. Bodyless/{} means stable; acceptance is a matching coordinator claim, not completion. Windows validates before simulation. Requires verified managed installation; no legacy Git fallback.",
+      "requestBody": {"required": false, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": false, "properties": {"channel": {"type": "string", "enum": ["stable", "prerelease"], "default": "stable"}}}}}},
+      "responses": {
+        "200": {"description": "Existing status=updating (or simulated on Windows) and message fields; operation completes asynchronously"},
+        "400": {"description": "Malformed/non-JSON/oversized body, unknown fields or invalid channel; error string"},
+        "401": {"description": "Authentication required"},
+        "403": {"description": "Valid CSRF token required"},
+        "409": {"description": "Another submission/request/update is busy, or migrated password hash missing; existing error string"},
+        "500": {"description": "Unavailable/legacy installation, no matching acknowledgement within 30 seconds or recovery required; actionable error string"},
+        "503": {"description": "Existing maintenance lease denies mutation"}
+      }
+    }},
+    "/api/version/log": {"get": {"description": "Existing {log: string} response, bounded safe root-authored CONFIG_DIR/.updater-log.txt projection; no logs written in releases"}},
     "/api/health": {"get": {"description": "Unauthenticated, session-free readiness; 200 contains only status=ready and source VERSION; 503 when recovery or active-version checks fail"}},
     "/api/upload": {"post": {"description": "Upload .knxproj/.knxprojarchive file", "consumes": ["multipart/form-data"]}},
     "/api/jobs": {"get": {"description": "List jobs"}},

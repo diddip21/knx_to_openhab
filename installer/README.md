@@ -293,3 +293,46 @@ restores only generator-managed files so manual configuration is preserved.
 Changing configured output paths requires explicit permission provisioning; do
 not rerun the privileged `setup.sh` directly. The Web UI updater does not change
 system file permissions.
+
+## Release update submission
+
+The Web UI update button and `update.sh [--channel stable|prerelease]` submit the
+same protocol-1 request as the **unprivileged Web UI service identity**. Stable is
+the default; prereleases are never selected implicitly. The wrapper can live at
+the managed base (using `current`) or inside a release. Its stdlib-only client is
+packaged application code at `installer/update_submit.py`, run with the active
+application's interpreter (system Python fallback); it is deliberately **not** a
+trusted root libexec component. Do not copy it into the privileged bundle or run
+the application wrapper/interpreter as root.
+
+Prefer `INSTALL_DIR/current/update.sh` after verified installation. Bootstrap
+installs the client with the application release, not into root libexec; an old
+leftover pre-bootstrap Git wrapper at the base is not an upgraded client and must
+not be used. This version of the thin wrapper also supports being placed at the
+managed base and finding the active application through `current`.
+
+A flat legacy/development checkout cannot self-convert. First obtain and verify
+the administrator bootstrap using the installation instructions; use verified
+`install.sh --repair` to repair an existing managed installation. This establishes
+root-protected release/config paths, external credentials, the fixed updater and
+exact sudoers start permission. Never run setup code from an unverified candidate
+to repair the privilege boundary. A claimed but interrupted transaction requires
+the installed coordinator's fixed offline recovery with writers stopped before
+verified repair; retain its protected journal and replay history.
+
+`DATA_DIR/update/submit.lock` is a persistent service-owned cross-process flock
+inode: never unlink/recreate it. A request is atomically published with a fresh
+UUID, then only `sudo -n /usr/bin/systemctl start --no-block
+knxohui-update.service` is requested. A start reply is not acknowledgement: the
+client waits up to 30 seconds for the matching UUID in the protected public
+status. Initial status without a UUID and old/unrelated statuses are not acks.
+Acceptance is **not completion**; the independent unit may restart the UI later.
+
+On failure/crash the request remains intact. Busy requests are not overwritten.
+An unclaimed request can be replaced only while holding that same submit lease,
+after a full 30-second timeout and confirmed inactive/failed-dead worker; active
+workers and queued systemd jobs are never replaced. A nonterminal claim requires
+recovery, not replay. Completed requests get new UUIDs. Publication requires Linux
+`renameat2` (no unsafe clobber fallback). Public bounded status/log projections
+remain root-owned/readable in `CONFIG_DIR/.updater-{status.json,log.txt}`; private
+state is not readable by the client. No release log file or Git mutation is used.

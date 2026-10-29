@@ -172,3 +172,32 @@ reports. Targets must be existing regular files inside the effective OpenHAB
 configuration root. Symlinks and traversal paths are rejected. Rollback
 restores those managed files from the selected full-tree backup and leaves
 manually maintained files untouched.
+
+## Verified release updates (API compatibility)
+
+`POST /api/version/update` still accepts no body (stable). Optional JSON is exactly
+`{"channel":"stable"}` or `{"channel":"prerelease"}`; `{}` also means stable.
+Unknown fields, duplicate keys, invalid channels and non-JSON/malformed bodies
+return 400 before any effects, including Windows simulation. Existing login/CSRF
+and maintenance leases remain required. Busy submissions/active work return 409;
+unavailable legacy/worker installations and acknowledgement timeout return an
+actionable error without a shell/Git fallback. Existing `status`/`message` success
+and `error` failure fields are retained. Windows retains `status: simulated`.
+
+`status: updating` means the root coordinator **claimed this request**, not that
+the update completed. The unit runs independently of the UI; inspect the existing
+`GET /api/version/log` (`{"log":"..."}`) for its bounded, sanitized root-authored
+projection outside releases. Timeouts retain the uncertain request; do not delete
+locks or journal data to force another attempt. Use verified administrator
+bootstrap/repair for one-time setup; interrupted claims require installed offline
+recovery before repair. See `installer/README.md` for the service-context wrapper.
+
+`GET /api/version/check[?channel=stable|prerelease]` checks supported GitHub release
+assets, not branch commits. Stable is default; explicit prerelease chooses the
+highest genuine prerelease SemVer, not a newer stable release. Equal precedence,
+build-metadata-only differences and older releases do not advertise updates.
+Metadata/network/unknown local VERSION errors set `update_available: false` with
+`error`, not a claim that the installation is current. Existing compatibility
+commit/date/branch/repository fields remain, with `unknown` commits when artifact
+metadata is absent; versions are never fabricated commit hashes. Machine-readable
+`current_version`/`latest_version` fields are additive; no visual UI change is made.

@@ -47,6 +47,9 @@ except Exception:
     secure_filename: Callable[[str], str] = lambda n: n  # type: ignore[no-redef]
     FLASK_AVAILABLE = False
 
+from installer.update_core.protocol import Limits, parse_object
+from installer.update_submit import validate_channel
+
 from .auth import verify_password
 from .jobs import JobManager
 from .service_manager import ALLOWED_SERVICES, get_service_status, restart_service
@@ -766,14 +769,36 @@ if FLASK_AVAILABLE:
     def check_version():
         """Check for available updates from GitHub."""
         try:
-            update_info = updater.check_for_updates()
+            channel = validate_channel(request.args.get("channel", "stable"))
+            update_info = (
+                updater.check_for_updates()
+                if channel == "stable"
+                else updater.check_for_updates(channel=channel)
+            )
             return jsonify(update_info)
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/version/update", methods=["POST"])
     def trigger_update():
         """Trigger the self-update process."""
+        try:
+            # Validate BEFORE Windows simulation, maintenance acquisition or effects.
+            # Read at most protocol budget + 1, including chunked/lengthless input.
+            raw = request.stream.read(Limits.REQUEST_BYTES + 1)
+            if raw:
+                if not request.is_json:
+                    raise ValueError("Expected a JSON body with optional channel")
+                body = parse_object(raw, Limits.REQUEST_BYTES)
+                if set(body) - {"channel"}:
+                    raise ValueError("Unknown update request fields")
+                channel = validate_channel(body.get("channel", "stable"))
+            else:
+                channel = "stable"
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
         acfg = cfg.get("auth", {})
         if acfg.get("enabled") and not acfg.get("password_hash"):
             return (
@@ -781,7 +806,7 @@ if FLASK_AVAILABLE:
                     {
                         "error": (
                             "A migrated Web UI password hash is required before updating. "
-                            f"Run 'sudo bash {project_root}/installer/setup.sh' as an administrator."
+                            "Use the freshly verified administrator bootstrap for setup/repair."
                         )
                     }
                 ),
@@ -793,15 +818,20 @@ if FLASK_AVAILABLE:
                 return jsonify(
                     {
                         "status": "simulated",
-                        "message": "Update simulation: Script would run on Linux.",
+                        "message": "Update simulation: Release request would be submitted on Linux.",
                     }
                 )
 
-            success, message = _mutate(updater.trigger_update)
+            success, message = (
+                _mutate(updater.trigger_update)
+                if channel == "stable"
+                else _mutate(updater.trigger_update, channel=channel)
+            )
             if success:
                 return jsonify({"status": "updating", "message": message})
             else:
-                return jsonify({"error": message}), 500
+                code = 409 if getattr(updater, "last_update_status", None) == "busy" else 500
+                return jsonify({"error": message}), code
         except MaintenanceError:
             raise
         except Exception as e:

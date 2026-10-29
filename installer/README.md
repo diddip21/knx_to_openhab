@@ -224,11 +224,15 @@ sudo /usr/bin/python3 -I /usr/local/libexec/knx_to_openhab/update_release.py \
 ```
 
 Do not delete the journal or lease files to bypass this refusal. A retained
-terminal journal's replay ledger is not reset by administrator installation:
-use `--repair` to update the trusted coordinator, then the release updater to
-change application versions. Administrator activation of a different target is
-refused while that ledger exists. Canonical path relocation requires a separate
-administrator migration. Spaces are supported; dollar/percent signs, double
+terminal journal is durably archived under the same lifecycle lock before a verified
+administrator install/update/reinstall/repair. Its exact bytes, recovery snapshots
+and all replay IDs are retained. An atomic administrator checkpoint replaces its
+active recovery authority; subsequent requests inherit the replay ledger. If boot
+is interrupted before the upgraded trusted bundle is installed, older coordinators
+refuse this checkpoint: rerun the verified bootstrap, never remove the checkpoint
+or archive. Pending, future, corrupt or mismatched journals still block replacement.
+Canonical path relocation requires a separate administrator migration.
+Spaces are supported; dollar/percent signs, double
 quotes, backslashes and control characters in paths are refused. Paths hidden by
 the service's home/tmp sandbox are also refused.
 

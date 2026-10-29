@@ -152,7 +152,9 @@ def check_clean_before_install(paths):
     store.paths, store.root, store.journal_path = paths, root, root / "journal.json"
     try:
         journal = store.load()
-        if journal is None or journal.phase not in TERMINAL:
+        if journal is None:
+            return  # validated administrator checkpoint retains replay history, not active recovery
+        if journal.phase not in TERMINAL:
             raise ValueError("Uncommitted updater journal")
         target = journal.candidate if journal.phase == "committed" else journal.prior_target
         if _current_target(paths)[0] != target:
@@ -591,20 +593,11 @@ def execute_setup(source, paths, paths_file, options, inherited=None):
     with tempfile.TemporaryDirectory(prefix="knxohui-bootstrap-", dir="/run") as scratch:
         result_file = Path(scratch) / "outcome.json"
         with installer_lease(paths, paths_file, inherited) as fd:
-            # A terminal updater journal binds its current target. Administrator
-            # repair may upgrade the trusted bundle, but must not silently reset
-            # its replay ledger by installing a different application version.
-            journal = paths.config_dir / ".updater-state/journal.json"
-            if journal.exists() and "--repair" not in options:
-                raise ValueError(
-                    "Retained updater journal: use verified --repair for trusted code, "
-                    "then the release updater; do not discard its replay ledger"
-                )
-            if journal.exists() and "--activate-existing" in options:
-                raise ValueError(
-                    "Retained updater journal forbids administrator target replacement; "
-                    "repair the trusted bundle without --activate-existing"
-                )
+            # Reconcile terminal authority under this SAME live lease. The
+            # checkpoint preserves IDs/evidence and fails closed on older code
+            # if power is lost before the new trusted bundle is installed.
+            if (paths.config_dir / ".updater-state/journal.json").exists():
+                StateStore(paths).archive_terminal_for_admin()
             environment = {
                 key: value for key, value in os.environ.items() if key.startswith("KNXOH_")
             }

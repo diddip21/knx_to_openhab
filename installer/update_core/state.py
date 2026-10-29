@@ -272,6 +272,22 @@ def _journal_dict(journal):
     return parse_object(_json(value), STATE_BYTES)
 
 
+def _decode_record(value, paths):
+    """The original exact journal + replay-ledger decoder, shared by archives."""
+    value = dict(value)
+    ids = value.pop("seen_request_ids", None)
+    if not isinstance(ids, list) or not 1 <= len(ids) <= MAX_REPLAY_IDS:
+        raise ValueError("Invalid replay ledger")
+    for request_id in ids:
+        parse_request(_json({"format_version": 1, "request_id": request_id, "channel": "stable"}))
+    if len(set(ids)) != len(ids):
+        raise ValueError("Duplicate replay IDs")
+    journal = _decode_journal(value, paths)
+    if journal.request_id != ids[-1]:
+        raise ValueError("Journal does not match replay ledger")
+    return journal, ids
+
+
 class StateStore:
     def __init__(self, paths: Paths):
         self.paths = paths
@@ -287,22 +303,82 @@ class StateStore:
             value = parse_object(fs.read_regular(self.journal_path, STATE_BYTES), STATE_BYTES)
         except FileNotFoundError:
             return None, []
-        ids = value.pop("seen_request_ids", None)
-        if not isinstance(ids, list) or not 1 <= len(ids) <= MAX_REPLAY_IDS:
-            raise ValueError("Invalid replay ledger")
-        for request_id in ids:
-            parse_request(
-                _json({"format_version": 1, "request_id": request_id, "channel": "stable"})
-            )
-        if len(set(ids)) != len(ids):
-            raise ValueError("Duplicate replay IDs")
-        journal = _decode_journal(value, self.paths)
-        if journal.request_id != ids[-1]:
-            raise ValueError("Journal does not match replay ledger")
-        return journal, ids
+        if "admin_history_version" not in value:
+            return _decode_record(value, self.paths)
+        # Separate, exact administrator checkpoint schema, NOT a relaxed Journal.
+        # Older coordinators reject it instead of treating an absent journal as
+        # a fresh empty replay ledger if bootstrap is interrupted before upgrade.
+        if (
+            set(value) != {"admin_history_version", "request_id", "archive_sha256"}
+            or type(value["admin_history_version"]) is not int
+            or value["admin_history_version"] != 1
+            or not _digest(value["archive_sha256"])
+        ):
+            raise ValueError("Unknown administrator history checkpoint")
+        request = parse_request(
+            _json({"format_version": 1, "request_id": value["request_id"], "channel": "stable"})
+        )
+        raw = fs.read_regular(self.root / ("terminal-" + request.request_id + ".json"), STATE_BYTES)
+        if hashlib.sha256(raw).hexdigest() != value["archive_sha256"]:
+            raise ValueError("Administrator history archive digest mismatch")
+        journal, ids = _decode_record(parse_object(raw, STATE_BYTES), self.paths)
+        if journal.phase not in TERMINAL or journal.request_id != request.request_id:
+            raise ValueError("Administrator history is not terminal")
+        return None, ids
 
     def load(self) -> Journal | None:
         return self._read()[0]
+
+    def archive_terminal_for_admin(self) -> bool:
+        """Caller holds LifecycleLock: durably detach terminal recovery authority.
+
+        Preserve exact journal bytes, snapshots and ALL replay IDs. An atomic
+        checkpoint replaces (never unlinks) journal.json only after the archive
+        is durable. Retrying a visible checkpoint fsyncs its parent. Future or
+        corrupt records never become archives; an active transaction blocks.
+        """
+        journal, _ = self._read()
+        for name in (".updater-maintenance.json", ".updater-startup-gate.json"):
+            try:
+                fs.read_regular(self.paths.config_dir / name, 4096)
+            except FileNotFoundError:
+                continue
+            raise ValueError("Reconcile updater gate/maintenance before administrator transition")
+        if journal is None:
+            with fs._parent(self.journal_path) as (_, parent, _, chain):
+                fs._check(chain)
+                os.fsync(parent)
+            return False
+        if journal.phase not in TERMINAL:
+            raise ValueError("Recover active transaction before administrator transition")
+        target = journal.candidate if journal.phase == "committed" else journal.prior_target
+        if _current_target(self.paths)[0] != target or not check_start_allowed(
+            self.paths, "cleanup"
+        ):
+            raise ValueError("Terminal journal/current mismatch or incomplete pair")
+        raw = fs.read_regular(self.journal_path, STATE_BYTES)
+        archive = self.root / ("terminal-" + journal.request_id + ".json")
+        try:
+            previous = fs.read_regular(archive, STATE_BYTES)
+        except FileNotFoundError:
+            fs.atomic_write(archive, raw, 0, 0, 0o600)
+        else:
+            if previous != raw:
+                raise ValueError("Conflicting administrator terminal archive")
+        fs.atomic_write(
+            self.journal_path,
+            _json(
+                {
+                    "admin_history_version": 1,
+                    "request_id": journal.request_id,
+                    "archive_sha256": hashlib.sha256(raw).hexdigest(),
+                }
+            ),
+            0,
+            0,
+            0o600,
+        )
+        return True
 
     def save(self, journal: Journal) -> None:
         value = _journal_dict(journal)

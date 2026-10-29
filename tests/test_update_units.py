@@ -41,7 +41,9 @@ def test_fixed_root_units_and_acyclic_recovery():
         assert "PartOf=" not in unit
     recovery = (ROOT / "installer/knxohui-update-recovery.service").read_text()
     assert "RemainAfterExit=yes" in recovery
-    assert "Requires=" not in recovery and "Wants=" not in recovery
+    assert "Requires=systemd-tmpfiles-setup.service" in recovery
+    assert "After=systemd-tmpfiles-setup.service" in recovery
+    assert "Wants=" not in recovery
     for name in (
         "knxohui.service",
         "knxohui-backup-cleanup.service",
@@ -267,6 +269,35 @@ def test_live_descriptor_survives_actual_nested_bash_and_isolated_python(protect
         with pytest.raises(BlockingIOError):
             with lock.acquire():
                 pytest.fail("nested command released host lease")
+
+
+def test_tmpfiles_creates_boot_lock_without_replacing_live_inode(protected_root):
+    tmpfiles = shutil.which("systemd-tmpfiles")
+    if tmpfiles is None:
+        pytest.skip("systemd-tmpfiles unavailable")
+    rule = ROOT / "installer/knxohui-tmpfiles.conf"
+    assert rule.is_file(), "boot must create the required writable lock leaf before namespace setup"
+    raw = rule.read_bytes()
+    assert b"\r" not in raw
+    assert raw.decode().strip() == "f /run/lock/knxohui-lifecycle.lock 0600 root root -"
+    (protected_root / "run/lock").mkdir(parents=True)
+    config = protected_root / "lock.conf"
+    config.write_bytes(raw)
+    lock = protected_root / "run/lock/knxohui-lifecycle.lock"
+    command = [tmpfiles, "--create", "--root=" + str(protected_root), str(config)]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    info = lock.stat()
+    assert (info.st_uid, info.st_gid, info.st_mode & 0o7777) == (0, 0, 0o600)
+    lock.write_bytes(b"do-not-truncate")
+    with lock.open("rb") as held:
+        import fcntl
+
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        assert result.returncode == 0, result.stderr
+        assert (lock.stat().st_dev, lock.stat().st_ino) == (info.st_dev, info.st_ino)
+        assert lock.read_bytes() == b"do-not-truncate"
 
 
 def test_bootstrap_holds_host_lease_through_nested_work_and_refuses_before_writes(
@@ -532,6 +563,7 @@ def test_bundle_policy_replacement_prevalidated_and_atomic(protected_root, monke
     monkeypatch.setattr(admin, "SYSTEMD", host / "systemd")
     monkeypatch.setattr(admin, "POLICY", host / "sudoers/knxohui")
     monkeypatch.setattr(admin, "PACKAGE_HELPER", host / "sbin/knxohui-service-update")
+    monkeypatch.setattr(admin, "TMPFILES", host / "tmpfiles.conf")
     paths = Paths(
         protected_root / "app/releases",
         protected_root / "app/current",
@@ -542,6 +574,7 @@ def test_bundle_policy_replacement_prevalidated_and_atomic(protected_root, monke
     checked = []
     monkeypatch.setattr(admin, "_run", lambda args: checked.append(args))
     admin.install_components(ROOT / "installer", paths, protected_root / "paths.env")
+    assert admin.TMPFILES.read_bytes() == (ROOT / "installer/knxohui-tmpfiles.conf").read_bytes()
     assert checked[0][:2] == ["/usr/sbin/visudo", "-cf"]
     for name in (*admin.BUNDLE, *admin.HELPERS):
         assert (admin.LIBEXEC / name).read_bytes() == (ROOT / "installer" / name).read_bytes()

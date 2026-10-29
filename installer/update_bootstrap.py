@@ -83,6 +83,7 @@ POLICY = Path("/etc/sudoers.d/knxohui")
 PACKAGE_HELPER = Path("/usr/local/sbin/knxohui-service-update")
 PREPARATION = Path("/var/lib/knxohupdate-preparation")
 PATHS_FILE = Path("/etc/knx_to_openhab/paths.env")
+TMPFILES = Path("/etc/tmpfiles.d/knxohui.conf")
 BUNDLE = (
     "update_release.py",
     "update_start_guard.py",
@@ -395,10 +396,18 @@ def _exchange(left, right):
 def install_components(source, paths, paths_file):
     drops = render_dropins(paths, paths_file)
     sources = _source_bytes(
-        source, (*BUNDLE, *HELPERS, *UNITS, "knxohui.sudoers", "service_update.sh")
+        source,
+        (
+            *BUNDLE,
+            *HELPERS,
+            *UNITS,
+            "knxohui.sudoers",
+            "service_update.sh",
+            "knxohui-tmpfiles.conf",
+        ),
     )
     # Validate ALL existing protected destinations before the first replacement.
-    destinations = [POLICY, PACKAGE_HELPER]
+    destinations = [POLICY, PACKAGE_HELPER, TMPFILES]
     destinations += [SYSTEMD / name for name in UNITS]
     destinations += [SYSTEMD / (name + ".d") / "50-knxohui-paths.conf" for name in drops]
     for path in destinations:
@@ -443,6 +452,7 @@ def install_components(source, paths, paths_file):
         fs.atomic_write(directory / "50-knxohui-paths.conf", text.encode(), 0, 0, 0o644)
     fs.atomic_write(POLICY, sources["knxohui.sudoers"], 0, 0, 0o440)
     fs.atomic_write(PACKAGE_HELPER, sources["service_update.sh"], 0, 0, 0o755)
+    fs.atomic_write(TMPFILES, sources["knxohui-tmpfiles.conf"], 0, 0, 0o644)
 
 
 @contextmanager

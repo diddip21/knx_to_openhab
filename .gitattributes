@@ -2,3 +2,4 @@
 *.service text eol=lf
 *.timer text eol=lf
 *.sudoers text eol=lf
+installer/knxohui-tmpfiles.conf text eol=lf

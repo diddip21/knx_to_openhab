@@ -1,5 +1,7 @@
 [Unit]
 Description=Recover interrupted KNX to OpenHAB release activation
+Requires=systemd-tmpfiles-setup.service
+After=systemd-tmpfiles-setup.service
 
 [Service]
 Type=oneshot

@@ -34,6 +34,7 @@ PHASES = frozenset(
         "recovered-awaiting-start",
         "rolled-back",
         "recovery-failed",
+        "recovery-failed-pre-mutation",
     }
 )
 TERMINAL = frozenset({"committed", "rolled-back"})
@@ -95,6 +96,9 @@ def _unlink(path):
             entry = fs._open(stack, parent, name, {0}, os.fstat(parent).st_dev)
         except FileNotFoundError:
             fs._check(chain)
+            # A previous unlink may have succeeded before its directory fsync
+            # failed. Retrying an absent leaf must still make absence durable.
+            os.fsync(parent)
             return
         fs._check([*chain, entry])
         os.unlink(name, dir_fd=parent)
@@ -399,7 +403,7 @@ class StateStore:
         write_gate(self.paths, "deny", None, None)
         fs.atomic_write(path, raw, snapshot["uid"], snapshot["gid"], snapshot["mode"])
 
-    def publish_status(self, phase: str, message: str) -> None:
+    def publish_status(self, phase: str, message: str, request_id: str | None = None) -> None:
         """Publish coordinator-authored text only; NEVER pass child output/secrets.
 
         No free-form child-log append interface is provided. The bounded log is a
@@ -414,6 +418,12 @@ class StateStore:
             or any(ord(c) < 32 or ord(c) == 127 for c in message)
         ):
             raise ValueError("Invalid public status")
+        identity = {}
+        if request_id is not None:
+            parse_request(
+                _json({"format_version": 1, "request_id": request_id, "channel": "stable"})
+            )
+            identity["request_id"] = request_id
         fs.atomic_write(
             config / ".updater-status.json",
             _json(
@@ -421,6 +431,7 @@ class StateStore:
                     "format_version": 1,
                     "phase": phase,
                     "message": message,
+                    **identity,
                 }
             ),
             0,

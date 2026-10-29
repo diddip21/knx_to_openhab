@@ -22,26 +22,23 @@ def check_start_allowed(paths, role):
     return check(paths, role)
 
 
-def _trusted_core():
+def _trusted_core(profile="guard"):
     if not sys.flags.isolated or os.name != "posix":
         raise ValueError("Guard requires isolated system Python on POSIX")
     script = Path(__file__)
     if not script.is_absolute() or ".." in script.parts:
         raise ValueError("Guard path must be absolute")
     bundle = script.parent
+    names = ("__init__", "protocol", "secure_fs", "state")
+    if profile == "coordinator":
+        names += ("artifacts", "maintenance", "systemd", "transaction")
+    elif profile != "guard":
+        raise ValueError("Unknown fixed updater bundle profile")
     # Bootstrap cannot trust secure_fs until it has validated that module. All
     # ancestors and every imported source file are checked using no-follow FDs.
     files = [
         script,
-        *(
-            bundle / "update_core" / name
-            for name in (
-                "__init__.py",
-                "protocol.py",
-                "secure_fs.py",
-                "state.py",
-            )
-        ),
+        *(bundle / "update_core" / (name + ".py") for name in names),
     ]
     sources = {}
     for path in files:
@@ -103,7 +100,7 @@ def _trusted_core():
     module = importlib.util.module_from_spec(spec)
     sys.modules[package] = module
     # Compile validated sources explicitly: SourceFileLoader otherwise reads pyc.
-    for name in ("__init__", "protocol", "secure_fs", "state"):
+    for name in names:
         fullname = package if name == "__init__" else package + "." + name
         if name != "__init__":
             module_spec = importlib.util.spec_from_file_location(
@@ -114,6 +111,8 @@ def _trusted_core():
             setattr(sys.modules[package], name, module)
         source = bundle / f"update_core/{name}.py"
         exec(compile(sources[source], str(source), "exec"), module.__dict__)
+    if profile == "coordinator":
+        return sys.modules[package + ".transaction"]
     return (
         sys.modules[package + ".protocol"].Paths,
         sys.modules[package + ".state"].check_start_allowed,
@@ -121,6 +120,11 @@ def _trusted_core():
 
 
 def main():
+    if sys.argv[1:2] == ["--coordinator"]:
+        try:
+            return _trusted_core("coordinator").main(sys.argv[2:])
+        except (OSError, ValueError, ImportError):
+            return 1
     parser = argparse.ArgumentParser(description="Check the protected updater startup gate")
     parser.add_argument("--releases", required=True, type=Path)
     parser.add_argument("--current", required=True, type=Path)

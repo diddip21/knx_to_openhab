@@ -53,6 +53,36 @@ class SystemdAdapter:
         self.runner = runner
         self.stopped = set()
 
+    def bind_request(self, request_id: str) -> None:
+        if str(UUID(request_id)) != request_id:
+            raise ValueError("Expected canonical request UUID")
+        self.request_id = request_id
+        self.stopped.clear()
+
+    def service(self, action: str, name: str) -> None:
+        if action not in ("start", "stop", "enable", "disable") or name not in SERVICES:
+            raise ValueError("Unsupported fixed service operation")
+        # Nonblocking start: coordinator enforces its own combined notify/HTTP
+        # 60-second deadline rather than inheriting a systemd start timeout.
+        options = ["--no-block"] if action == "start" else []
+        self._run(["/usr/bin/systemctl", action, *options, "--", name])
+
+    def notify_ready(self, timeout: float = 30) -> bool:
+        result = self._run(
+            [
+                "/usr/bin/systemctl",
+                "show",
+                "--property=Type",
+                "--property=ActiveState",
+                "--property=SubState",
+                "--",
+                "knxohui.service",
+            ],
+            timeout=timeout,
+        )
+        fields = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+        return fields == {"Type": "notify", "ActiveState": "active", "SubState": "running"}
+
     def _unit(self, stage):
         return f"knxohupdate-{self.request_id}-{stage}.service"
 

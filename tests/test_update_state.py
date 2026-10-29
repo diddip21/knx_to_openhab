@@ -355,3 +355,116 @@ def test_restore_sync_failures_never_publish_unprotected_config(
         assert config.read_bytes() in (b"original", b"changed")
     store.restore_config()
     assert config.read_bytes() == b"original"
+
+
+@pytest.mark.parametrize("operation", ["absent-config", "gate-clear"])
+@pytest.mark.parametrize("fault", ["unlink-before", "unlink-after", "fsync-before", "fsync-after"])
+def test_durable_unlink_faults_retain_evidence_and_converge(paths, monkeypatch, operation, fault):
+    store = state.StateStore(paths)
+    first = journal(paths)
+    store.save(first)
+    if operation == "absent-config":
+        store.snapshot_config()
+        (paths.config_dir / "config.json").write_bytes(b"temporary")
+        action = store.restore_config
+        leaf = "config.json"
+    else:
+        state.write_gate(paths, "deny", None, None)
+
+        def action():
+            state.write_gate(paths, "clear", None, None)
+
+        leaf = ".updater-startup-gate.json"
+    original_unlink, original_sync = os.unlink, os.fsync
+    unlinked = False
+
+    def unlink(name, *args, **kwargs):
+        nonlocal unlinked
+        if name == leaf and fault == "unlink-before":
+            raise OSError("before unlink")
+        result = original_unlink(name, *args, **kwargs)
+        if name == leaf:
+            unlinked = True
+            if fault == "unlink-after":
+                raise OSError("after unlink")
+        return result
+
+    def sync(fd):
+        if unlinked and fault == "fsync-before":
+            raise OSError("before directory fsync")
+        original_sync(fd)
+        if unlinked and fault == "fsync-after":
+            raise OSError("after directory fsync")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "unlink", unlink)
+        patch.setattr(os, "fsync", sync)
+        with pytest.raises(OSError):
+            action()
+    assert store.load() == first
+    action()
+    assert not (paths.config_dir / leaf).exists()
+
+
+@pytest.mark.parametrize("kind", ["capacity", "duplicate", "mismatch"])
+def test_replay_ledger_fail_closed_without_discarding_evidence(paths, monkeypatch, kind):
+    store = state.StateStore(paths)
+    first = journal(paths)
+    store.save(first)
+    store.save(replace(first, phase="committed"))
+    if kind == "capacity":
+        monkeypatch.setattr(state, "MAX_REPLAY_IDS", 1)
+    else:
+        value = json.loads(store.journal_path.read_bytes())
+        value["seen_request_ids"] = (
+            [first.request_id, first.request_id] if kind == "duplicate" else [str(uuid4())]
+        )
+        store.journal_path.write_text(json.dumps(value))
+    evidence = store.journal_path.read_bytes()
+    with pytest.raises(ValueError):
+        store.save(journal(paths))
+    assert store.journal_path.read_bytes() == evidence
+
+
+@pytest.mark.parametrize(
+    "kind", ["created", "published", "identity", "candidate", "replace-active"]
+)
+def test_sticky_provenance_cannot_be_weakened(paths, kind):
+    store = state.StateStore(paths)
+    first = journal(paths, candidate_created=True, candidate_published=True)
+    first = replace(first, candidate_identity=(123, 456))
+    store.save(first)
+    changes = {
+        "created": {"candidate_created": False},
+        "published": {"candidate_published": False},
+        "identity": {"candidate_identity": (123, 789)},
+        "candidate": {"candidate": None},
+    }
+    evidence = store.journal_path.read_bytes()
+    with pytest.raises(ValueError):
+        store.save(journal(paths) if kind == "replace-active" else replace(first, **changes[kind]))
+    assert store.journal_path.read_bytes() == evidence
+
+
+def test_public_status_request_id_is_optional_and_strict(paths):
+    store = state.StateStore(paths)
+    request_id = str(uuid4())
+    store.publish_status("claimed", "Request claimed", request_id)
+    public = paths.config_dir / ".updater-status.json"
+    assert json.loads(public.read_bytes())["request_id"] == request_id
+    with pytest.raises(ValueError):
+        store.publish_status("claimed", "Request claimed", "bad")
+    assert json.loads(public.read_bytes())["request_id"] == request_id
+
+
+def test_retry_absent_gate_still_syncs_parent_after_previous_unlink_fault(paths, monkeypatch):
+    synced = []
+    sync = os.fsync
+
+    def record(fd):
+        synced.append(Path(os.readlink(f"/proc/self/fd/{fd}")))
+        sync(fd)
+
+    monkeypatch.setattr(os, "fsync", record)
+    state.write_gate(paths, "clear", None, None)
+    assert paths.config_dir in synced

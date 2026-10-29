@@ -5,6 +5,10 @@ import subprocess
 import threading
 from typing import Any
 
+from knxoh_paths import get_paths
+
+from .update_maintenance import mutation_lease
+
 PACKAGES = {"openhab": "openhab.service", "evcc": "evcc.service"}
 HELPER = "/usr/local/sbin/knxohui-service-update"
 
@@ -91,8 +95,22 @@ class ServiceUpdates:
         with self.lock:
             if self.task["state"] == "running":
                 return False, "Another package operation is already running."
+            lease = mutation_lease(get_paths())
+            lease.__enter__()
             self.task = {"action": action, "state": "running", "message": "Starting APT…"}
-            threading.Thread(target=self._run, args=(action, expected_version), daemon=True).start()
+
+            def run_admitted():
+                try:
+                    self._run(action, expected_version)
+                finally:
+                    lease.__exit__(None, None, None)
+
+            try:
+                threading.Thread(target=run_admitted, daemon=True).start()
+            except BaseException:
+                lease.__exit__(None, None, None)
+                self.task = {"action": action, "state": "failed", "message": "Start failed"}
+                raise
         return True, "Package operation started."
 
     def _run(self, action: str, expected_version: str | None) -> None:

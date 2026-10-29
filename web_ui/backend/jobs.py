@@ -13,6 +13,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 from completeness import check_completeness, iter_thing_lines
+from knxoh_paths import get_paths
 
 from .deploy_policy import (
     configured_managed_paths,
@@ -20,6 +21,7 @@ from .deploy_policy import (
     restore_managed_files,
 )
 from .storage import ensure_dirs, load_jobs, save_jobs
+from .update_maintenance import guarded_mutation, mutation_lease
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +141,17 @@ class JobManager:
         return self.queues.get(job_id)
 
     def create_job(self, input_path, original_name=None, password=None):
+        # A distinct open descriptor per job: flock is not a thread mutex, and
+        # sharing one FD would let the first completion unlock another job.
+        lease = mutation_lease(get_paths())
+        lease.__enter__()
+        try:
+            return self._create_admitted_job(lease, input_path, original_name, password)
+        except BaseException:
+            lease.__exit__(None, None, None)
+            raise
+
+    def _create_admitted_job(self, lease, input_path, original_name, password):
         job_id = uuid.uuid4().hex
         job = {
             "id": job_id,
@@ -161,7 +174,15 @@ class JobManager:
                 self._jobs[job_id] = job
                 self.queues[job_id] = q  # Register queue before saving jobs
                 save_jobs(self.jobs_dir, self._jobs)
-            self.executor.submit(self._run_job, job_id)
+            future = self.executor.submit(self._run_job, job_id)
+
+            def finished(_future):
+                try:
+                    self._passwords.pop(job_id, None)
+                finally:
+                    lease.__exit__(None, None, None)
+
+            future.add_done_callback(finished)
         except Exception:
             # A worker is not guaranteed to run, so remove the in-memory
             # secret and roll back the partially created job immediately.
@@ -813,6 +834,7 @@ class JobManager:
 
         return diff_lines
 
+    @guarded_mutation
     def rollback(self, job_id, backup_name=None):
         """Restore a job's managed files, serialized with deployments."""
         with self.lock:
@@ -858,6 +880,7 @@ class JobManager:
         restore_managed_files(backup_path, openhab_root, restore_relatives)
         return True, f'restored managed files from {backup["name"]}'
 
+    @guarded_mutation
     def deploy(self, job_id):
         """Deploy staged files to live environment."""
         with self.lock:
@@ -978,6 +1001,7 @@ class JobManager:
         running = [j for j in self._jobs.values() if j["status"] == "running"]
         return {"jobs_total": len(self._jobs), "jobs_running": len(running)}
 
+    @guarded_mutation
     def update_job(self, job_id, updates):
         """Update job fields (used for persisting logs from frontend)."""
         if job_id not in self._jobs:
@@ -989,6 +1013,7 @@ class JobManager:
             save_jobs(self.jobs_dir, self._jobs)
         return True
 
+    @guarded_mutation
     def delete_job(self, job_id):
         """Delete a job from history."""
         if job_id not in self._jobs:

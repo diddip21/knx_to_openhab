@@ -49,10 +49,11 @@ except Exception:
 
 from .auth import verify_password
 from .jobs import JobManager
-from .service_manager import get_service_status, restart_service
+from .service_manager import ALLOWED_SERVICES, get_service_status, restart_service
 from .service_updates import PACKAGES, ServiceUpdates, package_version
 from .session_store import SESSION_MAX_AGE, SessionStore
 from .storage import get_session_secret, load_config, load_generator_config, save_generator_config
+from .update_maintenance import MaintenanceError, mutation_lease, readiness_version
 from .updater import Updater
 from .upload_security import (
     MAX_UPLOAD_SIZE_BYTES,
@@ -113,6 +114,9 @@ if FLASK_AVAILABLE:
     # Fix openhab_path to be absolute if it's relative and based on project root
 
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    # Resolve once while this worker loads. Resolving "current" anew after an
+    # activation would let an old gunicorn worker advertise the new VERSION.
+    readiness_paths = get_paths(project_root)
     if "openhab_path" in cfg:
         openhab_path = cfg["openhab_path"]
         # If openhab_path is relative (doesn't start with / on Unix or a drive letter on Windows),
@@ -232,7 +236,7 @@ if FLASK_AVAILABLE:
         path = request.path or ""
         if path.startswith("/static"):
             return None
-        if path in ("/api/status", "/login"):
+        if path in ("/api/status", "/api/health", "/login"):
             return None
         if not acfg.get("password_hash") and not acfg.get("legacy_password"):
             return (
@@ -266,6 +270,29 @@ if FLASK_AVAILABLE:
             ):
                 return jsonify({"error": "valid CSRF token required"}), 403
         return None
+
+    def _mutate(function, *args, **kwargs):
+        with mutation_lease(get_paths(project_root)):
+            return function(*args, **kwargs)
+
+    @app.errorhandler(MaintenanceError)
+    def maintenance_unavailable(_error):
+        return (
+            jsonify(
+                {
+                    "error": "Release maintenance in progress or unsafe lease; retry or repair installation"
+                }
+            ),
+            503,
+        )
+
+    @app.route("/api/health", methods=["GET"])
+    def health():
+        try:
+            version = readiness_version(readiness_paths)
+        except (OSError, ValueError, NotImplementedError):
+            return jsonify({"status": "not_ready"}), 503
+        return jsonify({"status": "ready", "version": version})
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
@@ -358,6 +385,14 @@ if FLASK_AVAILABLE:
 
         fn = secure_filename(f.filename)
         password = request.form.get("password") or None
+        lease = mutation_lease(get_paths(project_root))
+        lease.__enter__()
+        try:
+            return _upload_admitted(f, fn, password)
+        finally:
+            lease.__exit__(None, None, None)
+
+    def _upload_admitted(f, fn, password):
         os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
         upload_id = uuid.uuid4().hex
         temp_path = os.path.join(app.config["UPLOAD_FOLDER"], f".upload-{upload_id}-{fn}")
@@ -383,6 +418,8 @@ if FLASK_AVAILABLE:
         except OSError as e:
             logger.error("Failed to save or validate uploaded file: %s", e)
             return jsonify({"error": "Failed to save uploaded file"}), 500
+        except MaintenanceError:
+            raise
         except Exception:
             logger.exception("Failed to create processing job for uploaded file")
             return jsonify({"error": "Failed to create processing job"}), 500
@@ -422,11 +459,13 @@ if FLASK_AVAILABLE:
     def update_job(job_id):
         data = request.get_json() or {}
         try:
-            ok = job_mgr.update_job(job_id, data)
+            ok = _mutate(job_mgr.update_job, job_id, data)
             if ok:
                 return jsonify({"ok": True})
             else:
                 return jsonify({"error": "not found"}), 404
+        except MaintenanceError:
+            raise
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
@@ -447,8 +486,12 @@ if FLASK_AVAILABLE:
 
         try:
             # SECURITY: Password is not stored - user must re-enter if needed
-            new_job = job_mgr.create_job(input_path, original_name=job.get("name"), password=None)
+            new_job = _mutate(
+                job_mgr.create_job, input_path, original_name=job.get("name"), password=None
+            )
             return jsonify(new_job), 201
+        except MaintenanceError:
+            raise
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
@@ -503,16 +546,20 @@ if FLASK_AVAILABLE:
         data = request.get_json() or {}
         backup = data.get("backup")
         try:
-            ok, out = job_mgr.rollback(job_id, backup)
+            ok, out = _mutate(job_mgr.rollback, job_id, backup)
             return jsonify({"ok": ok, "output": out})
+        except MaintenanceError:
+            raise
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/job/<job_id>", methods=["DELETE"])
     def delete_job(job_id):
         try:
-            ok = job_mgr.delete_job(job_id)
+            ok = _mutate(job_mgr.delete_job, job_id)
             return jsonify({"ok": ok})
+        except MaintenanceError:
+            raise
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
@@ -522,7 +569,9 @@ if FLASK_AVAILABLE:
         svc = data.get("service")
         if not svc:
             return jsonify({"error": "service missing"}), 400
-        ok, out = restart_service(svc)
+        if svc not in ALLOWED_SERVICES:
+            return jsonify({"ok": False, "output": "Unsupported service"})
+        ok, out = _mutate(restart_service, svc)
         return jsonify({"ok": ok, "output": out})
 
     @app.route("/api/service/<service_name>/status", methods=["GET"])
@@ -559,7 +608,7 @@ if FLASK_AVAILABLE:
         if request.headers.get("X-Requested-With") != "XMLHttpRequest":
             return jsonify({"error": "Missing request header"}), 403
         data = request.get_json(silent=True) or {}
-        ok, message = service_updates.start(action, data.get("version"))
+        ok, message = _mutate(service_updates.start, action, data.get("version"))
         return jsonify({"ok": ok, "message": message}), 202 if ok else 409
 
     @app.route("/api/status")
@@ -748,11 +797,13 @@ if FLASK_AVAILABLE:
                     }
                 )
 
-            success, message = updater.trigger_update()
+            success, message = _mutate(updater.trigger_update)
             if success:
                 return jsonify({"status": "updating", "message": message})
             else:
                 return jsonify({"error": message}), 500
+        except MaintenanceError:
+            raise
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
@@ -957,9 +1008,11 @@ if FLASK_AVAILABLE:
                 return jsonify({"error": "Config must be a JSON object"}), 400
 
             # Save to the main config file (which contains knxproject_to_openhab settings)
-            save_generator_config(new_config, project_root)
+            _mutate(save_generator_config, new_config, project_root)
 
             return jsonify({"message": "Configuration updated successfully"})
+        except MaintenanceError:
+            raise
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
@@ -985,6 +1038,14 @@ if FLASK_AVAILABLE:
 
         fn = secure_filename(f.filename)
         password = request.form.get("password") or None
+        lease = mutation_lease(get_paths(project_root))
+        lease.__enter__()
+        try:
+            return _project_preview_admitted(f, fn, password)
+        finally:
+            lease.__exit__(None, None, None)
+
+    def _project_preview_admitted(f, fn, password):
         temp_path = os.path.join(app.config["UPLOAD_FOLDER"], f"temp_{uuid.uuid4().hex}_{fn}")
         try:
             # Save to Werkzeug's spooled stream target, then inspect the file
@@ -1129,8 +1190,10 @@ if FLASK_AVAILABLE:
     @app.route("/api/job/<job_id>/deploy", methods=["POST"])
     def job_deploy(job_id):
         try:
-            success, msg = job_mgr.deploy(job_id)
+            success, msg = _mutate(job_mgr.deploy, job_id)
             return jsonify({"success": success, "message": msg})
+        except MaintenanceError:
+            raise
         except ValueError as e:
             if "not found" in str(e).lower():
                 return jsonify({"error": str(e)}), 404

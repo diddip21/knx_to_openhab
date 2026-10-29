@@ -1,5 +1,6 @@
 {
   "paths": {
+    "/api/health": {"get": {"description": "Unauthenticated, session-free readiness; 200 contains only status=ready and source VERSION; 503 when recovery or active-version checks fail"}},
     "/api/upload": {"post": {"description": "Upload .knxproj/.knxprojarchive file", "consumes": ["multipart/form-data"]}},
     "/api/jobs": {"get": {"description": "List jobs"}},
     "/api/job/{id}": {"get": {"description": "Job detail"}},

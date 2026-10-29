@@ -145,6 +145,8 @@ def reject_credentials(config):
 
 
 def health_url(config):
+    # Match the direct Gunicorn listener, not a reverse proxy's public scheme.
+    # Gunicorn reads only bind_host/port; unrelated config keys stay uninterpreted.
     host = config.get("bind_host", "127.0.0.1")
     port = config.get("port", 8085)
     if not isinstance(host, str) or type(port) is not int or not 1 <= port <= 65535:
@@ -157,10 +159,7 @@ def health_url(config):
         host = "::1" if address.version == 6 else "127.0.0.1"
     if ":" in host:
         host = "[" + host + "]"
-    tls = config.get("tls", False)
-    if type(tls) is not bool:
-        raise ValueError("Invalid TLS configuration")
-    return f"{'https' if tls else 'http'}://{host}:{port}/api/health"
+    return f"http://{host}:{port}/api/health"
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -169,8 +168,8 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def fetch_health(url, timeout):
-    # Default HTTPSHandler uses system trust and hostname verification. Do not
-    # inherit proxy settings or follow health redirects off the configured bind.
+    # Do not inherit proxy settings or follow health redirects off the direct
+    # configured HTTP listener. Public reverse-proxy HTTPS is not readiness.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
     with opener.open(url, timeout=timeout) as response:
         if response.status != 200:

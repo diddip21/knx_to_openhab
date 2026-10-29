@@ -217,17 +217,32 @@ def test_public_interface_exists():
 
 
 @pytest.mark.parametrize(
-    "host, tls, expected",
+    "host, expected",
     [
-        ("0.0.0.0", False, "http://127.0.0.1:8085/api/health"),
-        ("::", True, "https://[::1]:8085/api/health"),
-        ("192.0.2.5", True, "https://192.0.2.5:8085/api/health"),
+        ("0.0.0.0", "http://127.0.0.1:8085/api/health"),
+        ("::", "http://[::1]:8085/api/health"),
+        ("192.0.2.5", "http://192.0.2.5:8085/api/health"),
+        ("localhost", "http://127.0.0.1:8085/api/health"),
+        ("127.0.0.1", "http://127.0.0.1:8085/api/health"),
+        ("[::1]", "http://[::1]:8085/api/health"),
     ],
 )
-def test_local_health_endpoint(host, tls, expected):
+def test_local_health_endpoint(host, expected):
     from installer.update_core.transaction import health_url
 
-    assert health_url({"bind_host": host, "tls": tls}) == expected
+    assert health_url({"bind_host": host}) == expected
+
+
+@pytest.mark.parametrize("tls", [True, False, "reverse-proxy", {"enabled": True}, None])
+def test_unrelated_tls_key_cannot_change_direct_http_probe(tls):
+    from copy import deepcopy
+
+    from installer.update_core.transaction import health_url
+
+    config = {"bind_host": "0.0.0.0", "port": 9000, "tls": tls}
+    original = deepcopy(config)
+    assert health_url(config) == "http://127.0.0.1:9000/api/health"
+    assert config == original
 
 
 def test_installed_entrypoint_interface():
@@ -263,6 +278,17 @@ def test_success_freezes_final_venv_and_commits_before_cleanup(installation):
     assert status["request_id"] == request_id
     assert adapter.active == dict.fromkeys(SERVICES, True)
     assert_sentinels(paths)
+
+
+def test_update_preserves_unknown_tls_key_and_probes_http(installation):
+    updater, paths, adapter, _ = installation
+    config_path = paths.config_dir / "config.json"
+    config = json.loads(config_path.read_bytes())
+    config["tls"] = {"enabled": True, "purpose": "unrelated reverse-proxy metadata"}
+    config_path.write_bytes(json.dumps(config).encode())
+    result = updater.run()  # The injected HTTP adapter asserts the direct HTTP URL.
+    assert result.status == "updated", result
+    assert json.loads(config_path.read_bytes())["tls"] == config["tls"]
 
 
 @pytest.mark.parametrize(

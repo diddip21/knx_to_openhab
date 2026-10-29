@@ -25,6 +25,7 @@ def test_trigger_submits_without_chmod_popen_or_release_log(monkeypatch, tmp_pat
     monkeypatch.setattr("web_ui.backend.updater.submit_update", submit)
     assert Updater(str(tmp_path)).trigger_update()[0]
     assert submit.call_args.args[1] == "stable"
+    assert Updater(str(tmp_path)).last_update_request_id is None
     assert list(tmp_path.iterdir()) == []
 
 
@@ -37,6 +38,40 @@ def test_trigger_error_code_is_request_local(tmp_path):
     worker.start()
     worker.join()
     assert updater.last_update_status == "busy"
+
+
+@pytest.mark.parametrize(
+    "phase,message,outcome",
+    [
+        ("claimed", "Update request claimed", "running"),
+        ("checking", "Waiting for readiness", "running"),
+        ("committed", "Release update completed", "updated"),
+        ("rolled-back", "No newer compatible release", "no-update"),
+        ("rolled-back", "Update failed; previous release preserved", "failed"),
+        ("recovery-failed", "Update recovery requires administrator intervention", "blocked"),
+        ("recovered-awaiting-start", "Recovered", "blocked"),
+    ],
+)
+def test_protected_status_exposes_correlated_outcome(
+    monkeypatch, tmp_path, phase, message, outcome
+):
+    request_id = "10000000-0000-4000-8000-000000000001"
+    monkeypatch.setattr(
+        "web_ui.backend.updater.read_status",
+        lambda paths: {
+            "format_version": 1,
+            "request_id": request_id,
+            "phase": phase,
+            "message": message,
+        },
+    )
+    value = Updater(str(tmp_path)).get_update_status()
+    assert value == {
+        "request_id": request_id,
+        "phase": phase,
+        "message": message,
+        "outcome": outcome,
+    }
 
 
 @pytest.mark.parametrize("channel", [None, "beta", "", [], {}])

@@ -7,6 +7,7 @@ import socket
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -71,6 +72,16 @@ def flask_server(base_url):
         text=True,
         bufsize=1,  # Line buffered
     )
+    # Drain continuously: an unread PIPE can fill during real-browser polling/
+    # reload tests and block Flask's request logging (especially on Windows).
+    server_output = []
+
+    def collect_output():
+        for line in server_process.stdout:
+            server_output.append(line)
+
+    output_reader = threading.Thread(target=collect_output, daemon=True)
+    output_reader.start()
 
     # Wait for server to be ready
     max_retries = 30
@@ -81,7 +92,8 @@ def flask_server(base_url):
         # Check if process crashed
         if server_process.poll() is not None:
             # Server crashed, get error output
-            output = server_process.stdout.read() if server_process.stdout else "No output"
+            output_reader.join(timeout=1)
+            output = "".join(server_output)
             raise RuntimeError(
                 "Flask server crashed during startup "
                 f"(exit code: {server_process.returncode}).\n"
@@ -101,7 +113,7 @@ def flask_server(base_url):
     if not server_ready:
         server_process.terminate()
         try:
-            output = server_process.stdout.read() if server_process.stdout else "No output"
+            output = "".join(server_output)
             server_process.wait(timeout=2)
         except subprocess.TimeoutExpired:
             server_process.kill()
@@ -122,6 +134,7 @@ def flask_server(base_url):
     except subprocess.TimeoutExpired:
         server_process.kill()
         server_process.wait()
+    output_reader.join(timeout=1)
 
 
 @pytest.fixture(scope="session")

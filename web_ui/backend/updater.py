@@ -10,7 +10,7 @@ from installer.update_core import secure_fs as fs
 from installer.update_core.artifacts import REPOSITORY, _precedence, select_release
 from installer.update_core.protocol import Limits, Paths
 from installer.update_prepare import download
-from installer.update_submit import submit_update, validate_channel
+from installer.update_submit import read_status, submit_update, validate_channel
 from knxoh_paths import get_paths
 
 
@@ -30,6 +30,10 @@ class Updater:
     @last_update_status.setter
     def last_update_status(self, value):
         self._submission_state.status = value
+
+    @property
+    def last_update_request_id(self):
+        return getattr(self._submission_state, "request_id", None)
 
     def _paths(self) -> Paths:
         paths = get_paths(self.base_path)
@@ -158,6 +162,7 @@ class Updater:
         return result
 
     def trigger_update(self, channel: str = "stable") -> Tuple[bool, str]:
+        self._submission_state.request_id = None
         try:
             validate_channel(channel)
         except ValueError as error:
@@ -165,12 +170,40 @@ class Updater:
             return False, str(error)
         result = submit_update(self._paths(), channel)
         self.last_update_status = result.status
+        self._submission_state.request_id = result.request_id
         if result.status == "submitted":
             return (
                 True,
                 "Update request accepted by the coordinator; completion is asynchronous. Check the update log.",
             )
         return False, result.error or "Release update could not be submitted"
+
+    def get_update_status(self) -> dict | None:
+        """Project only validated, protected status; log text is never lifecycle authority."""
+        try:
+            value = read_status(self._paths())
+            phase = value["phase"]
+            outcome = "running"
+            if phase == "committed":
+                outcome = "updated"
+            elif phase == "rolled-back":
+                outcome = (
+                    "no-update" if value["message"] == "No newer compatible release" else "failed"
+                )
+            elif phase in (
+                "recovery-failed",
+                "recovery-failed-pre-mutation",
+                "recovered-awaiting-start",
+            ):
+                outcome = "blocked"
+            return {
+                "request_id": value.get("request_id"),
+                "phase": phase,
+                "message": value["message"],
+                "outcome": outcome,
+            }
+        except (OSError, ValueError, RuntimeError):
+            return None
 
     def get_update_log(self) -> str:
         """Only the bounded, root-owned public projection; never release logs."""

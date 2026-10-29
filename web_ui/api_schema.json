@@ -6,7 +6,7 @@
       "description": "Authenticated, CSRF-protected asynchronous release submission. Bodyless/{} means stable; acceptance is a matching coordinator claim, not completion. Windows validates before simulation. Requires verified managed installation; no legacy Git fallback.",
       "requestBody": {"required": false, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": false, "properties": {"channel": {"type": "string", "enum": ["stable", "prerelease"], "default": "stable"}}}}}},
       "responses": {
-        "200": {"description": "Existing status=updating (or simulated on Windows) and message fields; operation completes asynchronously"},
+        "200": {"description": "Existing status=updating (or simulated on Windows) and message fields; updating adds the matching claimed request_id. Acceptance is not completion; poll protected status for that same ID."},
         "400": {"description": "Malformed/non-JSON/oversized body, unknown fields or invalid channel; error string"},
         "401": {"description": "Authentication required"},
         "403": {"description": "Valid CSRF token required"},
@@ -15,7 +15,7 @@
         "503": {"description": "Existing maintenance lease denies mutation"}
       }
     }},
-    "/api/version/log": {"get": {"description": "Existing {log: string} response, bounded safe root-authored CONFIG_DIR/.updater-log.txt projection; no logs written in releases"}},
+    "/api/version/log": {"get": {"description": "Preserves log:string from bounded safe root-authored CONFIG_DIR/.updater-log.txt. Adds update:null or validated protected {request_id,phase,message,outcome}; outcome is running|updated|no-update|failed|blocked. Initial status may have request_id:null. Only matching phase=committed is success; rolled-back is no-update for the fixed No newer compatible release message, otherwise failure. Recovery phases are blocked. Ignore other IDs; no logs written in releases."}},
     "/api/health": {"get": {"description": "Unauthenticated, session-free readiness; 200 contains only status=ready and source VERSION; 503 when recovery or active-version checks fail"}},
     "/api/upload": {"post": {"description": "Upload .knxproj/.knxprojarchive file", "consumes": ["multipart/form-data"]}},
     "/api/jobs": {"get": {"description": "List jobs"}},

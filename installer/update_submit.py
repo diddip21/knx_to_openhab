@@ -26,6 +26,9 @@ from .update_core.transaction import UpdateResult
 ACK_TIMEOUT = 30.0
 STALE_SECONDS = 30.0
 POLL_INTERVAL = 0.1
+COMMAND_TIMEOUT_SECONDS = 5
+# Two manager inspections, one nonblocking start, then the FULL claim window.
+SUBMISSION_WAIT_SECONDS = 3 * COMMAND_TIMEOUT_SECONDS + ACK_TIMEOUT
 UNIT = "knxohui-update.service"
 SYSTEMCTL = "/usr/bin/systemctl"
 SETUP = (
@@ -81,7 +84,7 @@ def _worker_state() -> str:
         ],
         capture_output=True,
         text=True,
-        timeout=5,
+        timeout=COMMAND_TIMEOUT_SECONDS,
         check=False,
         env={"PATH": "/usr/bin:/bin", "LANG": "C"},
     )
@@ -260,7 +263,7 @@ def submit_update(paths: Paths, channel: str = "stable") -> UpdateResult:
                 ["sudo", "-n", SYSTEMCTL, "start", "--no-block", UNIT],
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=COMMAND_TIMEOUT_SECONDS,
                 check=False,
                 env={"PATH": "/usr/bin:/bin", "LANG": "C"},
             )

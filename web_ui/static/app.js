@@ -2001,11 +2001,21 @@ function showUpdateDialog(updateData) {
   document.getElementById('updateDialog').showModal()
 }
 let updatePollInterval = null
+let updateReloadInterval = null
+let activeUpdateRequestId = null
+
+function stopUpdateLogPolling() {
+  if (updatePollInterval) clearInterval(updatePollInterval)
+  updatePollInterval = null
+  activeUpdateRequestId = null
+}
 
 async function performUpdate() {
   const updateDialog = document.getElementById('updateDialog')
   const logModal = document.getElementById('updateLogModal')
   const logContent = document.getElementById('updateLogContent')
+  stopUpdateLogPolling()
+  if (updateReloadInterval) clearInterval(updateReloadInterval)
 
   // Close the update info dialog and open log modal
   updateDialog.close()
@@ -2016,45 +2026,51 @@ async function performUpdate() {
     const response = await apiFetch('/api/version/update', { method: 'POST' })
     const data = await response.json()
 
-    if (data.status === 'updating' || data.status === 'simulated') {
-      // Start polling for logs
-      startUpdateLogPolling()
+    if (response.ok && data.status === 'updating' && typeof data.request_id === 'string') {
+      startUpdateLogPolling(data.request_id)
+    } else if (response.ok && data.status === 'simulated') {
+      logContent.textContent = data.message
     } else {
-      logContent.textContent += 'Error interacting with update API: ' + (data.error || 'Unknown error') + '\n'
-      // Try polling anyway in case it partially started
-      startUpdateLogPolling()
+      logContent.textContent += 'Error interacting with update API: ' + (data.error || 'No correlated updater acknowledgement; check the service or retry.') + '\n'
     }
   } catch (error) {
     logContent.textContent += 'Request failed: ' + error.message + '\n'
-    // Try polling anyway
-    startUpdateLogPolling()
+    // An uncertain submission has no trusted request ID. Never consume a prior
+    // attempt's terminal evidence as this attempt's success.
   }
 }
 
-function startUpdateLogPolling() {
+function startUpdateLogPolling(requestId) {
   const logContent = document.getElementById('updateLogContent')
   const successDialog = document.getElementById('updateSuccessDialog')
   const countdownEl = document.getElementById('reloadCountdown')
 
-  if (updatePollInterval) clearInterval(updatePollInterval)
+  stopUpdateLogPolling()
+  activeUpdateRequestId = requestId
+  let polling = false
 
   updatePollInterval = setInterval(async () => {
+    if (polling) return
+    polling = true
     try {
       const res = await apiFetch('/api/version/log')
       if (res.ok) {
         const data = await res.json()
-        if (data.log) {
+        const status = data.update
+        if (activeUpdateRequestId !== requestId || status?.request_id !== requestId) return
+        if (typeof data.log === 'string') {
           // Update log display
           if (logContent.textContent.length !== data.log.length || !logContent.textContent.startsWith(data.log.substring(0, 20))) {
             logContent.textContent = data.log
             logContent.scrollTop = logContent.scrollHeight
           }
 
-          // Trigger reload sequence when restart is imminent
-          if (data.log.includes('Restarting knxohui.service') || data.log.includes('Update completed successfully')) {
+          // Only a protected, matching committed phase proves completed activation.
+          // Restart/checking and legacy shell phrases cannot signal success.
+          if (status.phase === 'committed') {
             if (!successDialog.open) {
               // Stop polling
-              clearInterval(updatePollInterval)
+              stopUpdateLogPolling()
 
               // Show success dialog
               document.getElementById('updateLogModal').close()
@@ -2064,22 +2080,28 @@ function startUpdateLogPolling() {
               let secondsLeft = 15
               countdownEl.textContent = secondsLeft
 
-              const countdownInterval = setInterval(() => {
+              updateReloadInterval = setInterval(() => {
                 secondsLeft--
                 countdownEl.textContent = secondsLeft
 
                 if (secondsLeft <= 0) {
-                  clearInterval(countdownInterval)
+                  clearInterval(updateReloadInterval)
                   window.location.reload()
                 }
               }, 1000)
             }
+          } else if (['rolled-back', 'recovery-failed', 'recovery-failed-pre-mutation', 'recovered-awaiting-start'].includes(status.phase)) {
+            stopUpdateLogPolling()
+            // Keep the existing log modal for no-update/failure/recovery guidance.
+            logContent.textContent = status.message || data.log
           }
         }
       }
     } catch (e) {
       // Ignore network errors as service might be restarting
       console.log('Poll error (expected during restart):', e)
+    } finally {
+      polling = false
     }
   }, 1000)
 }

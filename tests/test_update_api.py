@@ -16,6 +16,7 @@ def api(monkeypatch):
     monkeypatch.setattr(app_module, "_mutate", lambda fn, *a, **k: fn(*a, **k))
     updater = Mock()
     updater.trigger_update.return_value = (True, "Accepted, not completed")
+    updater.last_update_request_id = "10000000-0000-4000-8000-000000000001"
     monkeypatch.setattr(app_module, "updater", updater)
     return app_module.app.test_client(), updater
 
@@ -27,7 +28,11 @@ def test_compatible_submission(api, body, expected):
     client, updater = api
     response = client.post("/api/version/update", **({} if body is None else {"json": body}))
     assert response.status_code == 200
-    assert response.json == {"status": "updating", "message": "Accepted, not completed"}
+    assert response.json == {
+        "status": "updating",
+        "message": "Accepted, not completed",
+        "request_id": updater.last_update_request_id,
+    }
     updater.trigger_update.assert_called_once_with(
         **({} if expected == "stable" else {"channel": expected})
     )
@@ -177,3 +182,19 @@ def test_schema_describes_submission_compatibility_and_errors():
     assert body["additionalProperties"] is False
     assert body["properties"]["channel"]["enum"] == ["stable", "prerelease"]
     assert {"200", "400", "401", "403", "409", "500", "503"} <= set(operation["responses"])
+
+
+def test_log_preserves_string_and_adds_protected_request_status(api):
+    client, updater = api
+    updater.get_update_log.return_value = "checking: Waiting for readiness\n"
+    updater.get_update_status.return_value = {
+        "request_id": updater.last_update_request_id,
+        "phase": "checking",
+        "message": "Waiting for readiness",
+        "outcome": "running",
+    }
+    response = client.get("/api/version/log")
+    assert response.json == {
+        "log": "checking: Waiting for readiness\n",
+        "update": updater.get_update_status.return_value,
+    }

@@ -13,8 +13,77 @@ import pytest
 
 from installer import update_submit as submit
 from installer.update_core.protocol import Paths, parse_request
+from installer.update_core.transaction import UpdateResult
 
 REAL_RUN = subprocess.run
+
+
+@pytest.mark.parametrize(
+    "argv,channel",
+    [
+        ([], "stable"),
+        (["--channel", "stable"], "stable"),
+        (["--channel", "prerelease"], "prerelease"),
+    ],
+)
+def test_actual_cli_main_defaults_and_explicit_channels(
+    monkeypatch, tmp_path, capsys, argv, channel
+):
+    from types import SimpleNamespace
+
+    import knxoh_paths
+
+    monkeypatch.setattr(submit, "os", SimpleNamespace(name="posix", geteuid=lambda: 65534))
+    monkeypatch.setattr(
+        knxoh_paths,
+        "get_paths",
+        lambda: SimpleNamespace(
+            install_dir=tmp_path / "install",
+            config_dir=tmp_path / "config",
+            data_dir=tmp_path / "data",
+            backup_dir=tmp_path / "backup",
+        ),
+    )
+    publish = Mock(
+        return_value=UpdateResult("submitted", request_id="10000000-0000-4000-8000-000000000001")
+    )
+    monkeypatch.setattr(submit, "submit_update", publish)
+    assert submit.main(argv) == 0
+    assert publish.call_args.args[1] == channel
+    assert json.loads(capsys.readouterr().out)["status"] == "submitted"
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "argv,root,code",
+    [
+        (["--channel", "beta"], False, 2),
+        (["--url", "https://example.invalid"], False, 2),
+        ([], True, 1),
+        (["--channel", "prerelease"], True, 1),
+    ],
+)
+def test_actual_cli_rejects_before_path_import_or_effects(monkeypatch, capsys, argv, root, code):
+    import builtins
+    from types import SimpleNamespace
+
+    original_import = builtins.__import__
+
+    def guarded_import(name, *args, **kwargs):
+        assert name != "knxoh_paths", "path import/effect before CLI refusal"
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(
+        submit, "os", SimpleNamespace(name="posix", geteuid=lambda: 0 if root else 65534)
+    )
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    publish = Mock(side_effect=AssertionError("submission before CLI validation"))
+    monkeypatch.setattr(submit, "submit_update", publish)
+    with pytest.raises(SystemExit) as result:
+        submit.main(argv)
+    assert result.value.code == code
+    publish.assert_not_called()
+    assert ("not root" if root else "error:") in capsys.readouterr().err
 
 
 @pytest.fixture

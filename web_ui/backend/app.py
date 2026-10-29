@@ -828,7 +828,9 @@ if FLASK_AVAILABLE:
                 else _mutate(updater.trigger_update, channel=channel)
             )
             if success:
-                return jsonify({"status": "updating", "message": message})
+                request_id = getattr(updater, "last_update_request_id", None)
+                identity = {"request_id": request_id} if isinstance(request_id, str) else {}
+                return jsonify({"status": "updating", "message": message, **identity})
             else:
                 code = 409 if getattr(updater, "last_update_status", None) == "busy" else 500
                 return jsonify({"error": message}), code
@@ -840,7 +842,7 @@ if FLASK_AVAILABLE:
     @app.route("/api/version/log", methods=["GET"])
     def get_update_log():
         """Get the log of the last update attempt."""
-        return jsonify({"log": updater.get_update_log()})
+        return jsonify({"log": updater.get_update_log(), "update": updater.get_update_status()})
 
     @app.route("/api/file/preview", methods=["GET"])
     def file_preview():

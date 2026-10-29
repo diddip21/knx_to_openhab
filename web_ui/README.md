@@ -201,3 +201,32 @@ Metadata/network/unknown local VERSION errors set `update_available: false` with
 commit/date/branch/repository fields remain, with `unknown` commits when artifact
 metadata is absent; versions are never fabricated commit hashes. Machine-readable
 `current_version`/`latest_version` fields are additive; no visual UI change is made.
+
+### Correlated completion and HTTP serving
+
+Successful submission adds `request_id`; the log endpoint preserves `log: string`
+and adds `update: {request_id, phase, message, outcome}` (or `null` if safe status
+is unavailable). The existing browser polls only after a claimed request ID is
+returned. It ignores old/other attempts, retries temporary polling disconnects
+during a UI restart, and opens the existing reload countdown **only after that
+request is committed**. Checking/restart initiation is not success. No-update,
+rollback and recovery failures stop polling in the existing log modal with the
+protected outcome message; failed/uncertain submissions cannot reuse old success.
+No markup, layout, version display, commit metadata or coordinator log phrases
+were redesigned to implement this lifecycle bridge.
+
+The deployed Gunicorn configuration uses **one gthread worker with four threads**,
+preserving process-local jobs while other requests remain available during the
+claim wait. The 60-second timeout/graceful budget covers three five-second manager
+calls plus the complete 30-second acknowledgement window, with 15 seconds of
+scheduling/I/O headroom. It does not shorten the 30-second stale/claim policy or
+treat a systemctl start reply as acknowledgement. Overrides that reduce timeout
+or concurrency below this contract are unsupported. No host service change is
+needed in the source launcher: it already loads `backend/gunicorn_conf.py`.
+
+Local real-app Playwright captures (test coordinator responses, no host updates):
+- [Checking/readiness](../docs/screenshots/update-release-checking.png): existing
+  log modal remains open; no premature success/reload.
+- [Committed](../docs/screenshots/update-release-committed.png): existing reload
+  dialog appears only after matching committed status. Its legacy wording/layout
+  and the separate version-presentation work remain unchanged.

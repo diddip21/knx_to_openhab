@@ -2003,6 +2003,7 @@ function showUpdateDialog(updateData) {
 let updatePollInterval = null
 let updateReloadInterval = null
 let activeUpdateRequestId = null
+let activeUpdateAttempt = null
 
 function stopUpdateLogPolling() {
   if (updatePollInterval) clearInterval(updatePollInterval)
@@ -2011,11 +2012,16 @@ function stopUpdateLogPolling() {
 }
 
 async function performUpdate() {
+  // A browser attempt is distinct from the server UUID, which is not known
+  // until POST/body processing finishes. Supersede even still-pending responses.
+  const attempt = {}
+  activeUpdateAttempt = attempt
   const updateDialog = document.getElementById('updateDialog')
   const logModal = document.getElementById('updateLogModal')
   const logContent = document.getElementById('updateLogContent')
   stopUpdateLogPolling()
   if (updateReloadInterval) clearInterval(updateReloadInterval)
+  updateReloadInterval = null
 
   // Close the update info dialog and open log modal
   updateDialog.close()
@@ -2024,23 +2030,27 @@ async function performUpdate() {
 
   try {
     const response = await apiFetch('/api/version/update', { method: 'POST' })
+    if (activeUpdateAttempt !== attempt) return
     const data = await response.json()
+    if (activeUpdateAttempt !== attempt) return
 
     if (response.ok && data.status === 'updating' && typeof data.request_id === 'string') {
-      startUpdateLogPolling(data.request_id)
+      startUpdateLogPolling(data.request_id, attempt)
     } else if (response.ok && data.status === 'simulated') {
       logContent.textContent = data.message
     } else {
       logContent.textContent += 'Error interacting with update API: ' + (data.error || 'No correlated updater acknowledgement; check the service or retry.') + '\n'
     }
   } catch (error) {
+    if (activeUpdateAttempt !== attempt) return
     logContent.textContent += 'Request failed: ' + error.message + '\n'
     // An uncertain submission has no trusted request ID. Never consume a prior
     // attempt's terminal evidence as this attempt's success.
   }
 }
 
-function startUpdateLogPolling(requestId) {
+function startUpdateLogPolling(requestId, attempt) {
+  if (activeUpdateAttempt !== attempt) return
   const logContent = document.getElementById('updateLogContent')
   const successDialog = document.getElementById('updateSuccessDialog')
   const countdownEl = document.getElementById('reloadCountdown')
@@ -2050,14 +2060,15 @@ function startUpdateLogPolling(requestId) {
   let polling = false
 
   updatePollInterval = setInterval(async () => {
-    if (polling) return
+    if (activeUpdateAttempt !== attempt || activeUpdateRequestId !== requestId || polling) return
     polling = true
     try {
       const res = await apiFetch('/api/version/log')
+      if (activeUpdateAttempt !== attempt) return
       if (res.ok) {
         const data = await res.json()
         const status = data.update
-        if (activeUpdateRequestId !== requestId || status?.request_id !== requestId) return
+        if (activeUpdateAttempt !== attempt || activeUpdateRequestId !== requestId || status?.request_id !== requestId) return
         if (typeof data.log === 'string') {
           // Update log display
           if (logContent.textContent.length !== data.log.length || !logContent.textContent.startsWith(data.log.substring(0, 20))) {
@@ -2080,15 +2091,20 @@ function startUpdateLogPolling(requestId) {
               let secondsLeft = 15
               countdownEl.textContent = secondsLeft
 
-              updateReloadInterval = setInterval(() => {
+              const reloadInterval = setInterval(() => {
+                if (activeUpdateAttempt !== attempt) {
+                  clearInterval(reloadInterval)
+                  return
+                }
                 secondsLeft--
                 countdownEl.textContent = secondsLeft
 
                 if (secondsLeft <= 0) {
-                  clearInterval(updateReloadInterval)
+                  clearInterval(reloadInterval)
                   window.location.reload()
                 }
               }, 1000)
+              updateReloadInterval = reloadInterval
             }
           } else if (['rolled-back', 'recovery-failed', 'recovery-failed-pre-mutation', 'recovered-awaiting-start'].includes(status.phase)) {
             stopUpdateLogPolling()
@@ -2098,6 +2114,7 @@ function startUpdateLogPolling(requestId) {
         }
       }
     } catch (e) {
+      if (activeUpdateAttempt !== attempt) return
       // Ignore network errors as service might be restarting
       console.log('Poll error (expected during restart):', e)
     } finally {

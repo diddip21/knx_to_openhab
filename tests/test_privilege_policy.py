@@ -315,9 +315,10 @@ def test_setup_preflight_stops_before_changes_without_terminal_or_valid_hash(tmp
         assert result.returncode == 4
         assert message in result.stderr
         assert "No service, package or runtime data was changed." in result.stderr
-        assert not sudo_log.exists() or sudo_log.read_text(encoding="utf-8").splitlines() == [
-            "preflight"
-        ]
+        sudo_calls = (
+            sudo_log.read_text(encoding="utf-8").splitlines() if sudo_log.exists() else []
+        )
+        assert sudo_calls in ([], ["preflight"])
         assert not (config / "secrets.env").exists()
         assert not (config.parent / "paths.env").exists()
 

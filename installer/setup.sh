@@ -96,6 +96,29 @@ stop_unit_if_active() {
     fi
 }
 
+PREVIOUSLY_ACTIVE_UNITS=()
+for unit in knxohui-backup-cleanup.timer knxohui-backup-cleanup.service knxohui.service; do
+    if sudo systemctl is-active --quiet "$unit"; then
+        PREVIOUSLY_ACTIVE_UNITS+=("$unit")
+    fi
+done
+SETUP_COMPLETED=0
+
+restore_previous_services() {
+    local exit_status=$?
+    trap - EXIT
+    if (( exit_status != 0 && SETUP_COMPLETED == 0 && ${#PREVIOUSLY_ACTIVE_UNITS[@]} > 0 )); then
+        echo "Setup failed; restoring services that were active before migration." >&2
+        sudo systemctl daemon-reload || true
+        for unit in "${PREVIOUSLY_ACTIVE_UNITS[@]}"; do
+            if ! sudo systemctl start "$unit"; then
+                echo "Could not restore $unit. Check it with: sudo systemctl status $unit" >&2
+            fi
+        done
+    fi
+    exit "$exit_status"
+}
+trap restore_previous_services EXIT
 echo "Stopping the Web UI and backup cleanup during migration"
 stop_unit_if_active knxohui-backup-cleanup.timer
 stop_unit_if_active knxohui-backup-cleanup.service
@@ -163,8 +186,13 @@ sudo chown root:"$SERVICE_USER" "$CONFIG_DIR" "$PATHS_FILE"
 sudo chmod 0750 "$CONFIG_DIR"
 sudo chmod 0644 "$PATHS_FILE"
 echo "Configuring Web UI credentials"
-sudo "$BASE/venv/bin/python" "$BASE/installer/configure_auth.py" \
-    --config "$CONF" --secrets "$CONFIG_DIR/secrets.env"
+if [[ "$EUID" -eq 0 ]]; then
+    "$BASE/venv/bin/python" "$BASE/installer/configure_auth.py" \
+        --config "$CONF" --secrets "$CONFIG_DIR/secrets.env"
+else
+    sudo "$BASE/venv/bin/python" "$BASE/installer/configure_auth.py" \
+        --config "$CONF" --secrets "$CONFIG_DIR/secrets.env"
+fi
 sudo chown root:"$SERVICE_USER" "$CONF" "$CONFIG_DIR/secrets.env"
 sudo chmod 0640 "$CONF" "$CONFIG_DIR/secrets.env"
 
@@ -199,5 +227,6 @@ sudo systemctl daemon-reload
 sudo systemctl enable knxohui.service
 sudo systemctl restart knxohui.service
 sudo systemctl enable --now knxohui-backup-cleanup.timer
+SETUP_COMPLETED=1
 
 echo "Installation complete. Web UI: http://127.0.0.1:$PORT"

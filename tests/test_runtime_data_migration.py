@@ -134,7 +134,7 @@ def test_migration_preserves_runtime_config_and_data_outside_install(monkeypatch
 
 
 @pytest.mark.parametrize("credential_source", ["config", "legacy_secret", "hashed_secret"])
-def test_migration_discards_shipped_default_and_leaves_setup_to_prompt(tmp_path, credential_source):
+def test_migration_discards_shipped_default_for_secure_replacement(tmp_path, credential_source):
     paths = _fixture(tmp_path)
     source_root, _, config_dir, _, _, *_ = paths
     legacy_config = source_root / "web_ui/backend/config.json"

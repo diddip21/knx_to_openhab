@@ -80,7 +80,8 @@ flask --app web_ui.backend.app:app run --debug
 1. **Open** `http://127.0.0.1:8085` on the device and use the Web UI password set during
    installation. The service listens on localhost by default. From another computer, create an
    SSH tunnel with `ssh -L 8085:127.0.0.1:8085 <user>@<device-ip>`, then open the same URL.
-   A fresh install prompts for a unique password; no shared default password is shipped.
+   When setup has no existing password to preserve, it generates a unique password and
+   displays it once. Save it before continuing; no shared default password is shipped.
    Rotate it later with the secure helper in [`installer/README.md`](installer/README.md).
 2. **Upload** your `.knxproj` export or JSON dump
 3. **Preview** the building structure before processing

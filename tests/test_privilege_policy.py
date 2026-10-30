@@ -230,12 +230,9 @@ def test_web_updater_rolls_back_if_updated_service_fails_health_check():
 
     assert "wait_for_service_active()" in update
     assert "restore_previous_release()" in update
-    assert (
-        'git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"'
-        in update
-    )
-    assert 'if ! wait_for_service_active; then' in update
-    assert update.index('if ! wait_for_service_active; then') < update.index(
+    assert 'git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"' in update
+    assert "if ! wait_for_service_active; then" in update
+    assert update.index("if ! wait_for_service_active; then") < update.index(
         'log "Update completed successfully!"'
     )
 
@@ -346,16 +343,16 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
         '  echo "systemctl restart knxohui.service is permitted"\n  exit 0\nfi\n'
         'if [[ "$*" == *provision-yaml* ]]; then exit 0; fi\n'
         'if [[ "$1" == "systemctl" && "$2" == "restart" ]]; then\n'
-        '  count=0\n'
+        "  count=0\n"
         '  [[ -f "$UPDATE_TEST_STATE/restarts" ]] && count=$(<"$UPDATE_TEST_STATE/restarts")\n'
         '  count=$((count + 1))\n  echo "$count" > "$UPDATE_TEST_STATE/restarts"\n'
-        '  if (( count == 1 )); then exit 0; fi\n'
+        "  if (( count == 1 )); then exit 0; fi\n"
         '  touch "$UPDATE_TEST_STATE/active"\n  exit 0\nfi\n'
         'if [[ "$1" == "systemctl" && "$2" == "is-active" ]]; then\n'
         '  [[ -f "$UPDATE_TEST_STATE/active" ]] || exit 3\n'
-        '  count=0\n'
+        "  count=0\n"
         '  [[ -f "$UPDATE_TEST_STATE/active-checks" ]] && count=$(<"$UPDATE_TEST_STATE/active-checks")\n'
-        '  count=$((count + 1))\n'
+        "  count=$((count + 1))\n"
         '  echo "$count" > "$UPDATE_TEST_STATE/active-checks"\n  exit 0\nfi\n'
         "exit 0\n",
         encoding="utf-8",

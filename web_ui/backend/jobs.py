@@ -154,6 +154,24 @@ class JobManager:
         )
         return latest.get("things_format", "dsl")
 
+    def get_last_deployed_gateway_source(self):
+        """Return reset-source metadata from the latest deployed job, if available."""
+        self._reload_jobs()
+        deployed_jobs = [job for job in self._jobs.values() if job.get("deployed")]
+        if not deployed_jobs:
+            return None
+        latest = max(
+            deployed_jobs,
+            key=lambda job: job.get("deployed_at", job.get("created", 0)),
+        )
+        if "detected_gateway_ip" not in latest:
+            return None
+        return {
+            "job_id": latest["id"],
+            "detected_gateway_ip": latest["detected_gateway_ip"],
+            "things_format": latest.get("things_format", "dsl"),
+        }
+
     def get_queue(self, job_id):
         # Ensure job exists before returning queue
         if job_id not in self._jobs:
@@ -485,6 +503,9 @@ class JobManager:
                     )
                 prj_name = house[0].get("name_long") if house else None
                 ip = knxmod.get_gateway_ip(project)
+                detected_ip = knxmod.detect_gateway_ip(project)
+                job["gateway_ip"] = ip
+                job["detected_gateway_ip"] = detected_ip
                 homekit_enabled = knxmod.is_homekit_enabled(project)
                 alexa_enabled = knxmod.is_alexa_enabled(project)
 

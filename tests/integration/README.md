@@ -64,13 +64,19 @@ The queued-Future cancellation obligation is in `tests/test_update_maintenance.p
 to mutate its host manager. A separately authorized fresh WSL2/nspawn provider was
 attempted on 2026-10-30. Initial preflight refused an outer WSL `9p` driver mount;
 the controller then explicitly authorized a narrow outer-only read-only driver
-policy. Read-only preflight and immutable source-only transfer now pass, but the
-provider guard/policy was independently approved at `d1f1848`. Real provisioning
-then stopped at a production sudo-listing validation defect, before application
-unit installation. See
-[`2026-10-30-systemd-acceptance-sudo-blocker.md`](../../docs/superpowers/2026-10-30-systemd-acceptance-sudo-blocker.md)
-for the live **1-failed** Linux regression, retained partial fixture and safe resume
-boundary. No full installed-unit acceptance is claimed. See also
+policy. Provider guard/policy was approved at `d1f1848`; runner `fd47f6a` and
+production `47e2c3a` were then independently approved. Current preflight, strict
+checkpoint inventory and the actual pinned continuation passed their gates.
+The real sudo regression went from **1 failed** to **1 passed** on the new code;
+the real bundle/full dependencies were installed and recovery executed cleanly.
+Writer startup then exposed a separate EnvironmentFile rendering defect:
+both loaded writer units have empty EnvironmentFiles, reproduced by **2 failed**
+read-only real D-Bus tests. See
+[`2026-10-30-systemd-environmentfile-blocker.md`](../../docs/superpowers/2026-10-30-systemd-environmentfile-blocker.md)
+for the current stopped-writer checkpoint, new regression and remaining work.
+The original sudo-blocker history is retained in
+[`2026-10-30-systemd-acceptance-sudo-blocker.md`](../../docs/superpowers/2026-10-30-systemd-acceptance-sudo-blocker.md).
+No full installed-unit acceptance is claimed. See also
 [`2026-10-30-nested-acceptance-blocker.md`](../../docs/superpowers/2026-10-30-nested-acceptance-blocker.md)
 for the exact checkpoint, receipt schema, reproducible command and remaining work.
 No installed-unit acceptance is claimed. `unshare` alone is not a provisioned disposable systemd guest and
@@ -82,8 +88,10 @@ route are documented in
 [`2026-10-30-acceptance-continuation-design.md`](../../docs/superpowers/2026-10-30-acceptance-continuation-design.md).
 Probe refuses canonical off-fixture paths before any hostile callback and
 validates the fixed preparation parent. Continuation does not adopt unknown
-state or use the current worktree as approved production source. Pending runner
-and production rereviews must complete before executing those new routes.
+state or use the current worktree as approved production source. The after-sudo
+route has now been consumed; it must not be repeated on the installed fixture.
+A separately reviewed rendering fix and explicit installed-component repair
+checkpoint are needed next, not fresh bootstrap or manual unit overrides.
 
 An administrator/CI owner must separately supply a throwaway Linux VM/container
 with systemd as PID 1, working cgroup/namespace isolation, distro `sudo`, Python

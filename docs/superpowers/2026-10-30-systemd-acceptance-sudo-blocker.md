@@ -1,5 +1,11 @@
 # Real nested acceptance: provisioning blocked by sudo listing semantics
 
+**Superseded runtime checkpoint:** approved production `47e2c3a` passed the real
+sudo regression and the approved partial continuation installed the real bundle
+and dependencies. Activation then exposed a separate production EnvironmentFile
+defect. See [`2026-10-30-systemd-environmentfile-blocker.md`](2026-10-30-systemd-environmentfile-blocker.md).
+The original observations below are retained history, not the current sudo result.
+
 **BLOCKED, not accepted.** Guard review of `d1f1848` approved proceeding. Current
 read-only outer/inner preflight and the actual pinned root-receipt guard passed.
 Real fixture provisioning then exposed a production bootstrap refusal before any

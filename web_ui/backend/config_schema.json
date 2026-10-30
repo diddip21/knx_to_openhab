@@ -14,7 +14,7 @@
       "type": "string",
       "title": "KNX Things YAML Path",
       "description": "Dedicated generator-owned YAML file for KNX Things",
-      "default": ""
+      "default": "openhab/yaml/knx.yaml"
     },
     "general": {
       "type": "object",

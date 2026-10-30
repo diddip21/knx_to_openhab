@@ -41,7 +41,7 @@ def test_active_things_output_uses_selected_yaml_path():
     assert (path, format_name) == ("openhab/yaml/knx.yaml", "yaml")
 
 
-def test_generator_configuration_preserves_dsl_default_and_empty_yaml_path():
+def test_generator_configuration_preserves_dsl_default_and_dedicated_yaml_path():
     project_root = Path(__file__).resolve().parents[1]
     generator_config = json.loads((project_root / "config.json").read_text(encoding="utf-8"))
     schema = json.loads(
@@ -49,9 +49,10 @@ def test_generator_configuration_preserves_dsl_default_and_empty_yaml_path():
     )
 
     assert generator_config["things_format"] == "dsl"
-    assert generator_config["yaml_path"] == ""
+    assert generator_config["yaml_path"] == "openhab/yaml/knx.yaml"
     assert schema["properties"]["things_format"]["default"] == "dsl"
     assert schema["properties"]["things_format"]["enum"] == ["dsl", "yaml"]
+    assert schema["properties"]["yaml_path"]["default"] == "openhab/yaml/knx.yaml"
 
 
 class TestOutputConfig:

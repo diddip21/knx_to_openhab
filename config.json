@@ -498,6 +498,6 @@
   "sitemaps_path": "openhab/sitemaps/knx.sitemap",
   "things_path": "openhab/things/knx.things",
   "things_format": "dsl",
-  "yaml_path": "",
+  "yaml_path": "openhab/yaml/knx.yaml",
   "transform_dir_path": "openhab/transform"
 }

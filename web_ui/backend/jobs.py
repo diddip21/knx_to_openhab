@@ -19,7 +19,16 @@ from .deploy_policy import (
     deploy_staged_files,
     restore_managed_files,
 )
+from .service_updates import package_version
 from .storage import ensure_dirs, load_jobs, save_jobs
+from .things_format import (
+    FORMAT_OUTPUT_KEYS,
+    THINGS_OUTPUT_KEYS,
+    assert_no_unmanaged_bridge_definitions,
+    inactive_content,
+    plan_things_outputs,
+    validate_yaml_compatibility,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +99,7 @@ class JobManager:
         self._preview_cache = {}
         self.executor = ThreadPoolExecutor(max_workers=2)
         self.lock = threading.Lock()
+        self.operation_lock = threading.Lock()
 
     def _reload_jobs(self):
         """Reload jobs from disk with a merge strategy to avoid clobbering active state."""
@@ -131,6 +141,18 @@ class JobManager:
         if job is not None:
             job["auto_place_unknown"] = self.cfg.get("general", {}).get("auto_place_unknown", False)
         return job
+
+    def get_last_deployed_things_format(self):
+        """Return the format of the most recently deployed job, defaulting legacy jobs to DSL."""
+        self._reload_jobs()
+        deployed_jobs = [job for job in self._jobs.values() if job.get("deployed")]
+        if not deployed_jobs:
+            return "dsl"
+        latest = max(
+            deployed_jobs,
+            key=lambda job: job.get("deployed_at", job.get("created", 0)),
+        )
+        return latest.get("things_format", "dsl")
 
     def get_queue(self, job_id):
         # Ensure job exists before returning queue
@@ -232,6 +254,10 @@ class JobManager:
         q.put(msg)
 
     def _run_job(self, job_id):
+        with self.operation_lock:
+            self._run_job_serialized(job_id)
+
+    def _run_job_serialized(self, job_id):
         job = self._jobs[job_id]
         q = self.queues[job_id]
         job["status"] = "running"
@@ -273,6 +299,21 @@ class JobManager:
             )
             job["openhab_root"] = openhab_path
             job["managed_targets"] = sorted(set(managed_paths.values()))
+            selected_format = global_config_module.config.get("things_format", "dsl")
+            previous_format = self.get_last_deployed_things_format()
+            output_keys, inactive_key = plan_things_outputs(
+                global_config_module.config,
+                managed_paths,
+                previous_format=previous_format,
+            )
+            job["things_format"] = selected_format
+            job["previous_things_format"] = previous_format
+            job["active_things_path"] = managed_paths[FORMAT_OUTPUT_KEYS[selected_format]]
+            if inactive_key:
+                managed_things_relpaths = {
+                    managed_paths[key] for key in THINGS_OUTPUT_KEYS if key in managed_paths
+                }
+                assert_no_unmanaged_bridge_definitions(openhab_path, managed_things_relpaths)
 
             # Back up the same effective OpenHAB root that generation and deploy use.
             ts = __import__("time").strftime("%Y%m%d-%H%M%S")
@@ -326,8 +367,20 @@ class JobManager:
             knxmod.config["openhab_path"] = staged_config["openhab_path"]
 
             # Define output keys to override
-            output_keys = [key for key in managed_paths if key in global_config_module.config]
+            output_keys = [key for key in output_keys if key in global_config_module.config]
             stage_mapping = {}  # staged_path -> real_absolute_path
+
+            if inactive_key:
+                inactive_relative = managed_paths[inactive_key]
+                inactive_staged = os.path.join(
+                    staging_dir, "openhab", *inactive_relative.split("/")
+                )
+                os.makedirs(os.path.dirname(inactive_staged), exist_ok=True)
+                with open(inactive_staged, "w", encoding="utf-8") as inactive_file:
+                    inactive_file.write(inactive_content(previous_format))
+                stage_mapping[inactive_staged] = os.path.join(
+                    openhab_path, *inactive_relative.split("/")
+                )
 
             q.put(
                 {
@@ -461,8 +514,9 @@ class JobManager:
                 # Generate completeness report from staged knx.things
                 try:
                     report_path = self._write_completeness_report(
-                        staged_config.get("things_path"),
+                        staged_config.get(FORMAT_OUTPUT_KEYS[selected_format]),
                         staged_config.get("openhab_path", ""),
+                        things_format=selected_format,
                     )
                     if report_path:
                         self._log_to_queue(
@@ -614,12 +668,46 @@ class JobManager:
             "label": match.group("label"),
         }
 
-    def _write_completeness_report(self, things_path, openhab_path):
+    def _write_completeness_report(self, things_path, openhab_path, things_format="dsl"):
         if not things_path or not os.path.exists(things_path):
             return None
 
-        with open(things_path, "r", encoding="utf-8", errors="ignore") as f:
-            things_text = f.read()
+        if things_format == "yaml":
+            import yaml
+
+            from knx_things import KnxChannel, KnxThingsModel, render_dsl_channels
+
+            with open(things_path, "r", encoding="utf-8") as things_file:
+                document = yaml.safe_load(things_file) or {}
+            things = document.get("things", {}) if isinstance(document, dict) else {}
+            generic_device = (
+                things.get("knx:device:bridge:generic", {}) if isinstance(things, dict) else {}
+            )
+            channels_data = (
+                generic_device.get("channels", {}) if isinstance(generic_device, dict) else {}
+            )
+            channels = []
+            if isinstance(channels_data, dict):
+                for channel_id, channel_data in channels_data.items():
+                    if not isinstance(channel_data, dict) or not channel_data.get("type"):
+                        continue
+                    channel_config = channel_data.get("config", {})
+                    if not isinstance(channel_config, dict):
+                        continue
+                    channels.append(
+                        KnxChannel(
+                            channel_id=str(channel_id),
+                            channel_type=str(channel_data["type"]),
+                            label=str(channel_data.get("label", channel_id)),
+                            config=channel_config,
+                        )
+                    )
+            things_text = render_dsl_channels(
+                KnxThingsModel(gateway_config={}, channels=tuple(channels))
+            )
+        else:
+            with open(things_path, "r", encoding="utf-8", errors="ignore") as f:
+                things_text = f.read()
 
         missing_required_tuples, recommended_missing_tuples = check_completeness(things_text)
 
@@ -815,8 +903,9 @@ class JobManager:
 
     def rollback(self, job_id, backup_name=None):
         """Restore a job's managed files, serialized with deployments."""
-        with self.lock:
-            return self._rollback_locked(job_id, backup_name)
+        with self.operation_lock:
+            with self.lock:
+                return self._rollback_locked(job_id, backup_name)
 
     def _rollback_locked(self, job_id, backup_name=None):
         job = self._jobs.get(job_id)
@@ -860,8 +949,9 @@ class JobManager:
 
     def deploy(self, job_id):
         """Deploy staged files to live environment."""
-        with self.lock:
-            return self._deploy_locked(job_id)
+        with self.operation_lock:
+            with self.lock:
+                return self._deploy_locked(job_id)
 
     def _deploy_locked(self, job_id):
         job = self._jobs.get(job_id)
@@ -874,6 +964,14 @@ class JobManager:
         mapping = job.get("stage_mapping", {})
         if not mapping:
             raise ValueError("No staged files found")
+
+        if job.get("things_format", "dsl") == "yaml":
+            installed_version = package_version("openhab").get("installed")
+            compatibility_warning = validate_yaml_compatibility(installed_version)
+            if compatibility_warning:
+                job["compatibility_warning"] = compatibility_warning
+            else:
+                job.pop("compatibility_warning", None)
 
         import importlib
 
@@ -914,6 +1012,7 @@ class JobManager:
             )
 
             job["deployed"] = True
+            job["deployed_at"] = __import__("time").time()
             save_jobs(self.jobs_dir, self._jobs)
             return True, f"Deployed {deployed_count} files."
 

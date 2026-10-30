@@ -37,6 +37,24 @@ def test_configured_paths_reject_traversal_and_unmanaged_outputs(tmp_path):
         configured_managed_paths(config, str(tmp_path))
 
 
+def test_yaml_output_is_managed_only_when_yaml_format_has_a_path(tmp_path):
+    root = tmp_path / "openhab"
+    root.mkdir()
+    config = {
+        "openhab_path": "openhab",
+        "things_path": "openhab/things/knx.things",
+        "things_format": "dsl",
+        "yaml_path": "",
+    }
+
+    _, managed = configured_managed_paths(config, str(tmp_path))
+    assert "yaml_path" not in managed
+
+    config["yaml_path"] = "openhab/yaml/knx.yaml"
+    _, managed = configured_managed_paths(config, str(tmp_path))
+    assert managed["yaml_path"] == "yaml/knx.yaml"
+
+
 def test_provisioning_creates_only_exact_managed_files(tmp_path):
     root = tmp_path / "openhab"
     root.mkdir()

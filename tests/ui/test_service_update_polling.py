@@ -6,7 +6,7 @@ import re
 from playwright.sync_api import Page, expect
 
 
-def test_running_package_operation_finishes_after_page_load(page: Page, base_url):
+def test_running_package_operation_finishes_after_page_load(page: Page, base_url, flask_server):
     state = {"status_calls": 0}
 
     def fulfill(route, payload):
@@ -56,7 +56,7 @@ def test_running_package_operation_finishes_after_page_load(page: Page, base_url
 
 
 def test_polling_resumes_when_another_operation_starts_during_completion_refresh(
-    page: Page, base_url
+    page: Page, base_url, flask_server
 ):
     state = {"status_calls": 0}
     task_states = [
@@ -109,7 +109,9 @@ def test_polling_resumes_when_another_operation_starts_during_completion_refresh
     assert state["status_calls"] >= 4
 
 
-def test_polling_catches_operation_started_during_full_completion_refresh(page: Page, base_url):
+def test_polling_catches_operation_started_during_full_completion_refresh(
+    page: Page, base_url, flask_server
+):
     state = {"status_calls": 0, "replacement_started": False}
     task_states = [
         ("running", "First operation running."),
@@ -118,8 +120,8 @@ def test_polling_catches_operation_started_during_full_completion_refresh(page: 
         ("running", "Second operation running in another tab."),
         ("running", "Second operation running in another tab."),
         ("running", "Second operation running in another tab."),
-        ("completed", "Second operation finished."),
-        ("completed", "Second operation finished."),
+        ("completed", "Second operation is finishing."),
+        ("completed", "Completion refresh settled."),
         ("completed", "Second operation finished."),
     ]
 

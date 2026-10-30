@@ -122,11 +122,15 @@ def test_web_updater_rolls_back_if_updated_service_fails_health_check():
 
     assert "wait_for_service_active()" in update
     assert "restore_previous_release()" in update
-    assert 'git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"' in update
+    assert (
+        'git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"'
+        in update
+    )
     assert 'if ! wait_for_service_active; then' in update
     assert update.index('if ! wait_for_service_active; then') < update.index(
         'log "Update completed successfully!"'
     )
+
 
 def test_update_script_never_elevates_git_or_uses_a_global_safe_directory():
     update = (ROOT / "update.sh").read_text(encoding="utf-8")

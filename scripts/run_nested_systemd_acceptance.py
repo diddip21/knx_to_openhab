@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -20,16 +21,75 @@ sys.path.insert(0, str(ROOT))
 from scripts import nested_acceptance as provider  # noqa: E402
 
 
-def guest_program(phase, nonce):
-    if phase not in ("bootstrap", "probe", "sudo-regression"):
+def read_pinned_json(path, digest):
+    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        raise ValueError("Explicit out-of-guest manifest pin required")
+    with path.open("rb") as stream:
+        raw = stream.read(2 * 1024 * 1024 + 1)
+    if len(raw) > 2 * 1024 * 1024 or hashlib.sha256(raw).hexdigest() != digest:
+        raise ValueError("Manifest pin/size mismatch")
+
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("Duplicate manifest field")
+            result[key] = value
+        return result
+
+    def invalid_constant(value):
+        raise ValueError("Invalid manifest number")
+
+    return json.loads(raw, object_pairs_hook=unique, parse_constant=invalid_constant)
+
+
+def guest_program(phase, nonce, *, checkpoint=None, source_approval=None, approved_head=None):
+    if phase not in (
+        "bootstrap",
+        "probe",
+        "sudo-regression",
+        "checkpoint-inventory",
+        "resume-after-sudo",
+    ):
         raise ValueError("Unsupported own-nested acceptance phase")
+    if phase == "resume-after-sudo":
+        from scripts.nested_fixture_state import validate_checkpoint, validate_source_manifest
+
+        if checkpoint is None or source_approval is None or approved_head is None:
+            raise ValueError("Resume requires pinned checkpoint AND reviewed source approval")
+        validate_checkpoint(checkpoint, checkpoint["inventory"], nonce)
+        validate_source_manifest(source_approval, approved_head)
+    elif phase == "probe" and (source_approval is not None or approved_head is not None):
+        from scripts.nested_fixture_state import validate_source_manifest
+
+        validate_source_manifest(source_approval, approved_head)
     fixture = (ROOT / "scripts/nested_systemd_fixture.py").read_text(encoding="utf-8")
+    state = (ROOT / "scripts/nested_fixture_state.py").read_text(encoding="utf-8")
     code = (
-        "import sys,os,json,hashlib\nfrom pathlib import Path\n"
+        "import sys,os,json,hashlib,types\nfrom pathlib import Path\n"
         "sys.dont_write_bytecode=True\n"
+        "sys.path.insert(0,'/opt/knxoh-harness-d1f1848')\n"
+        "module=types.ModuleType('scripts.nested_fixture_state')\n"
+        "sys.modules[module.__name__]=module\n"
+        f"exec(compile({state!r},'<trusted fixture state>','exec'),module.__dict__)\n"
         f"exec(compile({fixture!r},'<trusted acceptance fixture>','exec'))\n"
         f"EXPECTED_NONCE={nonce!r}\nrequire_guest(EXPECTED_NONCE)\n"
     )
+    if phase == "checkpoint-inventory":
+        return (
+            code
+            + "from scripts.nested_fixture_state import checkpoint_candidate\nprint(json.dumps(checkpoint_candidate(collect_inventory(details=True),EXPECTED_NONCE)))\n"
+        )
+    if phase == "resume-after-sudo":
+        return (
+            code
+            + f"resume_after_sudo(EXPECTED_NONCE,{checkpoint!r},{source_approval!r},{approved_head!r})\n"
+        )
+    if phase == "probe" and source_approval is not None:
+        return (
+            code
+            + f"probe(EXPECTED_NONCE,source_approval={source_approval!r},approved_head={approved_head!r})\n"
+        )
     if phase != "sudo-regression":
         return code + f"run_phase({phase!r},EXPECTED_NONCE)\n"
     raw = (ROOT / "tests/integration/test_update_sudo_runtime.py").read_bytes()
@@ -57,13 +117,57 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--receipt", required=True, type=Path)
     parser.add_argument("--evidence-dir", required=True, type=Path)
-    parser.add_argument("--phase", required=True, choices=("bootstrap", "probe", "sudo-regression"))
+    parser.add_argument(
+        "--phase",
+        required=True,
+        choices=(
+            "bootstrap",
+            "probe",
+            "sudo-regression",
+            "checkpoint-inventory",
+            "resume-after-sudo",
+        ),
+    )
+    parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument("--checkpoint-sha256")
+    parser.add_argument("--source-approval", type=Path)
+    parser.add_argument("--source-approval-sha256")
+    parser.add_argument("--approved-source-head")
     args = parser.parse_args()
     receipt = provider.decode_receipt(args.receipt.read_text(encoding="utf-8"))
     provider.validate_receipt(receipt)
+    resume = {}
+    supplied = (
+        args.checkpoint,
+        args.checkpoint_sha256,
+        args.source_approval,
+        args.source_approval_sha256,
+        args.approved_source_head,
+    )
+    if args.phase == "resume-after-sudo":
+        if not all(supplied):
+            parser.error(
+                "resume-after-sudo requires checkpoint/source files, both SHA-256 pins and approved commit"
+            )
+        resume = dict(
+            checkpoint=read_pinned_json(args.checkpoint, args.checkpoint_sha256),
+            source_approval=read_pinned_json(args.source_approval, args.source_approval_sha256),
+            approved_head=args.approved_source_head,
+        )
+    elif args.phase == "probe" and any(supplied):
+        if args.checkpoint or args.checkpoint_sha256 or not all(supplied[2:]):
+            parser.error(
+                "probe source selection requires only source approval, its pin, and approved commit"
+            )
+        resume = dict(
+            source_approval=read_pinned_json(args.source_approval, args.source_approval_sha256),
+            approved_head=args.approved_source_head,
+        )
+    elif any(supplied):
+        parser.error("continuation approval arguments are valid ONLY for resume-after-sudo")
+    program = guest_program(args.phase, receipt["nonce"], **resume)
     provider.validate_registration(provider.registration())
     observations = provider.preflight(receipt)
-    program = guest_program(args.phase, receipt["nonce"])
     args.evidence_dir.mkdir(parents=True, exist_ok=True)
     (args.evidence_dir / (args.phase + "-preflight.json")).write_text(
         json.dumps(observations, indent=2), encoding="utf-8"
@@ -91,7 +195,18 @@ def main():
     (args.evidence_dir / (args.phase + ".log")).write_text(
         result.stdout + "\nSTDERR\n" + result.stderr, encoding="utf-8"
     )
-    print(result.stdout)
+    if args.phase == "checkpoint-inventory" and result.returncode == 0:
+        # Candidate contains a private nonce. Save privately, never echo it.
+        candidate = json.loads(result.stdout)
+        from scripts.nested_fixture_state import validate_checkpoint
+
+        validate_checkpoint(candidate, candidate["inventory"], receipt["nonce"])
+        path = args.evidence_dir / "checkpoint-candidate.json"
+        with path.open("x", encoding="utf-8") as stream:
+            json.dump(candidate, stream, indent=2)
+        print("Read-only checkpoint candidate saved; requires controller SHA-256 pin:", path)
+    else:
+        print(result.stdout)
     print(result.stderr, file=sys.stderr)
     return result.returncode
 

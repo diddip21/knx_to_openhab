@@ -83,6 +83,13 @@ fresh fixture). The fresh-only runner intentionally refuses existing paths/accou
 do not delete them, blindly repeat bootstrap, grant worker sudo, fake exit status,
 or edit the immutable baseline to get past the failure.
 
+Runner-review corrections and the explicit **`resume-after-sudo`** protocol are
+specified in [`2026-10-30-acceptance-continuation-design.md`](2026-10-30-acceptance-continuation-design.md).
+That route requires the exact recorded checkpoint plus out-of-guest pins for it
+and a separately reviewed new production source. It never repeats fresh seeding.
+No continuation/enrollment/preflight ran while implementing that revision; both
+runner and production reviews precede runtime authorization.
+
 All full installed-unit update/rollback, actual worker isolation/cgroup teardown,
 readiness, production-dependency lifecycle, real boot/offline-lock ordering,
 resource/repair acceptance and original three systemd tests remain outstanding.

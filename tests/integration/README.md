@@ -77,6 +77,14 @@ No installed-unit acceptance is claimed. `unshare` alone is not a provisioned di
 must not be used to bypass these prerequisites. Do not install providers globally,
 create host users, install units/policy, or alter host services to run this suite.
 
+The runner's full-footprint fresh gate and separate pinned `resume-after-sudo`
+route are documented in
+[`2026-10-30-acceptance-continuation-design.md`](../../docs/superpowers/2026-10-30-acceptance-continuation-design.md).
+Probe refuses canonical off-fixture paths before any hostile callback and
+validates the fixed preparation parent. Continuation does not adopt unknown
+state or use the current worktree as approved production source. Pending runner
+and production rereviews must complete before executing those new routes.
+
 An administrator/CI owner must separately supply a throwaway Linux VM/container
 with systemd as PID 1, working cgroup/namespace isolation, distro `sudo`, Python
 venv support, project test dependencies, and a verified installed updater bundle,

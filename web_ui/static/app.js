@@ -744,6 +744,7 @@ function computeLineDiff(original, current) {
 let packagePollTimeout = null
 let packagePollInFlight = false
 let packagePollRequested = false
+let packagePollConfirmationPending = false
 let servicesRefreshGeneration = 0
 let cloudInfoGeneration = 0
 
@@ -762,9 +763,18 @@ function startPackageOperationPolling() {
       if (!response.ok) throw new Error('Status nicht erreichbar')
       const task = await response.json()
       statusEl.textContent = task.state === 'idle' ? '' : `${task.action}: ${task.message}`
-      if (task.state !== 'running') {
+      if (task.state === 'running') {
+        if (packagePollConfirmationPending) {
+          packagePollConfirmationPending = false
+          await refreshServices()
+        }
+      } else if (packagePollConfirmationPending) {
+        packagePollConfirmationPending = false
         continuePolling = false
+        document.getElementById('refreshPackagesBtn').disabled = false
+      } else {
         await refreshServices()
+        packagePollConfirmationPending = true
       }
     } catch (e) {
       statusEl.textContent = `Status nicht erreichbar: ${e.message}`

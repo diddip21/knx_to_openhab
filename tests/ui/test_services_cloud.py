@@ -90,6 +90,11 @@ class TestServicesSection:
         expect(page.locator("#servicesList .service-item")).to_have_count(2, timeout=10000)
         expect(page.locator("#servicesList #cloud-info-card")).to_have_count(1, timeout=10000)
 
+        page.evaluate("Promise.all([refreshServices(), refreshServices()])")
+
+        expect(page.locator("#servicesList .service-item")).to_have_count(2, timeout=10000)
+        expect(page.locator("#servicesList #cloud-info-card")).to_have_count(1, timeout=10000)
+
     def test_services_after_package_refresh_screenshot(self, page: Page, base_url, flask_server):
         _setup_services_routes(
             page,
@@ -113,11 +118,6 @@ class TestServicesSection:
         page.locator("#service-section").screenshot(
             path=str(screenshot_dir / "services-after-package-refresh.png")
         )
-
-        page.evaluate("Promise.all([refreshServices(), refreshServices()])")
-
-        expect(page.locator("#servicesList .service-item")).to_have_count(2, timeout=10000)
-        expect(page.locator("#servicesList #cloud-info-card")).to_have_count(1, timeout=10000)
 
     def test_service_shows_status(self, page: Page, base_url, flask_server):
         _setup_services_routes(page)

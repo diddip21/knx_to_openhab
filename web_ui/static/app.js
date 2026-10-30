@@ -749,6 +749,7 @@ let servicesRefreshGeneration = 0
 let cloudInfoGeneration = 0
 
 function startPackageOperationPolling() {
+  packagePollCompletionStage = 0
   packagePollRequested = true
   if (packagePollTimeout || packagePollInFlight) return
 

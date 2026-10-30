@@ -312,11 +312,17 @@ def check_worker_sudo():
         cwd="/",
         env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
     )
-    # Exit 1 can also mean a policy/query error. Accept ONLY sudo's explicit
-    # complete denial, not merely a failed query. Never log permission listings.
-    if result.returncode != 1 or not re.fullmatch(
-        r"User knxohupdate is not allowed to run sudo on [^\r\n]+\.\n?",
-        result.stdout + result.stderr,
+    # sudo versions return 0 or 1 for a complete denial; neither status alone
+    # proves it. Require the exact C-locale response with an ASCII hostname token
+    # in ONE stream, without stripping whitespace or joining fragments/errors.
+    # Never log permission listings.
+    if (
+        result.returncode not in (0, 1)
+        or (result.stdout and result.stderr)
+        or not re.fullmatch(
+            r"User knxohupdate is not allowed to run sudo on [A-Za-z0-9_][A-Za-z0-9_.-]*\.\n?",
+            result.stdout or result.stderr,
+        )
     ):
         raise ValueError(
             "Cannot prove knxohupdate has no direct sudo grants; repair administrator policy"

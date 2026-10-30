@@ -508,21 +508,28 @@ def test_worker_requires_actual_nonlogin_shell_not_just_a_filename(shell, monkey
 
 @pytest.mark.parametrize("returncode", [0, 2])
 def test_worker_direct_sudo_grants_or_failed_query_are_refused(returncode, monkeypatch):
-    from types import SimpleNamespace
-
     from installer import update_bootstrap as admin
 
     calls = []
 
     def query(argv, **kwargs):
         calls.append((argv, kwargs))
-        return SimpleNamespace(returncode=returncode)
+        return subprocess.CompletedProcess(argv, returncode, stdout="", stderr="")
 
     monkeypatch.setattr(admin.subprocess, "run", query)
     with pytest.raises(ValueError):
         admin.check_worker_sudo()
     assert calls[0][0] == ["/usr/bin/sudo", "-n", "-l", "-U", "knxohupdate"]
-    assert calls[0][1]["cwd"] == "/"
+    assert calls[0][1] == {
+        "check": False,
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+        "timeout": 15,
+        "cwd": "/",
+        "env": {"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
+    }
 
 
 @pytest.mark.parametrize(
@@ -548,6 +555,91 @@ def test_worker_sudo_exit_one_must_prove_denial(message, allowed, monkeypatch):
     else:
         with pytest.raises(ValueError):
             admin.check_worker_sudo()
+
+
+@pytest.mark.parametrize("returncode", [0, 1])
+@pytest.mark.parametrize("stream", ["stdout", "stderr"])
+@pytest.mark.parametrize(
+    "message",
+    [
+        "User knxohupdate is not allowed to run sudo on localhost.\n",
+        "User knxohupdate is not allowed to run sudo on test-host.\n",
+        "User knxohupdate is not allowed to run sudo on host.example.org.\n",
+        "User knxohupdate is not allowed to run sudo on test-host.",
+    ],
+)
+def test_worker_sudo_accepts_only_complete_denial_on_supported_statuses(
+    returncode, stream, message, monkeypatch
+):
+    from installer import update_bootstrap as admin
+
+    result = subprocess.CompletedProcess([], returncode, stdout="", stderr="")
+    setattr(result, stream, message)
+    monkeypatch.setattr(admin.subprocess, "run", lambda *args, **kwargs: result)
+    admin.check_worker_sudo()
+
+
+@pytest.mark.parametrize("returncode", [0, 1])
+@pytest.mark.parametrize(
+    "stdout,stderr",
+    [
+        ("", ""),
+        ("User knxohupdate may run the following commands on localhost:\n    (ALL) ALL\n", ""),
+        ("", "sudo: parse error in policy\n"),
+        ("", "sudo: unknown user knxohupdate\n"),
+        ("", "sudo: unable to resolve host missing-host: Name or service not known\n"),
+        ("User other is not allowed to run sudo on localhost.\n", ""),
+        ("User knxohupdate is not allowed to run sudo on .\n", ""),
+        ("User knxohupdate is not allowed to run sudo on localhost.\r\n", ""),
+        (" User knxohupdate is not allowed to run sudo on localhost.\n", ""),
+        ("User knxohupdate is not allowed to run sudo on localhost.\n\n", ""),
+        ("User knxohupdate is not allowed to run sudo on localhost.\n ", ""),
+        ("User knxohupdate is not allowed to run sudo on local\x00host.\n", ""),
+        ("User knxohupdate is not allowed to run sudo on local\thost.\n", ""),
+        ("User knxohupdate is not allowed to run sudo on local\x1bhost.\n", ""),
+        ("User knxohupdate is not allowed to run sudo on localhost. sudo: policy error.\n", ""),
+        ("User knxohupdate is not allowed to run sudo on localhost", ".\n"),
+        ("User knxohupdate is not allowed to run sudo on localhost.", "\n"),
+        ("User knxohupdate is not allowed to run sudo on localhost.\n", "sudo: policy error\n"),
+        ("sudo: policy error\n", "User knxohupdate is not allowed to run sudo on localhost.\n"),
+        (
+            "User knxohupdate is not allowed to run sudo on localhost.\n",
+            "User knxohupdate is not allowed to run sudo on localhost.\n",
+        ),
+        (
+            "User knxohupdate is not allowed to run sudo on localhost.\n"
+            "User knxohupdate may run the following commands on localhost:\n    (ALL) ALL\n",
+            "",
+        ),
+        (
+            "User knxohupdate may run the following commands on localhost:\n    (ALL) ALL\n",
+            "User knxohupdate is not allowed to run sudo on localhost.\n",
+        ),
+    ],
+)
+def test_worker_sudo_refuses_errors_grants_and_ambiguous_output(
+    returncode, stdout, stderr, monkeypatch
+):
+    from installer import update_bootstrap as admin
+
+    result = subprocess.CompletedProcess([], returncode, stdout=stdout, stderr=stderr)
+    monkeypatch.setattr(admin.subprocess, "run", lambda *args, **kwargs: result)
+    with pytest.raises(ValueError, match="Cannot prove knxohupdate has no direct sudo grants"):
+        admin.check_worker_sudo()
+
+
+@pytest.mark.parametrize("returncode", [-15, -1, 2, 126, 127, 255])
+@pytest.mark.parametrize("stream", ["stdout", "stderr"])
+def test_worker_sudo_refuses_other_statuses_even_with_explicit_denial(
+    returncode, stream, monkeypatch
+):
+    from installer import update_bootstrap as admin
+
+    result = subprocess.CompletedProcess([], returncode, stdout="", stderr="")
+    setattr(result, stream, "User knxohupdate is not allowed to run sudo on localhost.\n")
+    monkeypatch.setattr(admin.subprocess, "run", lambda *args, **kwargs: result)
+    with pytest.raises(ValueError, match="Cannot prove knxohupdate has no direct sudo grants"):
+        admin.check_worker_sudo()
 
 
 def test_bundle_policy_replacement_prevalidated_and_atomic(protected_root, monkeypatch):

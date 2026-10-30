@@ -33,6 +33,11 @@ belong to the still-missing disposable installed-unit acceptance.
 - Default stable and explicit prerelease; already current; corrupt archive;
   failed copied migration and candidate HTTP readiness; rollback serves old Flask
   app; custom paths with spaces; clean same-version dependency retry.
+  The migration-failure archive contains a deliberately failing migration body;
+  the real isolated candidate CLI writes a fixture-only start marker recording
+  its non-root UID, isolated flag and selected source, then raises. The test checks
+  this evidence and the old app after rollback; it does not inject a pre-CLI stage
+  exception or treat the fixture marker as coordinator authority.
 - Real unprivileged submit client publishes its request and waits for the real
   protected matching-ID coordinator claim; facade reads the real committed projection.
 - Old and candidate fixture releases contain the actual current backend sources
@@ -72,6 +77,15 @@ candidate, so **destroy the complete guest afterward**. Never reuse production d
 The image must contain root-owned mode-0600
 `/etc/knxoh-disposable-systemd-test.json`:
 
+Generate a fresh independent 32-byte nonce during disposable-image provisioning
+(for example `secrets.token_hex(32)`). Supply the same **64 lowercase hexadecimal
+characters** explicitly in the image marker, configuration and environment; no
+unset/null/empty/default value is accepted. Placeholder strings in the examples
+below must be replaced, not copied literally. The machine ID must match the guest's
+nonzero 32-character lowercase hex `/etc/machine-id`. Prior/current boot IDs must
+be canonical lowercase nonzero UUIDs, and must actually differ. Matching formatted
+values do **not** prove independence, isolation, or offline lock absence.
+
 ```json
 {"disposable":true,"machine_id":"GUEST_ETC_MACHINE_ID","nonce":"INDEPENDENT_RANDOM_NONCE"}
 ```
@@ -99,7 +113,7 @@ Inside that guest only:
 
 ```sh
 export KNXOH_DISPOSABLE_SYSTEMD=destroy-this-guest
-export KNXOH_DISPOSABLE_SYSTEMD_NONCE=INDEPENDENT_RANDOM_NONCE
+export KNXOH_DISPOSABLE_SYSTEMD_NONCE="${GUEST_TEST_NONCE:?supply image nonce explicitly}"
 export KNXOH_DISPOSABLE_SYSTEMD_CONFIG=/root/acceptance.json
 python -m pytest -q tests/integration/test_update_systemd.py -o addopts=
 journalctl -b --no-pager > /root/acceptance-boot-journal.txt
@@ -109,6 +123,24 @@ Guards require the explicit marker, nonce, machine ID, fresh boot ID, root-only
 configuration, virtualization detection, and reject WSL/nonvirtual hosts before
 any service operation. Markers do not create an isolation boundary; the guest
 provider and offline transcript are mandatory independent prerequisites.
+Marker/configuration objects have exactly the fields shown above (no duplicate or
+unknown keys); Boolean attestations must be JSON `true`, not numbers/strings. All
+schema/nonce/machine/boot validation precedes subprocess queries and any mutation.
+Root ownership, regular-file permissions, virtualization/PID-1, custom paths and
+preprovisioning gates remain mandatory. Portable fake/read-only guard tests live
+in `test_update_systemd_guard.py`; they cannot establish guest isolation.
+
+After those gates, the trusted harness calls provisioning's `check_worker()` and
+`check_worker_sudo()` **outside** the child's `NoNewPrivileges` sandbox, before
+creating candidates or invoking manager mutations. These perform actual account/
+UID/primary-GID, supplementary-GID/name/alias and UI/OpenHAB/sudo/wheel exclusion
+checks, then ONLY the root read-only listing
+`/usr/bin/sudo -n -l -U knxohupdate`. Explicit complete denial is required; any grant,
+ambiguous error or unavailable query blocks acceptance. No allowed service/package
+action is executed through sudo. The later sandbox `sudo -n /usr/bin/id` probe
+proves only denial of that particular attempt under confinement, not absence of
+account policy grants. These real read-only checks have not been run on the host;
+their portable guard tests use fake account/group data and fake query responses.
 
 The suite checks real tmpfiles/recovery/writer activation timestamps and dependencies,
 notify state and no reported ordering cycle; runs the installed preparation worker
@@ -124,6 +156,19 @@ real boot interrupted at each mutation phase, and the complete production-unit
 update/rollback/installer race must still be exercised in that guest before full
 feature acceptance. Do not equate default skips, static unit verification, mocked
 manager tests or local HTTP success with those missing real acceptance results.
+
+Outstanding acceptance obligations (not completed by adding harness code):
+
+- [ ] Provision an independently isolated guest and retain actual read-only worker
+  identity/membership/no-grant evidence outside NNP, plus the sandbox probe results.
+- [ ] Retain independently observed offline lock absence and boot journal evidence
+  for tmpfiles/recovery/UI/cleanup ordering and no cycle; attestations are not proof.
+- [ ] Exercise real boot interruption at each config/link phase, corrupt recovery,
+  and both writers' same-boot startup guards, not just local process exits.
+- [ ] Exercise full installed-unit submission, production dependencies/interpreter,
+  notify/direct-HTTP readiness, rollback, custom paths and administrator/update race.
+- [ ] Exercise actual resource exhaustion/limits and child descendant teardown with
+  real cgroups; current fake-manager stop flags and local sentinels are not evidence.
 
 ## Repository verification
 

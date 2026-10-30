@@ -6,15 +6,90 @@ See README.md. Default collection must not contact a service manager.
 
 import json
 import os
+import re
 import stat
 import subprocess
 import time
-from pathlib import Path
-from uuid import uuid4
+from pathlib import Path, PurePosixPath
+from uuid import UUID, uuid4
 
 import pytest
 
 from installer.update_core.systemd import SERVICES, SystemdAdapter
+
+
+def _root_process():
+    return os.name == "posix" and os.geteuid() == 0
+
+
+def _read_attestation(path):
+    def unique(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("Duplicate disposable attestation field")
+            value[key] = item
+        return value
+
+    raw = path.read_text()
+    if len(raw.encode("utf-8")) > 4096:
+        raise ValueError("Oversized disposable attestation")
+    return json.loads(raw, object_pairs_hook=unique)
+
+
+def _boot_uuid(value):
+    if not isinstance(value, str):
+        raise ValueError("Expected a canonical nonzero boot UUID")
+    parsed = UUID(value)
+    if str(parsed) != value or not parsed.int:
+        raise ValueError("Expected a canonical nonzero boot UUID")
+    return value
+
+
+def _validate_attestations(env, marker, settings, machine_id, boot_id):
+    if type(marker) is not dict or set(marker) != {"disposable", "machine_id", "nonce"}:
+        raise ValueError("Invalid disposable marker schema")
+    if type(settings) is not dict or set(settings) != {
+        "nonce",
+        "paths_file",
+        "prior_boot_id",
+        "offline_lock_absent",
+    }:
+        raise ValueError("Invalid disposable configuration schema")
+    if marker["disposable"] is not True or settings["offline_lock_absent"] is not True:
+        raise ValueError("Explicit disposable/offline attestations required")
+    nonces = (env.get("KNXOH_DISPOSABLE_SYSTEMD_NONCE"), marker["nonce"], settings["nonce"])
+    if any(not isinstance(n, str) or re.fullmatch(r"[0-9a-f]{64}", n) is None for n in nonces):
+        raise ValueError("Explicit nonce must be 64 lowercase hexadecimal characters")
+    if len(set(nonces)) != 1:
+        raise ValueError("Disposable nonces disagree")
+    if (
+        not isinstance(machine_id, str)
+        or re.fullmatch(r"[0-9a-f]{32}", machine_id) is None
+        or not int(machine_id, 16)
+        or marker["machine_id"] != machine_id
+    ):
+        raise ValueError("Disposable machine identity mismatch")
+    if _boot_uuid(settings["prior_boot_id"]) == _boot_uuid(boot_id):
+        raise ValueError("A different real boot identity is required")
+    path = settings["paths_file"]
+    if (
+        not isinstance(path, str)
+        or not PurePosixPath(path).is_absolute()
+        or str(PurePosixPath(path)) != path
+        or ".." in PurePosixPath(path).parts
+        or any(ord(char) < 32 or ord(char) == 127 for char in path)
+    ):
+        raise ValueError("Expected a canonical absolute paths file")
+
+
+def _check_worker_policy():
+    # Trusted read-only provisioning checks, OUTSIDE the NoNewPrivileges child.
+    # Listing permissions is not permission to execute a sudo action as worker.
+    from installer.update_bootstrap import check_worker, check_worker_sudo
+
+    check_worker()
+    check_worker_sudo()
 
 
 @pytest.fixture(scope="module")
@@ -25,26 +100,28 @@ def disposable():
     assert (
         os.environ.get("KNXOH_DISPOSABLE_SYSTEMD") == "destroy-this-guest"
     ), "explicit opt-in required"
-    assert os.name == "posix" and os.geteuid() == 0
+    assert _root_process()
     # This marker belongs to the disposable image, NOT a marker supplied in /tmp
     # by the test caller. Bind it to this guest identity and an independent nonce.
     marker = Path("/etc/knxoh-disposable-systemd-test.json")
     info = marker.lstat()
     assert stat.S_ISREG(info.st_mode) and info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o600
-    value = json.loads(marker.read_text())
-    assert value["disposable"] is True
-    assert value["machine_id"] == Path("/etc/machine-id").read_text().strip()
-    assert value["nonce"] == os.environ.get("KNXOH_DISPOSABLE_SYSTEMD_NONCE")
-    virt = subprocess.run(["systemd-detect-virt"], capture_output=True, text=True, check=True)
-    assert virt.stdout.strip() not in ("", "none", "wsl"), "development WSL/host is forbidden"
-    assert Path("/proc/1/comm").read_text().strip() == "systemd"
+    value = _read_attestation(marker)
     config = Path(configured)
     info = config.lstat()
     assert stat.S_ISREG(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022
-    settings = json.loads(config.read_text())
-    assert settings["nonce"] == value["nonce"]
-    assert settings["prior_boot_id"] != Path("/proc/sys/kernel/random/boot_id").read_text().strip()
-    assert settings["offline_lock_absent"] is True
+    settings = _read_attestation(config)
+    _validate_attestations(
+        os.environ,
+        value,
+        settings,
+        Path("/etc/machine-id").read_text().strip(),
+        Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+    )
+    virt = subprocess.run(["systemd-detect-virt"], capture_output=True, text=True, check=True)
+    assert virt.stdout.strip() not in ("", "none", "wsl"), "development WSL/host is forbidden"
+    assert Path("/proc/1/comm").read_text().strip() == "systemd"
+    _check_worker_policy()
     from installer.update_core.transaction import load_paths
 
     paths = load_paths(Path(settings["paths_file"]))

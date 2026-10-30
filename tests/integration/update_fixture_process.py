@@ -29,16 +29,13 @@ def main():
             return data
 
         update_prepare.download = download
-        if stage == failure:
-            if stage == "dependencies":
-                (Path(candidate) / "poison-partial-venv").write_text("must never resume")
-                # Exercise a REAL failed isolated pip installation, offline,
-                # after the final-path venv has actually been constructed.
-                (Path(candidate) / "requirements.txt").write_text(
-                    "/nonexistent/knxoh_missing_fixture_dependency-1.0-py3-none-any.whl\n"
-                )
-            else:
-                raise RuntimeError("deliberate fixture stage failure")
+        if stage == failure == "dependencies":
+            (Path(candidate) / "poison-partial-venv").write_text("must never resume")
+            # Exercise a REAL failed isolated pip installation, offline,
+            # after the final-path venv has actually been constructed.
+            (Path(candidate) / "requirements.txt").write_text(
+                "/nonexistent/knxoh_missing_fixture_dependency-1.0-py3-none-any.whl\n"
+            )
         update_prepare.run_stage(stage, Path(workspace), Path(candidate) if candidate else None)
     elif mode == "app":
         from web_ui.backend.jobs import JobManager

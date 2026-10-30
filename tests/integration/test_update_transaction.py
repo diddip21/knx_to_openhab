@@ -44,10 +44,26 @@ def source_files(version):
     return files
 
 
-def release_archive(version):
+def release_archive(version, *, migration_failure=False):
+    files = source_files(version)
+    if migration_failure:
+        # A deliberate failure INSIDE the real copied-config CLI body. Archive
+        # checksum/selection/extraction and the fixed -I invocation are unchanged.
+        name = "installer/config_migrations.py"
+        anchor = "def _migration_1(config: dict) -> dict:\n"
+        injected = (
+            "    import sys\n"
+            "    output = Path(sys.argv[sys.argv.index('--output') + 1])\n"
+            "    output.with_name('migration-cli-started.json').write_text(json.dumps(\n"
+            "        dict(isolated=sys.flags.isolated, uid=os.geteuid(), source=__file__)))\n"
+            "    raise ValueError('deliberate fixture candidate migration failure')\n"
+        )
+        source = files[name].decode().replace("\r\n", "\n")
+        assert source.count(anchor) == 1
+        files[name] = source.replace(anchor, anchor + injected).encode()
     raw = io.BytesIO()
     with tarfile.open(fileobj=raw, mode="w:gz") as archive:
-        for name, contents in source_files(version).items():
+        for name, contents in files.items():
             info = tarfile.TarInfo(f"knx_to_openhab-{version}/{name}")
             info.size = len(contents)
             info.mode = 0o644
@@ -266,14 +282,23 @@ def assembled():
             (base / "unrelated-sentinel").write_bytes(b"never restore a whole data directory")
             for path in [base, *base.rglob("*")]:
                 os.chown(path, SERVICE, SERVICE)
-        f = SimpleNamespace(root=root, paths=paths, port=port, version="2.0.0", corrupt=False)
+        f = SimpleNamespace(
+            root=root,
+            paths=paths,
+            port=port,
+            version="2.0.0",
+            corrupt=False,
+            migration_failure=False,
+        )
         f.app_url = f"http://127.0.0.1:{port}"
         f.app_log = (root / "app.log").open("w")
         payloads = {v: release_archive(v) for v in ("2.0.0", "2.1.0-rc.1", "1.0.0")}
+        migration_failure_payload = release_archive("2.0.0", migration_failure=True)
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 version = f.version
+                payload = migration_failure_payload if f.migration_failure else payloads[version]
                 name = f"knx_to_openhab-{version}.tar.gz"
                 url = f"https://github.com/diddip21/knx_to_openhab/releases/download/v{version}/"
                 metadata = {
@@ -290,10 +315,10 @@ def assembled():
                     value = [metadata] if "-" in version else metadata
                     raw = json.dumps(value).encode()
                 elif self.path.endswith(".sha256"):
-                    digest = hashlib.sha256(payloads[version]).hexdigest()
+                    digest = hashlib.sha256(payload).hexdigest()
                     raw = f"{digest}  {name}\n".encode()
                 else:
-                    raw = b"bad artifact" if f.corrupt else payloads[version]
+                    raw = b"bad artifact" if f.corrupt else payload
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
@@ -383,16 +408,26 @@ def test_real_failure_keeps_old_app_and_shared_records(assembled, failure):
     elif failure == "artifact":
         f.corrupt = True
     elif failure == "migrate":
-        f.manager.fail_stage = "migrate"
+        f.migration_failure = True
     else:
         f.manager.bad_health = True
-    f.request()
+    request_id = f.request()
     result = f.updater().run()
     assert result.status == ("no-update" if failure == "current" else "failed"), result
     assert f.paths.current.resolve().name == "1.0.0"
     assert (f.paths.config_dir / "config.json").read_bytes() == original
     assert_shared_state(f, ["1.0.0", "2.0.0"] if failure == "health" else ["1.0.0"])
     assert requests.get(f.app_url + "/api/health", timeout=2).json()["version"] == "1.0.0"
+    if failure == "migrate":
+        evidence = f.root / "prepare" / request_id / "migrate/output/migration-cli-started.json"
+        assert evidence.is_file(), "failure must enter the actual isolated candidate CLI"
+        probe = json.loads(evidence.read_bytes())
+        assert probe == {
+            "isolated": 1,
+            "uid": WORKER,
+            "source": str(f.paths.releases / "2.0.0/installer/config_migrations.py"),
+        }
+        assert "deliberate fixture candidate migration failure" in f.stage_error
     if failure == "health":
         starts = json.loads((f.paths.data_dir / "startup-evidence.json").read_text())
         assert [s["version"] for s in starts] == ["1.0.0", "2.0.0", "1.0.0"]

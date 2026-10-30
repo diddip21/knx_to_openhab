@@ -596,6 +596,6 @@ For issues or feature requests:
 ---
 
 **Version:** 1.1
-**Last Updated:** 2026-10-23
+**Last Updated:** 2026-10-30
 **License:** Same as knx_to_openhab project
 

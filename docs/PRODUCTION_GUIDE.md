@@ -85,10 +85,12 @@ curl http://localhost:8085/api/status
 The setup step preserves existing user-chosen logins and stores their Argon2id password
 hashes in `/etc/knx_to_openhab/secrets.env` with mode `0640`. A legacy shipped default is
 discarded and setup asks for a replacement; a fresh install also asks for a unique password.
-Run setup from an interactive SSH terminal so the password prompt can read from `/dev/tty`.
-When setup is started as root, it runs the prompt directly instead of detaching it through a
-nested `sudo` process. If setup fails after stopping services, it attempts to start the
-services that were active before migration. A failed Web UI update restores the previous
+If no valid external password hash exists, setup checks for an interactive terminal before
+stopping services or changing packages and runtime data. Run it from an interactive SSH
+terminal (for example, `ssh -t`) so the password prompt can read from `/dev/tty`. When setup
+is started as root, it runs the prompt directly instead of detaching it through a nested
+`sudo` process. If setup fails after stopping services, it attempts to start the services
+that were active before migration. A failed Web UI update restores the previous
 application commit and checks that its service is active. Runtime settings are in
 `/etc/knx_to_openhab/config.json`; generator rules edited through the Settings
 screen are in `/var/lib/knx_to_openhab/generator.json`. Jobs and backups remain

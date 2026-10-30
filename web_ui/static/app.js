@@ -741,11 +741,18 @@ function computeLineDiff(original, current) {
   return result
 }
 
-let packagePollInterval = null
+let packagePollTimeout = null
+let packagePollInFlight = false
+let servicesRefreshGeneration = 0
+let cloudInfoGeneration = 0
 
 function startPackageOperationPolling() {
-  if (packagePollInterval) return
-  packagePollInterval = setInterval(async () => {
+  if (packagePollTimeout || packagePollInFlight) return
+
+  const poll = async () => {
+    packagePollTimeout = null
+    packagePollInFlight = true
+    let continuePolling = true
     const statusEl = document.getElementById('packageOperationStatus')
     try {
       const response = await apiFetch('/api/service/updates/status')
@@ -753,24 +760,30 @@ function startPackageOperationPolling() {
       const task = await response.json()
       statusEl.textContent = task.state === 'idle' ? '' : `${task.action}: ${task.message}`
       if (task.state !== 'running') {
-        clearInterval(packagePollInterval)
-        packagePollInterval = null
+        continuePolling = false
         await refreshServices()
       }
     } catch (e) {
       statusEl.textContent = `Status nicht erreichbar: ${e.message}`
+    } finally {
+      packagePollInFlight = false
+      if (continuePolling) packagePollTimeout = setTimeout(poll, 2000)
     }
-  }, 2000)
+  }
+
+  packagePollTimeout = setTimeout(poll, 2000)
 }
 
 async function refreshServices() {
+  const refreshGeneration = ++servicesRefreshGeneration
   const services = ['openhab.service', 'evcc.service']
-  servicesListEl.innerHTML = ''
+  const serviceItems = document.createDocumentFragment()
   let task = { state: 'idle' }
   try {
     const taskResponse = await apiFetch('/api/service/updates/status')
     if (taskResponse.ok) task = await taskResponse.json()
   } catch (e) { console.error('Package status unavailable:', e) }
+  if (refreshGeneration !== servicesRefreshGeneration) return
   const busy = task.state === 'running'
   if (busy) startPackageOperationPolling()
   document.getElementById('refreshPackagesBtn').disabled = busy
@@ -786,6 +799,7 @@ async function refreshServices() {
       ])
       const status = await res.json()
       const version = await versionRes.json()
+      if (refreshGeneration !== servicesRefreshGeneration) return
 
       const div = document.createElement('div')
       div.className = 'service-item'
@@ -827,11 +841,13 @@ async function refreshServices() {
           startPackageOperation(pkg, version.candidate)
         }
       })
-      servicesListEl.appendChild(div)
+      serviceItems.appendChild(div)
     } catch (e) {
       console.error('Error fetching service status:', e)
     }
   }
+  if (refreshGeneration !== servicesRefreshGeneration) return
+  servicesListEl.replaceChildren(serviceItems)
   await loadCloudInfo()
 }
 
@@ -850,12 +866,12 @@ async function startPackageOperation(action, version = null) {
 }
 
 async function loadCloudInfo() {
-  const existing = document.getElementById('cloud-info-card')
-  if (existing) existing.remove()
+  const refreshGeneration = ++cloudInfoGeneration
 
   try {
     const res = await apiFetch('/api/openhab/cloud-info')
     const data = await res.json()
+    if (refreshGeneration !== cloudInfoGeneration) return
     const card = document.createElement('div')
     card.id = 'cloud-info-card'
     card.className = 'cloud-info-card'
@@ -896,7 +912,9 @@ async function loadCloudInfo() {
         ${data.uuid_path ? `<div class="cloud-info-paths"><small>📁 ${data.uuid_path}</small></div>` : ''}
       `
     }
-    servicesListEl.appendChild(card)
+    const existing = document.getElementById('cloud-info-card')
+    if (existing) existing.replaceWith(card)
+    else servicesListEl.appendChild(card)
   } catch (e) {
     console.error('Failed to load cloud info:', e)
   }

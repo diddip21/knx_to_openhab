@@ -51,4 +51,5 @@ def test_running_package_operation_finishes_after_page_load(page: Page, base_url
         "Update finished.", timeout=10000
     )
     expect(page.locator("#refreshPackagesBtn")).to_be_enabled()
+    expect(page.locator("#servicesList .service-item")).to_have_count(2, timeout=10000)
     assert state["status_calls"] >= 2

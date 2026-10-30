@@ -81,6 +81,19 @@ class TestServicesSection:
         services = page.locator("#servicesList .service-item")
         expect(services).to_have_count(2, timeout=10000)
 
+    def test_concurrent_service_refreshes_do_not_duplicate_entries(
+        self, page: Page, base_url, flask_server
+    ):
+        _setup_services_routes(page)
+        page.goto(base_url)
+        expect(page.locator("#servicesList .service-item")).to_have_count(2, timeout=10000)
+        expect(page.locator("#servicesList #cloud-info-card")).to_have_count(1, timeout=10000)
+
+        page.evaluate("Promise.all([refreshServices(), refreshServices()])")
+
+        expect(page.locator("#servicesList .service-item")).to_have_count(2, timeout=10000)
+        expect(page.locator("#servicesList #cloud-info-card")).to_have_count(1, timeout=10000)
+
     def test_service_shows_status(self, page: Page, base_url, flask_server):
         _setup_services_routes(page)
         page.goto(base_url)

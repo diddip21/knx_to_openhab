@@ -64,3 +64,18 @@ subprocess limit tests intentionally lower their own limits, not host limits.
   than permitting a misleading predecessor warning; active pair and config remain
   unchanged. Subprocess tests cover active repair and inactive activation without
   executing candidate code or provisioning anything.
+
+## M1 — late pinned public-status replacement classification
+
+- Red: `python -m pytest -q tests/test_update_post_final_fixes.py -k last_entry_check --tb=short`
+  -> `2 failed, 2 passed, 10 deselected in 2.54s`. Deterministic atomic replacement
+  after the final `_check` and before `fstat` yielded plain ValueError instead of
+  successful bounded retry; repeated late replacements also failed without retry.
+- Change: on final size/mtime/ctime mismatch, recheck the pinned entry/chain before
+  raising generic concurrent-content failure. Known entry replacement now raises
+  EntryChangedError; oversized data and in-place content mutation remain ordinary
+  validation failures. No new retry loop or relaxation of ownership/link/mount rules.
+- Green: `python -m pytest -q tests/test_update_post_final_fixes.py tests/test_update_final_fixes.py tests/test_update_secure_fs.py --tb=short`
+  -> `110 passed in 21.14s`. Covers late replacement, three-attempt churn bound,
+  unsafe replacement rejection, in-place modification refusal, and previous race/
+  secure filesystem regressions. Public interfaces unchanged.

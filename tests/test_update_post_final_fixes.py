@@ -102,6 +102,52 @@ def test_live_writer_clean_exception_rejects_unproven_state(installation, state)
     assert before == (os.readlink(paths.current), (paths.config_dir / "config.json").read_bytes())
 
 
+@pytest.mark.parametrize("change", ["replace", "unsafe-replace", "in-place", "churn"])
+def test_status_replacement_after_last_entry_check(installation, monkeypatch, change):
+    from installer.update_core.state import StateStore
+    from installer.update_submit import read_status
+
+    _, paths, _, request_id = installation
+    store = StateStore(paths)
+    store.publish_status("claimed", "old projection", request_id)
+    status_file = paths.config_dir / ".updater-status.json"
+    real_check = fs._check
+    changes = 0
+    writing = False
+
+    def check_then_change(chain):
+        nonlocal changes, writing
+        real_check(chain)
+        if writing or chain[-1].name != status_file.name or (changes and change != "churn"):
+            return
+        changes += 1
+        writing = True
+        try:
+            if change == "in-place":
+                raw = status_file.read_bytes()
+                status_file.write_bytes(raw.replace(b"old projection", b"bad projection"))
+            else:
+                store.publish_status("committed", "Release update completed", request_id)
+                if change == "unsafe-replace":
+                    status_file.chmod(0o666)
+        finally:
+            writing = False
+
+    monkeypatch.setattr(fs, "_check", check_then_change)
+    if change == "replace":
+        status = read_status(paths)
+        assert status["phase"] == "committed" and status["request_id"] == request_id
+    elif change == "churn":
+        with pytest.raises(fs.EntryChangedError):
+            read_status(paths)
+        assert changes == 3
+    else:
+        with pytest.raises(ValueError, match="ownership or mode|concurrently modified") as error:
+            read_status(paths)
+        assert not isinstance(error.value, fs.EntryChangedError)
+    assert changes == (3 if change == "churn" else 1)
+
+
 @pytest.mark.parametrize("wrapped", [False, True])
 def test_checker_does_not_misdiagnose_descriptor_exhaustion(installation, monkeypatch, wrapped):
     import errno

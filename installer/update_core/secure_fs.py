@@ -202,11 +202,18 @@ def read_regular(path: Path, max_bytes: int) -> bytes:
             output.extend(chunk)
         _check([*chain, entry])
         after = os.fstat(entry.fd)
-        if len(output) > max_bytes or (
+        if len(output) > max_bytes:
+            raise ValueError("Oversized or concurrently modified updater file")
+        if (
             entry.info.st_size,
             entry.info.st_mtime_ns,
             entry.info.st_ctime_ns,
         ) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            # A protected atomic replacement after the last entry check can
+            # unlink this pinned inode and change ctime. Classify that observed
+            # entry race for public readers' bounded whole-read retry. In-place
+            # content changes still fail closed as ordinary validation errors.
+            _check([*chain, entry])
             raise ValueError("Oversized or concurrently modified updater file")
         return bytes(output)
 

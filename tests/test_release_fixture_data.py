@@ -232,3 +232,40 @@ def test_staging_refuses_windows_reparse_ancestor(tmp_path, monkeypatch):
     with pytest.raises(ValueError):
         api().build_artifacts(output)
     assert not output.exists()
+
+
+def test_negative_cli_emits_bounded_marker_from_exact_copied_source(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    original = api().source_files()["installer/config_migrations.py"][1]
+    script = tmp_path / "config_migrations.py"
+    script.write_bytes(
+        original.replace(b"def main() -> None:\n", b"def main() -> None:\n" + api().MIGRATION_BODY)
+    )
+    output = tmp_path / "output"
+    output.mkdir()
+    source = tmp_path / "input.json"
+    source.write_text("{}")
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-B",
+            str(script),
+            "--migrate-copy",
+            str(source),
+            "--output",
+            str(output / "config.json"),
+        ],
+        capture_output=True,
+    )
+    assert result.returncode == 73 and not (output / "config.json").exists()
+    raw = (output / "fixture-migration-rejection.json").read_bytes()
+    assert len(raw) < 2048
+    marker = json.loads(raw)
+    assert marker["co_filename"] == str(script)
+    assert marker["script_sha256"] == api().sha256(script.read_bytes())
+    assert marker["uid"] == getattr(os, "geteuid", lambda: None)()
+    assert marker["intended_exit"] == 73

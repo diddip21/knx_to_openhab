@@ -192,9 +192,428 @@ def check_parent_inventory(actual, original, own_directories, own_files=()):
     require(actual == expected, "Unknown parent entry/identity; no adoption or prefix exemption")
 
 
-def preserve(baseline, *, before_first=False, own_root=None):
+def check_collected_entries(actual, expected, changing_fields=None):
+    require(
+        set(actual) == set(expected), "Unknown/missing collected path; original absence preserved"
+    )
+    for name, value in expected.items():
+        observed = dict(actual[name])
+        for field in (changing_fields or {}).get(name, ()):
+            require(field in observed and field in value, "Unknown mutable inventory field")
+            observed[field] = value[field]
+        require(observed == value, "Collected entry changed outside exact own transaction effects")
+
+
+def validate_own_transactions(records, journal):
+    """Existing result records must be an exact prefix of the real protected ledger."""
+    from installer.update_core.protocol import Paths
+    from installer.update_core.state import _decode_record
+    from scripts.nested_fixture_state import BACKUPS, BASE, CONFIG, DATA
+
+    paths = Paths(BASE / "releases", BASE / "current", CONFIG, DATA, BACKUPS)
+    phases = ("stable-update", "no-update", "checksum-rejection", "migration-rejection", "retry")
+    require(0 < len(records) <= len(phases), "Unknown own transaction count")
+    ids = []
+    services = {
+        name: dict(
+            active=name != "knxohui-backup-cleanup.service",
+            enabled=name != "knxohui-backup-cleanup.service",
+        )
+        for name in (
+            "knxohui.service",
+            "knxohui-backup-cleanup.service",
+            "knxohui-backup-cleanup.timer",
+        )
+    }
+    for index, record in enumerate(records):
+        phase, root = record["phase"], record["root"]
+        require(phase == phases[index], "Unrelated/out-of-sequence own phase result")
+        _decode_record(
+            root, paths
+        )  # Original decoder validates UUIDs, exact fields and BOOL types.
+        ids.append(root["request_id"])
+        require(
+            len(set(ids)) == len(ids) and root["seen_request_ids"] == ids,
+            "Own result/replay ledger mismatch",
+        )
+        commit = phase in ("stable-update", "retry")
+        prepared = phase in ("stable-update", "migration-rejection", "retry")
+        version = "0.1.1" if phase == "stable-update" else "0.1.2"
+        require(
+            root["phase"] == ("committed" if commit else "rolled-back")
+            and root["channel"] == "stable"
+            and root["candidate_uid"] == 997,
+            "Wrong actual phase outcome/identity",
+        )
+        require(
+            root["prior_target"] == str(BASE / "releases" / ("0.1.0" if index == 0 else "0.1.1")),
+            "Unrelated prior target",
+        )
+        require(
+            root["candidate"] == (str(BASE / "releases" / version) if prepared else None)
+            and root["candidate_created"] is prepared
+            and root["candidate_published"] is commit
+            and (root["candidate_identity"] is not None) is prepared
+            and root["service_states"] == (services if prepared else {}),
+            "Own phase side effects/provenance mismatch",
+        )
+    _decode_record(journal, paths)
+    require(
+        journal == records[-1]["root"] and journal["seen_request_ids"] == ids,
+        "Results are not the actual protected transaction ledger",
+    )
+
+
+def own_transactions(own_phase, own_root):
+    from installer.update_core.protocol import parse_object
+
+    records = []
+    for phase in (
+        "stable-update",
+        "no-update",
+        "checksum-rejection",
+        "migration-rejection",
+        "retry",
+    ):
+        path, attempt = CONTROL / (phase + ".result.json"), CONTROL / (phase + ".started.json")
+        if path.exists():
+            require(phase != own_phase, "Own phase result already exists")
+            result = parse_object(fs.read_regular(path, 2 * 1024 * 1024), 2 * 1024 * 1024)
+            require(
+                result["phase"] == phase and result["request_id"] == result["root"]["request_id"],
+                "Result identity mismatch",
+            )
+            records.append(dict(phase=phase, root=result["root"]))
+        elif phase == own_phase:
+            require(own_root is not None, "Missing actual own root claim")
+            records.append(dict(phase=phase, root=own_root))
+        else:
+            require(not attempt.exists(), "Unfinished/unrelated attempt; no automatic adoption")
+    if not records:
+        require(
+            own_phase is None and own_root is None and not JOURNAL.exists(),
+            "Unexpected protected transaction before any own request",
+        )
+        return []
+    validate_own_transactions(records, protected_record())
+    require(
+        read_request()["request_id"] == records[-1]["root"]["request_id"],
+        "Service request/protected ledger mismatch",
+    )
+    previous = None
+    for record in records:
+        phase, root = record["phase"], record["root"]
+        attempt = parse_object(fs.read_regular(CONTROL / (phase + ".started.json"), 4096), 4096)
+        require(
+            attempt
+            == dict(
+                phase=phase, previous_request=previous, current=Path(root["prior_target"]).name
+            ),
+            "Result not bound to exact own attempt",
+        )
+        previous = root["request_id"]
+    return records
+
+
+def admit_inventory(baseline, footprint, own_phase, own_root, manifest):
+    """Complete collector key/value contract; no prefix/subset exception or new baseline."""
+    original = baseline["DIRECT_OBSERVATIONS"]["footprint"]["entries"]
+    actual, expected, changes = footprint["entries"], dict(original), {}
+    prepared_path = CONTROL / "prepare-fixture.result.json"
+    if not prepared_path.exists():
+        require(own_phase is None and own_root is None, "Unknown unprepared transaction")
+        check_collected_entries(actual, expected)
+        return []
+    prepared = json.loads(fs.read_regular(prepared_path, 2 * 1024 * 1024))
+    require(
+        prepared["phase"] == "prepare-fixture"
+        and prepared["system_tls"] is True
+        and str(UNIT) not in original,
+        "Unknown own fixture receipt",
+    )
+    unit_entry = prepared["unit_entry"]
+    require(
+        all(
+            unit_entry.get(k) == v
+            for k, v in dict(
+                kind="file", uid=0, gid=0, mode=0o644, links=1, sha256=digest(unit_bytes())
+            ).items()
+        ),
+        "Invalid own fixture unit identity",
+    )
+    expected[str(UNIT)] = unit_entry
+    hosts = fs.read_regular(CONTROL / "hosts.original", 65536)
+    require(
+        digest(hosts) == original["/etc/hosts"]["sha256"]
+        and fs.read_regular(CONTROL / "hosts.installed", 65536) == hosts_bytes(hosts),
+        "Original hosts/own addition mismatch",
+    )
+    expected["/etc/hosts"] = {**original["/etc/hosts"], "sha256": digest(hosts_bytes(hosts))}
+    require(
+        set(actual) == set(expected), "Unknown/missing collected path; no fixture prefix exemption"
+    )
+    records = own_transactions(own_phase, own_root)
+    requests = {r["root"]["request_id"] for r in records}
+    releases = {
+        Path(r["root"]["candidate"]).name for r in records if r["root"]["phase"] == "committed"
+    }
+    state_files = set()
+    for record in records:
+        phase, request = record["phase"], record["root"]["request_id"]
+        state_files.add("journal.json")
+        if phase != "no-update":
+            name = "archive-" + request + ".tar.gz"
+            state_files.add(name)
+            label = {
+                "stable-update": "normal-0.1.1",
+                "checksum-rejection": "normal-0.1.2",
+                "migration-rejection": "migration-negative",
+                "retry": "normal-0.1.2",
+            }[phase]
+            version = "0.1.1" if phase == "stable-update" else "0.1.2"
+            value = manifest["files"][f"artifacts/{label}/knx_to_openhab-{version}.tar.gz"]
+            raw = fs.read_regular(state.CONFIG / ".updater-state" / name, 64 * 1024 * 1024)
+            require(
+                dict(size=len(raw), sha256=digest(raw)) == value,
+                "Protected own archive differs from sealed fixture",
+            )
+        if phase in ("stable-update", "migration-rejection", "retry"):
+            name = "snapshot-" + request + ".json"
+            state_files.add(name)
+            verify_snapshot(state.CONFIG / ".updater-state" / name, request, baseline)
+    for name in state_files:
+        info = (state.CONFIG / ".updater-state" / name).lstat()
+        mode = (
+            0o400 if name in {"archive-" + request + ".tar.gz" for request in requests} else 0o600
+        )
+        require(
+            stat.S_ISREG(info.st_mode)
+            and info.st_nlink == 1
+            and (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (0, 0, mode),
+            "Unsafe protected own transaction artifact",
+        )
+    for parent, directories, files in (
+        (state.BASE, set(), set()),
+        (state.CONFIG, set(), set()),
+        (state.BASE / "releases", releases, set()),
+        (state.PREPARATION, requests, set()),
+        (
+            state.DATA,
+            {"update"} if requests else set(),
+            {"sessions.sqlite3"} if requests else set(),
+        ),
+        (state.CONFIG / ".updater-state", set(), state_files),
+    ):
+        check_parent_inventory(actual[str(parent)], original[str(parent)], directories, files)
+        expected[str(parent)] = actual[str(parent)]  # Already exact derived names/links/identities.
+    if records:
+        update = state.DATA / "update"
+        info = update.lstat()
+        require(
+            stat.S_ISDIR(info.st_mode)
+            and (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (999, 989, 0o700),
+            "Unsafe own submission directory",
+        )
+        exact_directory(update, {"request.json": "file", "submit.lock": "file"}, metadata(info))
+        for name in ("request.json", "submit.lock"):
+            leaf = (update / name).lstat()
+            require(
+                (leaf.st_uid, leaf.st_gid, stat.S_IMODE(leaf.st_mode)) == (999, 989, 0o600),
+                "Unsafe own submission file",
+            )
+        require((update / "submit.lock").lstat().st_size == 0, "Submission lock content changed")
+        config_raw = fs.read_regular(CONTROL / "config.original", 1024 * 1024)
+        config_name = str(state.CONFIG / "config.json")
+        require(
+            digest(config_raw) == original[config_name]["sha256"],
+            "Original protected config receipt changed",
+        )
+        require(
+            json.dumps(
+                json.loads(fs.read_regular(state.CONFIG / "config.json", 1024 * 1024)),
+                sort_keys=True,
+                allow_nan=False,
+            )
+            == json.dumps(json.loads(config_raw), sort_keys=True, allow_nan=False),
+            "Protected config values changed",
+        )
+        changes[config_name] = {"inode", "sha256"}
+        current = (
+            records[-1]["root"]["candidate"]
+            if records[-1]["root"]["phase"] == "committed"
+            else records[-1]["root"]["prior_target"]
+        )
+        require(
+            os.readlink(state.BASE / "current") == current,
+            "Actual current/protected own ledger mismatch",
+        )
+        changes[str(state.BASE / "current")] = {"inode"}
+        last = records[-1]
+        message = (
+            "Release update completed"
+            if last["root"]["phase"] == "committed"
+            else (
+                "No newer compatible release"
+                if last["phase"] == "no-update"
+                else "Update failed; previous release preserved"
+            )
+        )
+        status = dict(
+            format_version=1,
+            phase=last["root"]["phase"],
+            request_id=last["root"]["request_id"],
+            message=message,
+        )
+        for leaf, raw in (
+            (
+                ".updater-status.json",
+                json.dumps(status, sort_keys=True, separators=(",", ":")).encode(),
+            ),
+            (".updater-log.txt", (status["phase"] + ": " + message + "\n").encode()),
+        ):
+            name = str(state.CONFIG / leaf)
+            expected[name] = {**original[name], "sha256": digest(raw)}
+            changes[name] = {"inode"}
+    check_collected_entries(actual, expected, changes)
+    return records
+
+
+def verify_snapshot(path, request, baseline):
+    from installer.update_core.protocol import parse_object
+
+    value = parse_object(fs.read_regular(path, 2 * 1024 * 1024), 2 * 1024 * 1024)
+    require(
+        set(value) == {"format_version", "request_id", "files"}
+        and type(value["format_version"]) is int
+        and value["format_version"] == 1
+        and value["request_id"] == request
+        and set(value["files"]) == {"config.json"},
+        "Unknown own snapshot",
+    )
+    entry = value["files"]["config.json"]
+    original = baseline["DIRECT_OBSERVATIONS"]["footprint"]["entries"][
+        str(state.CONFIG / "config.json")
+    ]
+    require(
+        set(entry) == {"present", "bytes", "uid", "gid", "mode"}
+        and entry["present"] is True
+        and all(type(entry[k]) is int and entry[k] == original[k] for k in ("uid", "gid", "mode")),
+        "Snapshot metadata not original protected config",
+    )
+    raw = base64.b64decode(entry["bytes"], validate=True)
+    require(
+        len(raw) <= 1024 * 1024
+        and json.dumps(json.loads(raw), sort_keys=True, allow_nan=False)
+        == json.dumps(
+            json.loads(fs.read_regular(CONTROL / "config.original", 1024 * 1024)),
+            sort_keys=True,
+            allow_nan=False,
+        ),
+        "Snapshot changed protected configuration values",
+    )
+
+
+def exact_directory(path, children, expected):
+    """Bounded no-follow names/types using a pinned directory FD, including worker output."""
+    before = path.lstat()
+    require(
+        stat.S_ISDIR(before.st_mode) and metadata(before) == expected,
+        "Retained directory membership/identity mismatch",
+    )
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    fields = (
+        "st_dev",
+        "st_ino",
+        "st_mode",
+        "st_uid",
+        "st_gid",
+        "st_nlink",
+        "st_size",
+        "st_mtime_ns",
+        "st_ctime_ns",
+    )
+
+    def unchanged(info):
+        return all(getattr(info, key) == getattr(before, key) for key in fields)
+
+    try:
+        require(unchanged(os.fstat(fd)), "Retained directory changed before membership read")
+        names = set()
+        with os.scandir(fd) as entries:
+            for entry in entries:
+                require(
+                    len(names) < len(children)
+                    and entry.name in children
+                    and entry.name not in names,
+                    "Unexpected retained directory membership",
+                )
+                info = os.stat(entry.name, dir_fd=fd, follow_symlinks=False)
+                kind = (
+                    "directory"
+                    if stat.S_ISDIR(info.st_mode)
+                    else "file" if stat.S_ISREG(info.st_mode) and info.st_nlink == 1 else "other"
+                )
+                require(kind == children[entry.name], "Unsafe retained membership type/link")
+                names.add(entry.name)
+        require(names == set(children), "Missing retained directory membership")
+        require(
+            unchanged(os.fstat(fd)) and unchanged(path.lstat()),
+            "Retained directory changed during membership read",
+        )
+    finally:
+        os.close(fd)
+
+
+def preserve_retained(expected):
+    require(
+        expected.get("request")
+        in ("5c4f51f8-2bdf-4e2e-ac71-cfb3897397b0", "dd13accd-c549-467c-b26d-4c2c25a797db")
+        and len(expected.get("metadata", {})) == 9,
+        "Exact retained UUID membership receipt required",
+    )
+    request = expected["request"]
+    candidate = state.BASE / "releases" / ("acceptance-" + request)
+    prep = state.PREPARATION / ("acceptance-" + request)
+    output = prep / "migrate/output"
+    directories = {
+        candidate: {"installer": "directory"},
+        candidate / "installer": {"config_migrations.py": "file"},
+        prep: {"migrate": "directory"},
+        prep / "migrate": {"input.json": "file", "output": "directory"},
+        output: {"heartbeat": "file", "probe.json": "file"},
+    }
+    paths = {str(path) for path in directories} | {
+        str(path / name) for path, names in directories.items() for name in names
+    }
+    require(set(expected["metadata"]) == paths, "Unknown retained UUID membership receipt")
+    for path, names in directories.items():
+        exact_directory(path, names, expected["metadata"][str(path)])
+    for name, value in expected["metadata"].items():
+        require(metadata(Path(name).lstat()) == value, "Retained exact probe metadata changed")
+    require(
+        digest(fs.read_regular(candidate / "installer/config_migrations.py", 65536))
+        == expected["candidate_script_sha256"],
+        "Retained probe script changed",
+    )
+    for name, field in (("heartbeat", "heartbeat_sha256"), ("probe.json", "probe_sha256")):
+        require(
+            digest(worker_read(output / name, 997, 988)) == expected[field],
+            "Retained worker bytes changed",
+        )
+    for stage in STAGES:
+        values = show("knxohupdate-" + request + "-" + stage + ".service")
+        require(
+            values["MainPID"] == values["ControlPID"] == "0" and values["ControlGroup"] == "",
+            "Retained hostile stage live",
+        )
+    return dict(request=request, exact_membership=True, input_content_pinned=False)
+
+
+def preserve(baseline, *, before_first=False, own_phase=None, own_root=None, manifest=None):
     """Use original scoped evidence; NEVER recurse root collector into worker trees."""
     original = baseline["DIRECT_OBSERVATIONS"]
+    footprint = state.collect_inventory(details=True, entry_reader=repair.inventory_entry)
+    transactions = admit_inventory(baseline, footprint, own_phase, own_root, manifest)
     initial = repair.snapshot_tree(Path(str(repair.INITIAL)))
     require(
         len(initial) == 3354 and initial == original["initial"],
@@ -211,31 +630,7 @@ def preserve(baseline, *, before_first=False, own_root=None):
         "Generated sentinels changed",
     )
     for event in ("HISTORICAL_ARTIFACTS", "NEW_PROBE_ARTIFACTS"):
-        expected = baseline[event]
-        request = expected["request"]
-        require(
-            request
-            in ("5c4f51f8-2bdf-4e2e-ac71-cfb3897397b0", "dd13accd-c549-467c-b26d-4c2c25a797db"),
-            "Unknown retained probe identity",
-        )
-        for name, value in expected["metadata"].items():
-            require(metadata(Path(name).lstat()) == value, "Retained exact probe metadata changed")
-        prep = state.PREPARATION / ("acceptance-" + request)
-        candidate = state.BASE / "releases" / ("acceptance-" + request)
-        require(
-            digest(fs.read_regular(candidate / "installer/config_migrations.py", 65536))
-            == expected["candidate_script_sha256"],
-            "Retained probe script changed",
-        )
-        for name, field in (("heartbeat", "heartbeat_sha256"), ("probe.json", "probe_sha256")):
-            raw = worker_read(prep / "migrate/output" / name, 997, 988)
-            require(digest(raw) == expected[field], "Retained worker bytes changed")
-        for stage in STAGES:
-            values = show("knxohupdate-" + request + "-" + stage + ".service")
-            require(
-                values["MainPID"] == values["ControlPID"] == "0" and values["ControlGroup"] == "",
-                "Retained hostile stage live",
-            )
+        preserve_retained(baseline[event])
     selected = original["selected_strict_snapshots"][str(state.CONFIG)]
     for path in (state.CONFIG / n for n in ("paths.env", "secrets.env", "generator.json")):
         require(
@@ -265,52 +660,7 @@ def preserve(baseline, *, before_first=False, own_root=None):
             ),
             "Protected config owner/mode changed",
         )
-    footprint = state.collect_inventory(details=True, entry_reader=repair.inventory_entry)
-    expected_entries = original["footprint"]["entries"]
-    transactions = []
-    for phase in (
-        "stable-update",
-        "no-update",
-        "checksum-rejection",
-        "migration-rejection",
-        "retry",
-    ):
-        path = CONTROL / (phase + ".result.json")
-        if path.exists():
-            record = json.loads(fs.read_regular(path, 2 * 1024 * 1024))
-            require(record["phase"] == phase, "Unexpected own phase result")
-            transactions.append(record["root"])
-    if own_root is not None:
-        transactions.append(own_root)
-    own_requests = {record["request_id"] for record in transactions}
-    own_releases = set()
-    for record in transactions:
-        require(
-            record["phase"] in ("committed", "rolled-back"),
-            "Nonterminal own transaction cannot explain parent changes",
-        )
-        if record["phase"] == "committed":
-            require(
-                record["candidate"]
-                in (str(state.BASE / "releases/0.1.1"), str(state.BASE / "releases/0.1.2")),
-                "Unknown own committed candidate",
-            )
-            own_releases.add(Path(record["candidate"]).name)
-    for parent, directories, files in (
-        (state.BASE, set(), set()),
-        (state.CONFIG, set(), set()),
-        (state.BASE / "releases", own_releases, set()),
-        (state.PREPARATION, own_requests, set()),
-        (
-            state.DATA,
-            {"update"} if own_requests else set(),
-            {"sessions.sqlite3"} if own_requests else set(),
-        ),
-    ):
-        check_parent_inventory(
-            footprint["entries"][str(parent)], expected_entries[str(parent)], directories, files
-        )
-    if own_requests:
+    if transactions:
         info = (state.DATA / "sessions.sqlite3").lstat()
         require(
             stat.S_ISREG(info.st_mode)
@@ -318,32 +668,6 @@ def preserve(baseline, *, before_first=False, own_root=None):
             and (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (999, 989, 0o600),
             "Unsafe actual authentication session store",
         )
-    # Exact fixed component/external footprint; do not adopt observed replacements.
-    for name, value in expected_entries.items():
-        path = Path(name)
-        fixed = name.startswith(
-            (
-                "/etc/systemd/",
-                "/usr/lib/systemd/",
-                "/etc/sudoers.d/",
-                "/etc/tmpfiles.d/",
-                "/usr/local/sbin/",
-            )
-        ) or path in (
-            state.DATA / "jobs",
-            state.DATA / "staging",
-            state.DATA / "generated",
-            state.BACKUPS,
-            Path("/root/knxoh-acceptance-login.json"),
-            state.LOCK,
-            Path("/etc/knx_to_openhab/paths.env"),
-            Path("/etc/knx_to_openhab"),
-        )
-        if fixed:
-            require(
-                footprint["entries"].get(name) == value,
-                "Original fixed external/component receipt changed",
-            )
     for key in ("accounts", "aliases", "groups", "hostname"):
         require(footprint[key] == original["footprint"][key], "Original identity/alias changed")
     emit(
@@ -351,6 +675,7 @@ def preserve(baseline, *, before_first=False, own_root=None):
         initial_entries=3354,
         installed_files=len(admin.BUNDLE),
         exact_probe_trees=2,
+        retained_input_content_pinned=False,
         protected=True,
     )
 
@@ -564,6 +889,7 @@ def prepare(manifest, files):
             phase="prepare-fixture",
             fixture=manifest,
             system_tls=True,
+            unit_entry=repair.inventory_entry(UNIT, details=True),
             tls_files=tls_files,
             installed_bundle_sha256=digest(
                 fs.read_regular(Path("/etc/ssl/certs/ca-certificates.crt"), 2 * 1024 * 1024)
@@ -776,7 +1102,31 @@ def stage_observation(request, samples):
             pids = (group / "cgroup.procs").read_text().split()
             if not pids:
                 continue
-            pid = pids[0]
+            pid = show(group.name)["MainPID"]
+            if pid == "0" or pid not in pids:
+                continue
+            argv = Path("/proc/" + pid + "/cmdline").read_bytes().split(b"\0")
+            require(
+                argv[:4]
+                == [
+                    b"/usr/bin/python3",
+                    b"-I",
+                    b"/usr/local/libexec/knx_to_openhab/update_prepare.py",
+                    stage.encode(),
+                ],
+                "Wrong installed stage helper process",
+            )
+            status = dict(
+                line.split(":", 1)
+                for line in Path("/proc/" + pid + "/status").read_text().splitlines()
+                if ":" in line
+            )
+            require(
+                status["Uid"].split() == ["997"] * 4
+                and status["Gid"].split() == ["988"] * 4
+                and status["NoNewPrivs"].strip() == "1",
+                "Stage helper is not the isolated worker identity",
+            )
             network = os.readlink("/proc/" + pid + "/ns/net")
             mount = os.readlink("/proc/" + pid + "/ns/mnt")
             interfaces = [
@@ -799,6 +1149,9 @@ def stage_observation(request, samples):
                 mount=mount,
                 interfaces=interfaces,
                 no_ipv4_route=True,
+                uid=997,
+                gid=988,
+                helper_argv=[arg.decode() for arg in argv if arg],
             )
         except FileNotFoundError:
             continue  # Exited between cgroup/proc reads; no inferred successful sample.
@@ -860,7 +1213,7 @@ def installed_candidate(version, manifest, ui):
 def check_stage_result(phase, stage, values):
     if phase == "migration-rejection" and stage == "migrate":
         require(
-            values["Result"] == "exit-code" and values["ExecMainStatus"] != "0",
+            values["Result"] == "exit-code" and values["ExecMainStatus"] == "1",
             "Migration negative did not exit nonzero",
         )
     else:
@@ -868,6 +1221,26 @@ def check_stage_result(phase, stage, values):
             values["Result"] == "success" and values["ExecMainStatus"] == "0",
             "Required stage did not actually succeed",
         )
+
+
+def check_migration_marker(marker, co_filename, script_sha256, helper_pid):
+    expected = dict(
+        fixture="copied-cli-migration-rejection-v1",
+        uid=997,
+        gid=988,
+        parent_pid=helper_pid,
+        co_filename=co_filename,
+        script_sha256=script_sha256,
+        intended_exit=73,
+    )
+    require(
+        set(marker) == {*expected, "pid"}
+        and all(type(marker[k]) is type(v) and marker[k] == v for k, v in expected.items())
+        and type(marker["pid"]) is int
+        and marker["pid"] > 0
+        and marker["pid"] != helper_pid,
+        "Copied CLI rejection marker attribution failed",
+    )
 
 
 def update_phase(phase, manifest, baseline):
@@ -1070,6 +1443,7 @@ def update_phase(phase, manifest, baseline):
         "Unexpected final current version",
     )
     candidate = None
+    migration_cause = None
     if phase in ("stable-update", "retry"):
         candidate = installed_candidate(expected_version, manifest, ui)
         require(
@@ -1156,7 +1530,46 @@ def update_phase(phase, manifest, baseline):
             not (state.BASE / "releases/0.1.2").exists(),
             "Production rollback retained failed candidate; no manual deletion",
         )
-    preserve(baseline, own_root=root)
+        output = state.PREPARATION / request_id / "migrate/output"
+        for path, uid, gid, mode in (
+            (output.parent.parent, 0, 988, 0o750),
+            (output.parent, 0, 988, 0o750),
+            (output, 997, 988, 0o700),
+        ):
+            info = path.lstat()
+            require(
+                stat.S_ISDIR(info.st_mode)
+                and (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (uid, gid, mode),
+                "Unsafe copied CLI marker ancestry",
+            )
+        exact_directory(
+            output, {"fixture-migration-rejection.json": "file"}, metadata(output.lstat())
+        )
+        from installer.update_core.protocol import parse_object
+
+        marker = parse_object(
+            worker_read(output / "fixture-migration-rejection.json", 997, 988, 2048), 2048
+        )
+        release_manifest = json.loads(
+            fs.read_regular(CONTROL / "artifacts/manifest.json", 1024 * 1024)
+        )
+        script_sha = release_manifest["releases"]["migration-negative"]["deltas"][
+            "installer/config_migrations.py"
+        ]["after"]
+        check_migration_marker(
+            marker,
+            str(state.BASE / "releases/0.1.2/installer/config_migrations.py"),
+            script_sha,
+            samples["migrate"]["pid"],
+        )
+        migration_cause = dict(
+            attribution="pinned-copied-cli-worker-marker",
+            marker=marker,
+            outer_helper_exit=1,
+            intended_cli_exit=73,
+            kernel_cli_exit_observed=False,
+        )
+    preserve(baseline, own_phase=phase, own_root=root, manifest=manifest)
     update_unit = show("knxohui-update.service")
     require(
         update_unit["MainPID"] == "0" and update_unit["ActiveState"] in ("inactive", "failed"),
@@ -1218,6 +1631,7 @@ def update_phase(phase, manifest, baseline):
         coordinator_journal=[json.loads(line) for line in raw_journal.splitlines()],
         sudo_journal=sudo_entries,
         candidate=candidate,
+        migration_cause=migration_cause,
         concurrent409=busy_checked,
         lost_http_response=lost_response,
     )
@@ -1247,7 +1661,7 @@ def run(phase, baseline, manifest, files):
     no_outbound()
     runtime_identity()
     before_first = not CONTROL.exists() or not (CONTROL / "stable-update.result.json").exists()
-    preserve(baseline, before_first=before_first)
+    preserve(baseline, before_first=before_first, manifest=manifest)
     if before_first:
         require(
             os.readlink(state.BASE / "current") == baseline["INDEPENDENT_STATE"]["current"],
@@ -1257,7 +1671,7 @@ def run(phase, baseline, manifest, files):
         require(not JOURNAL.exists(), "Unexpected existing updater journal")
         health("0.1.0")
         prepare(manifest, files)
-        preserve(baseline, before_first=True)
+        preserve(baseline, before_first=True, manifest=manifest)
     else:
         verify_fixture(manifest)
         update_phase(phase, manifest, baseline)

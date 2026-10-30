@@ -29,7 +29,30 @@ SOURCE_HEAD = "2dcf3078b61283a41fd1ef38e34327e4f759d5c1"
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = "diddip21/knx_to_openhab"
 PHASES = ("stable-update", "no-update", "checksum-rejection", "migration-rejection", "retry")
-MIGRATION_BODY = b"    raise SystemExit(73)  # acceptance fixture: copied CLI rejection\n"
+MIGRATION_BODY = b"""    # Fixture-only CLI provenance; production helpers and migration tables unchanged.
+    import sys
+
+    if len(sys.argv) != 5 or sys.argv[1] != "--migrate-copy" or sys.argv[3] != "--output":
+        raise SystemExit(74)
+    marker = {
+        "fixture": "copied-cli-migration-rejection-v1",
+        "uid": getattr(os, "geteuid", lambda: None)(),
+        "gid": getattr(os, "getegid", lambda: None)(),
+        "pid": os.getpid(),
+        "parent_pid": os.getppid(),
+        "co_filename": main.__code__.co_filename,
+        "script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "intended_exit": 73,
+    }
+    raw = (json.dumps(marker, sort_keys=True) + "\\n").encode("ascii")
+    if len(raw) > 2048:
+        raise SystemExit(74)
+    with Path(sys.argv[4]).with_name("fixture-migration-rejection.json").open("xb") as stream:
+        stream.write(raw)
+        stream.flush()
+        os.fsync(stream.fileno())
+    raise SystemExit(73)
+"""
 MAX_WHEEL = 64 * 1024 * 1024
 MAX_EXPANDED = 256 * 1024 * 1024
 

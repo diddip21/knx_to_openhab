@@ -226,6 +226,38 @@ def guest_payload(phase, approval, source, nonce, baseline, fixture, files):
     )
 
 
+def dispatch(command, payload, evidence_dir, phase):
+    """One transport attempt; timeout/launch failure is unknown, never retryable here."""
+    try:
+        result = subprocess.run(
+            command, input=payload, text=True, capture_output=True, timeout=1800
+        )
+    except subprocess.TimeoutExpired as error:
+        stdout, stderr = error.stdout, error.stderr
+        exit_text, code = "unknown: timed-out; do not resubmit", 124
+        outcome = dict(phase=phase, outcome="timed-out-unknown", transport_exit=None)
+    except OSError as error:
+        stdout, stderr = (
+            b"",
+            f"Transport launch failed: {type(error).__name__}; errno={error.errno}",
+        )
+        exit_text, code = "unknown: launch-failed; do not resubmit", 125
+        outcome = dict(phase=phase, outcome="launch-failed-unknown", transport_exit=None)
+    else:
+        stdout, stderr = result.stdout, result.stderr
+        exit_text, code = str(result.returncode), result.returncode
+        outcome = dict(phase=phase, outcome="transport-completed", transport_exit=code)
+    for name, value in (("observations.jsonl", stdout), ("stderr.log", stderr)):
+        raw = value.encode("utf-8") if isinstance(value, str) else value or b""
+        (evidence_dir / name).write_bytes(raw)
+    (evidence_dir / "exit.txt").write_text(exit_text, encoding="utf-8")
+    (evidence_dir / "dispatch-outcome.json").write_text(
+        json.dumps(outcome, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print("Own-inner fixture transport:", outcome["outcome"], "controller exit:", code)
+    return code
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--phase", required=True, choices=PHASES)
@@ -317,15 +349,7 @@ def main(argv=None):
         "-B",
         "-",
     ]
-    result = subprocess.run(command, input=payload, text=True, capture_output=True, timeout=1800)
-    for name, value in (
-        ("observations.jsonl", result.stdout),
-        ("stderr.log", result.stderr),
-        ("exit.txt", str(result.returncode)),
-    ):
-        (args.evidence_dir / name).write_text(value, encoding="utf-8")
-    print("Own-inner fixture phase exit:", result.returncode)
-    return result.returncode
+    return dispatch(command, payload, args.evidence_dir, args.phase)
 
 
 if __name__ == "__main__":

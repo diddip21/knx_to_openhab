@@ -89,6 +89,16 @@ if [[ -e "$BASE/venv" || -e "$BASE/jobs" || -e "$CONFIG_DIR/secrets.env" || -e "
     echo "LAB UPGRADE: running against existing state; never use this override on production." >&2
 fi
 
+if [[ ! -f "$CONFIG_DIR/secrets.env" ]] || ! grep -q '^KNXOH_UI_PASSWORD_HASH_B64=' "$CONFIG_DIR/secrets.env"; then
+    if ! { exec 3<>/dev/tty; } 2>/dev/null; then
+        echo "Credential migration needs an interactive terminal." >&2
+        echo "Run setup from an interactive SSH session (for example, ssh -t) or configure a valid" >&2
+        echo "KNXOH_UI_PASSWORD_HASH_B64 in $CONFIG_DIR/secrets.env before setup." >&2
+        echo "No service, package or runtime data was changed." >&2
+        exit 4
+    fi
+    exec 3>&-
+fi
 stop_unit_if_active() {
     local unit="$1"
     if sudo systemctl is-active --quiet "$unit"; then

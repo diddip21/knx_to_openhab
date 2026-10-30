@@ -90,20 +90,35 @@ def read_regular(path, limit=MAX_WHEEL, owner=None):
     if owner is not None and (before.st_uid != owner or before.st_mode & 0o022):
         raise ValueError("Unsafe file owner/mode")
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
-    fields = ("st_dev", "st_ino", "st_mode", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")
+    common_fields = ("st_dev", "st_ino", "st_mode", "st_nlink", "st_size", "st_mtime_ns")
+    descriptor_fields = common_fields + ("st_ctime_ns",)
+    path_fields = common_fields + ("st_ctime_ns",)
+    identity_fields = common_fields
+    if os.name == "nt":
+        if not hasattr(before, "st_birthtime_ns"):
+            raise NotImplementedError("Windows stable identity requires birth-time metadata")
+        # Windows path stat reports creation time in st_ctime_ns, while fstat
+        # reports change time. Compare their shared creation-time field instead.
+        identity_fields += ("st_birthtime_ns",)
+    else:
+        identity_fields += ("st_ctime_ns",)
 
-    def unchanged(info):
-        return all(getattr(before, field) == getattr(info, field) for field in fields)
+    def unchanged(left, right, fields):
+        return all(getattr(left, field) == getattr(right, field) for field in fields)
 
     with os.fdopen(os.open(path, flags), "rb") as stream:
-        if not unchanged(os.fstat(stream.fileno())):
+        opened = os.fstat(stream.fileno())
+        if not unchanged(before, opened, identity_fields):
             raise ValueError("File changed before read")
         raw = stream.read(limit + 1)
-        if not unchanged(os.fstat(stream.fileno())) or len(raw) != before.st_size:
+        if (
+            not unchanged(opened, os.fstat(stream.fileno()), descriptor_fields)
+            or len(raw) != before.st_size
+        ):
             raise ValueError("File changed during read")
     # atime is allowed to change on POSIX reads.
     after = path.lstat()
-    if not unchanged(after):
+    if not unchanged(before, after, path_fields):
         raise ValueError("File changed after read")
     return raw
 

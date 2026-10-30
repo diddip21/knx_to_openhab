@@ -148,12 +148,14 @@ On failure retain the original journal/candidate/workspaces and private evidence
   untrusted-chain rejection, without system trust/DNS writes.
 - Fresh targeted review-regression tests on Windows3.12: **12 passed,15 skipped**;
   Linux/root-only transaction and filesystem cases are skipped on Windows. The
-  broader focused two-file run reported **62 passed,17 skipped,2 failed**: both
-  failures hit the unchanged `read_regular()` lstat/fstat `st_ctime_ns` comparison
-  on locally generated Windows files. That suite is not green on this host.
-- Black, isort, flake8 and `git diff --check` passed for the changed files. The
+  initial broader Windows run exposed that `Path.lstat().st_ctime_ns` reports
+  creation time while `os.fstat().st_ctime_ns` reports change time. The reader now
+  compares their shared birth-time identity, retains same-source change checks,
+  and fails closed if Windows birth-time metadata is unavailable.
+- Fresh focused fixture suite (data, operator, server): **83 passed,17 skipped**;
+  Black, isort, flake8 and `git diff --check` passed for the changed files. The
   existing private Linux fix-run record says **78 passed,4 deselected**; it was not
-  rerun during this review follow-up.
+  rerun during this follow-up.
 - Focused actual Ubuntu3.12.3 run: **52 passed,3 deselected**, using exclusive own
   private test files, the already installed test interpreter and original guarded
   read-only wheelhouse. Git release-build tests were deliberately not run there.

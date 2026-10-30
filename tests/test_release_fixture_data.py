@@ -91,6 +91,91 @@ def test_inventory_refuses_links_and_unknown_entries(tmp_path):
         api().inventory_wheels(tmp_path)
 
 
+def test_read_regular_accepts_stable_windows_file_when_stat_ctime_semantics_differ(
+    tmp_path, monkeypatch
+):
+    import os
+    import sys
+    from types import SimpleNamespace
+
+    if sys.platform != "win32":
+        pytest.skip(
+            "Windows path stat reports creation time while descriptor stat reports change time"
+        )
+    path = tmp_path / "stable-artifact.bin"
+    expected = b"stable bytes"
+    path.write_bytes(expected)
+    path_info = path.lstat()
+    if not hasattr(path_info, "st_birthtime_ns"):
+        pytest.skip("Python does not expose Windows birth time")
+    original_fstat = os.fstat
+
+    def windows_fstat(fd):
+        value = original_fstat(fd)
+        fields = (
+            "st_dev",
+            "st_ino",
+            "st_mode",
+            "st_nlink",
+            "st_size",
+            "st_mtime_ns",
+            "st_birthtime_ns",
+        )
+        result = {field: getattr(value, field) for field in fields}
+        result["st_ctime_ns"] = value.st_ctime_ns + 2_000_000_000
+        return SimpleNamespace(**result)
+
+    monkeypatch.setattr(api().os, "fstat", windows_fstat)
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+    try:
+        descriptor_info = os.fstat(fd)
+    finally:
+        os.close(fd)
+    for field in ("st_dev", "st_ino", "st_mode", "st_nlink", "st_size", "st_mtime_ns"):
+        assert getattr(path_info, field) == getattr(descriptor_info, field)
+    assert path_info.st_birthtime_ns == descriptor_info.st_birthtime_ns
+    if path_info.st_ctime_ns == descriptor_info.st_ctime_ns:
+        pytest.skip("This Python runtime does not expose different path/fd ctime semantics")
+    assert api().read_regular(path) == expected
+
+
+def test_read_regular_fails_closed_when_windows_birthtime_is_unavailable(tmp_path, monkeypatch):
+    import os
+    import sys
+    from types import SimpleNamespace
+
+    if sys.platform != "win32":
+        pytest.skip("Windows file identity requires birth-time comparison")
+    path = tmp_path / "stable-artifact.bin"
+    path.write_bytes(b"stable bytes")
+    info = path.lstat()
+    os.utime(path, ns=(info.st_atime_ns, info.st_mtime_ns + 2_000_000_000))
+    path_type = type(path)
+    original_lstat = path_type.lstat
+
+    def without_birthtime(self, *args, **kwargs):
+        value = original_lstat(self, *args, **kwargs)
+        if self != path:
+            return value
+        fields = (
+            "st_dev",
+            "st_ino",
+            "st_mode",
+            "st_nlink",
+            "st_size",
+            "st_mtime_ns",
+            "st_ctime_ns",
+            "st_uid",
+            "st_gid",
+            "st_file_attributes",
+        )
+        return SimpleNamespace(**{field: getattr(value, field, 0) for field in fields})
+
+    monkeypatch.setattr(path_type, "lstat", without_birthtime)
+    with pytest.raises(NotImplementedError, match="birth-time"):
+        api().read_regular(path)
+
+
 def test_builds_exact_source_reproducibly_and_records_all_deltas(tmp_path):
     first = api().build_artifacts(tmp_path / "first")
     second = api().build_artifacts(tmp_path / "second")

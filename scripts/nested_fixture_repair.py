@@ -327,6 +327,57 @@ def _directory(entries, path, uid, gid, mode, children=None):
         raise ValueError("Invalid repair checkpoint directory: " + str(path))
 
 
+def _systemd_enable_links():
+    return {
+        str(root / target / unit): str(SYSTEMD / unit)
+        for root in (SYSTEMD, PurePosixPath("/usr/lib/systemd/system"))
+        for target, unit in (
+            ("multi-user.target.wants", state.UNITS[0]),
+            ("multi-user.target.wants", state.UNITS[4]),
+            ("timers.target.wants", state.UNITS[2]),
+        )
+    }
+
+
+def _validate_systemd_entry(name, value):
+    """Restrict the already collected footprint, including nested dependencies."""
+    path = PurePosixPath(name)
+    if not any(
+        root in path.parents for root in (SYSTEMD, PurePosixPath("/usr/lib/systemd/system"))
+    ):
+        return
+    links = _systemd_enable_links()
+    if name in links:
+        if any(
+            value.get(k) != v
+            for k, v in dict(
+                kind="other",
+                uid=0,
+                gid=0,
+                target=links[name],
+            ).items()
+        ):
+            raise ValueError("Invalid installed systemd enable link")
+        return
+    drops = {
+        SYSTEMD / (unit + ".d")
+        for unit in (state.UNITS[0], state.UNITS[1], state.UNITS[3], state.UNITS[4])
+    }
+    if path in drops:
+        kind = "directory"
+    elif (
+        path.parent == SYSTEMD
+        and path.name in state.UNITS
+        or path.parent in drops
+        and path.name == "50-knxohui-paths.conf"
+    ):
+        kind = "file"
+    else:
+        raise ValueError("Unknown installed systemd artifact")
+    if value.get("kind") != kind:
+        raise ValueError("Invalid installed systemd artifact kind")
+
+
 def validate_known_inventory(inventory, nonce):
     if type(inventory) is not dict or set(inventory) != {
         "entries",
@@ -400,15 +451,9 @@ def validate_known_inventory(inventory, nonce):
             or value["children"] != sorted(set(value["children"]))
         ):
             raise ValueError("Invalid repair checkpoint children")
+        _validate_systemd_entry(name, value)
         if kind == "other":
-            allowed = {(state.BASE / "current").as_posix(): str(INITIAL)}
-            for root in (SYSTEMD, PurePosixPath("/usr/lib/systemd/system")):
-                for target, unit in (
-                    ("multi-user.target.wants", state.UNITS[0]),
-                    ("multi-user.target.wants", state.UNITS[4]),
-                    ("timers.target.wants", state.UNITS[2]),
-                ):
-                    allowed[str(root / target / unit)] = str(SYSTEMD / unit)
+            allowed = {(state.BASE / "current").as_posix(): str(INITIAL), **_systemd_enable_links()}
             if value["uid"] != 0 or value["gid"] != 0 or allowed.get(name) != value["target"]:
                 raise ValueError("Unknown repair checkpoint link")
     # Original hashes/modes/account identities are NOT replaced by a newly
@@ -590,6 +635,7 @@ def _validate_component_bytes(inventory, expected):
         _directory(entries, root, 0, 0, mode, children)
     allowed = set(expected) | {str(p) for p in roots}
     for name in entries:
+        _validate_systemd_entry(name, entries[name])
         path = PurePosixPath(name)
         if (
             path == LIBEXEC

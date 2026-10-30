@@ -923,3 +923,183 @@ def test_installed_collection_refuses_windows_before_any_filesystem_query(monkey
     )
     with pytest.raises(ValueError, match="nested root"):
         repair.collect_installed()
+
+
+@pytest.fixture
+def pinned_systemd_boundary(monkeypatch, installed_inventory, synthetic_sources):
+    """Keep checkpoint and component validators real; fake only guest I/O/effects."""
+    repair, old, new = synthetic_sources
+    inventory = installed_inventory
+    entries = inventory["entries"]
+    expected = {}
+    events = []
+
+    def file(path):
+        raw = ("original component " + str(path)).encode()
+        expected[str(path)] = (raw, 0o644)
+        entries[str(path)] = dict(
+            kind="file",
+            uid=0,
+            gid=0,
+            mode=0o644,
+            device=1,
+            inode=len(entries) + 1,
+            links=1,
+            sha256=hashlib.sha256(raw).hexdigest(),
+        )
+
+    def directory(path, children):
+        entries[str(path)] = dict(
+            kind="directory",
+            uid=0,
+            gid=0,
+            mode=0o755,
+            device=1,
+            inode=len(entries) + 1,
+            links=2,
+            children=sorted(children),
+        )
+
+    for unit in state.UNITS:
+        file(repair.SYSTEMD / unit)
+    for unit in (state.UNITS[0], state.UNITS[1], state.UNITS[3], state.UNITS[4]):
+        drop = repair.SYSTEMD / (unit + ".d")
+        directory(drop, ["50-knxohui-paths.conf"])
+        file(drop / "50-knxohui-paths.conf")
+    directory(repair.LIBEXEC, ["helper.py"])
+    file(repair.LIBEXEC / "helper.py")
+    enabled = {}
+    for parent, unit in (
+        ("multi-user.target.wants", state.UNITS[0]),
+        ("multi-user.target.wants", state.UNITS[4]),
+        ("timers.target.wants", state.UNITS[2]),
+    ):
+        name = str(repair.SYSTEMD / parent / unit)
+        enabled[name] = dict(
+            kind="other",
+            uid=0,
+            gid=0,
+            mode=0o777,
+            device=1,
+            inode=len(entries) + 1,
+            links=1,
+            target=str(repair.SYSTEMD / unit),
+        )
+        entries[name] = enabled[name]
+    checkpoint = dict(
+        format=1,
+        checkpoint="environmentfile-installed-20261030",
+        nonce_sha256=hashlib.sha256(NONCE.encode()).hexdigest(),
+        old_source_approval=old,
+        inventory=copy.deepcopy(inventory),
+    )
+    repair.validate_repair_checkpoint(checkpoint, inventory, NONCE)
+
+    def components(actual):
+        # Isolate component bytes from external trees: those remain covered by
+        # the real full checkpoint validator, not this synthetic source I/O fake.
+        view = {
+            "entries": {
+                name: value
+                for name, value in actual["entries"].items()
+                if name.startswith(
+                    ("/etc/systemd/system/", "/usr/lib/systemd/system/", "/usr/local/libexec/")
+                )
+            }
+        }
+        repair._validate_component_bytes(view, expected)
+
+    components(inventory)
+    monkeypatch.setattr(fixture, "require_guest", lambda nonce: events.append("guest"))
+    monkeypatch.setattr(repair, "collect_installed", lambda: copy.deepcopy(inventory))
+
+    def sources(pin, approval, head):
+        repair.validate_repair_source(approval, head, pin["old_source_approval"])
+        return fixture.SOURCE
+
+    monkeypatch.setattr(repair, "verify_repair_sources", sources)
+    monkeypatch.setattr(
+        repair, "validate_installed_components", lambda guest, pin, actual: components(actual)
+    )
+    admin = SimpleNamespace(
+        Paths=type(fixture.expected_paths()),
+        check_worker=lambda: None,
+        check_worker_sudo=lambda: None,
+        install_components=lambda *a: events.append("install"),
+    )
+    monkeypatch.setattr(fixture, "load_approved_admin", lambda source: admin)
+
+    @contextmanager
+    def lease(*args):
+        events.append("lock")
+        yield
+        events.append("unlock")
+
+    monkeypatch.setattr(fixture, "resume_lease", lease)
+    monkeypatch.setattr(repair, "verify_repaired", lambda *a: events.append("repaired"))
+    monkeypatch.setattr(repair, "activate_repaired", lambda *a: events.append("activate"))
+    return repair, inventory, checkpoint, new, components, enabled, events
+
+
+def test_pinned_genuine_recorded_systemd_enable_links_remain_accepted(pinned_systemd_boundary):
+    repair, _, checkpoint, approval, _, _, events = pinned_systemd_boundary
+    repair.repair_environmentfile(fixture, NONCE, checkpoint, approval, HEAD)
+    assert events == ["guest", "lock", "guest", "install", "repaired", "unlock", "activate"]
+
+
+@pytest.mark.parametrize("substitution", [False, True])
+@pytest.mark.parametrize(
+    "parent,unit",
+    [
+        ("multi-user.target.wants", "knxohui.service"),
+        ("multi-user.target.wants", "knxohui-update-recovery.service"),
+        ("timers.target.wants", "knxohui-backup-cleanup.timer"),
+    ],
+)
+def test_pinned_nested_systemd_regular_artifact_refuses_before_effects(
+    pinned_systemd_boundary,
+    substitution,
+    parent,
+    unit,
+):
+    repair, inventory, checkpoint, approval, _, _, events = pinned_systemd_boundary
+    name = str(repair.SYSTEMD / parent / (unit if substitution else "knxoh-review-extra.service"))
+    inventory["entries"][name] = dict(
+        kind="file",
+        uid=0,
+        gid=0,
+        mode=0o644,
+        device=1,
+        inode=99999,
+        links=1,
+        sha256=hashlib.sha256(b"unknown").hexdigest(),
+    )
+    # Simulate externally pinning the unknown entry too, not a stale-pin mismatch.
+    checkpoint["inventory"] = copy.deepcopy(inventory)
+    with pytest.raises(ValueError, match="systemd"):
+        repair.repair_environmentfile(fixture, NONCE, checkpoint, approval, HEAD)
+    assert events == ["guest"]
+
+
+@pytest.mark.parametrize("substitution", [False, True])
+def test_component_check_also_refuses_nested_systemd_artifact(
+    pinned_systemd_boundary, substitution
+):
+    repair, inventory, _, _, components, enabled, _ = pinned_systemd_boundary
+    name = (
+        next(iter(enabled))
+        if substitution
+        else str(repair.SYSTEMD / "knxohui.service.requires/knxoh-review-extra.service")
+    )
+    inventory["entries"][name] = dict(
+        kind="file",
+        uid=0,
+        gid=0,
+        mode=0o644,
+        device=1,
+        inode=99999,
+        links=1,
+        sha256=hashlib.sha256(b"unknown").hexdigest(),
+    )
+    with pytest.raises(ValueError, match="systemd"):
+        components(inventory)

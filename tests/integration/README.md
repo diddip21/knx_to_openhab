@@ -93,6 +93,25 @@ route has now been consumed; it must not be repeated on the installed fixture.
 A separately reviewed rendering fix and explicit installed-component repair
 checkpoint are needed next, not fresh bootstrap or manual unit overrides.
 
+The EnvironmentFile candidate has portable and actual systemd-255 static RED→GREEN
+coverage, but has not repaired the installed fixture. A separate parser-only
+test is available **after controller review/preflight**:
+
+```sh
+KNXOH_LIVE_SYSTEMD_ENV_ACCEPTANCE=own-nested-parser \
+KNXOH_DISPOSABLE_SYSTEMD_NONCE="${ORIGINAL_PRIVATE_NONCE:?}" \
+/opt/knxoh-test-venv/bin/python -B -m pytest -q \
+  tests/integration/test_update_environment_runtime.py -k disposable_pid1 \
+  -o addopts= -p no:cacheprovider
+```
+
+It requires the authenticated nested-provider receipt, creates/removes only
+exclusive UUID-named runtime fixture unit files, and queries actual PID-1 parsing
+without starting a service or reloading/editing app units. It is not a replacement
+for the original read-only `-k installed_writer` checks after an explicitly
+approved production component repair. Unconfigured collection skips all four
+live cases; property-decoder tests remain portable.
+
 An administrator/CI owner must separately supply a throwaway Linux VM/container
 with systemd as PID 1, working cgroup/namespace isolation, distro `sudo`, Python
 venv support, project test dependencies, and a verified installed updater bundle,

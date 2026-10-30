@@ -247,9 +247,11 @@ def render_dropins(paths, paths_file):
             raise ValueError("Paths contract must be outside candidate/runtime/preparation code")
     if paths.config_dir in paths_file.parents and paths_file != paths.config_dir / "paths.env":
         raise ValueError("Paths contract must not replace settings or private recovery state")
-    # EnvironmentFile values are parsed by systemd, not a shell. The four-value
-    # contract itself is parsed as DATA by the coordinator.
-    env = "[Service]\nEnvironmentFile=\nEnvironmentFile=" + _quoted(paths_file) + "\n"
+    # EnvironmentFile takes one whole RHS path, not a quoted word list: systemd
+    # 255 treats quotes literally and rejects the resulting nonabsolute path.
+    # _path retains the no-controls/escaping/specifiers policy; spaces are data.
+    # ExecStart and ReadWritePaths below have DIFFERENT, quoted-word grammars.
+    env = "[Service]\nEnvironmentFile=\nEnvironmentFile=" + _path(paths_file) + "\n"
     result = {name: env for name in UNITS[:2]}
     for name, mode in ((UNITS[3], "run"), (UNITS[4], "recover-boot")):
         result[name] = (

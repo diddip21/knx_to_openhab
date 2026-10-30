@@ -1,13 +1,15 @@
 """Opt-in, read-only installed-unit regression for custom paths with spaces.
 
 Run only in the approved own nested fixture after controller preflight. Queries
-real PID-1 D-Bus state; never patches a unit, starts a service or fakes a property.
+real PID-1 D-Bus state. The separate parser opt-in writes only uniquely named
+disposable fixture units; neither mode starts services or patches app units.
 """
 
 import json
 import os
 import subprocess
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -106,3 +108,72 @@ def test_installed_writer_loads_actual_custom_paths_environment(unit):
         f"actual PID-1 {unit} EnvironmentFiles={actual!r}; "
         "protected custom paths contract was not loaded"
     )
+
+
+@pytest.mark.parametrize("writer", ["knxohui.service", "knxohui-backup-cleanup.service"])
+def test_disposable_pid1_parses_production_environment_file(writer):
+    if os.environ.get("KNXOH_LIVE_SYSTEMD_ENV_ACCEPTANCE") != "own-nested-parser":
+        pytest.skip("opt-in own-nested disposable PID-1 parser regression not configured")
+    import test_update_systemd as harness
+
+    from installer import update_bootstrap as admin
+
+    assert harness._root_process()
+    # This opt-in is specifically for the authenticated own nested fixture, not
+    # arbitrary virtualized hosts. The shared check authenticates this receipt.
+    assert Path("/etc/knxoh-nested-acceptance.json").exists()
+    virt = subprocess.run(
+        ["/usr/bin/systemd-detect-virt"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    harness._check_virtualization(
+        virt.stdout.strip(), os.environ.get("KNXOH_DISPOSABLE_SYSTEMD_NONCE")
+    )
+    assert Path("/proc/1/comm").read_text().strip() == "systemd"
+    contract = Path("/etc/knxoh acceptance config/paths.env")
+    base = Path("/srv/knxoh acceptance app")
+    paths = admin.Paths(
+        base / "releases",
+        base / "current",
+        contract.parent,
+        Path("/var/lib/knxoh acceptance data"),
+        Path("/var/backups/knxoh acceptance backups"),
+    )
+    name = f"knxoh-env-parser-{uuid4().hex}.service"
+    fixture = Path("/run/systemd/system") / name
+    # No app unit edits, daemon-reload, starts, environment injection or contract
+    # reads. LoadUnit parses this new unique fragment directly. The inherited
+    # entry proves the production reset leaves exactly one REQUIRED file.
+    text = (
+        "[Service]\nType=oneshot\nExecStart=/usr/bin/true\n"
+        "EnvironmentFile=/nonexistent-inherited.env\n"
+        + admin.render_dropins(paths, contract)[writer]
+    )
+    stream = fixture.open("x")
+    try:
+        with stream:
+            stream.write(text)
+        obj = _bus(
+            "call",
+            "org.freedesktop.systemd1",
+            "/org/freedesktop/systemd1",
+            "org.freedesktop.systemd1.Manager",
+            "LoadUnit",
+            "s",
+            name,
+        )
+        assert obj["type"] == "o" and len(obj["data"]) == 1
+        environment = _bus(
+            "get-property",
+            "org.freedesktop.systemd1",
+            obj["data"][0],
+            "org.freedesktop.systemd1.Service",
+            "EnvironmentFiles",
+        )
+        assert environment["type"] == "a(sb)"
+        assert _file_entries(environment["data"]) == [(str(contract), False)]
+    finally:
+        fixture.unlink()  # only this exclusively created fixture, never app files

@@ -110,3 +110,37 @@ Delivery checks: the actual Linux installed-writer selection reports **2 failed,
 2 live cases skipped**. Black/isort/flake8 pass for the new regression; full
 native/core/UI suites were not run. This failure concerns EnvironmentFile parsing;
 do not blindly change quoting used by other unit fields, whose parsing differs.
+
+## Targeted rendering candidate (not installed)
+
+`render_dropins()` now emits the validated path directly for `EnvironmentFile=`
+only. In systemd v255 `src/core/load-fragment.c`,
+`config_parse_unit_env_file()` passes the **whole** right-hand side through
+specifier expansion and absolute-path checking without word extraction or
+unquoting. Thus spaces belong to the path, while surrounding quotes are literal
+and invalidate the absolute path. `ExecStart=` and `ReadWritePaths=` retain their
+separate quoted-word grammars. Existing path validation, canonical configuration,
+required-file behavior and the list reset remain unchanged; no environment
+overrides, keys or dependencies were added.
+
+Portable regression: both writers with default and custom-space contract paths
+failed before the fix (**4 failed, 9 passed**) and pass afterward. The existing
+custom-space static test now also rejects `EnvironmentFile=` parser diagnostics:
+real Ubuntu systemd 255 reproduced **1 failed** before the fix despite `verify`
+returning 0, then **1 passed** afterward. This is static parsing, not installed
+writer runtime acceptance.
+
+`test_disposable_pid1_parses_production_environment_file` adds a separately
+opt-in real-PID-1 parser check for the authenticated own nested fixture. It
+exclusively creates a UUID-named `/run/systemd/system/knxoh-env-parser-*.service`,
+uses `LoadUnit` and the real D-Bus `EnvironmentFiles` property, and removes only
+that fixture file. It neither starts services nor reloads/edits app units. This
+new live check has **not** been run; default collection skips it.
+
+Controller must independently review this production change **and** the separate
+guarded installed-component repair runner before guest effects. After explicit
+repair, rerun the original `-k installed_writer` command above and require the
+recorded **2 failed → 2 passed** result on actual installed production-rendered
+drop-ins. The stopped-writer checkpoint and all remaining acceptance limits above
+remain in force; do not hand-edit drop-ins or claim runtime success from static
+validation.

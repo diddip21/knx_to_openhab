@@ -3,7 +3,7 @@
 import os
 import shutil
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -96,6 +96,30 @@ def test_dropins_paths_and_complete_bundle():
     }
 
 
+@pytest.mark.parametrize("contract", ["/etc/knx_to_openhab/paths.env", "/etc/my app/paths.env"])
+@pytest.mark.parametrize("unit", ["knxohui.service", "knxohui-backup-cleanup.service"])
+def test_writer_environment_file_is_one_required_literal_path(contract, unit):
+    from installer.update_bootstrap import render_dropins
+    from installer.update_core.protocol import Paths
+
+    paths = Paths(
+        Path("/opt/my app/releases"),
+        Path("/opt/my app/current"),
+        Path("/etc/my app"),
+        Path("/var/lib/my app"),
+        Path("/var/backups/my app"),
+    )
+    # systemd 255 config_parse_unit_env_file takes the whole RHS, not a quoted
+    # word list. Quotes are literal (and make this nonabsolute); spaces are not
+    # separators. Retain the reset and required-file semantics, without adding
+    # Environment= overrides or changing ExecStart/ReadWritePaths word grammars.
+    assert render_dropins(paths, Path(contract))[unit].splitlines() == [
+        "[Service]",
+        "EnvironmentFile=",
+        "EnvironmentFile=" + contract,
+    ]
+
+
 @pytest.mark.parametrize("bad", ["$x", "%x", 'a"b', "a\\b", "a\nb", "a\x00b"])
 def test_provisioning_rejects_same_path_alphabet_as_adapter(bad):
     from installer.update_bootstrap import render_dropins
@@ -138,6 +162,24 @@ def test_contract_cannot_be_hidden_candidate_runtime_or_settings_file(contract):
     )
     with pytest.raises(ValueError):
         render_dropins(paths, Path(contract))
+
+
+@pytest.mark.parametrize(
+    "bad", ["$x", "%x", 'a"b', "a\\b", "a\nb", "a\rb", "a\tb", "a\x00b", "a\x7fb"]
+)
+def test_environment_file_preserves_rejected_path_alphabet(bad):
+    from installer.update_bootstrap import render_dropins
+    from installer.update_core.protocol import Paths
+
+    paths = Paths(
+        Path("/opt/app/releases"),
+        Path("/opt/app/current"),
+        Path("/etc/app"),
+        Path("/var/lib/app"),
+        Path("/var/backups/app"),
+    )
+    with pytest.raises(ValueError, match="Unsafe sandbox path"):
+        render_dropins(paths, PurePosixPath("/etc/" + bad) / "paths.env")
 
 
 def test_launchers_use_actual_fixed_guard_cli_and_fail_closed():
@@ -1069,3 +1111,6 @@ def test_rendered_custom_space_units_pass_systemd_static_validation(tmp_path):
         [analyze, "verify", "--man=no", *units], capture_output=True, text=True, check=False
     )
     assert result.returncode == 0, result.stdout + result.stderr
+    # verify may succeed while a nonfatal field parser warning drops the entire
+    # EnvironmentFile contract. Exit status alone missed the real 255 defect.
+    assert "EnvironmentFile=" not in result.stderr, result.stderr

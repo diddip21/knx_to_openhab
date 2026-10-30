@@ -179,5 +179,7 @@ regression transcript is in `wsl-acceptance/release-fixture-fix-linux-03/`.
 Original private read-only/run evidence stays under the existing `.superpowers/sdd/...` scratch.
 No private proof, receipt, raw operational log, wheel ZIP or key is committed.
 The source-fix rereview found no further findings. Independent review of the new
-code/fixture pins, actual guest trust/TLS/install/update, and full Task9/parent
-installed acceptance remain **OPEN**.
+code/fixture pins completed read-only with no findings; the refreshed `f2` hashes
+remain pending controller approval and are **not** runtime-approved. Actual guest
+trust/TLS/install/update and full Task9/parent installed acceptance remain
+**OPEN**. No `prepare-fixture` phase has been authorized or run.

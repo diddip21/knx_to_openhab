@@ -114,8 +114,7 @@ except (OSError, json.JSONDecodeError):
 auth = config.get("auth", {}) if isinstance(config, dict) else {}
 if not isinstance(auth, dict):
     raise SystemExit(2)
-if auth.get("enabled") is False:
-    raise SystemExit(0)
+authentication_enabled = auth.get("enabled", True)
 encoded_hash = None
 if secrets_path.is_file():
     try:
@@ -134,6 +133,8 @@ if encoded_hash:
         raise SystemExit(2)
     if not verify_password(password_hash, "logihome"):
         raise SystemExit(0)
+if authentication_enabled is False:
+    raise SystemExit(0)
 raise SystemExit(1)
 PY
     then

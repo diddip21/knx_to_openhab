@@ -8,6 +8,7 @@ from typing import Any
 
 from config import config, datapoint_mappings, normalize_string
 from ets_helpers import flags_match, get_co_flags, get_dpt_from_dco
+from knx_things import KnxChannel, KnxThingsModel, render_dsl_channels
 from utils import get_datapoint_type
 
 logger = logging.getLogger(__name__)
@@ -32,8 +33,8 @@ FENSTERKONTAKTE: list[str] = []
 PRJ_NAME = "Our Home"
 
 
-def gen_building():
-    """Generates a Building from an ETS Project"""
+def gen_building_model() -> tuple[str, str, KnxThingsModel]:
+    """Generate Items, Sitemap, and structured KNX Things from the ETS data."""
 
     def get_co_by_functiontext(cos, config_functiontexts, checkwriteflag=True):
         """
@@ -295,7 +296,7 @@ def gen_building():
 
     items = ""
     sitemap = ""
-    things = ""
+    channels: list[KnxChannel] = []
     floor_nr = 0
     homekit_instance = 1
     homekit_accessorie = 0
@@ -347,7 +348,7 @@ def gen_building():
                     lovely_name = address["Group name"]
                     item_label = lovely_name
                     item_type = ""
-                    thing_address_info = ""
+                    thing_address_info: dict[str, str] = {}
                     description = address["Description"].casefold().split(";")
                     equipment = ""
                     equip_homekit = ""
@@ -395,9 +396,8 @@ def gen_building():
                                 )
                                 if drop_addr:
                                     used_addresses.append(drop_addr["Address"])
-                            relative_option = ""
-                            switch_option = ""
-                            switch_option_status = ""
+                            relative_value = None
+                            switch_value = None
                             if dimmwert_status:
                                 used = True
                                 used_addresses.append(dimmwert_status["Address"])
@@ -406,9 +406,7 @@ def gen_building():
                                 )
                                 if relative_command:
                                     used_addresses.append(relative_command["Address"])
-                                    relative_option = (
-                                        f", increaseDecrease=\"{relative_command['Address']}\""
-                                    )
+                                    relative_value = relative_command["Address"]
                                 switch_command = get_address_from_dco_enhanced(
                                     co, "switch_suffix", define
                                 )
@@ -419,14 +417,22 @@ def gen_building():
                                     )
                                     if switch_status_command:
                                         used_addresses.append(switch_status_command["Address"])
-                                        switch_option_status = (
-                                            f"+<{switch_status_command['Address']}"
+                                        switch_value = (
+                                            f"{switch_command['Address']}+<"
+                                            f"{switch_status_command['Address']}"
                                         )
-                                    switch_option = f", switch=\"{switch_command['Address']}{switch_option_status}\""
+                                    else:
+                                        switch_value = switch_command["Address"]
 
                                 auto_add = True
                                 item_type = "Dimmer"
-                                thing_address_info = f"position=\"{address['Address']}+<{dimmwert_status['Address']}\"{switch_option}{relative_option}"
+                                thing_address_info = {
+                                    "position": f"{address['Address']}+<{dimmwert_status['Address']}"
+                                }
+                                if switch_value:
+                                    thing_address_info["switch"] = switch_value
+                                if relative_value:
+                                    thing_address_info["increaseDecrease"] = relative_value
                                 equipment = "Lightbulb"
                                 semantic_info = '["Light"]'
                                 item_icon = "light"
@@ -466,10 +472,9 @@ def gen_building():
                                 )
                                 if drop_addr:
                                     used_addresses.append(drop_addr["Address"])
-                            option_stop = ""
-                            option_position = ""
-                            option_position_absolute = ""
-                            option_position_status = ""
+                            stop_value = None
+                            position_absolute = ""
+                            position_status = ""
                             if fahren_auf_ab:
                                 used_addresses.append(fahren_auf_ab["Address"])
                                 fahren_stop = get_address_from_dco_enhanced(
@@ -477,7 +482,7 @@ def gen_building():
                                 )
                                 if fahren_stop:
                                     used_addresses.append(fahren_stop["Address"])
-                                    option_stop = f", stopMove=\"{fahren_stop['Address']}\""
+                                    stop_value = fahren_stop["Address"]
                                 absolute_position = get_address_from_dco_enhanced(
                                     co, "absolute_position_suffix", define
                                 )
@@ -487,22 +492,27 @@ def gen_building():
                                 if absolute_position or absolute_position_status:
                                     if absolute_position:
                                         used_addresses.append(absolute_position["Address"])
-                                        option_position_absolute = f"{absolute_position['Address']}"
+                                        position_absolute = absolute_position["Address"]
                                     if absolute_position_status:
                                         used_addresses.append(absolute_position_status["Address"])
                                         if absolute_position:
-                                            option_position_status = (
+                                            position_status = (
                                                 f"+<{absolute_position_status['Address']}"
                                             )
                                         else:
-                                            option_position_status = (
+                                            position_status = (
                                                 f"<{absolute_position_status['Address']}"
                                             )
-                                    option_position = f', position="{option_position_absolute}{option_position_status}"'
 
                                 auto_add = True
                                 item_type = "Rollershutter"
-                                thing_address_info = f"upDown=\"{fahren_auf_ab['Address']}\"{option_stop}{option_position}"
+                                thing_address_info = {"upDown": fahren_auf_ab["Address"]}
+                                if stop_value:
+                                    thing_address_info["stopMove"] = stop_value
+                                if position_absolute or position_status:
+                                    thing_address_info["position"] = (
+                                        f"{position_absolute}{position_status}"
+                                    )
                                 equipment = "Blinds"
                                 semantic_info = '["Blinds"]'
                                 item_icon = "rollershutter"
@@ -543,9 +553,9 @@ def gen_building():
                                 if address["DatapointType"] == "DPST-20-102":
                                     item_type = "Number"
                                     ga = "20.102"
-                                thing_address_info = (
-                                    f"ga=\"{ga}:{address['Address']}{option_status_betriebsmodus}\""
-                                )
+                                thing_address_info = {
+                                    "ga": f"{ga}:{address['Address']}{option_status_betriebsmodus}"
+                                }
                                 item_label = f"{lovely_name}"
                                 equipment = "HVAC"
                                 if B_HOMEKIT:
@@ -577,12 +587,12 @@ def gen_building():
                             if status:
                                 auto_add = True
                                 used_addresses.append(status["Address"])
-                                thing_address_info = (
-                                    f"ga=\"{address['Address']}+<{status['Address']}\""
-                                )
+                                thing_address_info = {
+                                    "ga": f"{address['Address']}+<{status['Address']}"
+                                }
                             else:
                                 auto_add = True
-                                thing_address_info = f"ga=\"{address['Address']}\""
+                                thing_address_info = {"ga": address["Address"]}
                             semantic_info = '["Switch"]'
                             item_icon = "switch"
                             if B_HOMEKIT:
@@ -601,14 +611,15 @@ def gen_building():
                                 item_type = mapping_info["item_type"]
                                 if item_type.casefold() in config["defines"]:
                                     define = config["defines"][item_type.casefold()]
-                                thing_address_info = (
-                                    f"ga=\"{mapping_info['ga_prefix']}:{address['Address']}\""
+                                channel_config_key = "ga"
+                                channel_config_value = (
+                                    f"{mapping_info['ga_prefix']}:{address['Address']}"
                                 )
                                 if "=" in mapping_info["ga_prefix"]:
                                     split_info = mapping_info["ga_prefix"].split("=")
-                                    thing_address_info = (
-                                        f"{split_info[0]}=\"{split_info[1]}:{address['Address']}\""
-                                    )
+                                    channel_config_key = split_info[0]
+                                    channel_config_value = f"{split_info[1]}:{address['Address']}"
+                                thing_address_info = {channel_config_key: channel_config_value}
                                 item_label = f"{lovely_name}"
                                 metadata = f"{mapping_info['metadata']}"
                                 if B_HOMEKIT:
@@ -654,7 +665,7 @@ def gen_building():
 
                                 auto_add = True
                                 item_type = "Number"
-                                thing_address_info = f"ga=\"{ga}:{address['Address']}\""
+                                thing_address_info = {"ga": f"{ga}:{address['Address']}"}
                                 semantic_info = '["Equipment"]'
                                 item_icon = "movecontrol"
                                 sitemap_type = "Selection"
@@ -728,7 +739,14 @@ def gen_building():
                         item_label = item_label.strip()
 
                         thing_type = item_type.lower().split(":")[0]
-                        things += f"Type {thing_type}    :   {item_name}   \"{address['Group name']}\"   [ {thing_address_info} ]\n"
+                        channels.append(
+                            KnxChannel(
+                                channel_id=item_name,
+                                channel_type=thing_type,
+                                label=address["Group name"],
+                                config=thing_address_info,
+                            )
+                        )
 
                         root = f"map{floor_nr}_{room_nr}"
 
@@ -791,7 +809,24 @@ def gen_building():
             else:
                 sitemap += "\n"
         sitemap += "}\n"
-    return items, sitemap, things
+    if GWIP:
+        gateway_config = {
+            "type": "TUNNEL",
+            "ipAddress": GWIP,
+            "portNumber": 3671,
+            "autoReconnectPeriod": 30,
+        }
+    else:
+        gateway_config = {"type": "ROUTER", "autoReconnectPeriod": 60}
+
+    model = KnxThingsModel(gateway_config=gateway_config, channels=tuple(channels))
+    return items, sitemap, model
+
+
+def gen_building() -> tuple[str, str, str]:
+    """Compatibility wrapper returning the KNX channel declarations as DSL."""
+    items, sitemap, model = gen_building_model()
+    return items, sitemap, render_dsl_channels(model)
 
 
 def data_of_name(data, name, suffix, replace=""):

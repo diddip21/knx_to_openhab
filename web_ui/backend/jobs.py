@@ -11,16 +11,27 @@ import threading
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
+from ipaddress import ip_address
 
 from completeness import check_completeness, iter_thing_lines
 
+from . import gateway_config
 from .deploy_policy import (
     configured_managed_paths,
     deploy_staged_files,
+    read_managed_file,
     restore_managed_files,
+    write_managed_file,
 )
 from .service_updates import package_version
-from .storage import ensure_dirs, load_jobs, save_jobs
+from .storage import (
+    ensure_dirs,
+    load_generator_config,
+    load_jobs,
+    save_generator_config,
+    save_jobs,
+)
 from .things_format import (
     FORMAT_OUTPUT_KEYS,
     THINGS_OUTPUT_KEYS,
@@ -171,6 +182,113 @@ class JobManager:
             "detected_gateway_ip": latest["detected_gateway_ip"],
             "things_format": latest.get("things_format", "dsl"),
         }
+
+    def get_gateway_state(self):
+        """Read active managed bridge settings and reset availability under the operation lock."""
+        with self.operation_lock:
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            configuration = load_generator_config(project_root)
+            state_config = deepcopy(configuration)
+            state_config["_gateway_reset_available"] = (
+                self.get_last_deployed_gateway_source() is not None
+            )
+            return gateway_config.read_gateway_state(state_config, project_root)
+
+    def _update_live_gateway(self, transform, gateway_ip, gateway_mode, override):
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        original_config = load_generator_config(project_root)
+        state_config = deepcopy(original_config)
+        state_config["_gateway_reset_available"] = (
+            self.get_last_deployed_gateway_source() is not None
+        )
+        state = gateway_config.read_gateway_state(state_config, project_root)
+        openhab_root, managed_paths = configured_managed_paths(original_config, project_root)
+        relative_path = state["managed_path"]
+        if relative_path not in managed_paths.values():
+            raise ValueError("Active KNX Things file is not a managed output")
+
+        old_content = read_managed_file(openhab_root, relative_path, managed_paths)
+        try:
+            old_text = old_content.decode("utf-8")
+        except UnicodeError as error:
+            raise ValueError(f"Active KNX Things file is not valid UTF-8: {error}") from error
+        new_text = transform(old_text, state["things_format"])
+        new_content = new_text.encode("utf-8")
+
+        updated_config = deepcopy(original_config)
+        devices = updated_config.setdefault("devices", {})
+        if not isinstance(devices, dict):
+            raise ValueError("Generator devices configuration must be an object")
+        gateway = devices.setdefault("gateway", {})
+        if not isinstance(gateway, dict):
+            raise ValueError("Generator gateway configuration must be an object")
+        gateway["ip_address"] = override
+
+        try:
+            save_generator_config(updated_config, project_root)
+            write_managed_file(openhab_root, relative_path, new_content, managed_paths)
+        except Exception as update_error:
+            restore_errors = []
+            try:
+                write_managed_file(openhab_root, relative_path, old_content, managed_paths)
+            except Exception as restore_error:
+                restore_errors.append(f"live file: {restore_error}")
+            try:
+                save_generator_config(original_config, project_root)
+            except Exception as restore_error:
+                restore_errors.append(f"generator configuration: {restore_error}")
+            if restore_errors:
+                raise RuntimeError(
+                    f"Gateway update failed: {update_error}; compensation failed: "
+                    + "; ".join(restore_errors)
+                ) from update_error
+            raise
+
+        return {
+            "success": True,
+            "things_format": state["things_format"],
+            "managed_path": relative_path,
+            "gateway_ip": gateway_ip,
+            "gateway_mode": gateway_mode,
+            "saved_override": override,
+            "message": (
+                "KNX gateway configuration file updated; OpenHAB runtime status was not checked."
+            ),
+        }
+
+    def apply_gateway_ip(self, ip_address_value):
+        """Update only the active KNX gateway settings and saved IP override."""
+        try:
+            normalized_ip = str(ip_address(ip_address_value.strip()))
+        except (AttributeError, ValueError) as error:
+            raise ValueError(f"Invalid IP address: {ip_address_value}") from error
+
+        with self.operation_lock:
+            return self._update_live_gateway(
+                lambda content, format_name: gateway_config.update_gateway_file(
+                    content, format_name, normalized_ip
+                ),
+                gateway_ip=normalized_ip,
+                gateway_mode="TUNNEL",
+                override=normalized_ip,
+            )
+
+    def restore_gateway_ip(self):
+        """Restore the last deployed ETS gateway address or KNX router mode."""
+        with self.operation_lock:
+            source = self.get_last_deployed_gateway_source()
+            if source is None:
+                raise ValueError("No successfully deployed ETS gateway source is available")
+            detected_ip = source["detected_gateway_ip"]
+            normalized_ip = str(ip_address(detected_ip)) if detected_ip is not None else None
+            return self._update_live_gateway(
+                lambda content, format_name: gateway_config.restore_ets_gateway_file(
+                    content, format_name, normalized_ip
+                ),
+                gateway_ip=normalized_ip,
+                gateway_mode="TUNNEL" if normalized_ip is not None else "ROUTER",
+                override="",
+            )
 
     def get_queue(self, job_id):
         # Ensure job exists before returning queue

@@ -63,6 +63,7 @@ def _run_staged_generation(tmp_path, monkeypatch, current_format, previous_forma
             {"name_long": "Test House", "floors": []}
         ],
         get_gateway_ip=lambda _project: "192.168.1.20",
+        detect_gateway_ip=lambda _project: "192.168.1.20",
         is_homekit_enabled=lambda _project: False,
         is_alexa_enabled=lambda _project: False,
     )

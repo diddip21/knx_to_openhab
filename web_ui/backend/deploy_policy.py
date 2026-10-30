@@ -253,6 +253,64 @@ def _replace_file_contents(fd, content):
     os.fsync(fd)
 
 
+def _managed_relative_path(relative_path, managed_paths):
+    relative = _path_text(relative_path, "managed target")
+    path = PurePosixPath(relative)
+    raw_parts = relative.split("/")
+    if path.is_absolute() or not path.parts or any(part in ("", ".", "..") for part in raw_parts):
+        raise DeployPolicyError("Managed target must be a safe relative path")
+    relative = path.as_posix()
+    if relative not in set(managed_paths.values()):
+        raise DeployPolicyError(f"Managed target is not managed: {relative}")
+    return relative
+
+
+def read_managed_file(openhab_root, relative_path, managed_paths):
+    """Read an existing single-link managed file without following symlinks."""
+    relative = _managed_relative_path(relative_path, managed_paths)
+    root = os.path.realpath(os.path.abspath(openhab_root))
+
+    if os.name == "nt":
+        current = root
+        parts = PurePosixPath(relative).parts
+        for part in parts[:-1]:
+            current = os.path.join(current, part)
+            if stat.S_ISLNK(os.lstat(current).st_mode):
+                raise DeployPolicyError(f"Managed path must not contain symlinks: {relative}")
+        target = os.path.join(current, parts[-1])
+        if stat.S_ISLNK(os.lstat(target).st_mode):
+            raise DeployPolicyError(f"Managed target must not be a symlink: {relative}")
+        descriptor = os.open(target, os.O_RDONLY | _NOFOLLOW)
+        try:
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode):
+                raise DeployPolicyError(f"Managed target is not a regular file: {relative}")
+            if info.st_nlink != 1:
+                raise DeployPolicyError(f"Managed target must not be a hard link: {relative}")
+            return _read_all(descriptor)
+        finally:
+            os.close(descriptor)
+
+    descriptor = _open_regular_file(root, relative, os.O_RDONLY)
+    try:
+        return _read_all(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def write_managed_file(openhab_root, relative_path, content, managed_paths):
+    """Replace one already-provisioned managed regular file and fsync its inode."""
+    if not isinstance(content, bytes):
+        raise TypeError("Managed file content must be bytes")
+    relative = _managed_relative_path(relative_path, managed_paths)
+    root = os.path.realpath(os.path.abspath(openhab_root))
+    descriptor = _open_regular_file(root, relative, os.O_WRONLY)
+    try:
+        _replace_file_contents(descriptor, content)
+    finally:
+        os.close(descriptor)
+
+
 def deploy_staged_files(mapping, staging_dir, openhab_root, managed_paths):
     """Copy only configured managed files into already provisioned inodes.
 

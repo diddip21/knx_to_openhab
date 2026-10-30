@@ -736,7 +736,8 @@ if FLASK_AVAILABLE:
                     {
                         "error": (
                             "A migrated Web UI password hash is required before updating. "
-                            f"Run 'sudo bash {project_root}/installer/setup.sh' as an administrator."
+                            f"Run 'sudo bash {project_root}/installer/setup.sh' from an interactive SSH terminal; "
+                            "setup will ask for a new Web UI password. Then retry the update."
                         )
                     }
                 ),

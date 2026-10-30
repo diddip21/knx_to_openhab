@@ -36,7 +36,7 @@ def test_setup_stops_service_before_migration_and_restarts_after_unit_reload():
 
     stop_index = setup.index("stop_unit_if_active knxohui.service")
     migration_index = setup.index("migrate_runtime_data.py")
-    daemon_reload_index = setup.index("sudo systemctl daemon-reload")
+    daemon_reload_index = setup.index("sudo systemctl daemon-reload", migration_index)
     restart_index = setup.index("sudo systemctl restart knxohui.service")
 
     assert stop_index < migration_index < daemon_reload_index < restart_index

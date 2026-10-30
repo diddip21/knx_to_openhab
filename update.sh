@@ -47,7 +47,7 @@ fi
 PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
 if [[ ! -x "$INSTALL_DIR/venv/bin/python" ]]; then
     log "ERROR: The installed Python environment is missing; credential migration cannot be verified."
-    log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' as an administrator, then retry."
+    log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' from an interactive SSH terminal (for example, ssh -t), then retry."
     exit 1
 fi
 if ! CREDENTIAL_CHECK=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" \
@@ -95,7 +95,7 @@ if auth.get("enabled", True):
 PY
 ); then
     log "ERROR: Credential migration is incomplete: $CREDENTIAL_CHECK"
-    log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' as an administrator, then retry."
+    log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' from an interactive SSH terminal (for example, ssh -t), then retry."
     exit 1
 fi
 log "External Web UI configuration and password hash are ready."
@@ -237,24 +237,61 @@ with open('version.json', 'w') as f:
 " || log "WARNING: Failed to update version.json"
 fi
 
-# Restart the service
+wait_for_service_active() {
+    local attempt consecutive_active=0
+    for attempt in {1..15}; do
+        if sudo systemctl is-active "$SERVICE_NAME" > /dev/null; then
+            consecutive_active=$((consecutive_active + 1))
+            if (( consecutive_active >= 3 )); then
+                return 0
+            fi
+        else
+            consecutive_active=0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
+restore_previous_release() {
+    log "Restoring previous application commit $CURRENT_COMMIT..."
+    if ! git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"; then
+        log "ERROR: Could not restore the previous application files."
+        return 1
+    fi
+
+    if [[ -x "$INSTALL_DIR/venv/bin/pip" ]]; then
+        if ! "$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt" -q; then
+            log "WARNING: Could not fully restore the previous Python dependencies."
+        fi
+    fi
+
+    if ! sudo systemctl restart "$SERVICE_NAME"; then
+        log "ERROR: The previous version could not be restarted."
+        return 1
+    fi
+    if wait_for_service_active; then
+        log "Previous version restored and service is active."
+        return 0
+    fi
+    log "ERROR: The previous version is restored, but the service is still inactive."
+    return 1
+}
+
 log "Restarting $SERVICE_NAME..."
 if ! sudo systemctl restart "$SERVICE_NAME"; then
-    log "ERROR: Failed to restart service"
-    log "Service may need manual restart: sudo systemctl restart $SERVICE_NAME"
+    log "ERROR: Failed to restart the updated service."
+    restore_previous_release || log "ERROR: Automatic recovery failed. Check: sudo systemctl status $SERVICE_NAME"
     exit 1
 fi
 
-# Wait a moment for service to start
-sleep 2
-
-# Check if service is running
-if sudo systemctl is-active "$SERVICE_NAME" > /dev/null; then
-    log "Service restarted successfully"
-else
-    log "WARNING: Service may not be running properly"
-    log "Check status with: sudo systemctl status $SERVICE_NAME"
+if ! wait_for_service_active; then
+    log "ERROR: The updated service did not become active."
+    restore_previous_release || log "ERROR: Automatic recovery failed. Check: sudo systemctl status $SERVICE_NAME"
+    exit 1
 fi
+
+log "Service restarted successfully"
 
 log "========================================="
 log "Update completed successfully!"

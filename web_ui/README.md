@@ -91,9 +91,13 @@ before installation, it aborts and asks you to check again. The update runs in t
 The UI reports completion or failure; existing generated
 openHAB configuration is not replaced by the Web UI. A personal Web UI password is required.
 After upgrading an existing Web UI installation from a version before this feature, run
-`cd /opt/knx_to_openhab && sudo bash installer/setup.sh` once to install the root-owned,
-package-restricted update helper and its sudoers entries. This step is also performed by
-`install.sh` on a new installation. The APT candidate can be newer than the version displayed
+`cd /opt/knx_to_openhab && sudo bash installer/setup.sh` once from an interactive SSH
+session (use `ssh -t` when connecting remotely). Setup can securely prompt you to replace
+the shipped default password and checks for a terminal before stopping services or changing
+packages and runtime data. If setup fails after stopping services, it attempts to restart
+the services that were active before migration. A Web UI update that cannot restart the new
+version restores the previous application commit and dependencies, then attempts to restart
+the previous service. This step is also performed by `install.sh` on a new installation. The APT candidate can be newer than the version displayed
 before refreshing the package lists; the selected package is the only one explicitly upgraded.
 
 Example screens with illustrative versions:

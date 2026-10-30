@@ -106,6 +106,29 @@ sudo systemctl restart knxohui.service
 The root-owned helper prompts twice, stores an Argon2id hash in the configured
 secrets file, and preserves other secret values.
 
+### Recovering from a failed first update
+
+If the Web UI reports that a migrated password hash is required, connect to the
+device through an interactive SSH session (for example, `ssh -t <user>@<pi>`)
+and run:
+
+```bash
+cd /opt/knx_to_openhab
+sudo bash installer/setup.sh
+```
+
+Setup checks for the password prompt before it stops services or changes packages
+and runtime data. It preserves a user-chosen password; if the old shipped default
+was still in use, setup asks you to choose a new password. If setup fails after
+stopping services, it attempts to restart the services that were active before
+migration. Retry the Web UI update after setup completes.
+
+The updater checks that `knxohui.service` stays active across three checks after
+restart. If the updated service fails to start or remain active, it restores the
+previous application commit and dependencies, then attempts to restart that
+version. Check recovery with `sudo systemctl status knxohui.service` and
+`sudo journalctl -u knxohui.service -n 100 --no-pager`.
+
 ### Uninstallation
 To completely remove the application, use the uninstaller script:
 ```bash

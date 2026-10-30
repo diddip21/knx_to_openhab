@@ -1,20 +1,49 @@
-# Nested systemd acceptance: blocked at provider preflight (2026-10-30)
+# Nested systemd acceptance: provider checkpoint (2026-10-30)
 
 Production source under test: `27d106a26c907b7ce05d1880ea25157b1f815e50`.
 **No installed-unit acceptance completed; parent Task 5 remains incomplete.**
+The original driver-share blocker below is superseded by the controller's
+explicitly authorized narrow outer-only policy. Live read-only preflight and
+source-only transfer now pass. Independent guard review is the next checkpoint;
+**application provisioning and hazardous acceptance have NOT run**.
 
 The explicitly authorized fresh WSL2 distribution has a real nested nspawn systemd
 manager with an independent machine ID. The new read-only preflight rejected the
-outer guest before source transfer or application provisioning: WSL automatically
+outer guest on the initial attempt before source transfer or application provisioning: WSL automatically
 mounted its read-only driver share via `9p` at `/usr/lib/wsl/drivers`, even with
 automount and interoperability disabled. The required strict no-9p policy rejects
 that share. This is not evidence of a C: user-data mount, a production updater bug,
 or failed inner sandbox isolation; it is an unmet provider prerequisite.
 
-No exemption, outer filesystem unmount, host fallback, service/account/policy
-installation, root candidate execution, default-distribution change or WSL
-shutdown/terminate was attempted. Existing Ubuntu and Windows host state were not
-modified. No production updater/installer/application code changed.
+No outer filesystem unmount, host fallback, service/account/policy installation,
+root candidate execution, default-distribution change or WSL shutdown/terminate
+was attempted. Existing Ubuntu and Windows host state were not modified. No
+production updater/installer/application code changed.
+
+## Authorized narrow outer driver policy
+
+After receipt, registry/location and outer machine-ID validation, the outer
+preflight allows at most one `9p` record with root exactly `/`, target exactly
+`/usr/lib/wsl/drivers`, source exactly `drivers`, VFS flags containing `ro,nosuid,nodev`
+and no `rw`, and superblock flags containing `ro` and no `rw`. All other `9p`/`drvfs`
+records, additional shares, malformed fields, changed source/root/path/type,
+missing safety flags or writable variants are refused before contacting the inner
+manager. Inner `9p`/`drvfs` remains forbidden, including that exact driver share.
+Interop and WSL automount/interop configuration checks remain mandatory. This is
+not a generic WSL permission, a writable driver exception or a host unmount.
+
+Mountinfo is parsed as complete records (IDs/device, paths, optional fields,
+filesystem/source and separate VFS/superblock options). Kernel-reported unlinked
+tmpfs bind-source roots may contain `//deleted`; they are not candidate paths to
+canonicalize. The driver root comparison remains byte-for-byte `/`.
+
+With portable tests green, the explicitly named outer and nested read-only
+preflight passed. Native `git -c core.autocrlf=false archive 27d106a` was transferred
+to the new nested `/opt/knxoh-source-27d106a`, not the previous source tree. All
+**238 files** were independently hash-checked inside the nested guest. Archive
+SHA-256: `a31060570bd5f0539a8acdc0831a9d44fed6fc39f816b1d3e9ad688c09a764ae`.
+The root-only adjacent source receipt records the exact production commit and
+verification; it does not attest acceptance, reboot or offline lock absence.
 
 ## Reproducible read-only checkpoint
 
@@ -45,9 +74,9 @@ WSL and nonvirtual hosts remain refused. The other existing gates, actual boot
 change and independently observed offline lock absence remain mandatory. **Do not
 create boot/offline attestations until those events have actually occurred.**
 
-The provider extension requires independent review before use for application
-effects. Resolving the outer driver share needs an authorized provider change or
-explicitly reviewed narrower policy, not silently bypassing the guard.
+The provider extension and new narrow policy require independent review before
+use for application effects. No further provisioning is authorized at this
+checkpoint. No boot/offline attestations were created.
 
 ## Evidence and limits
 
@@ -70,7 +99,11 @@ probes or this preflight refusal. See `tests/integration/README.md` for obligati
 
 Verification at this checkpoint:
 
-- Focused command above: **148 passed, 3 skipped** (the three real-manager tests).
+- Focused guard command plus `tests/test_update_sandbox.py` after the policy change:
+  **232 passed, 8 skipped** (three real-manager tests and five POSIX-only sandbox
+  tests on Windows). RED first showed 3 failures/29 passes for the policy
+  cases; the real kernel tmpfs bind-root regression separately failed before its
+  parser correction. Neither test run contacted a live manager.
 - Native Windows/Python 3.11 core: **21 failed, 795 passed, 681 skipped**. Failures
   involve POSIX paths, permissions, symlinks and unavailable `fchmod`/`fchown`;
   all failure names/raw output are retained in the private report. This is not
@@ -79,4 +112,5 @@ Verification at this checkpoint:
   Bare recursive isort/flake8 initially scanned existing ignored scratch venvs
   and snapshots and failed; those artifacts were not changed.
 - `git diff --check`: passed, with native Git LF/CRLF warnings.
-- UI tests and Linux full-core rerun: not run at this blocked checkpoint.
+- UI tests and Linux full-core rerun: not run. The expensive native core suite
+  was not rerun for this guard-only revision; its recorded result above is historical.

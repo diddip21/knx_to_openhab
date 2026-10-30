@@ -458,7 +458,9 @@ def test_nested_provider_allows_attested_nspawn_not_blanket_wsl(nested_guest):
     assert nested_guest.mutations == []
 
 
-@pytest.mark.parametrize("gate", ["owner", "mode", "nonce", "outer", "container", "mount"])
+@pytest.mark.parametrize(
+    "gate", ["owner", "mode", "nonce", "outer", "container", "mount", "driver"]
+)
 def test_nested_provider_refuses_before_worker_or_service_effects(nested_guest, gate):
     guest = nested_guest
     path = "/etc/knxoh-nested-acceptance.json"
@@ -474,6 +476,10 @@ def test_nested_provider_refuses_before_worker_or_service_effects(nested_guest, 
         guest.raw[path] = json.dumps(receipt)
     elif gate == "container":
         guest.raw["/run/systemd/container"] = "wsl"
+    elif gate == "driver":
+        guest.raw["/proc/self/mountinfo"] = (
+            "172 175 0:36 / /usr/lib/wsl/drivers ro,nosuid,nodev - 9p drivers ro\n"
+        )
     else:
         guest.raw["/proc/self/mountinfo"] = "1 0 0:1 / /mnt/c rw - 9p C: rw\n"
     assert_refused_without_effect(guest)

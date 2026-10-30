@@ -13,7 +13,7 @@ import configparser
 import json
 import re
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 DISTRIBUTION = "KNXOH-Acceptance-20261030"
 MACHINE = "knxoh-acceptance"
@@ -94,12 +94,80 @@ def registration():
     return records
 
 
-def _host_integration(observed):
+def _mounts(raw):
+    """Parse complete mountinfo records, never search fragments for safe flags."""
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValueError("Missing mount evidence")
+    ids = set()
+    for line in raw.splitlines():
+        if any(ord(c) < 32 or ord(c) == 127 for c in line):
+            raise ValueError("Malformed mountinfo control character")
+        halves = line.split(" - ")
+        if len(halves) != 2:
+            raise ValueError("Malformed mountinfo separator")
+        left, right = (half.split() for half in halves)
+        if len(left) < 6 or len(right) != 3:
+            raise ValueError("Malformed mountinfo fields")
+        mount_id, parent, device, root, target, options, *optional = left
+        fs, source, superoptions = right
+        if (
+            re.fullmatch(r"[1-9][0-9]*", mount_id) is None
+            or mount_id in ids
+            or re.fullmatch(r"[0-9]+", parent) is None
+            or re.fullmatch(r"[0-9]+:[0-9]+", device) is None
+            or re.fullmatch(r"[a-zA-Z0-9_.-]+", fs) is None
+            or any(
+                re.fullmatch(r"(?:shared|master|propagate_from):[0-9]+|unbindable", v) is None
+                for v in optional
+            )
+        ):
+            raise ValueError("Malformed mountinfo identity/type")
+        ids.add(mount_id)
+        for path in (root, target):
+            parsed = PurePosixPath(path)
+            # Kernel roots can include //deleted for unlinked bind sources.
+            # Do not canonicalize those dentry names. The allowed driver root
+            # is still compared byte-for-byte with '/' below.
+            if (
+                not parsed.is_absolute()
+                or ".." in parsed.parts
+                or (path == target and str(parsed) != path)
+                or re.search(r"\\(?!040|011|012|134)", path)
+            ):
+                raise ValueError("Malformed mountinfo path")
+        flags = []
+        for value in (options, superoptions):
+            parts = value.split(",")
+            if any(not p for p in parts) or len(set(parts)) != len(parts):
+                raise ValueError("Malformed mountinfo options")
+            selected = set(parts)
+            if ("ro" in selected) == ("rw" in selected):
+                raise ValueError("Missing or contradictory mount writability")
+            flags.append(selected)
+        yield root, target, fs, source, *flags
+
+
+def _host_integration(observed, *, outer=False):
     mounts = observed["mounts"]
-    if not mounts or any(len(line.split(" - ")) != 2 for line in mounts.splitlines()):
-        raise ValueError("Missing/malformed mount evidence")
-    if any(line.split(" - ", 1)[1].split()[0] in ("9p", "drvfs") for line in mounts.splitlines()):
-        raise ValueError("Windows filesystem is mounted")
+    drivers = 0
+    for root, target, fs, source, flags, superflags in _mounts(mounts):
+        if fs in ("9p", "drvfs") or target == "/usr/lib/wsl/drivers" or source == "drivers":
+            if not (
+                outer
+                and drivers == 0
+                and root == "/"
+                and target == "/usr/lib/wsl/drivers"
+                and fs == "9p"
+                and source == "drivers"
+                and {"ro", "nosuid", "nodev"} <= flags
+                and "rw" not in flags
+                and "ro" in superflags
+                and "rw" not in superflags
+            ):
+                raise ValueError(
+                    "Forbidden shared filesystem (only exact outer driver share allowed)"
+                )
+            drivers += 1
     if observed["interop"] is not False:
         raise ValueError("Windows interoperability is enabled")
 
@@ -108,7 +176,7 @@ def validate_outer(receipt, observed):
     validate_receipt(receipt)
     if observed["machine_id"] != receipt["outer_machine_id"]:
         raise ValueError("Wrong outer guest")
-    _host_integration(observed)
+    _host_integration(observed, outer=True)
     config = configparser.ConfigParser()
     config.read_string(observed["wsl_conf"])
     for section, option in (

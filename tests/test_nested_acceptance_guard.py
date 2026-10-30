@@ -8,6 +8,104 @@ import pytest
 
 from scripts import nested_acceptance as guard
 
+DRIVER = (
+    "172 175 0:36 / /usr/lib/wsl/drivers ro,nosuid,nodev,noatime - "
+    "9p drivers ro,aname=drivers;fmask=222;dmask=222,trans=fd,rfd=8,wfd=8\n"
+)
+
+
+def outer_evidence(receipt, mounts):
+    return {
+        "machine_id": receipt["outer_machine_id"],
+        "mounts": mounts,
+        "interop": False,
+        "wsl_conf": "[automount]\nenabled=false\n[interop]\nenabled=false\nappendWindowsPath=false\n",
+    }
+
+
+def test_exact_readonly_driver_share_allowed_only_in_outer(evidence):
+    receipt, inner = evidence
+    mounts = inner["mounts"] + DRIVER
+    guard.validate_outer(receipt, outer_evidence(receipt, mounts))
+    with pytest.raises(ValueError):
+        guard.validate_inner(receipt, {**inner, "mounts": mounts})
+
+
+@pytest.mark.parametrize(
+    "mounts",
+    [
+        DRIVER.replace("ro,nosuid", "rw,nosuid"),
+        DRIVER.replace("ro,nosuid", "ro,rw,nosuid"),
+        DRIVER.replace("drivers ro,", "drivers rw,"),
+        DRIVER.replace("drivers ro,", "drivers ro,rw,"),
+        DRIVER.replace("ro,nosuid,nodev", "nosuid,nodev"),
+        DRIVER.replace(",nosuid", ""),
+        DRIVER.replace(",nodev", ""),
+        DRIVER.replace("drivers ro,", "drivers aname=drivers,"),
+        DRIVER.replace("9p drivers", "9p C:"),
+        DRIVER.replace("/usr/lib/wsl/drivers", "/mnt/c"),
+        DRIVER.replace("0:36 / ", "0:36 /subtree "),
+        DRIVER.replace("9p drivers", "drvfs drivers"),
+        DRIVER.replace("9p drivers", "ext4 drivers"),
+        DRIVER + DRIVER.replace("172 ", "173 "),
+        DRIVER + "173 175 0:37 / /mnt/c ro,nosuid,nodev - 9p C: ro\n",
+        DRIVER + "173 175 0:37 / /mnt/c ro,nosuid,nodev - drvfs C: ro\n",
+        DRIVER.replace("172 ", "bad "),
+        DRIVER.replace("175 ", "bad "),
+        DRIVER.replace("0:36", "bad"),
+        DRIVER.replace(" - ", " "),
+        DRIVER.replace(" - ", " - - "),
+        DRIVER.replace("9p drivers ro,", "9p drivers extra ro,"),
+        DRIVER.replace("ro,nosuid", "ro,,nosuid"),
+        DRIVER.replace("nodev,noatime", "nodev,nodev,noatime"),
+        DRIVER.replace("0:36 / ", "0:36 relative "),
+        DRIVER.replace("/usr/lib/wsl/drivers", "/usr/lib/wsl/drivers/subdir"),
+        DRIVER.replace("9p drivers", "9p driverz"),
+        DRIVER + "malformed unrelated line\n",
+    ],
+)
+def test_outer_driver_variations_refused_before_inner_manager(evidence, mounts):
+    receipt, _ = evidence
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        assert len(calls) == 1, "must not contact inner manager after unsafe outer evidence"
+        return CompletedProcess(argv, 0, json.dumps(outer_evidence(receipt, mounts)), "")
+
+    with pytest.raises(ValueError):
+        guard.preflight(receipt, run=run)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("machine_id", "ff" * 16),
+        ("interop", True),
+        ("wsl_conf", ""),
+    ],
+)
+def test_driver_exception_does_not_bypass_other_outer_gates(evidence, field, value):
+    receipt, _ = evidence
+    observed = outer_evidence(receipt, DRIVER)
+    observed[field] = value
+    with pytest.raises(ValueError):
+        guard.validate_outer(receipt, observed)
+
+
+def test_kernel_deleted_tmpfs_bind_root_is_not_a_windows_share(evidence):
+    receipt, inner = evidence
+    # nspawn unlinks temporary bind sources after pinning boot-id/kmsg files.
+    # Kernel mountinfo renders the dentry root with a //deleted suffix; it is
+    # data, not a candidate path to normalize or a shared-filesystem exception.
+    mount = (
+        "953 640 0:130 /.#proc-sys-kernel-random-boot-idac27//deleted "
+        "/proc/sys/kernel/random/boot_id ro,nosuid,nodev,noexec shared:600 "
+        "- tmpfs tmpfs rw,size=793524k\n"
+    )
+    guard.validate_inner(receipt, {**inner, "mounts": inner["mounts"] + mount})
+
 
 @pytest.fixture
 def evidence():

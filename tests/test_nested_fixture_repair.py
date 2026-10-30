@@ -927,7 +927,7 @@ def test_installed_collection_refuses_windows_before_any_filesystem_query(monkey
 
 @pytest.fixture
 def pinned_systemd_boundary(monkeypatch, installed_inventory, synthetic_sources):
-    """Keep checkpoint and component validators real; fake only guest I/O/effects."""
+    """Full recorded inventory and real validators; fake guest/source I/O and effects."""
     repair, old, new = synthetic_sources
     inventory = installed_inventory
     entries = inventory["entries"]
@@ -986,6 +986,32 @@ def pinned_systemd_boundary(monkeypatch, installed_inventory, synthetic_sources)
             target=str(repair.SYSTEMD / unit),
         )
         entries[name] = enabled[name]
+    # Match the old source map, not the generic inventory fixture's filler source.
+    for name in list(entries):
+        path = PurePosixPath(name)
+        if path == repair.INITIAL or repair.INITIAL in path.parents:
+            del entries[name]
+    initial_files = {repair.INITIAL / name: value for name, value in old["files"].items()}
+    initial_dirs = {repair.INITIAL, repair.INITIAL / "venv"}
+    for path in initial_files:
+        initial_dirs.update(
+            parent
+            for parent in path.parents
+            if parent == repair.INITIAL or repair.INITIAL in parent.parents
+        )
+    for index in range(3354 - len(initial_files) - len(initial_dirs)):
+        initial_files[repair.INITIAL / "venv" / f"dependency{index}"] = dict(
+            sha256="a" * 64, mode=0o644
+        )
+    for path, value in initial_files.items():
+        entries[str(path)] = dict(
+            kind="file", uid=0, gid=0, device=1, inode=len(entries) + 1, links=1, **value
+        )
+    for path in initial_dirs:
+        children = {
+            child.name for child in set(initial_files) | initial_dirs if child.parent == path
+        }
+        directory(path, children)
     checkpoint = dict(
         format=1,
         checkpoint="environmentfile-installed-20261030",
@@ -996,36 +1022,36 @@ def pinned_systemd_boundary(monkeypatch, installed_inventory, synthetic_sources)
     repair.validate_repair_checkpoint(checkpoint, inventory, NONCE)
 
     def components(actual):
-        # Isolate component bytes from external trees: those remain covered by
-        # the real full checkpoint validator, not this synthetic source I/O fake.
-        view = {
-            "entries": {
-                name: value
-                for name, value in actual["entries"].items()
-                if name.startswith(
-                    ("/etc/systemd/system/", "/usr/lib/systemd/system/", "/usr/local/libexec/")
-                )
-            }
-        }
-        repair._validate_component_bytes(view, expected)
+        repair._validate_component_bytes(actual, expected)
 
-    components(inventory)
     monkeypatch.setattr(fixture, "require_guest", lambda nonce: events.append("guest"))
     monkeypatch.setattr(repair, "collect_installed", lambda: copy.deepcopy(inventory))
 
     def sources(pin, approval, head):
-        repair.validate_repair_source(approval, head, pin["old_source_approval"])
-        return fixture.SOURCE
+        return repair.validate_repair_source(approval, head, pin["old_source_approval"])
 
     monkeypatch.setattr(repair, "verify_repair_sources", sources)
-    monkeypatch.setattr(
-        repair, "validate_installed_components", lambda guest, pin, actual: components(actual)
-    )
+    # Stub bytes read from immutable source only, not the complete inventory,
+    # component checker, initial-source comparison or post-install verification.
+    monkeypatch.setattr(repair, "_component_files", lambda *a: expected)
+
+    def install(*args):
+        events.append("install")
+        retained = PurePosixPath("/usr/local/libexec/.knxohui-bundle-synthetic")
+        for name in list(entries):
+            path = PurePosixPath(name)
+            if path == repair.LIBEXEC or repair.LIBEXEC in path.parents:
+                previous = copy.deepcopy(entries[name])
+                if path == repair.LIBEXEC:
+                    previous["mode"] = 0o700
+                entries[str(retained / path.relative_to(repair.LIBEXEC))] = previous
+                entries[name] = dict(entries[name], inode=entries[name]["inode"] + 100000)
+
     admin = SimpleNamespace(
         Paths=type(fixture.expected_paths()),
         check_worker=lambda: None,
         check_worker_sudo=lambda: None,
-        install_components=lambda *a: events.append("install"),
+        install_components=install,
     )
     monkeypatch.setattr(fixture, "load_approved_admin", lambda source: admin)
 
@@ -1036,7 +1062,13 @@ def pinned_systemd_boundary(monkeypatch, installed_inventory, synthetic_sources)
         events.append("unlock")
 
     monkeypatch.setattr(fixture, "resume_lease", lease)
-    monkeypatch.setattr(repair, "verify_repaired", lambda *a: events.append("repaired"))
+    verify_repaired = repair.verify_repaired
+
+    def repaired(*args):
+        verify_repaired(*args)
+        events.append("repaired")
+
+    monkeypatch.setattr(repair, "verify_repaired", repaired)
     monkeypatch.setattr(repair, "activate_repaired", lambda *a: events.append("activate"))
     return repair, inventory, checkpoint, new, components, enabled, events
 
@@ -1045,6 +1077,147 @@ def test_pinned_genuine_recorded_systemd_enable_links_remain_accepted(pinned_sys
     repair, _, checkpoint, approval, _, _, events = pinned_systemd_boundary
     repair.repair_environmentfile(fixture, NONCE, checkpoint, approval, HEAD)
     assert events == ["guest", "lock", "guest", "install", "repaired", "unlock", "activate"]
+
+
+def test_full_recorded_inventory_accepts_configured_service_owned_data_root(
+    pinned_systemd_boundary,
+):
+    repair, inventory, checkpoint, approval, components, _, events = pinned_systemd_boundary
+    root = inventory["entries"][state.DATA.as_posix()]
+    assert (root["uid"], root["gid"], root["mode"]) == (999, 989, 0o750)
+    repair.validate_repair_checkpoint(checkpoint, inventory, NONCE)
+    components(inventory)
+    repair.repair_environmentfile(fixture, NONCE, checkpoint, approval, HEAD)
+    assert events == ["guest", "lock", "guest", "install", "repaired", "unlock", "activate"]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "data-file",
+        "data-link",
+        "data-uid",
+        "data-gid",
+        "data-mode",
+        "data-wrongpath",
+        "data-case",
+        "unknown-sibling",
+        "unknown-data-child",
+        "unknown-job-child",
+        "unknown-preparation-child",
+        "preparation-file",
+        "preparation-uid",
+        "preparation-mode",
+        "unknown-libexec-child",
+        "unknown-generated-output",
+        "changed-generated-output",
+        "changed-initial-source",
+    ],
+)
+def test_full_recorded_inventory_reapproved_mutation_refuses_before_effects(
+    pinned_systemd_boundary,
+    change,
+):
+    repair, inventory, checkpoint, approval, _, _, events = pinned_systemd_boundary
+    entries = inventory["entries"]
+    data = state.DATA.as_posix()
+    preparation = state.PREPARATION.as_posix()
+
+    def file(name, uid=0, gid=0):
+        entries[name] = dict(
+            kind="file",
+            uid=uid,
+            gid=gid,
+            mode=0o644,
+            device=1,
+            inode=99999,
+            links=1,
+            sha256=hashlib.sha256(b"unknown").hexdigest(),
+        )
+
+    if change in ("data-file", "preparation-file"):
+        file(data if change == "data-file" else preparation)
+    elif change == "data-link":
+        entries[data] = dict(
+            kind="other",
+            uid=0,
+            gid=0,
+            mode=0o777,
+            device=1,
+            inode=99999,
+            links=1,
+            target="/var/lib/unknown",
+        )
+    elif change in ("data-uid", "data-gid", "data-mode", "preparation-uid", "preparation-mode"):
+        root, key = change.split("-")
+        entries[data if root == "data" else preparation][key] = {
+            "uid": 0 if root == "data" else 999,
+            "gid": 0,
+            "mode": 0o777,
+        }[key]
+    elif change in ("data-wrongpath", "data-case"):
+        name = data + "-wrong" if change == "data-wrongpath" else data.replace("knxoh", "KNXOH")
+        entries[name] = entries.pop(data)
+    elif change == "unknown-sibling":
+        file("/var/lib/knxoh-review-extra")
+    elif change in (
+        "unknown-data-child",
+        "unknown-job-child",
+        "unknown-preparation-child",
+        "unknown-libexec-child",
+    ):
+        parent = {
+            "unknown-data-child": data,
+            "unknown-job-child": data + "/jobs",
+            "unknown-preparation-child": preparation,
+            "unknown-libexec-child": str(repair.LIBEXEC),
+        }[change]
+        entries[parent]["children"].append("knxoh-review-extra")
+        entries[parent]["children"].sort()
+        file(parent + "/knxoh-review-extra")
+    elif change == "unknown-generated-output":
+        parent = state.OUTPUT.as_posix() + "/rules"
+        entries[parent]["children"].append("knxoh-review-extra")
+        entries[parent]["children"].sort()
+        file(parent + "/knxoh-review-extra", uid=999, gid=989)
+    elif change == "changed-generated-output":
+        entries[(state.OUTPUT / "rules/fenster.rules").as_posix()]["sha256"] = "0" * 64
+    else:
+        entries[str(repair.INITIAL / "requirements.txt")]["sha256"] = "0" * 64
+    checkpoint["inventory"] = copy.deepcopy(inventory)
+    with pytest.raises(ValueError):
+        repair.repair_environmentfile(fixture, NONCE, checkpoint, approval, HEAD)
+    assert events == ["guest"]
+
+
+@pytest.mark.parametrize("root", ["data", "preparation"])
+@pytest.mark.parametrize("change", ["kind", "uid", "gid", "mode", "children"])
+def test_full_component_check_enforces_exact_noncomponent_root_policy(
+    pinned_systemd_boundary,
+    root,
+    change,
+):
+    _, inventory, _, _, components, _, _ = pinned_systemd_boundary
+    path = state.DATA if root == "data" else state.PREPARATION
+    entry = inventory["entries"][path.as_posix()]
+    entry[change] = {
+        "kind": "file",
+        "uid": 997,
+        "gid": 997,
+        "mode": 0o777,
+        "children": ["unknown"],
+    }[change]
+    with pytest.raises(ValueError, match="directory"):
+        components(inventory)
+
+
+def test_full_component_check_rejects_unknown_knxoh_sibling(pinned_systemd_boundary):
+    _, inventory, _, _, components, _, _ = pinned_systemd_boundary
+    inventory["entries"]["/var/lib/knxoh-review-extra"] = dict(
+        kind="directory", uid=0, gid=0, mode=0o755, device=1, inode=99999, links=2, children=[]
+    )
+    with pytest.raises(ValueError, match="Unknown installed component"):
+        components(inventory)
 
 
 @pytest.mark.parametrize("substitution", [False, True])

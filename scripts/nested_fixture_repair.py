@@ -378,6 +378,38 @@ def _validate_systemd_entry(name, value):
         raise ValueError("Invalid installed systemd artifact kind")
 
 
+def _noncomponent_directories():
+    """Exact configured roots and protected preparation, never a prefix exemption."""
+    return {
+        state.BASE.as_posix(): (0, 0, 0o755, ["current", "releases"]),
+        (state.BASE / "releases").as_posix(): (0, 0, 0o755, ["0.1.0"]),
+        state.CONFIG.as_posix(): (
+            0,
+            989,
+            0o750,
+            [
+                "config.json",
+                "generator.json",
+                "paths.env",
+                "secrets.env",
+                ".updater-state",
+                ".updater-mutation.lock",
+                ".updater-status.json",
+                ".updater-log.txt",
+            ],
+        ),
+        state.DATA.as_posix(): (999, 989, 0o750, ["jobs", "staging", "generated"]),
+        state.BACKUPS.as_posix(): (999, 989, 0o750, []),
+        state.OUTPUT.as_posix(): (
+            0,
+            0,
+            0o755,
+            ["items", "things", "sitemaps", "persistence", "rules"],
+        ),
+        state.PREPARATION.as_posix(): (0, 988, 0o750, []),
+    }
+
+
 def validate_known_inventory(inventory, nonce):
     if type(inventory) is not dict or set(inventory) != {
         "entries",
@@ -472,10 +504,9 @@ def validate_known_inventory(inventory, nonce):
             for k, v in original[path.as_posix()].items()
         ):
             raise ValueError("Original repair checkpoint contract changed: " + str(path))
-    _directory(entries, state.BASE, 0, 0, 0o755, ["current", "releases"])
-    _directory(entries, state.BASE / "releases", 0, 0, 0o755, ["0.1.0"])
-    _directory(entries, state.DATA, 999, 989, 0o750, ["jobs", "staging", "generated"])
-    for path in [state.BACKUPS, *(state.DATA / n for n in ("jobs", "staging", "generated"))]:
+    for name, policy in _noncomponent_directories().items():
+        _directory(entries, PurePosixPath(name), *policy)
+    for path in (state.DATA / n for n in ("jobs", "staging", "generated")):
         _directory(entries, path, 999, 989, 0o750, [])
     output_files = {
         "items": "knx.items",
@@ -484,7 +515,6 @@ def validate_known_inventory(inventory, nonce):
         "persistence": "influxdb.persist",
         "rules": "fenster.rules",
     }
-    _directory(entries, state.OUTPUT, 0, 0, 0o755, output_files)
     for folder, name in output_files.items():
         _directory(entries, state.OUTPUT / folder, 0, 0, 0o755, [name])
         path = (state.OUTPUT / folder / name).as_posix()
@@ -500,19 +530,7 @@ def validate_known_inventory(inventory, nonce):
             ).items()
         ):
             raise ValueError("Original repair checkpoint generated output changed")
-    _directory(entries, state.PREPARATION, 0, 988, 0o750, [])
     _directory(entries, state.CONFIG / ".updater-state", 0, 0, 0o700, [])
-    config_children = [
-        "config.json",
-        "generator.json",
-        "paths.env",
-        "secrets.env",
-        ".updater-state",
-        ".updater-mutation.lock",
-        ".updater-status.json",
-        ".updater-log.txt",
-    ]
-    _directory(entries, state.CONFIG, 0, 989, 0o750, config_children)
     for path, gid, mode in (
         (state.CONFIG / "secrets.env", 989, 0o640),
         (Path("/root/knxoh-acceptance-login.json"), 0, 0o600),
@@ -634,9 +652,13 @@ def _validate_component_bytes(inventory, expected):
         }
         _directory(entries, root, 0, 0, mode, children)
     allowed = set(expected) | {str(p) for p in roots}
+    noncomponents = _noncomponent_directories()
     for name in entries:
         _validate_systemd_entry(name, entries[name])
         path = PurePosixPath(name)
+        if name in noncomponents:
+            _directory(entries, path, *noncomponents[name])
+            continue
         if (
             path == LIBEXEC
             or LIBEXEC in path.parents
@@ -650,7 +672,7 @@ def _validate_component_bytes(inventory, expected):
                 PurePosixPath("/var/lib"),
             )
         ):
-            if name not in allowed and path != state.PREPARATION:
+            if name not in allowed:
                 raise ValueError("Unknown installed component")
 
 

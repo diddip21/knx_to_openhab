@@ -40,3 +40,27 @@ subprocess limit tests intentionally lower their own limits, not host limits.
   timed out at 120s; `-x tests/test_update_recovery.py` identified
   `test_offline_refuses_active_writers_without_mutation` (`1 failed, 70 passed`);
   kept offline preconditions, then obtained the green run above.
+
+## NB2 — isolated administrator checker descriptor budget
+
+- Red: `python -m pytest -q tests/test_update_post_final_fixes.py -k fd_budget --tb=short`
+  -> `4 failed, 4 deselected in 4.96s`. Actual isolated check-release CLI under
+  inherited validated lease, soft=64/hard=32768 or 128; 256 valid immutable
+  dependency files. Active repair wrongly warned predecessor guidance; inactive
+  activation wrongly refused. Insufficient hard limits also produced legacy advice.
+- Change: `check_existing_release` establishes/verifies soft 32768 within the
+  existing hard budget before scanning. Never increases hard limits, never changes
+  unit/host configuration. Insufficient budget/setrlimit failure and direct or
+  fdinfo-wrapped EMFILE/ENFILE are explicit descriptor-resource errors, not
+  predecessor advice. Tree ownership/link/mount validation is unchanged.
+- Additional red: `python -m pytest -q tests/test_update_post_final_fixes.py -k misdiagnose --tb=short`
+  -> `1 failed, 1 passed, 8 deselected in 2.75s` for wrapped exhaustion. Follow
+  explicit exception causes for the resource diagnosis; do not weaken validation.
+- Green: `python -m pytest -q tests/test_update_post_final_fixes.py tests/test_update_final_fixes.py tests/test_update_bootstrap_recovery.py --tb=short`
+  -> `61 passed in 40.40s` (earlier budget-only implementation: `59 passed in 23.32s`).
+  One mistyped filename `tests/test_update_bootstrap.py` yielded `no tests ran`;
+  corrected to `tests/test_update_bootstrap_recovery.py` above.
+- Public interfaces/CLI unchanged. Resource insufficiency now blocks repair rather
+  than permitting a misleading predecessor warning; active pair and config remain
+  unchanged. Subprocess tests cover active repair and inactive activation without
+  executing candidate code or provisioning anything.

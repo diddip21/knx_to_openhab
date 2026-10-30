@@ -27,13 +27,14 @@ from uuid import uuid4
 if os.name == "posix":
     import grp
     import pwd
+    import resource
 else:  # Allow portable rendering/static tests; privileged operations remain POSIX-only.
     grp = pwd = None
 
 if __package__:
     from .bootstrap_activation import activate_services, restore_services
     from .update_core import secure_fs as fs
-    from .update_core.protocol import Paths
+    from .update_core.protocol import Limits, Paths
     from .update_core.state import (
         TERMINAL,
         LifecycleLock,
@@ -57,7 +58,7 @@ else:
     sys.modules[spec.name] = package
     spec.loader.exec_module(package)
     from _knxoh_admin import secure_fs as fs
-    from _knxoh_admin.protocol import Paths
+    from _knxoh_admin.protocol import Limits, Paths
     from _knxoh_admin.state import (
         TERMINAL,
         LifecycleLock,
@@ -174,11 +175,34 @@ def check_existing_release(paths, target, *, activating):
         raise ValueError("Existing release must be an immediate managed release")
     if not activating and _current_target(paths)[0] != target:
         raise ValueError("Component-only repair target must be current")
+    # This isolated administrator process does not inherit the coordinator
+    # unit's LimitNOFILE. Retained-tree validation pins descriptors until the
+    # final race check, so establish the same budget without raising the hard
+    # limit or changing host configuration. Resource failures are NOT legacy
+    # environment incompatibility and cannot be fixed by a newer release.
+    budget = Limits.COORDINATOR_NOFILE
+    diagnostic = f"Release checker descriptor budget requires soft/hard RLIMIT_NOFILE >= {budget}"
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        if hard != resource.RLIM_INFINITY and hard < budget:
+            raise ValueError(diagnostic)
+        if soft != resource.RLIM_INFINITY and soft < budget:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (budget, hard))
+        soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+        if soft != resource.RLIM_INFINITY and soft < budget:
+            raise ValueError(diagnostic)
+    except (OSError, ValueError) as error:
+        raise ValueError(diagnostic) from error
     try:
         with fs._parent(target) as (stack, parent, name, chain):
             entries = fs._tree(stack, parent, name, {0})
             fs._check([*chain, *entries])
     except (OSError, ValueError) as error:
+        cause = error
+        while cause is not None:
+            if isinstance(cause, OSError) and cause.errno in (errno.EMFILE, errno.ENFILE):
+                raise ValueError(diagnostic + "; descriptor resources exhausted") from error
+            cause = cause.__cause__
         if activating:
             raise ValueError(fs.EXISTING_RELEASE_GUIDANCE) from error
         print("WARNING: " + fs.EXISTING_RELEASE_GUIDANCE, file=sys.stderr)

@@ -1,5 +1,3 @@
-All done! ✨ 🍰 ✨
-1 file would be left unchanged.
 """Regression tests for the service user's privileged command policy."""
 
 import os

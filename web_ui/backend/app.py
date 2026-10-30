@@ -944,6 +944,59 @@ if FLASK_AVAILABLE:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/gateway/state", methods=["GET"])
+    def get_gateway_state():
+        """Return generator-file state; OpenHAB runtime status is never queried."""
+        try:
+            state = dict(job_mgr.get_gateway_state())
+            source = job_mgr.get_last_deployed_gateway_source()
+            state["active_path"] = state.get("configured_path") or state.get("managed_path")
+            state["detected_gateway_ip"] = (
+                source.get("detected_gateway_ip") if source is not None else None
+            )
+            state["reset_available"] = source is not None
+            state["runtime_status"] = "not_checked"
+            return jsonify(state)
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 409
+        except Exception as error:
+            logger.exception("Failed to read KNX gateway state")
+            return jsonify({"error": str(error)}), 500
+
+    @app.route("/api/gateway/ip", methods=["POST"])
+    def apply_gateway_ip():
+        """Apply a validated gateway IP to the managed file and generator config."""
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "Request body must be a JSON object"}), 400
+        ip_address = payload.get("ip_address")
+        if not isinstance(ip_address, str) or not ip_address.strip():
+            return jsonify({"error": "A non-empty IP address is required"}), 400
+
+        try:
+            result = dict(job_mgr.apply_gateway_ip(ip_address))
+            result["runtime_status"] = "not_checked"
+            return jsonify(result)
+        except ValueError as error:
+            status = 400 if "IP address" in str(error) else 409
+            return jsonify({"error": str(error)}), status
+        except Exception as error:
+            logger.exception("Failed to apply KNX gateway IP")
+            return jsonify({"error": str(error)}), 500
+
+    @app.route("/api/gateway/ip/reset", methods=["POST"])
+    def reset_gateway_ip():
+        """Restore the last successfully deployed ETS gateway configuration."""
+        try:
+            result = dict(job_mgr.restore_gateway_ip())
+            result["runtime_status"] = "not_checked"
+            return jsonify(result)
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 409
+        except Exception as error:
+            logger.exception("Failed to restore KNX gateway IP")
+            return jsonify({"error": str(error)}), 500
+
     @app.route("/api/config", methods=["POST"])
     def set_config():
         """Update the configuration."""
@@ -957,7 +1010,8 @@ if FLASK_AVAILABLE:
                 return jsonify({"error": "Config must be a JSON object"}), 400
 
             # Save to the main config file (which contains knxproject_to_openhab settings)
-            save_generator_config(new_config, project_root)
+            with job_mgr.operation_lock:
+                save_generator_config(new_config, project_root)
 
             return jsonify({"message": "Configuration updated successfully"})
         except Exception as e:

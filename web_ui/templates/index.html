@@ -191,6 +191,26 @@
 
           <!-- Devices Tab -->
           <div id="tab-devices" class="tab-content">
+            <h3>KNX Things Output</h3>
+            <div class="form-group">
+              <label for="conf-things-format">Things Format</label>
+              <select id="conf-things-format" class="form-control">
+                <option value="dsl">DSL (default)</option>
+                <option value="yaml">YAML (OpenHAB 5.0+)</option>
+              </select>
+            </div>
+            <div class="form-group" id="conf-yaml-path-group" style="display:none;">
+              <label for="conf-yaml-path">YAML Things Path</label>
+              <input type="text" id="conf-yaml-path" class="form-control">
+            </div>
+            <div id="gateway-format-warning" class="info-box" role="status" style="display:none;"></div>
+            <div id="gateway-migration-preview" class="info-box" style="display:none;">
+              <strong>Format migration preview</strong>
+              <p>Old generator file: <code id="gateway-migration-from"></code></p>
+              <p>New generator file: <code id="gateway-migration-to"></code></p>
+              <p>Manual edits inside the generator-owned file are backed up but not translated.</p>
+            </div>
+
             <h3>Gateway</h3>
             <div class="form-group">
               <label>Hardware Names (comma separated)</label>
@@ -200,8 +220,15 @@
             <div class="form-group">
               <label for="conf-gateway-ip">KNX Gateway IP Override</label>
               <input type="text" id="conf-gateway-ip" class="form-control" inputmode="text" autocomplete="off" spellcheck="false" placeholder="Auto-detect from ETS project" aria-describedby="conf-gateway-ip-help">
-              <small id="conf-gateway-ip-help">Enter an IPv4 or IPv6 address to override the ETS value. Leave blank for automatic detection. Save &amp; Reprocess applies changes to the selected job.</small>
+              <small id="conf-gateway-ip-help">Enter an IPv4 or IPv6 address to override the ETS value. Leave blank for automatic detection during a future generation.</small>
             </div>
+            <div id="gateway-file-state" class="info-box" role="status">Loading managed gateway file state…</div>
+            <p class="muted">Applying an IP changes only the selected generator-owned file and saved override. The KNX link may briefly reconnect. OpenHAB is not restarted, and runtime status is not checked.</p>
+            <div class="form-actions">
+              <button type="button" id="gateway-apply-ip" class="btn-primary">Apply IP to live OpenHAB file</button>
+              <button type="button" id="gateway-reset-ip" class="btn-secondary" disabled>Restore ETS address</button>
+            </div>
+            <div id="gateway-action-status" class="status-message" role="status" aria-live="polite"></div>
           </div>
 
           <!-- Mappings Tab -->
@@ -242,7 +269,7 @@
         <div class="settings-actions">
           <button onclick="loadConfig()" class="btn-secondary">Reload Config</button>
           <div class="spacer"></div>
-          <button onclick="saveConfig(true)" class="btn-secondary btn-outline">Save & Reprocess Last Job</button>
+          <button id="save-reprocess-config" onclick="saveConfig(true)" class="btn-secondary btn-outline">Save & Reprocess Last Job</button>
           <button onclick="saveConfig(false)" class="btn-primary">Save Config</button>
         </div>
         <div id="configStatus" class="status-message"></div>

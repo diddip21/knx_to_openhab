@@ -1189,6 +1189,143 @@ window.updateStatisticsDisplay = updateStatisticsDisplay
 
 // Configuration Management
 let currentConfig = {}
+let gatewayState = null
+let loadedThingsFormat = 'dsl'
+let installedOpenhabVersion = null
+const DEFAULT_YAML_THINGS_PATH = 'openhab/yaml/knx.yaml'
+
+function thingsOutputPath(format, config = currentConfig) {
+  return format === 'yaml'
+    ? (config.yaml_path || DEFAULT_YAML_THINGS_PATH)
+    : (config.things_path || 'openhab/things/knx.things')
+}
+
+function updateGatewayFormatControls() {
+  const formatSelect = document.getElementById('conf-things-format')
+  if (!formatSelect) return
+
+  const selectedFormat = formatSelect.value || 'dsl'
+  const yamlPathGroup = document.getElementById('conf-yaml-path-group')
+  const migrationPreview = document.getElementById('gateway-migration-preview')
+  const warning = document.getElementById('gateway-format-warning')
+  const yamlPath = document.getElementById('conf-yaml-path')
+  const reprocessButton = document.getElementById('save-reprocess-config')
+
+  yamlPathGroup.style.display = selectedFormat === 'yaml' ? '' : 'none'
+  if (!yamlPath.value) yamlPath.value = DEFAULT_YAML_THINGS_PATH
+
+  const installedVersion = String(installedOpenhabVersion || '')
+  const versionMatch = installedVersion.match(/^(\d+)\.(\d+)/)
+  const knownUnsupported = selectedFormat === 'yaml' && versionMatch && Number(versionMatch[1]) < 5
+  if (knownUnsupported) {
+    warning.textContent = `YAML requires OpenHAB 5.0 or newer. Installed version: ${installedVersion}. YAML generation and deployment are blocked.`
+    warning.style.display = ''
+  } else if (selectedFormat === 'yaml' && !versionMatch) {
+    warning.textContent = 'OpenHAB version could not be determined; YAML compatibility cannot be confirmed.'
+    warning.style.display = ''
+  } else {
+    warning.textContent = ''
+    warning.style.display = 'none'
+  }
+  reprocessButton.disabled = Boolean(knownUnsupported)
+
+  if (loadedThingsFormat !== selectedFormat) {
+    document.getElementById('gateway-migration-from').textContent = thingsOutputPath(loadedThingsFormat)
+    document.getElementById('gateway-migration-to').textContent = selectedFormat === 'yaml'
+      ? (yamlPath.value || DEFAULT_YAML_THINGS_PATH)
+      : document.getElementById('conf-things-path').value
+    migrationPreview.style.display = ''
+  } else {
+    migrationPreview.style.display = 'none'
+  }
+}
+
+async function loadOpenhabVersion() {
+  try {
+    const response = await apiFetch('/api/service/openhab/version')
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const data = await response.json()
+    installedOpenhabVersion = data.installed || null
+  } catch (error) {
+    console.warn('Could not determine installed OpenHAB version:', error)
+    installedOpenhabVersion = null
+  }
+  updateGatewayFormatControls()
+}
+
+async function loadGatewayState() {
+  const stateElement = document.getElementById('gateway-file-state')
+  const resetButton = document.getElementById('gateway-reset-ip')
+  try {
+    const response = await apiFetch('/api/gateway/state')
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
+    gatewayState = data
+    const address = data.gateway_ip || 'not configured'
+    const mode = data.gateway_mode || 'unknown mode'
+    const detected = data.detected_gateway_ip || 'no ETS IP detected'
+    stateElement.textContent = `Managed ${String(data.things_format || 'KNX')} file ${data.active_path || ''}: ${mode} at ${address}. ETS source: ${detected}. Runtime status not checked.`
+    resetButton.disabled = !data.reset_available
+  } catch (error) {
+    gatewayState = null
+    stateElement.textContent = `Managed gateway file state unavailable: ${error.message}`
+    resetButton.disabled = true
+  }
+}
+
+async function applyGatewayIpLive() {
+  const ipAddress = document.getElementById('conf-gateway-ip').value.trim()
+  const status = document.getElementById('gateway-action-status')
+  if (!ipAddress) {
+    status.textContent = 'Enter a non-empty IPv4 or IPv6 address.'
+    status.className = 'status-message error'
+    return
+  }
+  if (!window.confirm('Apply this IP to the managed OpenHAB file? The KNX link may briefly reconnect.')) return
+
+  status.textContent = 'Updating the managed KNX gateway file…'
+  status.className = 'status-message'
+  try {
+    const response = await apiFetch('/api/gateway/ip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip_address: ipAddress })
+    })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`)
+    currentConfig.devices = currentConfig.devices || {}
+    currentConfig.devices.gateway = { ...(currentConfig.devices.gateway || {}), ip_address: ipAddress }
+    status.textContent = '✓ Datei aktualisiert; OpenHAB-Laufzeitstatus nicht geprüft'
+    status.className = 'status-message success'
+    await loadGatewayState()
+  } catch (error) {
+    status.textContent = `✗ ${error.message || 'Gateway IP update failed'}`
+    status.className = 'status-message error'
+  }
+}
+
+async function restoreGatewayIp() {
+  const status = document.getElementById('gateway-action-status')
+  if (!gatewayState?.reset_available) return
+  if (!window.confirm('Restore the gateway address from the last successfully deployed ETS project? The KNX link may briefly reconnect.')) return
+
+  status.textContent = 'Restoring the deployed ETS gateway setting…'
+  status.className = 'status-message'
+  try {
+    const response = await apiFetch('/api/gateway/ip/reset', { method: 'POST' })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`)
+    document.getElementById('conf-gateway-ip').value = ''
+    currentConfig.devices = currentConfig.devices || {}
+    currentConfig.devices.gateway = { ...(currentConfig.devices.gateway || {}), ip_address: '' }
+    status.textContent = '✓ Datei aktualisiert; OpenHAB-Laufzeitstatus nicht geprüft'
+    status.className = 'status-message success'
+    await loadGatewayState()
+  } catch (error) {
+    status.textContent = `✗ ${error.message || 'Gateway reset failed'}`
+    status.className = 'status-message error'
+  }
+}
 
 function switchTab(tabId) {
   // Hide all tabs
@@ -1251,6 +1388,12 @@ async function loadConfig() {
     const gw = dev.gateway || {}
     document.getElementById('conf-gateway-names').value = (gw.hardware_name || []).join(', ')
     document.getElementById('conf-gateway-ip').value = gw.ip_address || ''
+    document.getElementById('conf-things-format').value = currentConfig.things_format || 'dsl'
+    document.getElementById('conf-yaml-path').value = currentConfig.yaml_path || DEFAULT_YAML_THINGS_PATH
+    loadedThingsFormat = currentConfig.things_format || 'dsl'
+
+    updateGatewayFormatControls()
+    await Promise.all([loadGatewayState(), loadOpenhabVersion()])
 
     // Populate Mappings Tab
     renderMappingsTable(currentConfig.datapoint_mappings || {})
@@ -1371,6 +1514,24 @@ async function saveConfig(reprocess = false) {
   const configStatus = document.getElementById('configStatus')
 
   try {
+    const selectedThingsFormat = document.getElementById('conf-things-format').value || 'dsl'
+    const versionMatch = String(installedOpenhabVersion || '').match(/^(\d+)\.(\d+)/)
+    if (reprocess && selectedThingsFormat === 'yaml' && versionMatch && Number(versionMatch[1]) < 5) {
+      configStatus.textContent = '✗ YAML requires OpenHAB 5.0 or newer.'
+      configStatus.className = 'status-message error'
+      return
+    }
+    if (reprocess && selectedThingsFormat !== loadedThingsFormat) {
+      const oldPath = thingsOutputPath(loadedThingsFormat)
+      const newPath = selectedThingsFormat === 'yaml'
+        ? (document.getElementById('conf-yaml-path').value || DEFAULT_YAML_THINGS_PATH)
+        : document.getElementById('conf-things-path').value
+      const confirmed = window.confirm(
+        `Migrate KNX Things from ${oldPath} to ${newPath}? The old file will be backed up and deactivated. Manual edits inside the generator-owned file are backed up but not translated.`
+      )
+      if (!confirmed) return
+    }
+
     configStatus.textContent = 'Saving configuration...'
 
     // Gather data from UI
@@ -1383,6 +1544,8 @@ async function saveConfig(reprocess = false) {
     newConfig.sitemaps_path = document.getElementById('conf-sitemaps-path').value
     newConfig.influx_path = document.getElementById('conf-influx-path').value
     newConfig.fenster_path = document.getElementById('conf-fenster-path').value
+    newConfig.things_format = selectedThingsFormat
+    newConfig.yaml_path = document.getElementById('conf-yaml-path').value.trim() || DEFAULT_YAML_THINGS_PATH
 
     newConfig.general = {
       FloorNameAsItIs: document.getElementById('conf-floor-asis').checked,
@@ -1446,6 +1609,7 @@ async function saveConfig(reprocess = false) {
 
     if (!res.ok) throw new Error('Failed to save config')
 
+    currentConfig = newConfig
     configStatus.textContent = '✓ Configuration saved'
     configStatus.className = 'status-message success'
     // Reprocess if requested
@@ -1890,6 +2054,11 @@ function startEvents(jobId) {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('conf-things-format').addEventListener('change', updateGatewayFormatControls)
+  document.getElementById('conf-things-path').addEventListener('input', updateGatewayFormatControls)
+  document.getElementById('conf-yaml-path').addEventListener('input', updateGatewayFormatControls)
+  document.getElementById('gateway-apply-ip').addEventListener('click', applyGatewayIpLive)
+  document.getElementById('gateway-reset-ip').addEventListener('click', restoreGatewayIp)
   document.getElementById('refreshPackagesBtn').addEventListener('click', () => startPackageOperation('refresh'))
   refreshJobs()
   refreshServices()

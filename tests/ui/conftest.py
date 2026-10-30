@@ -7,7 +7,9 @@ import socket
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
+from collections import deque
 from pathlib import Path
 
 import pytest
@@ -67,10 +69,22 @@ def flask_server(base_url):
         [sys.executable, "-m", "web_ui.backend"],
         env=env,
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,  # Merge stderr into stdout for easier debugging
+        stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,  # Line buffered
     )
+    # Keep draining the pipe while retaining recent startup/runtime diagnostics.
+    # Leaving a subprocess pipe unread can fill its OS buffer and stall Flask's
+    # request threads while Werkzeug writes access logs.
+    server_output = deque(maxlen=200)
+
+    def drain_server_output():
+        if server_process.stdout:
+            for line in server_process.stdout:
+                server_output.append(line)
+
+    output_reader = threading.Thread(target=drain_server_output, daemon=True)
+    output_reader.start()
 
     # Wait for server to be ready
     max_retries = 30
@@ -81,7 +95,8 @@ def flask_server(base_url):
         # Check if process crashed
         if server_process.poll() is not None:
             # Server crashed, get error output
-            output = server_process.stdout.read() if server_process.stdout else "No output"
+            output_reader.join(timeout=1)
+            output = "".join(server_output) or "No output"
             raise RuntimeError(
                 "Flask server crashed during startup "
                 f"(exit code: {server_process.returncode}).\n"
@@ -101,11 +116,12 @@ def flask_server(base_url):
     if not server_ready:
         server_process.terminate()
         try:
-            output = server_process.stdout.read() if server_process.stdout else "No output"
             server_process.wait(timeout=2)
         except subprocess.TimeoutExpired:
             server_process.kill()
             server_process.wait()
+        output_reader.join(timeout=2)
+        output = "".join(server_output) or "No output"
         raise RuntimeError(
             f"Flask server did not start within {max_retries} seconds.\n"
             f"Last error: {last_error}\n"
@@ -122,6 +138,7 @@ def flask_server(base_url):
     except subprocess.TimeoutExpired:
         server_process.kill()
         server_process.wait()
+    output_reader.join(timeout=2)
 
 
 @pytest.fixture(scope="session")

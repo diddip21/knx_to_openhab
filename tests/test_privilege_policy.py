@@ -251,7 +251,11 @@ def test_update_restores_previous_commit_if_service_restart_fails(tmp_path):
         '  if (( count == 1 )); then exit 1; fi\n'
         '  touch "$UPDATE_TEST_STATE/active"\n  exit 0\nfi\n'
         'if [[ "$1" == "systemctl" && "$2" == "is-active" ]]; then\n'
-        '  [[ -f "$UPDATE_TEST_STATE/active" ]] && exit 0 || exit 3\nfi\n'
+        '  [[ -f "$UPDATE_TEST_STATE/active" ]] || exit 3\n'
+        '  count=0\n'
+        '  [[ -f "$UPDATE_TEST_STATE/active-checks" ]] && count=$(<"$UPDATE_TEST_STATE/active-checks")\n'
+        '  count=$((count + 1))\n'
+        '  echo "$count" > "$UPDATE_TEST_STATE/active-checks"\n  exit 0\nfi\n'
         "exit 0\n",
         encoding="utf-8",
     )
@@ -284,6 +288,7 @@ def test_update_restores_previous_commit_if_service_restart_fails(tmp_path):
     assert current_commit == previous_commit
     assert (state / "active").is_file()
     assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
+    assert int((state / "active-checks").read_text(encoding="utf-8")) >= 3
     assert "Previous version restored and service is active." in log
 
 def test_privilege_scripts_have_valid_bash_syntax():

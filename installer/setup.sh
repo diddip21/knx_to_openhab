@@ -116,12 +116,17 @@ if not isinstance(auth, dict):
     raise SystemExit(2)
 authentication_enabled = auth.get("enabled", True)
 encoded_hash = None
+legacy_encoded = None
 if secrets_path.is_file():
     try:
         for line in secrets_path.read_text(encoding="utf-8").splitlines():
             name, separator, value = line.partition("=")
-            if separator and name == "KNXOH_UI_PASSWORD_HASH_B64":
+            if not separator:
+                continue
+            if name == "KNXOH_UI_PASSWORD_HASH_B64":
                 encoded_hash = value.strip()
+            elif name == "KNXOH_UI_PASSWORD_B64":
+                legacy_encoded = value.strip()
     except OSError:
         raise SystemExit(2)
 if encoded_hash:
@@ -133,6 +138,19 @@ if encoded_hash:
         raise SystemExit(2)
     if not verify_password(password_hash, "logihome"):
         raise SystemExit(0)
+    if authentication_enabled is False:
+        raise SystemExit(0)
+    raise SystemExit(1)
+if legacy_encoded:
+    try:
+        legacy_password = base64.b64decode(legacy_encoded, validate=True).decode("utf-8")
+    except (binascii.Error, UnicodeDecodeError):
+        raise SystemExit(2)
+    if legacy_password != "logihome":
+        raise SystemExit(0)
+legacy_password = auth.get("password", auth.get("legacy_password"))
+if legacy_password is not None and str(legacy_password) != "logihome":
+    raise SystemExit(0)
 if authentication_enabled is False:
     raise SystemExit(0)
 raise SystemExit(1)

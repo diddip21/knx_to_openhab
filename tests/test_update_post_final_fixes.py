@@ -38,8 +38,10 @@ def test_first_component_repair_activates_clean_recovery_with_live_writers(
         name = argv[-1]
         assert argv[1] == "show"
         return subprocess.CompletedProcess(
-            argv, 0,
-            "ActiveState=" + ("active" if adapter.active[name] else "inactive")
+            argv,
+            0,
+            "ActiveState="
+            + ("active" if adapter.active[name] else "inactive")
             + "\nAfter=knxohui-update-recovery.service\n"
             + "Requires=knxohui-update-recovery.service\n",
         )
@@ -61,14 +63,18 @@ def test_first_component_repair_activates_clean_recovery_with_live_writers(
 
     def setup(argv, **kwargs):
         outcome = dict.fromkeys(
-            ("ui_start", "ui_enable", "cleanup_start", "cleanup_enable",
-             "release_was_incomplete"), False
+            ("ui_start", "ui_enable", "cleanup_start", "cleanup_enable", "release_was_incomplete"),
+            False,
         )
         outcome.update(
-            ui_was_active=True, ui_was_enabled=True,
-            cleanup_service_was_active=True, cleanup_timer_was_active=True,
-            cleanup_timer_was_enabled=True, mode="repair",
-            release=str(paths.current.resolve()), previous=str(paths.current.resolve()),
+            ui_was_active=True,
+            ui_was_enabled=True,
+            cleanup_service_was_active=True,
+            cleanup_timer_was_active=True,
+            cleanup_timer_was_enabled=True,
+            mode="repair",
+            release=str(paths.current.resolve()),
+            previous=str(paths.current.resolve()),
             snapshot_file="",
         )
         Path(kwargs["env"]["KNXOH_BOOTSTRAP_OUTCOME"]).write_text(json.dumps(outcome))
@@ -100,6 +106,50 @@ def test_live_writer_clean_exception_rejects_unproven_state(installation, state)
     assert updater.recover("boot").status == "blocked"
     assert not adapter.events
     assert before == (os.readlink(paths.current), (paths.config_dir / "config.json").read_bytes())
+
+
+def test_mounted_config_rollback_failure_projects_status_under_original_lock(
+    installation, monkeypatch
+):
+    from installer.update_core.state import LifecycleLock, StateStore
+    from tests.test_update_final_fixes import sandbox_mount_ids
+
+    updater, paths, adapter, request_id = installation
+    updater.lock_path.touch(mode=0o600)
+    roots = (paths.releases.parent, paths.config_dir, updater.workspace_root, updater.lock_path)
+    sandbox_mount_ids(monkeypatch, roots)
+    adapter.fail = "health"
+    adapter.fail_old = True
+    publish = StateStore.publish_status
+    observations = []
+
+    def observe(store, phase, *args):
+        if phase == "recovery-failed":
+            anchors = fs._ANCHORS.get()
+            lock_held = False
+            try:
+                with LifecycleLock(updater.lock_path).acquire():
+                    pass
+            except BlockingIOError:
+                lock_held = True
+            observations.append(
+                (lock_held, anchors is not None and anchors[paths.config_dir] is not None)
+            )
+        return publish(store, phase, *args)
+
+    monkeypatch.setattr(StateStore, "publish_status", observe)
+    result = updater.run()
+    assert result.status == "failed" and result.rollback_status.startswith("failed:")
+    # Actual protected journal and actual public projection, not mocked results.
+    with fs.mount_anchors(roots):
+        journal = StateStore(paths).load()
+        status = json.loads(fs.read_regular(paths.config_dir / ".updater-status.json", 4096))
+    assert journal.phase == status["phase"] == "recovery-failed"
+    assert journal.request_id == status["request_id"] == request_id
+    assert observations == [(True, True)]
+    assert fs._ANCHORS.get() is None
+    with LifecycleLock(updater.lock_path).acquire():
+        pass  # lifecycle lease released only after the public projection
 
 
 @pytest.mark.parametrize("change", ["replace", "unsafe-replace", "in-place", "churn"])
@@ -169,9 +219,7 @@ def test_checker_does_not_misdiagnose_descriptor_exhaustion(installation, monkey
 
 @pytest.mark.parametrize("activate", [False, True])
 @pytest.mark.parametrize("hard_budget", [128, 32768])
-def test_isolated_admin_checker_establishes_own_fd_budget(
-    installation, activate, hard_budget
-):
+def test_isolated_admin_checker_establishes_own_fd_budget(installation, activate, hard_budget):
     import resource
     import shutil
 
@@ -195,21 +243,29 @@ def test_isolated_admin_checker_establishes_own_fd_budget(
     verified.mkdir(parents=True)
     for name in ("update_bootstrap.py", "bootstrap_activation.py"):
         shutil.copyfile(source / name, verified / name)
-    shutil.copytree(source / "update_core", verified / "update_core",
-                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    shutil.copytree(
+        source / "update_core",
+        verified / "update_core",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
     contract = paths.config_dir / "paths.env"
     values = (paths.releases.parent, paths.config_dir, paths.data_dir, paths.backup_dir)
     keys = ("KNXOH_INSTALL_DIR", "KNXOH_CONFIG_DIR", "KNXOH_DATA_DIR", "KNXOH_BACKUP_DIR")
     contract.write_text("".join(f'{key}="{path}"\n' for key, path in zip(keys, values)))
     bootstrap = verified / "update_bootstrap.py"
-    bootstrap.write_text(bootstrap.read_text().replace(
-        'PATHS_FILE = Path("/etc/knx_to_openhab/paths.env")',
-        f"PATHS_FILE = Path({str(contract)!r})",
-    ))
+    bootstrap.write_text(
+        bootstrap.read_text().replace(
+            'PATHS_FILE = Path("/etc/knx_to_openhab/paths.env")',
+            f"PATHS_FILE = Path({str(contract)!r})",
+        )
+    )
     state = verified / "update_core/state.py"
-    state.write_text(state.read_text().replace(
-        'Path("/run/lock/knxohui-lifecycle.lock")', f"Path({str(updater.lock_path)!r})",
-    ))
+    state.write_text(
+        state.read_text().replace(
+            'Path("/run/lock/knxohui-lifecycle.lock")',
+            f"Path({str(updater.lock_path)!r})",
+        )
+    )
     arguments = ["/usr/bin/python3", "-I", str(bootstrap), "--action", "check-release"]
     for key, value in zip(("--base", "--config-dir", "--data-dir", "--backup-dir"), values):
         arguments.extend((key, str(value)))
@@ -221,8 +277,13 @@ def test_isolated_admin_checker_establishes_own_fd_budget(
 
     with LifecycleLock(updater.lock_path).acquire() as fd:
         result = subprocess.run(
-            arguments, pass_fds=(fd,), env={"KNXOH_LIFECYCLE_FD": str(fd)},
-            capture_output=True, text=True, preexec_fn=low_limits, timeout=20,
+            arguments,
+            pass_fds=(fd,),
+            env={"KNXOH_LIFECYCLE_FD": str(fd)},
+            capture_output=True,
+            text=True,
+            preexec_fn=low_limits,
+            timeout=20,
         )
     if hard_budget >= 32768:
         assert result.returncode == 0 and not result.stderr, result.stderr

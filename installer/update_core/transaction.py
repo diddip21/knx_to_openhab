@@ -849,55 +849,61 @@ class ReleaseUpdater:
                 ),
                 LifecycleLock(self.lock_path).acquire(),
             ):
-                self._identities()
-                self._layout()
-                self.store = StateStore(self.paths)
-                self.journal = self.store.load()
-                if self.journal is not None:
-                    self.systemd.bind_request(self.journal.request_id)
-                    if self.journal.phase in ("recovery-failed", "recovery-failed-pre-mutation"):
-                        return UpdateResult(
-                            "blocked", error=ADMIN, request_id=self.journal.request_id
+                try:
+                    self._identities()
+                    self._layout()
+                    self.store = StateStore(self.paths)
+                    self.journal = self.store.load()
+                    if self.journal is not None:
+                        self.systemd.bind_request(self.journal.request_id)
+                        if self.journal.phase in (
+                            "recovery-failed",
+                            "recovery-failed-pre-mutation",
+                        ):
+                            return UpdateResult(
+                                "blocked", error=ADMIN, request_id=self.journal.request_id
+                            )
+                        if self.journal.phase == "recovered-awaiting-start":
+                            if _current_target(self.paths)[0] != self.journal.prior_target:
+                                raise ValueError("Recovered target mismatch")
+                            self._validate_target(self.journal.prior_target)
+                            if not check_start_allowed(self.paths, "ui"):
+                                raise ValueError("Recovered startup gate mismatch")
+                            self._ready(self.journal.prior_target.name)
+                            self._restore_units()
+                            self._intent("rolled-back")
+                            self._clear_maintenance()
+                            self.store.reconcile_status()
+                        elif self.journal.phase not in TERMINAL:
+                            return self._recover_locked("boot")
+                        elif self.journal.phase == "committed":
+                            self._finalize_committed(start=True)
+                        elif _current_target(self.paths)[0] != self.journal.prior_target:
+                            raise ValueError("Rolled-back target mismatch")
+                        else:
+                            self.store.reconcile_status()
+                    self._layout(preparation=True)
+                    request = self._claim()
+                    return self._transaction(request)
+                except _RollbackFailed as error:
+                    # Retain this operation's pinned mount authorities and host
+                    # lease until its failure projection has been attempted.
+                    try:
+                        self.store.publish_status(
+                            self.journal.phase,
+                            "Update recovery requires administrator intervention",
+                            self.journal.request_id,
                         )
-                    if self.journal.phase == "recovered-awaiting-start":
-                        if _current_target(self.paths)[0] != self.journal.prior_target:
-                            raise ValueError("Recovered target mismatch")
-                        self._validate_target(self.journal.prior_target)
-                        if not check_start_allowed(self.paths, "ui"):
-                            raise ValueError("Recovered startup gate mismatch")
-                        self._ready(self.journal.prior_target.name)
-                        self._restore_units()
-                        self._intent("rolled-back")
-                        self._clear_maintenance()
-                        self.store.reconcile_status()
-                    elif self.journal.phase not in TERMINAL:
-                        return self._recover_locked("boot")
-                    elif self.journal.phase == "committed":
-                        self._finalize_committed(start=True)
-                    elif _current_target(self.paths)[0] != self.journal.prior_target:
-                        raise ValueError("Rolled-back target mismatch")
-                    else:
-                        self.store.reconcile_status()
-                self._layout(preparation=True)
-                request = self._claim()
-                return self._transaction(request)
+                    except Exception:
+                        pass  # Private journal/intent evidence remains authoritative.
+                    return UpdateResult(
+                        "failed",
+                        error=error.original,
+                        rollback_status="failed: " + error.rollback + "; " + ADMIN,
+                        request_id=self.journal.request_id,
+                    )
         except BlockingIOError:
             return UpdateResult("busy", error="Lifecycle operation already active")
-        except _RollbackFailed as error:
-            try:
-                self.store.publish_status(
-                    self.journal.phase,
-                    "Update recovery requires administrator intervention",
-                    self.journal.request_id,
-                )
-            except Exception:
-                pass  # Private journal/intent evidence, not status, remains authoritative.
-            return UpdateResult(
-                "failed",
-                error=error.original,
-                rollback_status="failed: " + error.rollback + "; " + ADMIN,
-                request_id=self.journal.request_id,
-            )
         except Exception as error:
             return UpdateResult(
                 "blocked",

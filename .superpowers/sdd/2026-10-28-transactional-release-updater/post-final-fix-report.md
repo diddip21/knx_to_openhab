@@ -79,3 +79,38 @@ subprocess limit tests intentionally lower their own limits, not host limits.
   -> `110 passed in 21.14s`. Covers late replacement, three-attempt churn bound,
   unsafe replacement rejection, in-place modification refusal, and previous race/
   secure filesystem regressions. Public interfaces unchanged.
+
+## M2 — rollback-failure projection retains operation authority/lease
+
+- Red: `python -m pytest -q tests/test_update_post_final_fixes.py -k original_lock --tb=short`
+  -> `1 failed, 14 deselected in 3.45s`. Modeled config-root self-bind mount,
+  actual transaction with candidate/old-version readiness failures, actual journal
+  and status: journal `recovery-failed`, public status `claimed`. Observer saw
+  `(lock_held=False, config_anchor_pinned=False)` at failure publication.
+- Change: catch `_RollbackFailed` inside the existing operation-specific
+  `mount_anchors` and lifecycle-lock contexts. Attempt the correlated failure
+  projection before unwinding either; return the same failure/rollback result.
+  No reopened anchors, arbitrary new authority, lock gaps, or public recovery input.
+  Private evidence remains authoritative if public projection itself fails.
+- Green: `python -m pytest -q tests/test_update_post_final_fixes.py tests/test_update_final_fixes.py tests/test_release_updater.py --tb=short`
+  -> `135 passed in 33.86s`. Actual journal/public status now both
+  `recovery-failed` with the same request ID; observer sees `(True, True)` and
+  contexts release normally afterwards. Existing nested-mount refusals retained.
+
+## Final focused verification / handoff
+
+- Formatting red: Black reported two files needing formatting; applied only its
+  displayed formatting diff (new tests and moved transaction block).
+- Final regression command: `python -m pytest -q tests/test_update_post_final_fixes.py tests/test_update_final_fixes.py tests/test_release_updater.py tests/test_update_recovery.py tests/test_update_secure_fs.py tests/test_update_bootstrap_recovery.py --tb=short`
+  -> `393 passed in 120.26s (0:02:00)` after all code/formatting changes.
+- For each of Black/isort/flake8, exact checked file list:
+  `installer/update_bootstrap.py installer/update_core/secure_fs.py installer/update_core/transaction.py tests/test_update_post_final_fixes.py`.
+  Commands: `python -m black --check FILES` -> `4 files would be left unchanged.`;
+  `python -m isort --check-only FILES` -> exit 0, no output;
+  `python -m flake8 FILES` -> exit 0, no output.
+- `git diff --check` -> exit 0, only Windows Git LF/CRLF advisory warnings.
+- All four fixes have red/green evidence; no external interfaces/config keys change.
+  Independent controller review, fresh disposable real-systemd WSL acceptance,
+  full applicable core suite once after acceptance, and repository-wide checks
+  remain controller-owned; NOT claimed complete here. No UI tests/screenshots are
+  applicable to these internal corrections. No forbidden test/runner was changed.

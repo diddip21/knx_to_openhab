@@ -1,12 +1,21 @@
-# Release-runtime acceptance: offline dependency admission blocked
+# Release-runtime acceptance: pip configuration finding and default-index alternative
 
 **Review-stage only. No guest setup, update, rollback or boot was executed.**
 Production remains the reviewed `2dcf3078b61283a41fd1ef38e34327e4f759d5c1` bundle;
 this change does not replace that bundle or alter application code.
 
+**Correction after read-only investigation:** the failure below concerns only the
+proposed `/etc/pip.conf` channel. It does not block all offline dependency fixtures
+and does not require a production change. The existing Ubuntu ensurepip seed has a
+Debian-patched vendored certifi using the system CA bundle, so an inner-only,
+TLS-verified fixture at pip's default PyPI URLs is viable for implementation review.
+See [the narrowed design](specs/2026-10-30-local-release-runtime-fixture-design.md).
+No fixture CA trust, hosts mapping, package update or HTTPS request was performed
+by that investigation; actual dependency installation remains unverified.
+
 ## Finding and bounded reproduction
 
-The requested acceptance depends on the real dependency child installing the full
+The initial proposed acceptance strategy depended on the real child installing the full
 unchanged `requirements.txt` from an inner-only offline wheelhouse configured in
 `/etc/pip.conf`. The exact reviewed `installer/update_prepare.py` instead sets
 `PIP_CONFIG_FILE=/dev/null`, including when invoking `pip --isolated install`.
@@ -33,7 +42,8 @@ this is **not** an actual Linux update failure or proof of the guest's pip versi
 The original helper SHA-256 is
 `260b76e82ca6ab712a84362a0f022d783db62f6e2b114fe442da8a2229a3106f`.
 The tests pin that original blob and its full venv/pip argv. Green diagnostic tests
-mean the blocker is detected; they do not mean offline installation succeeds.
+mean this configuration-channel incompatibility is detected; they do not mean
+offline installation succeeds or that the default-index alternative is blocked.
 
 Do not work around this by changing requirements, precreating the candidate venv,
 changing helper environment/argv, exporting `PIP_*`, making global host dependency
@@ -41,22 +51,25 @@ changes, giving the guest outbound access, or replacing the production helper
 from this harness. Any production policy correction needs its own review and
 explicit installed-component authorization. No such correction is proposed here.
 
-## Admission before the next implementation
+## Corrected admission inputs
 
-The private `wsl-acceptance/readiness-execution-report.md` and
-`wsl-acceptance/probe-final-execution-report.md` were not available in this checkout
-or the adjacent task scratch directory. The public hostile-probe summary was
-read, but is not a substitute for their private original receipts and state pins.
-Do not reconstruct/enroll an observed baseline or rerun readiness to get them.
+The earlier statement that the private execution reports were unavailable was
+incorrect. Both exist under
+`.superpowers/sdd/2026-10-28-transactional-release-updater/wsl-acceptance/` and have
+now been read in full, together with the original pinned provider/source inputs.
+They record actual readiness/version `0.1.0` and the later actual new-UUID hostile
+probe PASS; historical failed attempts remain historical failures. Reuse those
+original guards and receipts. Do not reconstruct/enroll a baseline or rerun readiness.
 
 Before a runtime-capable runner can be submitted for review:
 
-1. Resolve the offline-install policy incompatibility with the controller; retain
-   the real failed admission. If production is changed, repeat the appropriate
-   source/component review rather than silently relaxing the `2dc` source gate.
-2. Supply the original provider receipt, production approval with existing
-   `90936a02…cafea` pin, private preservation evidence and exact known probe artifact
-   names. Reuse existing provider/receipt readers and verified callback origins.
+1. Retain the real failed configuration-channel diagnostic, but use the default
+   `https://pypi.org/simple` index and `https://files.pythonhosted.org/` wheel links
+   with system CA validation. No pip configuration/environment/argv or production
+   change is needed for the observed Ubuntu-packaged seed.
+2. Reuse the existing original provider receipt, production approval, private
+   preservation evidence and exact known probe artifact names. These inputs are
+   present; they are not missing prerequisites. Keep them private.
 3. Confirm the guest wheelhouse contains every unchanged production dependency
    and transitive wheel for the guest Python/platform, readable by UID997 with
    protected ancestry. No sdist build/network fallback, host package install or
@@ -103,7 +116,9 @@ each phase, plus no non-loopback interface or outbound route.
   **only in that inner disposable guest**. Never in Windows, outer WSL or production.
   Preserve unrelated `/etc/hosts` lines; add loopback mappings only for owned
   `api.github.com`, `github.com`, `release-assets.githubusercontent.com` names.
-  Refuse existing conflicting mappings and unknown CA/hosts/pip/unit fixture state.
+  Include `pypi.org` and `files.pythonhosted.org` for the default-index fixture.
+  Refuse existing conflicting mappings and unknown CA/hosts/unit fixture state.
+  Do not write pip configuration or add pip environment overrides.
 - Bind443 on loopback with a fixed root-owned trusted server/helper and an own
   fixture unit. Do not execute candidate code as root. Do not disable HTTPS
   verification, checksum checks, URL checks or startup guards. Production ignores
@@ -160,10 +175,10 @@ separate reviewed cleanup step comparing their exact original/installed bytes.
 
 ## Runtime permission still needed
 
-There is deliberately **no full-update runtime command in this commit**. A command
-would imply an implemented/admitted runner, which the failed prerequisite does not
-support. After the blocker and missing private inputs are resolved, review the
-fixture artifacts, TLS setup and phase implementation before authorizing any inner
-CA/hosts/pip/unit writes. Separately authorize the first actual authenticated
+There is deliberately **no full-update runtime command in this commit**. The
+default-index path is viable for design review, but its runner is not implemented.
+After reviewing that design and existing private inputs, review fixture artifacts,
+TLS setup and phase implementation before authorizing any inner
+CA/hosts/unit writes. Separately authorize the first actual authenticated
 stable update, then each negative/retry phase. Boot/offline-lock/corrupt-journal
 acceptance remains outside this scope and **NOT VERIFIED**.

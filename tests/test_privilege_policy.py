@@ -84,6 +84,7 @@ def test_web_updater_checks_external_credentials_before_backup_or_git_changes():
     assert "external Web UI config.json or secrets.env is missing" in update
     assert "valid external Argon2id password hash is required" in update
     assert "sudo bash $INSTALL_DIR/installer/setup.sh" in update
+    assert "interactive SSH terminal" in update
     assert preflight < update.index("Creating backup of current installation")
     assert preflight < update.index('git -c "safe.directory=$INSTALL_DIR" stash')
     assert preflight < update.index('git -c "safe.directory=$INSTALL_DIR" fetch origin')

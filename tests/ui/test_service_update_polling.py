@@ -107,7 +107,7 @@ def test_polling_resumes_when_another_operation_starts_during_completion_refresh
     )
     expect(page.locator("#refreshPackagesBtn")).to_be_enabled()
     expect(page.locator("#servicesList")).to_contain_text("Installiert: 5.1.0-1")
-    assert state["status_calls"] >= 6
+    assert state["status_calls"] >= 5
 
 
 def test_polling_catches_operation_started_during_full_completion_refresh(

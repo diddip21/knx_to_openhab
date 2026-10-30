@@ -61,8 +61,13 @@ The queued-Future cancellation obligation is in `tests/test_update_maintenance.p
 ## Opt-in REAL systemd acceptance: disposable guest only
 
 **NOT VERIFIED in the development environment.** WSL PID 1 systemd is not permission
-to mutate its host manager. No Docker/Podman/nspawn/QEMU disposable provider is
-available here. `unshare` alone is not a provisioned disposable systemd guest and
+to mutate its host manager. A separately authorized fresh WSL2/nspawn provider was
+attempted on 2026-10-30, but its strict read-only preflight refused an outer WSL
+`9p` driver mount before application setup. The new narrowly scoped provider guard
+still requires independent review. See
+[`2026-10-30-nested-acceptance-blocker.md`](../../docs/superpowers/2026-10-30-nested-acceptance-blocker.md)
+for the exact checkpoint, receipt schema, reproducible command and remaining work.
+No installed-unit acceptance is claimed. `unshare` alone is not a provisioned disposable systemd guest and
 must not be used to bypass these prerequisites. Do not install providers globally,
 create host users, install units/policy, or alter host services to run this suite.
 
@@ -120,8 +125,10 @@ journalctl -b --no-pager > /root/acceptance-boot-journal.txt
 ```
 
 Guards require the explicit marker, nonce, machine ID, fresh boot ID, root-only
-configuration, virtualization detection, and reject WSL/nonvirtual hosts before
-any service operation. Markers do not create an isolation boundary; the guest
+configuration, virtualization detection, and reject ordinary/unmarked WSL and
+nonvirtual hosts before any service operation. A nested-nspawn exception requires
+the fixed root-only fresh-import receipt and live PID-1/mount evidence described
+above; the independent Windows preflight must pass first. Markers do not create an isolation boundary; the guest
 provider and offline transcript are mandatory independent prerequisites.
 Marker/configuration objects have exactly the fields shown above (no duplicate or
 unknown keys); Boolean attestations must be JSON `true`, not numbers/strings. All

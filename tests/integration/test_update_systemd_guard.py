@@ -62,6 +62,9 @@ def fake_guest(monkeypatch):
         def __str__(self):
             return self.path
 
+        def exists(self):
+            return self.path in guest.raw and self.path not in guest.missing
+
         def lstat(self):
             return SimpleNamespace(
                 st_uid=guest.owners.get(self.path, 0),
@@ -417,3 +420,60 @@ def test_worker_preflight_queries_actual_memberships_and_sudo_listing_only(fake_
     assert fake_worker.group_reads == [("knxohupdate", 501)]
     assert fake_worker.sudo == [["/usr/bin/sudo", "-n", "-l", "-U", "knxohupdate"]]
     assert fake_guest.mutations == []  # never execute any worker sudo-granted action
+
+
+@pytest.fixture
+def nested_guest(fake_guest):
+    from scripts.nested_acceptance import DISTRIBUTION, LOCATION
+    from scripts.nested_acceptance import MACHINE as NESTED_MACHINE
+
+    guest = fake_guest
+    guest.virt = "wsl"
+    guest.raw["/etc/knxoh-nested-acceptance.json"] = json.dumps(
+        {
+            "format": 1,
+            "provider": "fresh-wsl2-nspawn",
+            "distribution": DISTRIBUTION,
+            "install_location": LOCATION,
+            "outer_machine_id": "cd" * 16,
+            "inner_machine_id": guest.machine,
+            "machine": NESTED_MACHINE,
+            "nonce": NONCE,
+        }
+    )
+    guest.raw.update(
+        {
+            "/run/systemd/container": "systemd-nspawn\n",
+            "/proc/1/environ": "container=systemd-nspawn\0",
+            "/proc/self/mountinfo": "1 0 0:1 / / rw - ext4 /dev/sdb rw\n",
+        }
+    )
+    return guest
+
+
+def test_nested_provider_allows_attested_nspawn_not_blanket_wsl(nested_guest):
+    settings, _paths = harness.disposable.__wrapped__()
+    assert settings == nested_guest.config
+    assert nested_guest.policy == ["checked"]
+    assert nested_guest.mutations == []
+
+
+@pytest.mark.parametrize("gate", ["owner", "mode", "nonce", "outer", "container", "mount"])
+def test_nested_provider_refuses_before_worker_or_service_effects(nested_guest, gate):
+    guest = nested_guest
+    path = "/etc/knxoh-nested-acceptance.json"
+    if gate in ("owner", "mode"):
+        getattr(guest, "owners" if gate == "owner" else "modes")[path] = (
+            1000 if gate == "owner" else 0o644
+        )
+    elif gate in ("nonce", "outer"):
+        receipt = json.loads(guest.raw[path])
+        receipt["nonce" if gate == "nonce" else "inner_machine_id"] = "b2" * (
+            32 if gate == "nonce" else 16
+        )
+        guest.raw[path] = json.dumps(receipt)
+    elif gate == "container":
+        guest.raw["/run/systemd/container"] = "wsl"
+    else:
+        guest.raw["/proc/self/mountinfo"] = "1 0 0:1 / /mnt/c rw - 9p C: rw\n"
+    assert_refused_without_effect(guest)

@@ -92,6 +92,42 @@ def _check_worker_policy():
     check_worker_sudo()
 
 
+def _check_virtualization(virt, nonce):
+    assert virt not in ("", "none"), "nonvirtual host is forbidden"
+    if virt != "wsl":
+        return
+    # WSL's detect-virt result masks nested nspawn. Never admit ordinary WSL:
+    # require the explicit fresh-import receipt PLUS live nested PID-1/mount
+    # evidence. The Windows preflight independently checks outer identity and
+    # disabled integration. Neither these checks nor the receipt prove that
+    # sandbox properties actually took effect: runtime probes remain required.
+    from scripts.nested_acceptance import validate_inner
+
+    receipt_path = Path("/etc/knxoh-nested-acceptance.json")
+    info = receipt_path.lstat()
+    assert stat.S_ISREG(info.st_mode) and info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o600
+    receipt = _read_attestation(receipt_path)
+    assert receipt["nonce"] == nonce
+    validate_inner(
+        receipt,
+        {
+            "machine_id": Path("/etc/machine-id").read_text().strip(),
+            "pid1": Path("/proc/1/comm").read_text().strip(),
+            "container": Path("/run/systemd/container").read_text().strip(),
+            "pid1_container": next(
+                (
+                    v.split("=", 1)[1]
+                    for v in Path("/proc/1/environ").read_text().split("\0")
+                    if v.startswith("container=")
+                ),
+                "",
+            ),
+            "mounts": Path("/proc/self/mountinfo").read_text(),
+            "interop": Path("/proc/sys/fs/binfmt_misc/WSLInterop").exists(),
+        },
+    )
+
+
 @pytest.fixture(scope="module")
 def disposable():
     configured = os.environ.get("KNXOH_DISPOSABLE_SYSTEMD_CONFIG")
@@ -119,7 +155,7 @@ def disposable():
         Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
     )
     virt = subprocess.run(["systemd-detect-virt"], capture_output=True, text=True, check=True)
-    assert virt.stdout.strip() not in ("", "none", "wsl"), "development WSL/host is forbidden"
+    _check_virtualization(virt.stdout.strip(), value["nonce"])
     assert Path("/proc/1/comm").read_text().strip() == "systemd"
     _check_worker_policy()
     from installer.update_core.transaction import load_paths

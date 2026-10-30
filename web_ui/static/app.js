@@ -743,15 +743,20 @@ function computeLineDiff(original, current) {
 
 let packagePollTimeout = null
 let packagePollInFlight = false
+let packagePollRequested = false
+let packagePollCompletionStage = 0
 let servicesRefreshGeneration = 0
 let cloudInfoGeneration = 0
 
 function startPackageOperationPolling() {
+  packagePollCompletionStage = 0
+  packagePollRequested = true
   if (packagePollTimeout || packagePollInFlight) return
 
   const poll = async () => {
     packagePollTimeout = null
     packagePollInFlight = true
+    packagePollRequested = false
     let continuePolling = true
     const statusEl = document.getElementById('packageOperationStatus')
     try {
@@ -759,15 +764,26 @@ function startPackageOperationPolling() {
       if (!response.ok) throw new Error('Status nicht erreichbar')
       const task = await response.json()
       statusEl.textContent = task.state === 'idle' ? '' : `${task.action}: ${task.message}`
-      if (task.state !== 'running') {
-        continuePolling = false
+      if (task.state === 'running') {
+        if (packagePollCompletionStage > 0) {
+          packagePollCompletionStage = 0
+          await refreshServices()
+        }
+      } else if (packagePollCompletionStage < 2) {
         await refreshServices()
+        packagePollCompletionStage = packagePollRequested
+          ? 1
+          : packagePollCompletionStage + 1
+      } else {
+        packagePollCompletionStage = 0
+        continuePolling = false
+        document.getElementById('refreshPackagesBtn').disabled = false
       }
     } catch (e) {
       statusEl.textContent = `Status nicht erreichbar: ${e.message}`
     } finally {
       packagePollInFlight = false
-      if (continuePolling) packagePollTimeout = setTimeout(poll, 2000)
+      if (continuePolling || packagePollRequested) packagePollTimeout = setTimeout(poll, 2000)
     }
   }
 

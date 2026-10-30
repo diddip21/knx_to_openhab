@@ -4,10 +4,12 @@ Production source under test: `27d106a26c907b7ce05d1880ea25157b1f815e50`.
 **No installed-unit acceptance completed; parent Task 5 remains incomplete.**
 The original driver-share blocker below is superseded by the controller's
 explicitly authorized narrow outer-only policy. Live read-only preflight and
-source-only transfer now pass. Independent guard review is the next checkpoint;
-**application provisioning and hazardous acceptance have NOT run**.
+source-only transfer now pass. Independent guard rereview approved `d1f1848`.
+Subsequent real fixture provisioning stopped at a production sudo-listing
+validation failure, before application installation; see
+[`2026-10-30-systemd-acceptance-sudo-blocker.md`](2026-10-30-systemd-acceptance-sudo-blocker.md).
 
-## Guard-review corrections (pending rereview)
+## Guard-review corrections (approved; historical guard checkpoint)
 
 - The hazardous harness reads `/proc/sys/kernel/osrelease` independently of
   `systemd-detect-virt`. A WSL/Microsoft kernel, detection result `wsl`, presence

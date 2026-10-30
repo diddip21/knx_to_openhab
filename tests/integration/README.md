@@ -65,7 +65,12 @@ to mutate its host manager. A separately authorized fresh WSL2/nspawn provider w
 attempted on 2026-10-30. Initial preflight refused an outer WSL `9p` driver mount;
 the controller then explicitly authorized a narrow outer-only read-only driver
 policy. Read-only preflight and immutable source-only transfer now pass, but the
-provider guard/policy still requires independent review before application setup. See
+provider guard/policy was independently approved at `d1f1848`. Real provisioning
+then stopped at a production sudo-listing validation defect, before application
+unit installation. See
+[`2026-10-30-systemd-acceptance-sudo-blocker.md`](../../docs/superpowers/2026-10-30-systemd-acceptance-sudo-blocker.md)
+for the live **1-failed** Linux regression, retained partial fixture and safe resume
+boundary. No full installed-unit acceptance is claimed. See also
 [`2026-10-30-nested-acceptance-blocker.md`](../../docs/superpowers/2026-10-30-nested-acceptance-blocker.md)
 for the exact checkpoint, receipt schema, reproducible command and remaining work.
 No installed-unit acceptance is claimed. `unshare` alone is not a provisioned disposable systemd guest and

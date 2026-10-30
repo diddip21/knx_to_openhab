@@ -2,13 +2,14 @@
 
 import json
 import re
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import Page, expect
 
 
-def _setup_services_routes(page: Page):
-    cloud_info = {
+def _setup_services_routes(page: Page, cloud_info=None):
+    cloud_info = cloud_info or {
         "uuid": "abc-123-def-456",
         "secret": "super-secret-value",
         "uuid_path": "/var/lib/openhab/uuid",
@@ -88,6 +89,30 @@ class TestServicesSection:
         page.goto(base_url)
         expect(page.locator("#servicesList .service-item")).to_have_count(2, timeout=10000)
         expect(page.locator("#servicesList #cloud-info-card")).to_have_count(1, timeout=10000)
+
+    def test_services_after_package_refresh_screenshot(self, page: Page, base_url, flask_server):
+        _setup_services_routes(
+            page,
+            cloud_info={
+                "uuid": "demo-uuid-0001",
+                "secret": "demo-only-not-valid",
+                "uuid_path": "/var/lib/openhab/uuid",
+                "secret_path": "/var/lib/openhab/openhabcloud/secret",
+            },
+        )
+        page.goto(base_url)
+        expect(page.locator("#servicesList .service-item")).to_have_count(2, timeout=10000)
+        expect(page.locator("#servicesList #cloud-info-card")).to_have_count(1, timeout=10000)
+
+        page.evaluate("refreshServices()")
+
+        expect(page.locator("#servicesList .service-item")).to_have_count(2, timeout=10000)
+        expect(page.locator("#servicesList #cloud-info-card")).to_have_count(1, timeout=10000)
+        screenshot_dir = Path("test-results")
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.locator("#service-section").screenshot(
+            path=str(screenshot_dir / "services-after-package-refresh.png")
+        )
 
         page.evaluate("Promise.all([refreshServices(), refreshServices()])")
 

@@ -743,15 +743,18 @@ function computeLineDiff(original, current) {
 
 let packagePollTimeout = null
 let packagePollInFlight = false
+let packagePollRequested = false
 let servicesRefreshGeneration = 0
 let cloudInfoGeneration = 0
 
 function startPackageOperationPolling() {
+  packagePollRequested = true
   if (packagePollTimeout || packagePollInFlight) return
 
   const poll = async () => {
     packagePollTimeout = null
     packagePollInFlight = true
+    packagePollRequested = false
     let continuePolling = true
     const statusEl = document.getElementById('packageOperationStatus')
     try {
@@ -767,7 +770,7 @@ function startPackageOperationPolling() {
       statusEl.textContent = `Status nicht erreichbar: ${e.message}`
     } finally {
       packagePollInFlight = false
-      if (continuePolling) packagePollTimeout = setTimeout(poll, 2000)
+      if (continuePolling || packagePollRequested) packagePollTimeout = setTimeout(poll, 2000)
     }
   }
 

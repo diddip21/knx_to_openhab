@@ -89,6 +89,36 @@ def test_web_updater_checks_external_credentials_before_backup_or_git_changes():
     assert preflight < update.index('git -c "safe.directory=$INSTALL_DIR" fetch origin')
 
 
+def test_setup_restores_previously_active_services_after_failure():
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+
+    assert "PREVIOUSLY_ACTIVE_UNITS" in setup
+    assert "trap restore_previous_services EXIT" in setup
+    assert 'sudo systemctl start "$unit"' in setup
+    assert setup.index("trap restore_previous_services EXIT") < setup.index(
+        'echo "Stopping the Web UI and backup cleanup during migration"'
+    )
+    assert "SETUP_COMPLETED=1" in setup
+
+
+def test_setup_runs_password_prompt_without_nested_sudo_when_already_root():
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+
+    assert 'if [[ "$EUID" -eq 0 ]]; then' in setup
+    assert '"$BASE/venv/bin/python" "$BASE/installer/configure_auth.py"' in setup
+
+
+def test_web_updater_rolls_back_if_updated_service_fails_health_check():
+    update = (ROOT / "update.sh").read_text(encoding="utf-8")
+
+    assert "wait_for_service_active()" in update
+    assert "restore_previous_release()" in update
+    assert 'git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"' in update
+    assert 'if ! wait_for_service_active; then' in update
+    assert update.index('if ! wait_for_service_active; then') < update.index(
+        'log "Update completed successfully!"'
+    )
+
 def test_update_script_never_elevates_git_or_uses_a_global_safe_directory():
     update = (ROOT / "update.sh").read_text(encoding="utf-8")
 

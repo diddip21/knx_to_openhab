@@ -926,7 +926,6 @@ class ReleaseUpdater:
         self.store.reconcile_status()
 
     def _recover_locked(self, mode):
-        self.systemd.verify_recovery_preconditions(mode)
         journal = self.journal
         if journal is None:
             if maintenance.maintenance_requested(self.paths) or not check_start_allowed(
@@ -935,7 +934,14 @@ class ReleaseUpdater:
                 raise ValueError(
                     "Unjournaled maintenance/gate; administrator intervention required"
                 )
+            # First administrator component repair can activate this oneshot
+            # while healthy writers are running. This proven-clean path only
+            # reads protected state; every journaled/mutating path below still
+            # requires inactive writers before taking any recovery action.
+            if mode == "offline":
+                self.systemd.verify_recovery_preconditions(mode)
             return UpdateResult("clean")
+        self.systemd.verify_recovery_preconditions(mode)
         self.systemd.bind_request(journal.request_id)
         if journal.phase == "committed":
             self._finalize_committed(start=False)
@@ -979,7 +985,6 @@ class ReleaseUpdater:
             ):
                 self._identities()
                 self._layout()
-                self.systemd.verify_recovery_preconditions(mode)
                 self.store = StateStore(self.paths)
                 self.journal = self.store.load()
                 return self._recover_locked(mode)

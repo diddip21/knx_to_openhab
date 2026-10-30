@@ -55,7 +55,7 @@ fi
 PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
 if [[ ! -x "$INSTALL_DIR/venv/bin/python" ]]; then
     log "ERROR: The installed Python environment is missing; credential migration cannot be verified."
-    log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' as an administrator, then retry."
+    log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' from an interactive SSH terminal, then retry."
     exit 1
 fi
 if ! CREDENTIAL_CHECK=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" \
@@ -103,7 +103,7 @@ if auth.get("enabled", True):
 PY
 ); then
     log "ERROR: Credential migration is incomplete: $CREDENTIAL_CHECK"
-    log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' as an administrator, then retry."
+    log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' from an interactive SSH terminal, then retry."
     exit 1
 fi
 log "External Web UI configuration and password hash are ready."

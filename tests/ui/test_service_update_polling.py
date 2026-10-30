@@ -90,7 +90,7 @@ def test_polling_resumes_when_another_operation_starts_during_completion_refresh
             return fulfill(
                 route,
                 {
-                    "installed": "5.0.0-1",
+                    "installed": ("5.1.0-1" if state["status_calls"] >= 5 else "5.0.0-1"),
                     "candidate": "5.1.0-1",
                     "supported": True,
                     "update_available": True,
@@ -106,7 +106,8 @@ def test_polling_resumes_when_another_operation_starts_during_completion_refresh
         "Second operation finished.", timeout=15000
     )
     expect(page.locator("#refreshPackagesBtn")).to_be_enabled()
-    assert state["status_calls"] >= 4
+    expect(page.locator("#servicesList")).to_contain_text("Installiert: 5.1.0-1")
+    assert state["status_calls"] >= 6
 
 
 def test_polling_catches_operation_started_during_full_completion_refresh(
@@ -121,7 +122,9 @@ def test_polling_catches_operation_started_during_full_completion_refresh(
         ("running", "Second operation running in another tab."),
         ("running", "Second operation running in another tab."),
         ("completed", "Second operation is finishing."),
-        ("completed", "Completion refresh settled."),
+        ("completed", "Completion refresh observed."),
+        ("completed", "Second operation is still settling."),
+        ("completed", "Final refresh observed."),
         ("completed", "Second operation finished."),
     ]
 
@@ -167,4 +170,4 @@ def test_polling_catches_operation_started_during_full_completion_refresh(
     )
     expect(page.locator("#refreshPackagesBtn")).to_be_enabled()
     assert state["replacement_started"]
-    assert state["status_calls"] >= 9
+    assert state["status_calls"] >= 11

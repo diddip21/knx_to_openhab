@@ -1,11 +1,15 @@
 # Local release fixture: implementation for independent review
 
-Status: **implemented and locally tested; not operationally authorized**.
+Status: **review fixes implemented and source-reviewed; not operationally authorized**.
 Implements the bounded
 [approved fixture design](specs/2026-10-30-local-release-runtime-fixture-design.md).
 Production remains the original `2dcf3078b61283a41fd1ef38e34327e4f759d5c1`.
 No installed helper, requirements, configuration, application unit or updater was
-changed or exercised by this implementation delivery. No subagents were used.
+changed or exercised by this implementation delivery. The original implementation
+delivery used no implementer subagents.
+The prior review's I1/I2/M1/M2/M3 corrections are present in the current source;
+a separate read-only review found no further findings. New code/fixture pin review,
+fresh Linux rerun and all operational phase authorizations remain outstanding.
 
 ## Code responsibilities
 
@@ -29,10 +33,14 @@ The exact2dc builder excludes `tests/`, but still packages its **pre-existing**
 `scripts/nested_acceptance.py`, `scripts/nested_systemd_fixture.py` and
 `scripts/run_nested_systemd_acceptance.py`. The new fixture/operator/server code,
 wheelhouse, private proofs, receipts and keys are not in any release archive.
-Silently filtering the old scripts would contradict the required real-builder /
-VERSION-only source delta. Independent review must resolve this original-source
-content against the design's no-test-harness intent; it has not been fixed or
-relabeled as accepted. This does not prevent reviewing the implemented commands.
+These three files are unchanged original-source members retained by the real
+builder; they are not newly admitted root-trusted fixture helpers. Their presence
+does not authorize executing or importing them as root from a release candidate.
+The fixture continues to use the separately pinned original harness/source, never
+the candidate copy. Silently filtering the old scripts would contradict the
+required real-builder / VERSION-only source delta. Independent review resolved this
+packaging qualification without changing production or relabeling the scripts as
+trusted helpers.
 
 ## Local commands and prepared artifacts
 
@@ -133,10 +141,19 @@ On failure retain the original journal/candidate/workspaces and private evidence
 - Portable TDD RED/GREEN covered the new builders/server and guard behavior,
   including malformed/incompatible wheels, raw `//` request aliases, original
   wheel pins, unknown parent entries and UUID validation before path use.
-- Final bounded related native suite: **396 passed,74 skipped** (Windows3.11;
-  skips are native symlink/Linux/root/opt-in conditions). Includes real verified
-  temporary TLS transfer of all29 complete exported wheels and actual hostname /
+- Initial bounded native suite: **396 passed,74 skipped** (Windows3.11; skips are
+  native symlink/Linux/root/opt-in conditions). This is historical evidence from
+  before the review fixes, not verification of the current candidate. It included
+  temporary TLS transfer of all29 complete exported wheels and hostname /
   untrusted-chain rejection, without system trust/DNS writes.
+- Fresh targeted review-regression tests on Windows3.12: **12 passed,15 skipped**;
+  Linux/root-only transaction and filesystem cases are skipped on Windows. The
+  broader focused two-file run reported **62 passed,17 skipped,2 failed**: both
+  failures hit the unchanged `read_regular()` lstat/fstat `st_ctime_ns` comparison
+  on locally generated Windows files. That suite is not green on this host.
+- Black, isort, flake8 and `git diff --check` passed for the changed files. The
+  existing private Linux fix-run record says **78 passed,4 deselected**; it was not
+  rerun during this review follow-up.
 - Focused actual Ubuntu3.12.3 run: **52 passed,3 deselected**, using exclusive own
   private test files, the already installed test interpreter and original guarded
   read-only wheelhouse. Git release-build tests were deliberately not run there.
@@ -152,5 +169,6 @@ Raw commands/results and the incremental handoff are private in
 `wsl-acceptance/release-fixture-implementation-report.md`; original private
 read-only/run evidence stays under the existing `.superpowers/sdd/...` scratch.
 No private proof, receipt, raw operational log, wheel ZIP or key is committed.
-Independent review is still pending. Actual guest trust/TLS/install/update and
-the full Task9/parent installed acceptance remain **OPEN**.
+The source-fix rereview found no further findings. Independent review of the new
+code/fixture pins, actual guest trust/TLS/install/update, and full Task9/parent
+installed acceptance remain **OPEN**.

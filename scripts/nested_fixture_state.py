@@ -181,7 +181,7 @@ def lock_entry(*, details=False):
         return value
 
 
-def collect_inventory(*, details=False):
+def collect_inventory(*, details=False, entry_reader=None):
     import grp
     import pwd
 
@@ -199,7 +199,7 @@ def collect_inventory(*, details=False):
         paths.update((Path("/etc/hosts"), RECEIPT))
     entries = {}
     for path in paths:
-        value = entry(path, details=details)
+        value = (entry_reader or entry)(path, details=details)
         if value is not None:
             entries[path.as_posix()] = value
     lock = lock_entry(details=details)

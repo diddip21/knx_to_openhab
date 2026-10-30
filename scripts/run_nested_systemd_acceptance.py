@@ -50,9 +50,17 @@ def guest_program(phase, nonce, *, checkpoint=None, source_approval=None, approv
         "sudo-regression",
         "checkpoint-inventory",
         "resume-after-sudo",
+        "repair-environmentfile",
     ):
         raise ValueError("Unsupported own-nested acceptance phase")
-    if phase == "resume-after-sudo":
+    if phase == "repair-environmentfile":
+        from scripts.nested_fixture_repair import validate_repair_checkpoint, validate_repair_source
+
+        if checkpoint is None or source_approval is None or approved_head is None:
+            raise ValueError("Repair requires pinned checkpoint AND reviewed source approval")
+        validate_repair_checkpoint(checkpoint, checkpoint.get("inventory"), nonce)
+        validate_repair_source(source_approval, approved_head, checkpoint["old_source_approval"])
+    elif phase == "resume-after-sudo":
         from scripts.nested_fixture_state import validate_checkpoint, validate_source_manifest
 
         if checkpoint is None or source_approval is None or approved_head is None:
@@ -75,6 +83,16 @@ def guest_program(phase, nonce, *, checkpoint=None, source_approval=None, approv
         f"exec(compile({fixture!r},'<trusted acceptance fixture>','exec'))\n"
         f"EXPECTED_NONCE={nonce!r}\nrequire_guest(EXPECTED_NONCE)\n"
     )
+    if phase == "repair-environmentfile":
+        repair = (ROOT / "scripts/nested_fixture_repair.py").read_text(encoding="utf-8")
+        return (
+            code
+            + "module=types.ModuleType('scripts.nested_fixture_repair')\n"
+            + "sys.modules[module.__name__]=module\n"
+            + f"exec(compile({repair!r},'<trusted repair boundary>','exec'),module.__dict__)\n"
+            + f"run_phase('repair-environmentfile',EXPECTED_NONCE,checkpoint={checkpoint!r},"
+            + f"source_approval={source_approval!r},approved_head={approved_head!r})\n"
+        )
     if phase == "checkpoint-inventory":
         return (
             code
@@ -126,6 +144,7 @@ def main():
             "sudo-regression",
             "checkpoint-inventory",
             "resume-after-sudo",
+            "repair-environmentfile",
         ),
     )
     parser.add_argument("--checkpoint", type=Path)
@@ -144,10 +163,10 @@ def main():
         args.source_approval_sha256,
         args.approved_source_head,
     )
-    if args.phase == "resume-after-sudo":
+    if args.phase in ("resume-after-sudo", "repair-environmentfile"):
         if not all(supplied):
             parser.error(
-                "resume-after-sudo requires checkpoint/source files, both SHA-256 pins and approved commit"
+                "continuation requires checkpoint/source files, both SHA-256 pins and approved commit"
             )
         resume = dict(
             checkpoint=read_pinned_json(args.checkpoint, args.checkpoint_sha256),

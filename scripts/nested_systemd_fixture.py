@@ -387,6 +387,10 @@ def resume_after_sudo(nonce, checkpoint, source_approval, approved_head):
 
 
 def run_phase(phase, nonce, **continuation):
+    if phase == "repair-environmentfile":
+        from scripts.nested_fixture_repair import repair_environmentfile
+
+        return repair_environmentfile(sys.modules[__name__], nonce, **continuation)
     handlers = {"bootstrap": bootstrap, "probe": probe, "resume-after-sudo": resume_after_sudo}
     if phase not in handlers:
         raise ValueError("Unsupported nested fixture phase")

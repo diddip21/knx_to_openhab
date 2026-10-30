@@ -100,3 +100,11 @@ rollback/fresh retry, real boot/offline-lock attestation, repair/races and appli
 Linux core/UI suites. The existing full three-test systemd module still requires
 actual prior-boot attestation; no prior ID may be invented. Parent Task 5 and
 production readiness remain incomplete; controller owns review and further scope.
+
+## Code-only follow-up
+
+The [readiness-only runner follow-up](2026-10-30-installed-repair-readiness-only.md)
+removes the strict xfail, shares production's API-health URL/transport, rejects the
+consumed repair dispatch, and adds a separately approved known-installed-state
+readiness phase. This does not amend the historical runtime outcome above: no
+actual API-health response or new guest/service effect is claimed or authorized.

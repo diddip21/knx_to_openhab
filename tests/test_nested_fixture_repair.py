@@ -23,7 +23,7 @@ def repair_module():
 
 
 def test_repair_phase_requires_all_pins_before_guest_program():
-    with pytest.raises(ValueError, match="pinned checkpoint"):
+    with pytest.raises(ValueError, match="consumed"):
         runner.guest_program("repair-environmentfile", NONCE)
 
 
@@ -617,35 +617,26 @@ def test_post_install_requires_exact_old_bundle_bytes_metadata_and_inodes(monkey
         repair.verify_repaired(None, before, after, None, None)
 
 
-def test_guest_program_transports_only_explicit_reviewed_repair(monkeypatch):
-    repair = repair_module()
-    calls = []
-    monkeypatch.setattr(repair, "validate_repair_checkpoint", lambda *a: calls.append("checkpoint"))
-    monkeypatch.setattr(repair, "validate_repair_source", lambda *a: calls.append("source"))
-    program = runner.guest_program(
-        "repair-environmentfile",
-        NONCE,
-        checkpoint={"old_source_approval": {}},
-        source_approval={"head": HEAD},
-        approved_head=HEAD,
-    )
-    assert calls == ["checkpoint", "source"]
-    compile(program, "<offline trusted transport>", "exec")
-    assert "run_phase('repair-environmentfile'" in program
-    assert "<trusted repair boundary>" in program
-    assert "resume_after_sudo(EXPECTED_NONCE" not in program
+def test_guest_program_never_transports_consumed_repair_even_with_all_pins():
+    with pytest.raises(ValueError, match="consumed"):
+        runner.guest_program(
+            "repair-environmentfile",
+            NONCE,
+            checkpoint={"old_source_approval": {}},
+            source_approval={"head": HEAD},
+            approved_head=HEAD,
+        )
 
 
 def test_fixture_dispatch_repair_cannot_fall_back_to_bootstrap(monkeypatch):
     repair = repair_module()
     calls = []
     monkeypatch.setattr(repair, "repair_environmentfile", lambda *a, **k: calls.append((a, k)))
-    fixture.run_phase(
-        "repair-environmentfile", NONCE, checkpoint={}, source_approval={}, approved_head=HEAD
-    )
-    assert calls == [
-        ((fixture, NONCE), dict(checkpoint={}, source_approval={}, approved_head=HEAD))
-    ]
+    with pytest.raises(ValueError, match="consumed"):
+        fixture.run_phase(
+            "repair-environmentfile", NONCE, checkpoint={}, source_approval={}, approved_head=HEAD
+        )
+    assert calls == []
 
 
 @pytest.fixture
@@ -1276,3 +1267,197 @@ def test_component_check_also_refuses_nested_systemd_artifact(
     )
     with pytest.raises(ValueError, match="systemd"):
         components(inventory)
+
+
+@pytest.fixture
+def readiness_boundary(pinned_systemd_boundary, monkeypatch):
+    repair, inventory, checkpoint, source, _, _, events = pinned_systemd_boundary
+    original_ui = dict(
+        ActiveState="failed",
+        SubState="failed",
+        Result="exit-code",
+        ExecMainStatus="1",
+        NRestarts="19",
+    )
+    inventory["manager"]["units"][state.UNITS[0]].update(original_ui)
+    checkpoint["inventory"]["manager"]["units"][state.UNITS[0]].update(original_ui)
+    repair.repair_environmentfile(fixture, NONCE, checkpoint, source, HEAD)
+    inventory["manager"]["units"][state.UNITS[0]].update(
+        ActiveState="inactive", SubState="dead", Result="success", ExecMainStatus="0"
+    )
+    events.clear()
+    monkeypatch.setattr(repair, "REPAIRED_HEAD", HEAD)
+    admin = fixture.load_approved_admin(None)
+    admin.load_paths = lambda path: fixture.admin_paths(admin)
+    approval = dict(
+        format=1,
+        phase="readiness-only",
+        nonce_sha256=hashlib.sha256(NONCE.encode()).hexdigest(),
+        manager=copy.deepcopy(inventory["manager"]),
+        components_sha256=repair.component_receipt(inventory),
+    )
+    return repair, inventory, checkpoint, source, approval, events
+
+
+def test_readiness_only_rechecks_under_retained_lease_and_never_reinstalls(readiness_boundary):
+    repair, _, checkpoint, source, approval, events = readiness_boundary
+    repair.readiness_only(fixture, NONCE, checkpoint, source, HEAD, approval)
+    assert events == ["guest", "repaired", "lock", "guest", "repaired", "unlock", "activate"]
+
+
+@pytest.mark.parametrize(
+    "change", ["config", "component-inode", "initial", "journal", "manager", "jobs", "receipt"]
+)
+@pytest.mark.parametrize("under_lock", [False, True])
+def test_readiness_drift_never_activates_or_installs(
+    readiness_boundary, monkeypatch, change, under_lock
+):
+    repair, inventory, checkpoint, source, approval, events = readiness_boundary
+    calls = []
+
+    def collect():
+        result = copy.deepcopy(inventory)
+        calls.append(1)
+        if len(calls) <= int(under_lock):
+            return result
+        if change in ("config", "initial", "component-inode"):
+            name = {
+                "config": (state.CONFIG / "config.json").as_posix(),
+                "initial": str(repair.INITIAL / "venv"),
+                "component-inode": str(repair.LIBEXEC / "helper.py"),
+            }[change]
+            result["entries"][name]["inode"] += 1
+        elif change == "journal":
+            result["entries"][(state.CONFIG / ".updater-state").as_posix()]["children"] = [
+                "journal.json"
+            ]
+        elif change == "manager":
+            result["manager"]["units"][state.UNITS[1]]["Result"] = "changed"
+        elif change == "jobs":
+            result["manager"]["jobs"] = [["1", state.UNITS[0], "start", "waiting"]]
+        else:
+            result["entries"][state.RECEIPT.as_posix()]["sha256"] = "0" * 64
+        return result
+
+    monkeypatch.setattr(repair, "collect_installed", collect)
+    with pytest.raises(ValueError):
+        repair.readiness_only(fixture, NONCE, checkpoint, source, HEAD, approval)
+    assert "install" not in events and "activate" not in events
+
+
+def test_readiness_approval_cannot_adopt_non_ui_manager_changes(readiness_boundary):
+    repair, inventory, checkpoint, source, approval, events = readiness_boundary
+    for value in (inventory["manager"], approval["manager"]):
+        value["units"][state.UNITS[1]]["Result"] = "unknown"
+    with pytest.raises(ValueError, match="manager"):
+        repair.readiness_only(fixture, NONCE, checkpoint, source, HEAD, approval)
+    assert events == ["guest"]
+
+
+def test_readiness_requires_separate_controller_approval_and_fixed_production(readiness_boundary):
+    repair, _, checkpoint, source, approval, events = readiness_boundary
+    with pytest.raises(ValueError, match="readiness"):
+        repair.readiness_only(fixture, NONCE, checkpoint, source, "00" * 20, approval)
+    with pytest.raises(ValueError, match="readiness"):
+        repair.readiness_only(fixture, NONCE, checkpoint, source, HEAD, None)
+    assert "activate" not in events and "install" not in events
+
+
+def test_consumed_checkpoint_never_reenters_disk_repair(readiness_boundary):
+    repair, _, checkpoint, source, _, events = readiness_boundary
+    with pytest.raises(ValueError):
+        repair.repair_environmentfile(fixture, NONCE, checkpoint, source, HEAD)
+    assert "activate" not in events and "install" not in events
+
+
+def test_readiness_dispatch_is_distinct_from_repair(monkeypatch):
+    repair = repair_module()
+    calls = []
+    monkeypatch.setattr(
+        repair, "readiness_only", lambda *a, **k: calls.append((a, k)), raising=False
+    )
+    fixture.run_phase("readiness-only", NONCE, readiness_approval={})
+    assert calls == [((fixture, NONCE), {"readiness_approval": {}})]
+
+
+def test_readiness_transport_requires_state_approval_before_guest_program():
+    with pytest.raises(ValueError, match="readiness"):
+        runner.guest_program("readiness-only", NONCE)
+
+
+def test_readiness_transport_has_no_repair_or_legacy_fallback(readiness_boundary):
+    repair, _, checkpoint, source, approval, _ = readiness_boundary
+    program = runner.guest_program(
+        "readiness-only",
+        NONCE,
+        checkpoint=checkpoint,
+        source_approval=source,
+        approved_head=HEAD,
+        readiness_approval=approval,
+    )
+    compile(program, "<offline trusted transport>", "exec")
+    assert "run_phase('readiness-only'" in program
+    assert "run_phase('repair-environmentfile'" not in program
+    assert "resume_after_sudo(EXPECTED_NONCE" not in program
+
+
+def test_controller_requires_exact_runner_and_successful_evidence_pins(tmp_path, monkeypatch):
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    paths = [*runner.READINESS_RUNNER_FILES, *runner.REPAIR_EVIDENCE_FILES]
+    for name in paths:
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"reviewed offline evidence")
+    pin = hashlib.sha256(b"reviewed offline evidence").hexdigest()
+    approval = dict(
+        state={},
+        runner_files={name: pin for name in runner.READINESS_RUNNER_FILES},
+        evidence_files={str(tmp_path / name): pin for name in runner.REPAIR_EVIDENCE_FILES},
+    )
+    runner.verify_readiness_inputs(approval)
+    (tmp_path / paths[0]).write_bytes(b"changed")
+    with pytest.raises(ValueError, match="pin"):
+        runner.verify_readiness_inputs(approval)
+
+
+@pytest.mark.parametrize("field", ["NRestarts", "UnitFileState", "LoadState"])
+def test_readiness_approval_cannot_adopt_ui_manager_history(readiness_boundary, field):
+    repair, _, checkpoint, _, approval, _ = readiness_boundary
+    approval["manager"]["units"][state.UNITS[0]][field] = "999"
+    with pytest.raises(ValueError, match="manager"):
+        repair.validate_readiness_approval(checkpoint, approval, NONCE, HEAD)
+
+
+def test_readiness_off_fixture_paths_fail_before_activation(readiness_boundary):
+    repair, _, checkpoint, source, approval, events = readiness_boundary
+    fixture.load_approved_admin(None).load_paths = lambda path: object()
+    with pytest.raises(ValueError, match="paths"):
+        repair.readiness_only(fixture, NONCE, checkpoint, source, HEAD, approval)
+    assert events == ["guest"]
+
+
+def test_health_failure_after_real_production_activation_stops_own_writers(monkeypatch, capsys):
+    from installer import bootstrap_activation
+
+    repair = repair_module()
+    events = []
+    actual = dict(
+        units={
+            state.UNITS[0]: dict(ActiveState="active", SubState="running"),
+            state.UNITS[2]: dict(ActiveState="active"),
+            state.UNITS[4]: dict(
+                ActiveState="active", SubState="exited", Result="success", ExecMainStatus="0"
+            ),
+        },
+        jobs=[],
+    )
+    monkeypatch.setattr(repair, "manager_state", lambda: actual)
+    monkeypatch.setattr(repair, "health", lambda: (_ for _ in ()).throw(ValueError("readiness")))
+    fake = SimpleNamespace(
+        require_guest=lambda nonce: None, command=lambda argv: events.append(argv)
+    )
+    with pytest.raises(ValueError, match="readiness"):
+        repair.activate_repaired(fake, NONCE, bootstrap_activation)
+    assert events[-1] == ["/usr/bin/systemctl", "stop", "--", *repair.WRITERS]
+    assert "REPAIR retained failure state" in capsys.readouterr().out
+    assert not any("reset-failed" in argv or "enable" in argv for argv in events)

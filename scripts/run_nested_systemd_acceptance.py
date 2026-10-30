@@ -17,6 +17,14 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+READINESS_RUNNER_FILES = (
+    "scripts/run_nested_systemd_acceptance.py",
+    "scripts/nested_fixture_repair.py",
+    "scripts/nested_systemd_fixture.py",
+    "scripts/nested_fixture_state.py",
+    "scripts/nested_acceptance.py",
+)
+REPAIR_EVIDENCE_FILES = ("repair-environmentfile.log", "installed-green.log", "diagnostic.log")
 sys.path.insert(0, str(ROOT))
 from scripts import nested_acceptance as provider  # noqa: E402
 
@@ -43,22 +51,59 @@ def read_pinned_json(path, digest):
     return json.loads(raw, object_pairs_hook=unique, parse_constant=invalid_constant)
 
 
-def guest_program(phase, nonce, *, checkpoint=None, source_approval=None, approved_head=None):
+def verify_readiness_inputs(approval):
+    """Controller-approved existing receipts, not an observation/enrollment API."""
+    if type(approval) is not dict or set(approval) != {"state", "runner_files", "evidence_files"}:
+        raise ValueError("Explicit readiness runner/evidence pins required")
+    runners, evidence = approval["runner_files"], approval["evidence_files"]
+    if (
+        type(runners) is not dict
+        or set(runners) != set(READINESS_RUNNER_FILES)
+        or type(evidence) is not dict
+        or len(evidence) != len(REPAIR_EVIDENCE_FILES)
+        or {Path(p).name for p in evidence} != set(REPAIR_EVIDENCE_FILES)
+    ):
+        raise ValueError("Incomplete readiness runner/evidence pins")
+    for path, digest in [(ROOT / p, h) for p, h in runners.items()] + [
+        (Path(p), h) for p, h in evidence.items()
+    ]:
+        if (
+            not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            or hashlib.sha256(path.read_bytes()).hexdigest() != digest
+        ):
+            raise ValueError("Readiness runner/evidence pin mismatch")
+
+
+def guest_program(
+    phase,
+    nonce,
+    *,
+    checkpoint=None,
+    source_approval=None,
+    approved_head=None,
+    readiness_approval=None,
+):
+    if phase == "repair-environmentfile":
+        raise ValueError("Installed repair checkpoint consumed; repair cannot be repeated")
     if phase not in (
         "bootstrap",
         "probe",
         "sudo-regression",
         "checkpoint-inventory",
         "resume-after-sudo",
-        "repair-environmentfile",
+        "readiness-only",
     ):
         raise ValueError("Unsupported own-nested acceptance phase")
-    if phase == "repair-environmentfile":
-        from scripts.nested_fixture_repair import validate_repair_checkpoint, validate_repair_source
+    if phase == "readiness-only":
+        from scripts.nested_fixture_repair import (
+            validate_readiness_approval,
+            validate_repair_source,
+        )
 
         if checkpoint is None or source_approval is None or approved_head is None:
-            raise ValueError("Repair requires pinned checkpoint AND reviewed source approval")
-        validate_repair_checkpoint(checkpoint, checkpoint.get("inventory"), nonce)
+            raise ValueError("readiness-only requires pinned historical checkpoint and source")
+        validate_readiness_approval(checkpoint, readiness_approval, nonce, approved_head)
         validate_repair_source(source_approval, approved_head, checkpoint["old_source_approval"])
     elif phase == "resume-after-sudo":
         from scripts.nested_fixture_state import validate_checkpoint, validate_source_manifest
@@ -83,15 +128,16 @@ def guest_program(phase, nonce, *, checkpoint=None, source_approval=None, approv
         f"exec(compile({fixture!r},'<trusted acceptance fixture>','exec'))\n"
         f"EXPECTED_NONCE={nonce!r}\nrequire_guest(EXPECTED_NONCE)\n"
     )
-    if phase == "repair-environmentfile":
+    if phase == "readiness-only":
         repair = (ROOT / "scripts/nested_fixture_repair.py").read_text(encoding="utf-8")
         return (
             code
             + "module=types.ModuleType('scripts.nested_fixture_repair')\n"
             + "sys.modules[module.__name__]=module\n"
             + f"exec(compile({repair!r},'<trusted repair boundary>','exec'),module.__dict__)\n"
-            + f"run_phase('repair-environmentfile',EXPECTED_NONCE,checkpoint={checkpoint!r},"
-            + f"source_approval={source_approval!r},approved_head={approved_head!r})\n"
+            + f"run_phase('readiness-only',EXPECTED_NONCE,checkpoint={checkpoint!r},"
+            + f"source_approval={source_approval!r},approved_head={approved_head!r},"
+            + f"readiness_approval={readiness_approval!r})\n"
         )
     if phase == "checkpoint-inventory":
         return (
@@ -145,6 +191,7 @@ def main():
             "checkpoint-inventory",
             "resume-after-sudo",
             "repair-environmentfile",
+            "readiness-only",
         ),
     )
     parser.add_argument("--checkpoint", type=Path)
@@ -152,7 +199,15 @@ def main():
     parser.add_argument("--source-approval", type=Path)
     parser.add_argument("--source-approval-sha256")
     parser.add_argument("--approved-source-head")
+    parser.add_argument("--readiness-approval", type=Path)
+    parser.add_argument("--readiness-approval-sha256")
     args = parser.parse_args()
+    if args.phase == "repair-environmentfile":
+        parser.error("Installed repair checkpoint consumed; repair cannot be repeated")
+    if args.phase != "readiness-only" and (
+        args.readiness_approval or args.readiness_approval_sha256
+    ):
+        parser.error("readiness approval is valid ONLY for readiness-only")
     receipt = provider.decode_receipt(args.receipt.read_text(encoding="utf-8"))
     provider.validate_receipt(receipt)
     resume = {}
@@ -163,7 +218,7 @@ def main():
         args.source_approval_sha256,
         args.approved_source_head,
     )
-    if args.phase in ("resume-after-sudo", "repair-environmentfile"):
+    if args.phase in ("resume-after-sudo", "readiness-only"):
         if not all(supplied):
             parser.error(
                 "continuation requires checkpoint/source files, both SHA-256 pins and approved commit"
@@ -173,6 +228,12 @@ def main():
             source_approval=read_pinned_json(args.source_approval, args.source_approval_sha256),
             approved_head=args.approved_source_head,
         )
+        if args.phase == "readiness-only":
+            if not args.readiness_approval or not args.readiness_approval_sha256:
+                parser.error("readiness-only requires separately pinned readiness approval")
+            approval = read_pinned_json(args.readiness_approval, args.readiness_approval_sha256)
+            verify_readiness_inputs(approval)
+            resume["readiness_approval"] = approval["state"]
     elif args.phase == "probe" and any(supplied):
         if args.checkpoint or args.checkpoint_sha256 or not all(supplied[2:]):
             parser.error(

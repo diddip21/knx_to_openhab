@@ -387,10 +387,12 @@ def resume_after_sudo(nonce, checkpoint, source_approval, approved_head):
 
 
 def run_phase(phase, nonce, **continuation):
-    if phase == "repair-environmentfile":
-        from scripts.nested_fixture_repair import repair_environmentfile
+    if phase == "readiness-only":
+        from scripts.nested_fixture_repair import readiness_only
 
-        return repair_environmentfile(sys.modules[__name__], nonce, **continuation)
+        return readiness_only(sys.modules[__name__], nonce, **continuation)
+    if phase == "repair-environmentfile":
+        raise ValueError("Installed repair checkpoint consumed; repair cannot be repeated")
     handlers = {"bootstrap": bootstrap, "probe": probe, "resume-after-sudo": resume_after_sudo}
     if phase not in handlers:
         raise ValueError("Unsupported nested fixture phase")

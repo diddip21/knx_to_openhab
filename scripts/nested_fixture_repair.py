@@ -13,13 +13,13 @@ import os
 import re
 import stat
 import subprocess
-import urllib.request
 from contextlib import ExitStack
 from pathlib import Path, PurePosixPath
 
 from scripts import nested_fixture_state as state
 
 OLD_HEAD = "47e2c3a3cd59d716f793226ec17badde60999eca"
+REPAIRED_HEAD = "2dcf3078b61283a41fd1ef38e34327e4f759d5c1"
 OLD_FILES_SHA256 = "34692929a224a22a53d6bd87aa48098ad98bbbcd023d2b741432f92ce3d2ea8e"
 OLD_ARCHIVE_SHA256 = "1a02d8a3e89f23052aee137aa57f0f3321aa9d15da79af828368a527d2695676"
 MACHINE_ID = "a50e862ca2e04dbda6720e0337e3d3da"
@@ -815,15 +815,12 @@ def verify_repaired(fixture, before, after, source, admin):
 
 
 def health():
-    # No proxy/environment injection, redirects or credential-bearing requests.
-    class NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, *args, **kwargs):
-            return None
+    from installer.update_core.transaction import fetch_health, health_url
 
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
-    with opener.open("http://127.0.0.1:8085/health", timeout=10) as response:
-        if response.status != 200 or len(response.read(65537)) > 65536:
-            raise ValueError("Actual installed HTTP readiness failed")
+    # Share production's direct-listener URL, bounded JSON and no-redirect/no-proxy
+    # transport. The retained fixture pins the default listener and version.
+    if fetch_health(health_url({}), 10) != {"status": "ready", "version": "0.1.0"}:
+        raise ValueError("Actual installed HTTP readiness/version failed")
 
 
 def activate_repaired(fixture, nonce, admin):
@@ -902,4 +899,76 @@ def repair_environmentfile(fixture, nonce, checkpoint, source_approval, approved
                 flush=True,
             )
             raise
+    activate_repaired(fixture, nonce, admin)
+
+
+def component_receipt(inventory):
+    """Narrow post-install identity pin; never enroll external state or approve it."""
+    entries = {
+        p: v
+        for p, v in inventory["entries"].items()
+        if _replaceable(p)
+        or any(part.startswith(".knxohui-bundle-") for part in PurePosixPath(p).parts)
+    }
+    return hashlib.sha256(
+        json.dumps(entries, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def validate_readiness_approval(checkpoint, approval, nonce, approved_head):
+    if (
+        approved_head != REPAIRED_HEAD
+        or type(approval) is not dict
+        or set(approval) != {"format", "phase", "nonce_sha256", "manager", "components_sha256"}
+        or type(approval["format"]) is not int
+        or approval["format"] != 1
+        or approval["phase"] != "readiness-only"
+        or approval["nonce_sha256"] != hashlib.sha256(nonce.encode()).hexdigest()
+        or not isinstance(approval["components_sha256"], str)
+        or re.fullmatch(r"[0-9a-f]{64}", approval["components_sha256"]) is None
+    ):
+        raise ValueError("Explicit reviewed readiness-only approval required")
+    # Historical evidence ONLY, never an actual pre-install checkpoint match.
+    validate_repair_checkpoint(checkpoint, checkpoint["inventory"], nonce)
+    validate_manager(approval["manager"])
+    expected = copy.deepcopy(checkpoint["inventory"]["manager"])
+    # The runner stopped its UI after notify activation. Nothing authorizes a
+    # changed restart count, enablement, cleanup failure or updater/recovery state.
+    expected["units"][state.UNITS[0]].update(
+        ActiveState="inactive", SubState="dead", MainPID="0", Result="success", ExecMainStatus="0"
+    )
+    if approval["manager"] != expected:
+        raise ValueError("Unapproved readiness manager transition")
+
+
+def readiness_only(fixture, nonce, checkpoint, source_approval, approved_head, readiness_approval):
+    fixture.require_guest(nonce)
+    validate_readiness_approval(checkpoint, readiness_approval, nonce, approved_head)
+    source = verify_repair_sources(checkpoint, source_approval, approved_head)
+    admin = fixture.load_approved_admin(source)
+
+    def validate_current():
+        # Production path decoding is read-only. No provisioning, cleanup or
+        # StateStore construction, even when a journal/gate/maintenance is unsafe.
+        if admin.load_paths(state.PATHS_FILE) != fixture.admin_paths(admin):
+            raise ValueError("Off-fixture readiness paths contract")
+        actual = collect_installed()
+        if actual["manager"] != readiness_approval["manager"]:
+            raise ValueError("Pinned readiness manager state changed")
+        validate_manager(actual["manager"])
+        preserved = copy.deepcopy(actual)
+        preserved["manager"] = checkpoint["inventory"]["manager"]
+        verify_preserved(checkpoint["inventory"], preserved)
+        validate_installed_components(fixture, checkpoint, checkpoint["inventory"])
+        verify_repaired(fixture, checkpoint["inventory"], actual, source, admin)
+        if component_receipt(actual) != readiness_approval["components_sha256"]:
+            raise ValueError("Pinned repaired component identity changed")
+
+    validate_current()
+    with fixture.resume_lease(admin, checkpoint):
+        fixture.require_guest(nonce)
+        verify_repair_sources(checkpoint, source_approval, approved_head)
+        validate_current()
+    # The retained lease must be released before production activation's recovery
+    # dependency. It is already active/exited with no journal, so start is a no-op.
     activate_repaired(fixture, nonce, admin)

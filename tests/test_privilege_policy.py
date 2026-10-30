@@ -200,6 +200,9 @@ def test_update_script_never_elevates_git_or_uses_a_global_safe_directory():
 def test_setup_checks_for_terminal_before_stopping_services():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
 
+    assert 'elif id -u "$SERVICE_USER" >/dev/null 2>&1; then' in setup
+    assert 'AUTH_PREFLIGHT_COMMAND=(sudo -u "$SERVICE_USER" env' in setup
+    assert 'AUTH_PREFLIGHT_COMMAND=(env "PYTHONPATH=$BASE" "$BASE/venv/bin/python")' in setup
     assert "exec 3<>/dev/tty" in setup
     assert "No service, package or runtime data was changed." in setup
     assert setup.index("exec 3<>/dev/tty") < setup.index(
@@ -253,11 +256,37 @@ def test_setup_preflight_stops_before_changes_without_terminal_or_valid_hash(tmp
         python = base / "venv" / "bin" / "python"
         python.parent.mkdir(parents=True)
         fake_bin.mkdir(parents=True)
-        python.write_text(f"#!/bin/sh\nexit {status}\n", encoding="utf-8")
+        wrong_identity_status = 2 if status == 1 else 1
+        python.write_text(
+            "#!/bin/sh\n"
+            'if [ "$SETUP_TEST_EXPECT_SERVICE" = 1 ] && '
+            '[ "$SETUP_TEST_PREFLIGHT_AS_SERVICE" != 1 ]; then\n'
+            f"  exit {wrong_identity_status}\n"
+            "fi\n"
+            f"exit {status}\n",
+            encoding="utf-8",
+        )
         python.chmod(0o755)
+        fake_id = fake_bin / "id"
+        fake_id.write_text(
+            '#!/bin/sh\n'
+            'if [ "$1" = -u ] && [ "$2" = knxohui ]; then echo 997; exit 0; fi\n'
+            'exit 1\n',
+            encoding="utf-8",
+        )
+        fake_id.chmod(0o755)
         sudo = fake_bin / "sudo"
         sudo.write_text(
-            '#!/bin/sh\necho called >> "$SETUP_TEST_SUDO_LOG"\nexit 0\n',
+            '#!/bin/sh\n'
+            'if [ "$1" = -u ] && [ "$2" = knxohui ]; then\n'
+            '  shift 2\n'
+            '  if [ "$1" = env ]; then\n'
+            '    echo preflight >> "$SETUP_TEST_SUDO_LOG"\n'
+            '    SETUP_TEST_PREFLIGHT_AS_SERVICE=1 exec "$@"\n'
+            '  fi\n'
+            'fi\n'
+            'echo mutation >> "$SETUP_TEST_SUDO_LOG"\n'
+            'exit 0\n',
             encoding="utf-8",
         )
         sudo.chmod(0o755)
@@ -267,6 +296,7 @@ def test_setup_preflight_stops_before_changes_without_terminal_or_valid_hash(tmp
             {
                 "PATH": str(fake_bin) + os.pathsep + env["PATH"],
                 "SETUP_TEST_SUDO_LOG": str(sudo_log),
+                "SETUP_TEST_EXPECT_SERVICE": "0" if os.geteuid() == 0 else "1",
                 "KNXOH_INSTALL_DIR": str(base),
                 "KNXOH_CONFIG_DIR": str(config),
                 "KNXOH_DATA_DIR": str(data),
@@ -285,7 +315,9 @@ def test_setup_preflight_stops_before_changes_without_terminal_or_valid_hash(tmp
         assert result.returncode == 4
         assert message in result.stderr
         assert "No service, package or runtime data was changed." in result.stderr
-        assert not sudo_log.exists()
+        assert not sudo_log.exists() or sudo_log.read_text(encoding="utf-8").splitlines() == [
+            "preflight"
+        ]
         assert not (config / "secrets.env").exists()
         assert not (config.parent / "paths.env").exists()
 

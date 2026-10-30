@@ -91,7 +91,14 @@ elif [[ ! -f "$AUTH_PREFLIGHT_CONFIG" && -f "$REPO_ROOT/web_ui/backend/config.js
 fi
 AUTH_PREFLIGHT_STATUS=1
 if [[ -x "$BASE/venv/bin/python" ]]; then
-    if PYTHONPATH="$BASE" "$BASE/venv/bin/python" - "$AUTH_PREFLIGHT_CONFIG" "$CONFIG_DIR/secrets.env" <<'PY'
+    if [[ "$EUID" -eq 0 ]]; then
+        AUTH_PREFLIGHT_COMMAND=(env "PYTHONPATH=$BASE" "$BASE/venv/bin/python")
+    elif id -u "$SERVICE_USER" >/dev/null 2>&1; then
+        AUTH_PREFLIGHT_COMMAND=(sudo -u "$SERVICE_USER" env "PYTHONPATH=$BASE" "$BASE/venv/bin/python")
+    else
+        AUTH_PREFLIGHT_COMMAND=(env "PYTHONPATH=$BASE" "$BASE/venv/bin/python")
+    fi
+    if "${AUTH_PREFLIGHT_COMMAND[@]}" - "$AUTH_PREFLIGHT_CONFIG" "$CONFIG_DIR/secrets.env" <<'PY'
 import base64
 import binascii
 import json

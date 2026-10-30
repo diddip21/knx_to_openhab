@@ -154,8 +154,14 @@ On failure retain the original journal/candidate/workspaces and private evidence
   and fails closed if Windows birth-time metadata is unavailable.
 - Fresh focused fixture suite (data, operator, server): **83 passed,17 skipped**;
   Black, isort, flake8 and `git diff --check` passed for the changed files. The
-  existing private Linux fix-run record says **78 passed,4 deselected**; it was not
-  rerun during this follow-up.
+  fresh guarded Linux3.12.3 root run of the same fixture regressions reports
+  **78 passed,2 skipped,4 deselected**, exit0. The two skips are the Windows-only
+  timestamp regressions. Source and pytest scratch lived under root-owned `/run`
+  tmpfs and were removed afterward; no installed service, package, trust, or
+  application state was changed. An initial runner placement under world-writable
+  `/tmp` correctly tripped the updater's ancestor-mode checks (2 failed,4 setup
+  errors); that retained test-harness failure is in the private run-02 record, and
+  the corrected `/run` run is run-03.
 - Focused actual Ubuntu3.12.3 run: **52 passed,3 deselected**, using exclusive own
   private test files, the already installed test interpreter and original guarded
   read-only wheelhouse. Git release-build tests were deliberately not run there.
@@ -168,8 +174,9 @@ On failure retain the original journal/candidate/workspaces and private evidence
 
 Raw commands/results and the incremental handoff are private in
 `wsl-acceptance/release-fixture-verification.json` and
-`wsl-acceptance/release-fixture-implementation-report.md`; original private
-read-only/run evidence stays under the existing `.superpowers/sdd/...` scratch.
+`wsl-acceptance/release-fixture-implementation-report.md`; the fresh Linux
+regression transcript is in `wsl-acceptance/release-fixture-fix-linux-03/`.
+Original private read-only/run evidence stays under the existing `.superpowers/sdd/...` scratch.
 No private proof, receipt, raw operational log, wheel ZIP or key is committed.
 The source-fix rereview found no further findings. Independent review of the new
 code/fixture pins, actual guest trust/TLS/install/update, and full Task9/parent

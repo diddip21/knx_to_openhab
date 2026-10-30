@@ -46,7 +46,19 @@ def validate_channel(channel: str) -> str:
 
 
 def read_status(paths: Paths) -> dict:
-    value = parse_object(fs.read_regular(paths.config_dir / ".updater-status.json", 4096), 4096)
+    # A legitimate coordinator replaces this projection atomically while clients
+    # poll. Discard raced bytes and retry a bounded full no-follow/owner-checked
+    # read, rather than turning a successful claim into a submission failure.
+    # Invalid content/ownership/mounts are NOT retryable or relaxed.
+    for attempt in range(3):
+        try:
+            raw = fs.read_regular(paths.config_dir / ".updater-status.json", 4096)
+            break
+        except fs.EntryChangedError:
+            if attempt == 2:
+                raise
+            time.sleep(0.01)
+    value = parse_object(raw, 4096)
     if (
         set(value)
         not in (

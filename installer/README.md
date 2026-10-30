@@ -57,6 +57,21 @@ already active, reinstall performs a system-component repair instead of
 replacing its files. The bootstrap refuses to run privileged repair code from a
 release tree the service account can modify.
 
+**Predecessor managed environments:** older installers used POSIX venv interpreter
+symlinks (`bin/python*` and `lib64`). Component-only repair can install the new
+protected helpers but deliberately cannot convert that immutable current release.
+It prints a compatibility warning; repeating repair, or selecting the same active
+version with update/reinstall, will not enable self-update. Use the verified
+bootstrap `--update` when a **genuinely new, never-installed verified release** is
+available. That administrator operation builds a fresh final-path `--copies` venv
+and normalizes only its known CPython `lib64 -> lib` alias. External canonical
+config/secrets/runtime/backups are preserved; the previous release is retained.
+If no new release is available, wait rather than deleting/reusing the current
+version directory. Activation of an existing inactive tree containing links or
+unsafe entries is refused before provisioning/link replacement; it is not a
+conversion route. Arbitrary candidate symlinks remain unsupported, and worker-built
+venvs must never execute as root. No in-place immutable-venv repair is provided.
+
 `setup.sh` is called by the verified bootstrap installer. Run repairs through
 the bootstrap as a regular user with `sudo` access; do not run a release-owned
 setup script directly as root:
@@ -132,14 +147,23 @@ To set or rotate it, run the helper, enter the new password twice, then restart
 the service:
 
 ```bash
-sudo /opt/knx_to_openhab/current/venv/bin/python \
-  /usr/local/libexec/knx_to_openhab/set_ui_password.py
+sudo -v
+set -o pipefail
+sudo -u knxohui -- /opt/knx_to_openhab/current/venv/bin/python -I \
+  /usr/local/libexec/knx_to_openhab/set_ui_password.py --hash-only |
+  sudo /usr/bin/python3 -I /usr/local/libexec/knx_to_openhab/set_ui_password.py --hash-stdin
 sudo systemctl restart knxohui.service
 ```
 
-The root-owned helper hashes the new password with Argon2id, resolves the
-configured secrets path from `paths.env`, preserves other secret values, and
-does not put the password in shell history.
+Hashing and its application dependencies run only as `knxohui`; the fixed root
+writer uses isolated system Python/stdlib and accepts only a bounded canonical
+Argon2id hash with the supported costs. It resolves protected `paths.env`, preserves
+sibling secrets and ownership, and durably writes mode `0640`. Passwords never
+enter shell history. No new global dependencies are needed. Never execute a
+worker-produced `current/venv` interpreter/packages as root, even with `-I`.
+For custom layouts replace the first interpreter path and pass
+`--paths-file /absolute/custom/paths.env` to the root writer. The revised helper
+must first be installed by the verified administrator bootstrap.
 
 See `WEBUI_INSTALLATION.md` for full documentation.
 

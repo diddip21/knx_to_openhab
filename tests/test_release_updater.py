@@ -37,6 +37,10 @@ class FakeSystemd:
     def capture_services(self):
         return ServiceState(self.active.copy(), self.enabled.copy())
 
+    def verify_recovery_preconditions(self, mode):
+        if any(self.active.values()):
+            raise ValueError("Recovery requires inactive writers")
+
     def stop_children(self, request_id):
         assert request_id == self.request_id
         self.events.append("teardown")
@@ -593,6 +597,7 @@ def test_prehandle_maintenance_fault_never_claims_incomplete_rollback(
 
     if persistent:
         # Only explicit recovery may reconcile the retained nonterminal evidence.
+        adapter.active = dict.fromkeys(adapter.active, False)  # simulated boot
         assert updater.recover("boot").status == "recovered"
         assert not marker.exists()
         adapter.active["knxohui.service"] = True
@@ -830,6 +835,7 @@ def test_commit_sync_error_never_rolls_back_a_durable_commit(installation, monke
         assert paths.current.resolve().name == "2.0.0"
         assert StateStore(paths).load().phase == "committed"
         assert (paths.config_dir / ".updater-maintenance.json").exists()
+        adapter.active = dict.fromkeys(adapter.active, False)  # simulated boot
         assert updater.recover("boot").status == "clean"
     else:
         assert result.rollback_status == "succeeded", result

@@ -163,6 +163,29 @@ def check_clean_before_install(paths):
         raise ValueError("Updater recovery required BEFORE bootstrap replacement") from error
 
 
+def check_existing_release(paths, target, *, activating):
+    """Repair retains immutable environments; activation must satisfy safe-tree rules.
+
+    Never run a retained environment to inspect it. Only a genuinely new verified
+    administrator install may construct a replacement copy venv at its final path.
+    """
+    target = fs._canonical(target)
+    if target.parent != paths.releases:
+        raise ValueError("Existing release must be an immediate managed release")
+    if not activating and _current_target(paths)[0] != target:
+        raise ValueError("Component-only repair target must be current")
+    try:
+        with fs._parent(target) as (stack, parent, name, chain):
+            entries = fs._tree(stack, parent, name, {0})
+            fs._check([*chain, *entries])
+    except (OSError, ValueError) as error:
+        if activating:
+            raise ValueError(fs.EXISTING_RELEASE_GUIDANCE) from error
+        print("WARNING: " + fs.EXISTING_RELEASE_GUIDANCE, file=sys.stderr)
+        return False
+    return True
+
+
 def render_dropins(paths, paths_file):
     for path in (
         paths.releases,
@@ -693,7 +716,9 @@ def execute_setup(source, paths, paths_file, options, inherited=None):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--action", choices=("setup", "validate", "provision"), required=True)
+    parser.add_argument(
+        "--action", choices=("setup", "validate", "provision", "check-release"), required=True
+    )
     parser.add_argument("--base", type=Path, required=True)
     parser.add_argument("--config-dir", type=Path, required=True)
     parser.add_argument("--data-dir", type=Path, required=True)
@@ -718,6 +743,11 @@ def main(argv=None):
     if args.action == "setup":
         return execute_setup(source, paths, args.paths_file, options, inherited)
     with installer_lease(paths, args.paths_file, inherited):
+        if args.action == "check-release":
+            if inherited is None or len(options) != 2 or options[1] not in ("0", "1"):
+                raise ValueError("Release check requires inherited lease and fixed target/mode")
+            check_existing_release(paths, Path(options[0]), activating=options[1] == "1")
+            return 0
         if args.action == "validate":
             if inherited is None:
                 raise ValueError("Missing inherited lifecycle descriptor")

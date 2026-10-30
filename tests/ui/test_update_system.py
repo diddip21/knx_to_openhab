@@ -208,6 +208,11 @@ def _capture_update_state(page, name):
     [
         ("No newer compatible release", "no-update"),
         ("Update failed; previous release preserved", "failed"),
+        (
+            "Update did not commit; previous release preserved; "
+            "prior-version readiness verification required before next update",
+            "failed",
+        ),
     ],
 )
 def test_rollback_and_no_update_stop_without_success(

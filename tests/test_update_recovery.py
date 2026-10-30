@@ -16,6 +16,12 @@ class Crash(BaseException):
     pass
 
 
+def recover_boot(updater, adapter):
+    # Explicit simulated reboot precondition, not a coordinator service effect.
+    adapter.active = dict.fromkeys(adapter.active, False)
+    return updater.recover("boot")
+
+
 def test_recovery_interface_modes():
     from installer.update_core.transaction import ReleaseUpdater
 
@@ -55,7 +61,7 @@ def test_crash_boundary_recovers_coherent_pair_without_start(installation, monke
         return
     before = StateStore(paths).load()
     adapter.events.clear()
-    result = updater.recover("boot")
+    result = recover_boot(updater, adapter)
     assert result.status in ("recovered", "clean"), (boundary, result)
     assert not any(isinstance(event, tuple) and event[0] == "start" for event in adapter.events)
     if before is not None and before.phase == "committed":
@@ -66,7 +72,7 @@ def test_crash_boundary_recovers_coherent_pair_without_start(installation, monke
     assert check_start_allowed(paths, "ui")
     assert check_start_allowed(paths, "cleanup")
     assert_sentinels(paths)
-    assert updater.recover("boot").status in ("recovered", "clean")
+    assert recover_boot(updater, adapter).status in ("recovered", "clean")
 
 
 def test_recovered_awaiting_start_requires_previous_health(installation, monkeypatch):
@@ -82,7 +88,7 @@ def test_recovered_awaiting_start_requires_previous_health(installation, monkeyp
     with pytest.raises(Crash):
         updater.run()
     monkeypatch.setattr(transaction.ReleaseUpdater, "_boundary", lambda *args: None)
-    assert updater.recover("boot").status == "recovered"
+    assert recover_boot(updater, adapter).status == "recovered"
     assert StateStore(paths).load().phase == "recovered-awaiting-start"
     assert updater.run().status == "blocked"
     adapter.active["knxohui.service"] = True
@@ -120,7 +126,7 @@ def test_corrupt_recovery_retains_evidence(installation, monkeypatch, fault):
     else:
         (store.root / ("snapshot-" + store.load().request_id + ".json")).write_bytes(b"bad")
     evidence = store.journal_path.read_bytes()
-    assert updater.recover("boot").status == "blocked"
+    assert recover_boot(updater, adapter).status == "blocked"
     assert store.journal_path.exists()
     if fault == "future":
         assert store.journal_path.read_bytes() == evidence
@@ -200,7 +206,7 @@ def test_recovery_holds_exclusive_mutation_lease(installation, monkeypatch):
         return original_restore(store)
 
     monkeypatch.setattr(StateStore, "restore_config", restore)
-    assert updater.recover("boot").status == "recovered"
+    assert recover_boot(updater, adapter).status == "recovered"
 
 
 @pytest.mark.parametrize("boundary", range(1, 76))
@@ -272,7 +278,7 @@ def test_recovered_journal_rejects_stale_old_http_on_wrong_current(installation,
     with pytest.raises(Crash):
         updater.run()
     monkeypatch.setattr(transaction.ReleaseUpdater, "_boundary", lambda *args: None)
-    assert updater.recover("boot").status == "recovered"
+    assert recover_boot(updater, adapter).status == "recovered"
     paths.current.unlink()
     paths.current.symlink_to(paths.releases / "2.0.0")
     adapter.active["knxohui.service"] = True
@@ -306,11 +312,11 @@ def test_interrupted_boot_recovery_converges_without_ui_start(installation, monk
     monkeypatch.setattr(transaction.ReleaseUpdater, "_boundary", crash)
     adapter.events.clear()
     try:
-        assert updater.recover("boot").status == "recovered"
+        assert recover_boot(updater, adapter).status == "recovered"
     except Crash:
         pass
     monkeypatch.setattr(transaction.ReleaseUpdater, "_boundary", lambda *args: None)
-    assert updater.recover("boot").status == "recovered"
+    assert recover_boot(updater, adapter).status == "recovered"
     assert not any(isinstance(event, tuple) and event[0] == "start" for event in adapter.events)
     assert paths.current.resolve().name == "1.0.0"
     assert (paths.config_dir / "config.json").read_bytes() == original

@@ -126,6 +126,10 @@ class LocalManager:
     def capture_services(self):
         return ServiceState(self.active.copy(), self.enabled.copy())
 
+    def verify_recovery_preconditions(self, mode):
+        if any(self.active.values()):
+            raise ValueError("Recovery requires inactive writers")
+
     def run_child(self, stage, paths, workspace, candidate):
         self.stopped.clear()
         self.events.append(stage)
@@ -533,6 +537,7 @@ def test_killed_coordinator_gate_and_boot_recovery(assembled, boundary):
     # A fresh trusted coordinator process exits without Python cleanup/rollback.
     # No fork from the threaded HTTP fixture and no manager/host process is killed.
     f.manager.stop_app()
+    f.manager.active = dict.fromkeys(SERVICES, False)  # explicit simulated power-off
     context = f.root / "coordinator.json"
     context.write_text(
         json.dumps(

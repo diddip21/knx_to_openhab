@@ -13,10 +13,53 @@ import os
 import secrets
 import stat
 from contextlib import ExitStack, contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 
 from .protocol import Journal, Limits, Paths
+
+_ANCHORS = ContextVar("updater_mount_anchors", default=None)
+EXISTING_RELEASE_GUIDANCE = (
+    "Existing managed release is not a protected link-free updater-compatible tree. "
+    "Use the verified administrator bootstrap --update to install a genuinely new verified release "
+    "with a final-path copy venv; component-only --repair and same-version update/reinstall "
+    "cannot convert the immutable current environment. If no new release is available, wait "
+    "for one; do not delete/reuse the release or loosen link checks."
+)
+
+
+class EntryChangedError(ValueError):
+    """A pinned name/descriptor changed; callers must discard the whole read."""
+
+
+@contextmanager
+def mount_anchors(paths):
+    """Only fixed administrator-selected sandbox roots may cross parent mounts.
+
+    Pin each first validated root for this operation. Descendants must stay on
+    that mount, including intermediate directories traversed by later operations.
+    """
+    token = _ANCHORS.set({_canonical(path): None for path in paths})
+    try:
+        yield
+    finally:
+        _ANCHORS.reset(token)
+
+
+def _is_anchor(path):
+    anchors = _ANCHORS.get()
+    return anchors is not None and Path(path) in anchors
+
+
+def _pin_anchor(path, entry):
+    anchors = _ANCHORS.get()
+    if anchors is not None and Path(path) in anchors:
+        identity = (_metadata(entry.info), entry.mount_id)
+        previous = anchors[Path(path)]
+        if previous is not None and previous != identity:
+            raise ValueError("Sandbox trust anchor changed")
+        anchors[Path(path)] = identity
 
 
 def _identity(info):
@@ -67,6 +110,10 @@ class _Entry:
     info: os.stat_result
     ancestors: tuple[_Entry, ...] = ()
     same_mount: bool = False
+    mount_id: int | None = None
+
+    def __post_init__(self):
+        self.mount_id = _mount_id(self.fd)
 
     def check(self):
         self._check_self()
@@ -77,7 +124,9 @@ class _Entry:
         opened = os.fstat(self.fd)
         named = os.stat(self.name, dir_fd=self.parent, follow_symlinks=False)
         if _metadata(opened) != _metadata(self.info) or _metadata(named) != _metadata(self.info):
-            raise ValueError("Raced updater directory entry")
+            raise EntryChangedError("Raced updater directory entry")
+        if _mount_id(self.fd) != self.mount_id:
+            raise ValueError("Updater mount identity changed")
         if self.same_mount and _mount_id(self.fd) != _mount_id(self.parent):
             raise ValueError("Updater path crosses a mount boundary")
 
@@ -116,10 +165,17 @@ def _parent(path):
         stack.callback(os.close, fd)
         _validate(os.fstat(fd), {0}, directory=True)
         chain = []
+        selected = False
+        walked = Path("/")
         for component in path.parts[1:-1]:
             # Ancestors may legitimately include separate administrator mounts.
             # The selected parent anchors the device boundary for the operation.
-            entry = _open(stack, fd, component, {0}, None, directory=True)
+            walked /= component
+            anchor = _is_anchor(walked)
+            device = os.fstat(fd).st_dev if selected and not anchor else None
+            entry = _open(stack, fd, component, {0}, device, directory=True)
+            _pin_anchor(walked, entry)
+            selected = selected or anchor
             chain.append(entry)
             fd = entry.fd
         yield stack, fd, path.name, chain

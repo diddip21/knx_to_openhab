@@ -99,13 +99,35 @@ To rotate the password without editing tracked configuration or exposing it in
 shell history, run:
 
 ```bash
-sudo /opt/knx_to_openhab/current/venv/bin/python \
-  /usr/local/libexec/knx_to_openhab/set_ui_password.py
+sudo -v
+set -o pipefail
+sudo -u knxohui -- /opt/knx_to_openhab/current/venv/bin/python -I \
+  /usr/local/libexec/knx_to_openhab/set_ui_password.py --hash-only |
+  sudo /usr/bin/python3 -I /usr/local/libexec/knx_to_openhab/set_ui_password.py --hash-stdin
 sudo systemctl restart knxohui.service
 ```
 
-The root-owned helper prompts twice, stores an Argon2id hash in the configured
-secrets file, and preserves other secret values.
+The first process prompts twice and hashes **as the unprivileged service user**.
+Only a bounded, strictly validated Argon2id hash crosses the pipe. The root writer
+uses isolated **system Python and stdlib only**, resolves the protected paths
+contract, preserves sibling secrets and root/group ownership, and writes mode
+`0640` durably. No global Argon2 dependency is installed. Never run `current/venv`
+as root: worker-prepared startup hooks/packages are not administrator-trusted;
+`-I` alone does not make that safe. Use the actual custom install path on the first
+line when applicable; pass `--paths-file /absolute/custom/paths.env` to the root
+writer for a custom contract. Install the revised protected helper through the
+verified administrator bootstrap before using this command.
+
+### Transition from a predecessor managed venv
+
+For installations made by the predecessor managed installer, `--repair` provisions
+system components but retains its symlink-based immutable venv. The updater will
+give an explicit compatibility diagnostic. Same-version update/reinstall also
+cannot convert it. Use the verified administrator bootstrap `--update` to a genuinely
+new, never-installed release (or wait until one is available); this builds a fresh
+final-path copy venv while preserving external settings/secrets/data/backups and
+the old release. Do not delete/reuse an immutable version or activate an incompatible
+inactive tree. See the predecessor-environment transition in `installer/README.md`.
 
 ### Uninstallation
 

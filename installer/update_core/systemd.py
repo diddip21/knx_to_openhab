@@ -83,6 +83,29 @@ class SystemdAdapter:
         fields = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
         return fields == {"Type": "notify", "ActiveState": "active", "SubState": "running"}
 
+    def verify_recovery_preconditions(self, mode):
+        """Read only: never replace writer start jobs queued behind boot recovery."""
+        recovery = "knxohui-update-recovery.service"
+        for name in SERVICES:
+            result = self._run(
+                [
+                    "/usr/bin/systemctl",
+                    "show",
+                    "--property=ActiveState",
+                    "--property=After",
+                    "--property=Requires",
+                    "--",
+                    name,
+                ]
+            )
+            fields = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+            if fields.get("ActiveState") not in ("inactive", "failed"):
+                raise ValueError("Recovery requires inactive UI and cleanup writers")
+            if mode == "boot" and any(
+                recovery not in fields.get(key, "").split() for key in ("After", "Requires")
+            ):
+                raise ValueError("Boot recovery requires writer ordering/dependencies")
+
     def _unit(self, stage):
         return f"knxohupdate-{self.request_id}-{stage}.service"
 

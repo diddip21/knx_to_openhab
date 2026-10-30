@@ -84,7 +84,9 @@ def _directory(path, private=False, create=False):
                 pass
             else:
                 os.fsync(parent)
-        entry = fs._open(stack, parent, name, {0}, os.fstat(parent).st_dev, directory=True)
+        device = None if fs._is_anchor(path) else os.fstat(parent).st_dev
+        entry = fs._open(stack, parent, name, {0}, device, directory=True)
+        fs._pin_anchor(path, entry)
         if private and stat.S_IMODE(entry.info.st_mode) != 0o700:
             raise ValueError("Recovery state directory must be private")
         fs._check([*chain, entry])
@@ -155,7 +157,11 @@ class LifecycleLock:
             else:
                 os.close(fd)
                 os.fsync(parent)
-            entry = fs._open(stack, parent, name, {0}, os.fstat(parent).st_dev)
+            entry = fs._open(stack, parent, name, {0}, None)
+            # Exact protected endpoint is a unit-created self-bind mount, not a
+            # general exception for other files under the lock directory.
+            if stat.S_IMODE(entry.info.st_mode) != 0o600:
+                raise ValueError("Lifecycle lock must have mode 0600")
             fcntl.flock(entry.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             try:
                 fs._check([*chain, entry])
@@ -174,7 +180,7 @@ class LifecycleLock:
         import fcntl
 
         with self._parent() as (stack, parent, name, chain):
-            entry = fs._open(stack, parent, name, {0}, os.fstat(parent).st_dev)
+            entry = fs._open(stack, parent, name, {0}, None)
             info = os.fstat(fd)
             if (
                 (info.st_dev, info.st_ino) != (entry.info.st_dev, entry.info.st_ino)
@@ -329,6 +335,36 @@ class StateStore:
     def load(self) -> Journal | None:
         return self._read()[0]
 
+    def reconcile_status(self):
+        """Retry BOTH durable projections from protected authority, never vice versa.
+
+        A recovered uncommitted attempt failed, even while prior-version startup
+        verification remains pending privately. This terminal public failure lets
+        a fresh UUID trigger that verification; it does not authorize preparation.
+        A rolled-back journal alone cannot prove a no-update outcome after crash.
+        """
+        journal = self.load()
+        if journal is None:
+            try:
+                raw_checkpoint = fs.read_regular(self.journal_path, STATE_BYTES)
+            except FileNotFoundError:
+                return
+            checkpoint = parse_object(raw_checkpoint, STATE_BYTES)
+            raw = fs.read_regular(
+                self.root / ("terminal-" + checkpoint["request_id"] + ".json"), STATE_BYTES
+            )
+            journal, _ = _decode_record(parse_object(raw, STATE_BYTES), self.paths)
+        if journal.phase == "committed":
+            phase, message = "committed", "Release update completed"
+        elif journal.phase in ("rolled-back", "recovered-awaiting-start"):
+            phase = "rolled-back"
+            message = "Update did not commit; previous release preserved"
+            if journal.phase == "recovered-awaiting-start":
+                message += "; prior-version readiness verification required before next update"
+        else:
+            raise ValueError("Transaction is not coherent for status reconciliation")
+        self.publish_status(phase, message, journal.request_id)
+
     def archive_terminal_for_admin(self) -> bool:
         """Caller holds LifecycleLock: durably detach terminal recovery authority.
 
@@ -345,6 +381,7 @@ class StateStore:
                 continue
             raise ValueError("Reconcile updater gate/maintenance before administrator transition")
         if journal is None:
+            self.reconcile_status()
             with fs._parent(self.journal_path) as (_, parent, _, chain):
                 fs._check(chain)
                 os.fsync(parent)
@@ -356,6 +393,7 @@ class StateStore:
             self.paths, "cleanup"
         ):
             raise ValueError("Terminal journal/current mismatch or incomplete pair")
+        self.reconcile_status()
         raw = fs.read_regular(self.journal_path, STATE_BYTES)
         archive = self.root / ("terminal-" + journal.request_id + ".json")
         try:

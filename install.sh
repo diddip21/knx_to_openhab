@@ -579,7 +579,7 @@ install_release() {
             -f "$INSTALL_DIR/releases/$version/installer/setup.sh" &&
             -f "$INSTALL_DIR/releases/$version/VERSION" &&
             "$(tr -d '\r\n' < "$INSTALL_DIR/releases/$version/VERSION")" == "$version" ]]; then
-            log_info "Release $version is already installed; activating it without replacing its files."
+            log_info "Release $version is already installed; validating before component repair/activation without replacing its files."
             if [[ "$CURRENT_RELEASE" == "$version" ]]; then
                 setup_options=(--repair)
                 REPAIR_TARGET="$INSTALL_DIR/current"

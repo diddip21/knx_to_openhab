@@ -26,6 +26,34 @@ def protected_paths():
     )
 
 
+@pytest.mark.parametrize("mode", ["boot", "offline"])
+@pytest.mark.parametrize("fault", [None, "active", "missing-after", "missing-requires"])
+def test_recovery_preconditions_are_read_only(mode, fault):
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        assert argv[:2] == ["/usr/bin/systemctl", "show"]
+        unit = "knxohui-update-recovery.service"
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=(
+                f"ActiveState={'active' if fault == 'active' else 'inactive'}\n"
+                f"After={'' if fault == 'missing-after' else unit}\n"
+                f"Requires={'' if fault == 'missing-requires' else unit}\n"
+            ),
+        )
+
+    worker = adapter(run)
+    if fault == "active" or mode == "boot" and fault is not None:
+        with pytest.raises(ValueError):
+            worker.verify_recovery_preconditions(mode)
+    else:
+        worker.verify_recovery_preconditions(mode)
+        assert len(calls) == 3
+
+
 @pytest.mark.parametrize("stage", ["metadata", "download", "extract", "dependencies", "migrate"])
 def test_fixed_argv_and_sandbox(stage):
     calls = []

@@ -145,6 +145,11 @@ provision_updater() {
         --action provision "${BOOTSTRAP_ARGS[@]}"
 }
 
+check_repair_release() {
+    /usr/bin/python3 -I "$REPO_ROOT/installer/update_bootstrap.py" \
+        --action check-release "${BOOTSTRAP_ARGS[@]}" -- "$1" "$2"
+}
+
 mark_installer_blocked() {
     /usr/bin/python3 -I - "$BASE/.installer-incomplete" <<'PY'
 import os
@@ -557,6 +562,11 @@ repair_system_components() {
         echo "Cannot repair without the existing path contract: $PATHS_FILE" >&2
         return 2
     fi
+
+    # Read-only administrator check, never the existing release's interpreter.
+    # Component repair may retain a predecessor venv with explicit guidance;
+    # publishing an inactive incompatible tree is refused before provisioning.
+    check_repair_release "$source_real" "$needs_activation"
 
     if ! getent group "$SERVICE_USER" >/dev/null 2>&1; then
         sudo groupadd -r "$SERVICE_USER"

@@ -23,7 +23,11 @@ def _shell_fixture_text(source):
     if source.name == "setup.sh":
         start = raw.index("# The verified administrator bootstrap holds ONE lease")
         end = raw.index('if [[ -L "$BASE/releases" ]]', start)
-        raw = raw[:start] + "provision_updater() { :; }\n\n" + raw[end:]
+        raw = (
+            raw[:start]
+            + "provision_updater() { :; }\ncheck_repair_release() { :; }\n\n"
+            + raw[end:]
+        )
     return raw
 
 

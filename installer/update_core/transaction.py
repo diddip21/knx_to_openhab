@@ -334,7 +334,10 @@ class ReleaseUpdater:
             # Validate the provisioned, never-replaced lease before preparing code.
             with maintenance._lease_fd(paths):
                 pass
-            self._frozen(current)
+            try:
+                self._frozen(current)
+            except (OSError, ValueError) as error:
+                raise CoordinatorError(fs.EXISTING_RELEASE_GUIDANCE) from error
             self._version(current)
             for hidden in (Path("/root"), Path("/home"), Path("/tmp")):
                 if self.workspace_root == hidden or hidden in self.workspace_root.parents:
@@ -672,7 +675,7 @@ class ReleaseUpdater:
             raise ValueError("Candidate exists without durable reservation identity")
         self._effect("remove-candidate", fs.remove_candidate, self.paths, journal)
 
-    def _coherent_prior(self, mutated):
+    def _coherent_prior(self, mutated, stop_writers=True):
         self._stop_children()
         current, _ = _current_target(self.paths)
         if current not in (self.journal.prior_target, self.journal.candidate):
@@ -681,7 +684,8 @@ class ReleaseUpdater:
         if not mutated and current != self.journal.prior_target:
             raise ValueError("Unexpected publication before activation intent")
         self._gate("deny")
-        self._stop_writers()
+        if stop_writers:
+            self._stop_writers()
         if mutated:
             self._intent("rolling-back")
             self._effect("restore-config", self.store.restore_config)
@@ -839,7 +843,12 @@ class ReleaseUpdater:
 
     def run(self) -> UpdateResult:
         try:
-            with LifecycleLock(self.lock_path).acquire():
+            with (
+                fs.mount_anchors(
+                    (self.paths.releases.parent, self.paths.config_dir, self.workspace_root)
+                ),
+                LifecycleLock(self.lock_path).acquire(),
+            ):
                 self._identities()
                 self._layout()
                 self.store = StateStore(self.paths)
@@ -860,12 +869,15 @@ class ReleaseUpdater:
                         self._restore_units()
                         self._intent("rolled-back")
                         self._clear_maintenance()
+                        self.store.reconcile_status()
                     elif self.journal.phase not in TERMINAL:
                         return self._recover_locked("boot")
                     elif self.journal.phase == "committed":
                         self._finalize_committed(start=True)
                     elif _current_target(self.paths)[0] != self.journal.prior_target:
                         raise ValueError("Rolled-back target mismatch")
+                    else:
+                        self.store.reconcile_status()
                 self._layout(preparation=True)
                 request = self._claim()
                 return self._transaction(request)
@@ -905,14 +917,16 @@ class ReleaseUpdater:
         if not maintenance.maintenance_requested(self.paths) and check_start_allowed(
             self.paths, "cleanup"
         ):
+            self.store.reconcile_status()
             return  # fully finalized: do not undo later administrator unit choices
-        if not start:
-            self._stop_writers()
         self._gate("clear")
-        self._restore_units(start=start)
+        if start:
+            self._restore_units()
         self._clear_maintenance()
+        self.store.reconcile_status()
 
     def _recover_locked(self, mode):
+        self.systemd.verify_recovery_preconditions(mode)
         journal = self.journal
         if journal is None:
             if maintenance.maintenance_requested(self.paths) or not check_start_allowed(
@@ -931,6 +945,7 @@ class ReleaseUpdater:
                 raise ValueError("Rolled-back target mismatch")
             self._gate("clear")
             self._clear_maintenance()
+            self.store.reconcile_status()
             return UpdateResult("clean", journal.prior_target.name, request_id=journal.request_id)
         if journal.service_states and set(journal.service_states) != SERVICES:
             raise ValueError("Incomplete recovery unit states")
@@ -944,24 +959,27 @@ class ReleaseUpdater:
                 if _current_target(self.paths)[0] != journal.prior_target:
                     raise ValueError("Recovered target mismatch")
                 self._validate_target(journal.prior_target)
-                self._stop_writers()
             else:
-                self._coherent_prior(journal.phase in MAY_WRITE_CONFIG)
+                self._coherent_prior(journal.phase in MAY_WRITE_CONFIG, stop_writers=False)
             self._gate("clear")
-            self._restore_units(start=False)
             self._intent("recovered-awaiting-start")
             self._clear_maintenance()
+            self.store.reconcile_status()
         return UpdateResult("recovered", journal.prior_target.name, request_id=journal.request_id)
 
     def recover(self, mode: str) -> UpdateResult:
         if mode not in ("boot", "offline"):
             raise ValueError("Recovery mode must be boot or offline")
         try:
-            with LifecycleLock(self.lock_path).acquire():
+            with (
+                fs.mount_anchors(
+                    (self.paths.releases.parent, self.paths.config_dir, self.workspace_root)
+                ),
+                LifecycleLock(self.lock_path).acquire(),
+            ):
                 self._identities()
                 self._layout()
-                if mode == "offline" and any(self.systemd.capture_services().active.values()):
-                    raise ValueError("Stop UI and cleanup writers before offline recovery")
+                self.systemd.verify_recovery_preconditions(mode)
                 self.store = StateStore(self.paths)
                 self.journal = self.store.load()
                 return self._recover_locked(mode)
@@ -976,7 +994,12 @@ class ReleaseUpdater:
 
     def check_clean_state(self) -> UpdateResult:
         try:
-            with LifecycleLock(self.lock_path).acquire():
+            with (
+                fs.mount_anchors(
+                    (self.paths.releases.parent, self.paths.config_dir, self.workspace_root)
+                ),
+                LifecycleLock(self.lock_path).acquire(),
+            ):
                 self._identities()
                 self._layout()
                 store = StateStore(self.paths)

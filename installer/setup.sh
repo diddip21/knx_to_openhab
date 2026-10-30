@@ -89,7 +89,65 @@ if [[ -e "$BASE/venv" || -e "$BASE/jobs" || -e "$CONFIG_DIR/secrets.env" || -e "
     echo "LAB UPGRADE: running against existing state; never use this override on production." >&2
 fi
 
-if [[ ! -f "$CONFIG_DIR/secrets.env" ]] || ! grep -q '^KNXOH_UI_PASSWORD_HASH_B64=' "$CONFIG_DIR/secrets.env"; then
+AUTH_PREFLIGHT_CONFIG="$CONFIG_DIR/config.json"
+if [[ ! -f "$AUTH_PREFLIGHT_CONFIG" && -f "$BASE/web_ui/backend/config.json" ]]; then
+    AUTH_PREFLIGHT_CONFIG="$BASE/web_ui/backend/config.json"
+elif [[ ! -f "$AUTH_PREFLIGHT_CONFIG" && -f "$REPO_ROOT/web_ui/backend/config.json" ]]; then
+    AUTH_PREFLIGHT_CONFIG="$REPO_ROOT/web_ui/backend/config.json"
+fi
+AUTH_PREFLIGHT_STATUS=1
+if [[ -x "$BASE/venv/bin/python" ]]; then
+    if PYTHONPATH="$BASE" "$BASE/venv/bin/python" - "$AUTH_PREFLIGHT_CONFIG" "$CONFIG_DIR/secrets.env" <<'PY'
+import base64
+import binascii
+import json
+import sys
+from pathlib import Path
+
+from web_ui.backend.auth import is_password_hash, verify_password
+
+config_path, secrets_path = map(Path, sys.argv[1:])
+try:
+    config = json.loads(config_path.read_text(encoding="utf-8")) if config_path.is_file() else {}
+except (OSError, json.JSONDecodeError):
+    raise SystemExit(2)
+auth = config.get("auth", {}) if isinstance(config, dict) else {}
+if not isinstance(auth, dict):
+    raise SystemExit(2)
+if auth.get("enabled") is False:
+    raise SystemExit(0)
+encoded_hash = None
+if secrets_path.is_file():
+    try:
+        for line in secrets_path.read_text(encoding="utf-8").splitlines():
+            name, separator, value = line.partition("=")
+            if separator and name == "KNXOH_UI_PASSWORD_HASH_B64":
+                encoded_hash = value.strip()
+    except OSError:
+        raise SystemExit(2)
+if encoded_hash:
+    try:
+        password_hash = base64.b64decode(encoded_hash, validate=True).decode("utf-8")
+    except (binascii.Error, UnicodeDecodeError):
+        raise SystemExit(2)
+    if not is_password_hash(password_hash):
+        raise SystemExit(2)
+    if not verify_password(password_hash, "logihome"):
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+    then
+        AUTH_PREFLIGHT_STATUS=0
+    else
+        AUTH_PREFLIGHT_STATUS=$?
+    fi
+fi
+if [[ "$AUTH_PREFLIGHT_STATUS" -eq 2 ]]; then
+    echo "The existing Web UI credential configuration is invalid." >&2
+    echo "No service, package or runtime data was changed." >&2
+    exit 4
+fi
+if [[ "$AUTH_PREFLIGHT_STATUS" -ne 0 ]]; then
     if ! { exec 3<>/dev/tty; } 2>/dev/null; then
         echo "Credential migration needs an interactive terminal." >&2
         echo "Run setup from an interactive SSH session (for example, ssh -t) or configure a valid" >&2

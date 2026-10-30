@@ -1,3 +1,5 @@
+All done! ✨ 🍰 ✨
+1 file would be left unchanged.
 """Regression tests for the service user's privileged command policy."""
 
 import os
@@ -55,12 +57,8 @@ def test_installer_runs_provisioner_from_installed_tree():
 
 def test_yaml_provisioning_uses_one_fixed_root_owned_action():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
-    service_update = (ROOT / "installer" / "service_update.sh").read_text(
-        encoding="utf-8"
-    )
-    helper = (ROOT / "installer" / "provision_managed_outputs.py").read_text(
-        encoding="utf-8"
-    )
+    service_update = (ROOT / "installer" / "service_update.sh").read_text(encoding="utf-8")
+    helper = (ROOT / "installer" / "provision_managed_outputs.py").read_text(encoding="utf-8")
     setup_provisioner = (ROOT / "installer" / "provision_managed_files.py").read_text(
         encoding="utf-8"
     )
@@ -74,9 +72,8 @@ def test_yaml_provisioning_uses_one_fixed_root_owned_action():
     assert "/usr/local/libexec/knx_to_openhab/provision_managed_outputs.py" in repair
     assert "sudo install -o root -g root -m 0755" in repair
     assert "provision-yaml)" in service_update
-    assert (
-        "/usr/bin/python3 -I /usr/local/libexec/knx_to_openhab/provision_managed_outputs.py"
-        in (service_update)
+    assert "/usr/bin/python3 -I /usr/local/libexec/knx_to_openhab/provision_managed_outputs.py" in (
+        service_update
     )
     assert '"$@"' not in service_update
     assert "/usr/local/sbin/knxohui-service-update provision-yaml" in policy
@@ -110,9 +107,7 @@ def test_updater_retries_yaml_provisioning_when_git_is_already_current(tmp_path)
     bin_dir.mkdir()
 
     updater = install_dir / "update.sh"
-    updater.write_text(
-        (ROOT / "update.sh").read_text(encoding="utf-8"), encoding="utf-8"
-    )
+    updater.write_text((ROOT / "update.sh").read_text(encoding="utf-8"), encoding="utf-8")
     fake_python = install_dir / "venv" / "bin" / "python"
     fake_python.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
     fake_python.chmod(0o755)
@@ -209,10 +204,7 @@ def test_setup_checks_for_terminal_before_stopping_services():
 
     assert 'elif id -u "$SERVICE_USER" >/dev/null 2>&1; then' in setup
     assert 'AUTH_PREFLIGHT_COMMAND=(sudo -u "$SERVICE_USER" env' in setup
-    assert (
-        'AUTH_PREFLIGHT_COMMAND=(env "PYTHONPATH=$BASE" "$BASE/venv/bin/python")'
-        in setup
-    )
+    assert 'AUTH_PREFLIGHT_COMMAND=(env "PYTHONPATH=$BASE" "$BASE/venv/bin/python")' in setup
     assert "exec 3<>/dev/tty" in setup
     assert "No service, package or runtime data was changed." in setup
     assert setup.index("exec 3<>/dev/tty") < setup.index(
@@ -244,9 +236,7 @@ def test_web_updater_rolls_back_if_updated_service_fails_health_check():
 
     assert "wait_for_service_active()" in update
     assert "restore_previous_release()" in update
-    assert (
-        'git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"' in update
-    )
+    assert 'git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"' in update
     assert "if ! wait_for_service_active; then" in update
     assert update.index("if ! wait_for_service_active; then") < update.index(
         'log "Update completed successfully!"'
@@ -327,11 +317,7 @@ def test_setup_preflight_stops_before_changes_without_terminal_or_valid_hash(tmp
         assert result.returncode == 4
         assert message in result.stderr
         assert "No service, package or runtime data was changed." in result.stderr
-        sudo_calls = (
-            sudo_log.read_text(encoding="utf-8").splitlines()
-            if sudo_log.exists()
-            else []
-        )
+        sudo_calls = sudo_log.read_text(encoding="utf-8").splitlines() if sudo_log.exists() else []
         assert sudo_calls in ([], ["preflight"])
         assert not (config / "secrets.env").exists()
         assert not (config.parent / "paths.env").exists()
@@ -358,9 +344,7 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
             check=True,
         )
 
-    (config_dir / "config.json").write_text(
-        '{"auth":{"enabled":false}}', encoding="utf-8"
-    )
+    (config_dir / "config.json").write_text('{"auth":{"enabled":false}}', encoding="utf-8")
     (config_dir / "secrets.env").write_text("\n", encoding="utf-8")
     paths_file.write_text("", encoding="utf-8")
 

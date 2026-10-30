@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 19573)
-Total output lines: 2130
-
 let authRedirectPending = false
 
 async function apiFetch(resource, options = {}) {
@@ -773,7 +770,9 @@ function startPackageOperationPolling() {
         }
       } else if (packagePollCompletionStage < 2) {
         await refreshServices()
-        packagePollCompletionStage += 1
+        packagePollCompletionStage = packagePollRequested
+          ? 1
+          : packagePollCompletionStage + 1
       } else {
         packagePollCompletionStage = 0
         continuePolling = false
@@ -848,7 +847,475 @@ async function refreshServices() {
           <button type="button" class="service-restart-btn restart-btn">Restart</button>
           <button type="button" class="service-restart-btn upgrade-btn"
             ${!version.supported || !version.update_available || busy ? 'disabled' : ''}>
-            ${version.update_available ? 'Update' : 'Kein Update'}</b…4573 tokens truncated…nt.querySelector('#mappingsTable tbody')
+            ${version.update_available ? 'Update' : 'Kein Update'}</button>
+        </div>
+      `
+      div.querySelector('.restart-btn').addEventListener('click', e => restartService(service, e.currentTarget))
+      div.querySelector('.upgrade-btn').addEventListener('click', () => {
+        if (confirm(`${service} von ${version.installed} auf den APT-Kandidaten ${version.candidate} aktualisieren?`)) {
+          startPackageOperation(pkg, version.candidate)
+        }
+      })
+      serviceItems.appendChild(div)
+    } catch (e) {
+      console.error('Error fetching service status:', e)
+    }
+  }
+  if (refreshGeneration !== servicesRefreshGeneration) return
+  servicesListEl.replaceChildren(serviceItems)
+  await loadCloudInfo()
+}
+
+async function startPackageOperation(action, version = null) {
+  const statusEl = document.getElementById('packageOperationStatus')
+  try {
+    const response = await apiFetch(`/api/service/updates/${action}`, {
+      method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version })
+    })
+    const result = await response.json()
+    if (!response.ok) { statusEl.textContent = result.error || result.message; return }
+    await refreshServices()
+    startPackageOperationPolling()
+  } catch (e) { statusEl.textContent = `Paketoperation fehlgeschlagen: ${e.message}` }
+}
+
+async function loadCloudInfo() {
+  const refreshGeneration = ++cloudInfoGeneration
+
+  try {
+    const res = await apiFetch('/api/openhab/cloud-info')
+    const data = await res.json()
+    if (refreshGeneration !== cloudInfoGeneration) return
+    const card = document.createElement('div')
+    card.id = 'cloud-info-card'
+    card.className = 'cloud-info-card'
+
+    const uuidVal = data.uuid || null
+    const secretVal = data.secret || null
+
+    if (!uuidVal && !secretVal) {
+      card.innerHTML = `
+        <div class="cloud-info-header">
+          <span class="cloud-info-title">☁️ openHAB Cloud Credentials</span>
+        </div>
+        <div class="cloud-info-not-found">
+          UUID / Secret nicht gefunden.<br>
+          <small>Erwartet unter <code>/var/lib/openhab/uuid</code> und <code>/var/lib/openhab/openhabcloud/secret</code></small>
+        </div>`
+    } else {
+      const masked = secretVal
+        ? secretVal.substring(0, 8) + '•'.repeat(Math.max(0, secretVal.length - 8))
+        : '—'
+      card.innerHTML = `
+        <div class="cloud-info-header">
+          <span class="cloud-info-title">☁️ openHAB Cloud Credentials</span>
+          <small class="cloud-info-hint">Für myopenhab.org Einrichtung</small>
+        </div>
+        <div class="cloud-info-row">
+          <span class="cloud-info-label">UUID</span>
+          <span class="cloud-info-value" id="cloud-uuid-val">${uuidVal || '—'}</span>
+          <button class="cloud-copy-btn" onclick="copyCloudValue('cloud-uuid-val', this, false)" title="UUID kopieren">📋</button>
+        </div>
+        <div class="cloud-info-row">
+          <span class="cloud-info-label">Secret</span>
+          <span class="cloud-info-value cloud-secret-masked" id="cloud-secret-val"
+            data-full="${secretVal || ''}" data-masked="${masked}">${masked}</span>
+          <button class="cloud-toggle-btn" onclick="toggleSecret()" title="Secret anzeigen/verbergen">👁</button>
+          <button class="cloud-copy-btn" onclick="copyCloudValue('cloud-secret-val', this, true)" title="Secret kopieren">📋</button>
+        </div>
+        ${data.uuid_path ? `<div class="cloud-info-paths"><small>📁 ${data.uuid_path}</small></div>` : ''}
+      `
+    }
+    const existing = document.getElementById('cloud-info-card')
+    if (existing) existing.replaceWith(card)
+    else servicesListEl.appendChild(card)
+  } catch (e) {
+    console.error('Failed to load cloud info:', e)
+  }
+}
+
+function toggleSecret() {
+  const el = document.getElementById('cloud-secret-val')
+  if (!el) return
+  if (el.classList.contains('cloud-secret-masked')) {
+    el.textContent = el.dataset.full || '—'
+    el.classList.remove('cloud-secret-masked')
+  } else {
+    el.textContent = el.dataset.masked || '—'
+    el.classList.add('cloud-secret-masked')
+  }
+}
+
+function copyCloudValue(elId, btn, useDataFull) {
+  const el = document.getElementById(elId)
+  if (!el) return
+  const val = useDataFull ? (el.dataset.full || el.textContent) : el.textContent
+  navigator.clipboard.writeText(val).then(() => {
+    const orig = btn.textContent
+    btn.textContent = '✅'
+    setTimeout(() => { btn.textContent = orig }, 1500)
+  })
+}
+
+// Log level filtering
+if (logLevelFilterEl) {
+  logLevelFilterEl.addEventListener('change', (e) => {
+    logLevelFilter = e.target.value
+    renderLog()
+  })
+}
+
+async function loadStructureFromJob(jobId) {
+  const statusEl = document.getElementById('status')
+  const previewSection = document.getElementById('preview-section')
+
+  // Show loading status
+  statusEl.textContent = 'Loading structure from job...'
+  statusEl.className = 'status-message'
+
+  try {
+    // First check if the job is completed before attempting to load structure
+    const jobRes = await apiFetch(`/api/job/${jobId}`)
+    if (!jobRes.ok) {
+      throw new Error(`Failed to get job status: ${jobRes.status}`)
+    }
+    const job = await jobRes.json();
+
+    if (job.status !== 'completed') {
+      // Wait for job to complete with timeout
+      const timeout = 30000; // 30 seconds
+      const startTime = Date.now();
+
+      while (job.status !== 'completed' && Date.now() - startTime < timeout) {
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+
+        const updatedJobRes = await apiFetch(`/api/job/${jobId}`)
+        if (updatedJobRes.ok) {
+          const updatedJob = await updatedJobRes.json();
+          job.status = updatedJob.status;
+
+          if (updatedJob.status === 'completed') {
+            statusEl.textContent = `Job completed, loading structure...`;
+            break;
+          } else if (updatedJob.status === 'failed') {
+            throw new Error(`Job failed: ${updatedJob.error || 'Unknown error'}`);
+          }
+        }
+      }
+
+      if (job.status !== 'completed') {
+        throw new Error(`Job did not complete within ${timeout / 1000} seconds. Current status: ${job.status}`);
+      }
+    }
+
+    statusEl.textContent = 'Retrieving structure data...';
+
+    const res = await apiFetch(`/api/job/${jobId}/preview`)
+    if (!res.ok) {
+      const error = await res.json()
+      throw new Error(error.error || 'Failed to load structure from job')
+    }
+    const preview = await res.json()
+
+    currentPreviewMetadata = preview.metadata
+    displayBuildingPreview(preview)
+
+    // Show preview section
+    previewSection.style.display = 'block'
+
+    statusEl.textContent = '✓ Structure loaded from job history'
+    statusEl.className = 'status-message success'
+
+    // Scroll to preview
+    previewSection.scrollIntoView({ behavior: 'smooth' })
+  } catch (e) {
+    statusEl.textContent = '✗ Error: ' + e.message
+    statusEl.className = 'status-message error'
+    console.error('Error loading structure from job:', e);
+  }
+}
+
+function renderLog() {
+  let filtered = allLogEntries
+  if (logLevelFilter !== 'all') {
+    filtered = allLogEntries.filter(entry => entry.level === logLevelFilter)
+  }
+
+  // Render with color coding based on log level
+  const html = filtered.map(entry => {
+    const levelClass = `log-level-${entry.level}`
+    return `<div class="log-entry ${levelClass}">${escapeHtml(entry.text)}</div>`
+  }).join('')
+
+  logEl.innerHTML = html
+  logEl.scrollTop = logEl.scrollHeight
+}
+
+function escapeHtml(text) {
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  }
+  return text.replace(/[&<>"']/g, m => map[m])
+}
+
+window.escapeHtml = escapeHtml
+
+function updateStatisticsDisplay(stats) {
+  // Prevent concurrent updates
+  if (statsUpdateInProgress) {
+    // Skip update if already in progress, instead of queuing
+    return
+  }
+
+  statsUpdateInProgress = true
+
+  try {
+    const statsEl = document.getElementById('stats')
+    if (!statsEl) {
+      statsUpdateInProgress = false
+      console.error('Statistics element not found');
+      return
+    }
+
+    if (stats && typeof stats === 'object' && Object.keys(stats).length > 0) {
+      let statsHtml = '<h3>Generated Files</h3><table class="stats-table"><tr><th>File</th><th>Before</th><th>After</th><th>Change</th><th>Diff</th><th>Action</th></tr>'
+
+      // Sort files for consistent display order
+      const sortedStats = Object.entries(stats)
+        .filter(([fname]) => !["completeness_report.json", "partial_report.json", "unknown_report.json"].includes(fname))
+        .sort(([a], [b]) => a.localeCompare(b))
+
+      for (const [fname, stat] of sortedStats) {
+        // Validate statistics data
+        const before = typeof stat.before === 'number' ? stat.before : 0
+        const after = typeof stat.after === 'number' ? stat.after : 0
+        const delta = typeof stat.delta === 'number' ? stat.delta : (after - before)
+        const added = typeof stat.added === 'number' ? stat.added : 0
+        const removed = typeof stat.removed === 'number' ? stat.removed : 0
+
+        const deltaClass = delta > 0 ? 'positive' : delta < 0 ? 'negative' : 'neutral'
+        const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`
+
+        // Detailed diff info
+        let diffHtml = ''
+        if (added > 0) diffHtml += `<span class="badge success" style="margin-right:5px">+${added}</span>`
+        if (removed > 0) diffHtml += `<span class="badge error">-${removed}</span>`
+        if (added === 0 && removed === 0) diffHtml = '<span class="neutral">-</span>'
+
+        // Escape backslashes for HTML onclick attribute (double escape needed)
+        const escapedFname = fname.replace(/\\/g, '\\\\')
+        const isReport = fname.endsWith('unknown_report.json') || fname.endsWith('partial_report.json') || fname.endsWith('completeness_report.json')
+        const actions = [
+          `<button onclick="previewFile('${escapedFname}')">Preview</button>`
+        ]
+        if (isReport) {
+          actions.push(`<button onclick="downloadReport('${escapedFname}')">Download</button>`)
+          actions.push(`<button onclick="copyReport('${escapedFname}')">Copy</button>`)
+        }
+
+        statsHtml += `<tr>
+          <td>${escapeHtml(fname)}</td>
+          <td>${before}</td>
+          <td>${after}</td>
+          <td class="${deltaClass}">${deltaStr}</td>
+          <td>${diffHtml}</td>
+          <td>${actions.join(' ')}</td>
+        </tr>`
+      }
+
+      statsHtml += '</table>'
+      statsEl.innerHTML = statsHtml
+
+      // Store for consistency checks
+      currentStatsData = JSON.parse(JSON.stringify(stats))
+
+      // Render expert panel (reports) when enabled
+      renderExpertPanel(stats)
+
+
+    } else {
+      if (!stats || (typeof stats === 'object' && Object.keys(stats).length === 0)) {
+        statsEl.innerHTML = '<p>No statistics available (stats object is empty or null)</p>'
+      } else {
+        statsEl.innerHTML = '<p>No statistics available</p>'
+      }
+      currentStatsData = null
+    }
+  } catch (error) {
+    console.error('Error updating statistics display:', error)
+    const statsEl = document.getElementById('stats')
+    if (statsEl) {
+      statsEl.innerHTML = '<p class="error">Error displaying statistics: ' + error.message + '</p>'
+    }
+  } finally {
+    // Use setTimeout to ensure the flag is reset after rendering completes
+    setTimeout(() => {
+      statsUpdateInProgress = false
+    }, 0)
+  }
+}
+
+function showReportDialog(reportKey) {
+  const dialog = document.getElementById('summaryDialog')
+  const content = document.getElementById('summaryDialogContent')
+  if (!dialog || !content) return
+  if (!currentStatsData) {
+    content.innerHTML = '<div class="muted">No report data available.</div>'
+    dialog.showModal()
+    return
+  }
+  const reportStat = currentStatsData[reportKey]
+  const reportPath = (reportStat && (reportStat.staged_path || reportStat.real_path)) || resolvePreviewPath(reportKey)
+  content.innerHTML = '<div class="muted">Loading report...</div>'
+  dialog.showModal()
+
+  apiFetch(`/api/file/preview?path=${encodeURIComponent(reportPath)}&job_id=${currentJobId}`, { credentials: 'include' })
+    .then((res) => {
+      if (!res.ok) throw new Error(`Preview API error ${res.status}`)
+      return res.json()
+    })
+    .then((data) => {
+      let report = null
+      try {
+        report = JSON.parse(data.content || '{}')
+      } catch (e) {
+        content.innerHTML = '<div class="error">Report is not valid JSON.</div>'
+        return
+      }
+
+      const req = report.missing_required || []
+      const rec = report.recommended_missing || []
+      if (req.length || rec.length) {
+        const renderList = (items, title) => {
+          if (!items.length) return ''
+          const rows = items.map(entry => {
+            const line = escapeHtml(entry.line || '')
+            return `<li><code>${escapeHtml(entry.kind || '')}</code> ${escapeHtml(entry.reason || '')} — ${line}</li>`
+          }).join('')
+          return `<div class="summary-block"><strong>${title}</strong><ul>${rows}</ul></div>`
+        }
+        content.innerHTML = `
+          <div class="summary-counts">
+            <span class="badge ${req.length ? 'error' : 'success'}">Required missing: ${req.length}</span>
+            <span class="badge ${rec.length ? 'warning' : 'success'}">Recommended missing: ${rec.length}</span>
+          </div>
+          ${renderList(req, 'Missing required')}
+          ${renderList(rec, 'Recommended')}
+        `
+        return
+      }
+
+      content.innerHTML = `<pre class="preview-content">${escapeHtml(JSON.stringify(report, null, 2))}</pre>`
+    })
+    .catch((e) => {
+      content.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`
+    })
+}
+window.updateStatisticsDisplay = updateStatisticsDisplay
+
+
+
+// Configuration Management
+let currentConfig = {}
+
+function switchTab(tabId) {
+  // Hide all tabs
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'))
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'))
+
+  // Show selected tab
+  document.getElementById(`tab-${tabId}`).classList.add('active')
+  // Activate button
+  const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.onclick.toString().includes(tabId))
+  if (btn) btn.classList.add('active')
+}
+window.showReportDialog = showReportDialog
+
+
+function updateOutputPathVisibility() {
+  const useYaml = document.getElementById('conf-output-format').value === 'yaml'
+  document.getElementById('yaml-path-group').hidden = !useYaml
+  document.getElementById('legacy-model-paths').hidden = useYaml
+}
+
+async function loadConfig() {
+  const configStatus = document.getElementById('configStatus')
+
+  try {
+    configStatus.textContent = 'Loading configuration...'
+
+    const res = await apiFetch('/api/config')
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `HTTP ${res.status}`)
+    }
+
+    currentConfig = await res.json()
+
+    // Ensure required config sections exist
+    if (!currentConfig.general) currentConfig.general = {}
+    if (!currentConfig.devices) currentConfig.devices = {}
+    if (!currentConfig.datapoint_mappings) currentConfig.datapoint_mappings = {}
+    if (!currentConfig.defines) currentConfig.defines = {}
+    if (!currentConfig.regexpattern) currentConfig.regexpattern = {}
+
+    // Populate General Tab
+    // ETS export path removed
+    document.getElementById('conf-output-format').value = currentConfig.output_format || 'legacy'
+    updateOutputPathVisibility()
+    document.getElementById('conf-yaml-path').value = currentConfig.yaml_path || 'openhab/yaml/knx.yaml'
+    document.getElementById('conf-items-path').value = currentConfig.items_path || ''
+    document.getElementById('conf-things-path').value = currentConfig.things_path || ''
+    document.getElementById('conf-sitemaps-path').value = currentConfig.sitemaps_path || ''
+    document.getElementById('conf-influx-path').value = currentConfig.influx_path || ''
+    document.getElementById('conf-fenster-path').value = currentConfig.fenster_path || ''
+
+    const gen = currentConfig.general || {}
+    document.getElementById('conf-floor-asis').checked = gen.FloorNameAsItIs || false
+    document.getElementById('conf-floor-desc').checked = gen.FloorNameFromDescription || false
+    document.getElementById('conf-room-asis').checked = gen.RoomNameAsItIs || false
+    document.getElementById('conf-room-desc').checked = gen.RoomNameFromDescription || false
+    document.getElementById('conf-add-missing').checked = gen.addMissingItems || false
+    document.getElementById('conf-auto-place').checked = gen.auto_place_unknown || false
+    document.getElementById('conf-unknown-floor').value = gen.unknown_floorname || 'unknown'
+    document.getElementById('conf-unknown-room').value = gen.unknown_roomname || 'unknown'
+    document.getElementById('conf-central-keyword').value = gen.central_function_keyword || 'zentral'
+    document.getElementById('conf-central-group').value = gen.central_function_group || 'Base'
+    document.getElementById('conf-notification-sensor-keyword').value = gen.notification_sensor_keyword || 'Melden/Sensor'
+
+    // Populate Devices Tab
+    const dev = currentConfig.devices || {}
+    const gw = dev.gateway || {}
+    document.getElementById('conf-gateway-names').value = (gw.hardware_name || []).join(', ')
+    document.getElementById('conf-gateway-ip').value = gw.ip_address || ''
+
+    // Populate Mappings Tab
+    renderMappingsTable(currentConfig.datapoint_mappings || {})
+
+    // Populate Definitions Tab
+    renderDefinitions(currentConfig.defines || {})
+
+    // Populate Advanced Tab
+    renderRegexSettings(currentConfig.regexpattern || {})
+
+    // Keep settings collapsed by default
+    configStatus.textContent = '✓ Configuration loaded'
+    configStatus.className = 'status-message success'
+  } catch (e) {
+    console.error('Error loading configuration:', e)
+    configStatus.textContent = '✗ Error: ' + (e.message || 'Failed to load configuration')
+    configStatus.className = 'status-message error'
+  }
+
+}
+
+function renderMappingsTable(mappings) {
+  const tbody = document.querySelector('#mappingsTable tbody')
   tbody.innerHTML = ''
 
   // Sort by key

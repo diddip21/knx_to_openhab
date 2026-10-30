@@ -237,10 +237,15 @@ with open('version.json', 'w') as f:
 fi
 
 wait_for_service_active() {
-    local attempt
+    local attempt consecutive_active=0
     for attempt in {1..15}; do
         if sudo systemctl is-active "$SERVICE_NAME" > /dev/null; then
-            return 0
+            consecutive_active=$((consecutive_active + 1))
+            if (( consecutive_active >= 3 )); then
+                return 0
+            fi
+        else
+            consecutive_active=0
         fi
         sleep 1
     done

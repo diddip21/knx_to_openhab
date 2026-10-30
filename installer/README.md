@@ -50,9 +50,12 @@ system-wide legacy source directories. Only after a successful copy does it
 remove legacy job or backup directories inside the application tree. The old
 root `config.json` is copied to `generator.json` before the application tree is
 reset to the packaged defaults. Existing user-chosen Web UI passwords are converted to
-Argon2id hashes in the restricted secrets file. The shipped default password is discarded,
-and setup prompts for a replacement. A fresh install also prompts for a unique password;
-runtime settings remain in `config.json`.
+Argon2id hashes in the restricted secrets file. If no usable password exists, setup
+generates a random password, stores only its hash, and prints the new password once. This
+also replaces the old shared default and lets setup recover after a partially completed
+migration without an interactive prompt. Save that output before continuing; the password
+is not written to a plaintext file. Use the password helper below to set a different
+password later. Runtime settings remain in `config.json`.
 
 The Web UI and generator both read the saved path environment, so the Settings
 screen writes `/var/lib/knx_to_openhab/generator.json` and future releases do not

@@ -12,8 +12,8 @@ import os
 import secrets
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -53,15 +53,17 @@ def _decode_password(encoded: str) -> str:
 
 def _prompt_password() -> str:
     try:
-        with open("/dev/tty", "r+", encoding="utf-8") as terminal:
+        # getpass opens /dev/tty itself for input. This stream is only used to
+        # display prompts, so open it write-only; terminals are not seekable.
+        with open("/dev/tty", "w", encoding="utf-8") as terminal:
             password = getpass.getpass(
                 "Set a Web UI password (at least 12 characters): ", stream=terminal
             )
             confirmation = getpass.getpass("Confirm Web UI password: ", stream=terminal)
     except OSError as error:
         raise RuntimeError(
-            "No interactive terminal is available. Configure KNXOH_UI_PASSWORD_HASH_B64 "
-            "in the restricted secrets file before running setup."
+            "No interactive terminal is available. Run the password prompt from an "
+            "interactive shell."
         ) from error
     if password != confirmation:
         raise ValueError("The passwords do not match")
@@ -74,6 +76,7 @@ def configure_auth(
     config_path: Path,
     secrets_path: Path,
     password_provider: Callable[[], str] = _prompt_password,
+    on_generated_password: Callable[[str], None] | None = None,
 ) -> bool:
     """Ensure enabled authentication has a durable Argon2id password hash."""
     config_path = Path(config_path)
@@ -93,6 +96,7 @@ def configure_auth(
             values[name] = value.strip()
 
     password_hash = None
+    generated_password = None
     encoded_hash = values.get("KNXOH_UI_PASSWORD_HASH_B64")
     if encoded_hash:
         password_hash = _decode_password(encoded_hash)
@@ -110,10 +114,10 @@ def configure_auth(
         if legacy_password is not None:
             password_hash = hash_password(str(legacy_password))
         elif auth.get("enabled", True):
-            new_password = password_provider()
-            if len(new_password) < 12:
+            generated_password = password_provider()
+            if len(generated_password) < 12:
                 raise ValueError("Choose a password with at least 12 characters")
-            password_hash = hash_password(new_password)
+            password_hash = hash_password(generated_password)
 
     secret_lines = [
         line
@@ -144,6 +148,8 @@ def configure_auth(
 
     if password_hash or session_secret or secret_lines != lines or not secrets_path.exists():
         _atomic_write(secrets_path, "\n".join(secret_lines) + "\n", 0o640)
+    if generated_password is not None and on_generated_password is not None:
+        on_generated_password(generated_password)
 
     if "password" in config.get("auth", {}):
         config["auth"].pop("password", None)
@@ -159,11 +165,31 @@ def main() -> None:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--secrets", type=Path, required=True)
     args = parser.parse_args()
+    generated_password = None
+
+    def generate_password() -> str:
+        nonlocal generated_password
+        generated_password = secrets.token_urlsafe(24)
+        return generated_password
+
+    def report_generated_password(password: str) -> None:
+        print(
+            "A random Web UI password was generated because no usable password was "
+            "configured. Save it now; it will only be shown once:\n"
+            f"{password}",
+            flush=True,
+        )
+
     try:
-        changed = configure_auth(args.config, args.secrets)
+        changed = configure_auth(
+            args.config,
+            args.secrets,
+            password_provider=generate_password,
+            on_generated_password=report_generated_password,
+        )
     except (OSError, RuntimeError, ValueError) as error:
         raise SystemExit(str(error)) from error
-    if changed:
+    if not generated_password and changed:
         print("Web UI password hash is configured in the restricted secrets file.")
 
 

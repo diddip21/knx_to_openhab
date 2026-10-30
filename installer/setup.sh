@@ -89,7 +89,7 @@ if [[ ! -f "$AUTH_PREFLIGHT_CONFIG" && -f "$BASE/web_ui/backend/config.json" ]];
 elif [[ ! -f "$AUTH_PREFLIGHT_CONFIG" && -f "$REPO_ROOT/web_ui/backend/config.json" ]]; then
     AUTH_PREFLIGHT_CONFIG="$REPO_ROOT/web_ui/backend/config.json"
 fi
-AUTH_PREFLIGHT_STATUS=1
+AUTH_PREFLIGHT_STATUS=3
 if [[ -x "$BASE/venv/bin/python" ]]; then
     if [[ "$EUID" -eq 0 ]]; then
         AUTH_PREFLIGHT_COMMAND=(env "PYTHONPATH=$BASE" "$BASE/venv/bin/python")
@@ -149,12 +149,17 @@ if legacy_encoded:
         raise SystemExit(2)
     if legacy_password != "logihome":
         raise SystemExit(0)
+    if authentication_enabled is False:
+        raise SystemExit(0)
+    raise SystemExit(1)
 legacy_password = auth.get("password", auth.get("legacy_password"))
 if legacy_password is not None and str(legacy_password) != "logihome":
     raise SystemExit(0)
 if authentication_enabled is False:
     raise SystemExit(0)
-raise SystemExit(1)
+if legacy_password is not None:
+    raise SystemExit(1)
+raise SystemExit(3)
 PY
     then
         AUTH_PREFLIGHT_STATUS=0
@@ -167,14 +172,8 @@ if [[ "$AUTH_PREFLIGHT_STATUS" -eq 2 ]]; then
     echo "No service, package or runtime data was changed." >&2
     exit 4
 fi
-if [[ "$AUTH_PREFLIGHT_STATUS" -ne 0 ]]; then
-    if ! { exec 3<>/dev/tty; } 2>/dev/null; then
-        echo "Credential migration needs an interactive terminal." >&2
-        echo "Run setup from an interactive SSH session (for example, ssh -t)." >&2
-        echo "No service, package or runtime data was changed." >&2
-        exit 4
-    fi
-    exec 3>&-
+if [[ "$AUTH_PREFLIGHT_STATUS" -eq 1 || "$AUTH_PREFLIGHT_STATUS" -eq 3 ]]; then
+    echo "If no usable Web UI password is configured, setup will generate one and show it once."
 fi
 PREVIOUSLY_ACTIVE_UNITS=()
 for unit in knxohui-backup-cleanup.timer knxohui-backup-cleanup.service knxohui.service; do

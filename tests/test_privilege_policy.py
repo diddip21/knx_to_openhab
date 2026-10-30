@@ -197,17 +197,17 @@ def test_update_script_never_elevates_git_or_uses_a_global_safe_directory():
     assert "systemctl is-active --quiet" not in update
 
 
-def test_setup_checks_for_terminal_before_stopping_services():
+def test_setup_preflights_credentials_before_stopping_services():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
 
     assert 'elif id -u "$SERVICE_USER" >/dev/null 2>&1; then' in setup
     assert 'AUTH_PREFLIGHT_COMMAND=(sudo -u "$SERVICE_USER" env' in setup
     assert 'AUTH_PREFLIGHT_COMMAND=(env "PYTHONPATH=$BASE" "$BASE/venv/bin/python")' in setup
-    assert "exec 3<>/dev/tty" in setup
     assert "No service, package or runtime data was changed." in setup
-    assert setup.index("exec 3<>/dev/tty") < setup.index(
-        'echo "Stopping the Web UI and backup cleanup during migration"'
-    )
+    assert "generate one and show it once" in setup
+    assert setup.index(
+        'echo "The existing Web UI credential configuration is invalid."'
+    ) < setup.index('echo "Stopping the Web UI and backup cleanup during migration"')
 
 
 def test_setup_restores_previously_active_services_after_failure():
@@ -241,10 +241,10 @@ def test_web_updater_rolls_back_if_updated_service_fails_health_check():
     )
 
 
-def test_setup_preflight_stops_before_changes_without_terminal_or_valid_hash(tmp_path):
+def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_config(tmp_path):
     setup_script = ROOT / "installer" / "setup.sh"
     for status, message in (
-        (1, "Credential migration needs an interactive terminal."),
+        (1, "generate one and show it once"),
         (2, "The existing Web UI credential configuration is invalid."),
     ):
         case = tmp_path / f"preflight-{status}"
@@ -290,6 +290,9 @@ def test_setup_preflight_stops_before_changes_without_terminal_or_valid_hash(tmp
             encoding="utf-8",
         )
         sudo.chmod(0o755)
+        fake_rsync = fake_bin / "rsync"
+        fake_rsync.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        fake_rsync.chmod(0o755)
         sudo_log = case / "sudo-called"
         env = os.environ.copy()
         env.update(
@@ -312,11 +315,18 @@ def test_setup_preflight_stops_before_changes_without_terminal_or_valid_hash(tmp
             check=False,
         )
 
-        assert result.returncode == 4
-        assert message in result.stderr
-        assert "No service, package or runtime data was changed." in result.stderr
         sudo_calls = sudo_log.read_text(encoding="utf-8").splitlines() if sudo_log.exists() else []
-        assert sudo_calls in ([], ["preflight"])
+        if status == 1:
+            assert result.returncode != 4
+            assert message in result.stdout
+            assert "Stopping the Web UI" in result.stdout
+            assert "Credential migration needs an interactive terminal." not in result.stderr
+            assert sudo_calls and "mutation" in sudo_calls
+        else:
+            assert result.returncode == 4
+            assert message in result.stderr
+            assert "No service, package or runtime data was changed." in result.stderr
+            assert sudo_calls in ([], ["preflight"])
         assert not (config / "secrets.env").exists()
         assert not (config.parent / "paths.env").exists()
 

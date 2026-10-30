@@ -82,9 +82,12 @@ curl http://localhost:8085/api/status
 ### Step 3: Verify migrated settings and data
 
 The setup step preserves existing user-chosen logins and stores their Argon2id password
-hashes in `/etc/knx_to_openhab/secrets.env` with mode `0640`. A legacy shipped default
-is discarded and setup prompts for a replacement. A fresh install also prompts for a
-unique password; no default password is shipped. Runtime settings are in
+hashes in `/etc/knx_to_openhab/secrets.env` with mode `0640`. If no usable password exists,
+setup generates a random password, stores only its hash, and prints the new password once
+in the setup output. This also replaces the old shared default and lets a partially
+completed migration continue without an interactive prompt. Save that output before
+continuing; the password is not written to a plaintext file. Use the password helper below
+to set a different password later. No default password is shipped. Runtime settings are in
 `/etc/knx_to_openhab/config.json`; generator rules edited through the Settings
 screen are in `/var/lib/knx_to_openhab/generator.json`. Jobs and backups remain
 available after migration:
@@ -109,19 +112,18 @@ secrets file, and preserves other secret values.
 ### Recovering from a failed first update
 
 If the Web UI reports that a migrated password hash is required, connect to the
-device through an interactive SSH session (for example, `ssh -t <user>@<pi>`)
-and run:
+device through SSH and run:
 
 ```bash
 cd /opt/knx_to_openhab
 sudo bash installer/setup.sh
 ```
 
-Setup checks for the password prompt before it stops services or changes packages
-and runtime data. It preserves a user-chosen password; if the old shipped default
-was still in use, setup asks you to choose a new password. If setup fails after
-stopping services, it attempts to restart the services that were active before
-migration. Retry the Web UI update after setup completes.
+Setup preserves a user-chosen password. If no usable password exists, it generates a
+random password, stores only its Argon2id hash, and prints the password once. Save it
+before continuing; setup does not need a terminal password prompt. If setup fails after
+stopping services, it attempts to restart the services that were active before migration.
+Retry the Web UI update after setup completes.
 
 The updater checks that `knxohui.service` stays active across three checks after
 restart. If the updated service fails to start or remain active, it restores the

@@ -83,7 +83,21 @@ def guest_program(
     source_approval=None,
     approved_head=None,
     readiness_approval=None,
+    harness_approval=None,
 ):
+    if harness_approval is not None:
+        if phase != "probe":
+            raise ValueError("Harness adoption is valid ONLY for probe")
+        from scripts import probe_harness_adoption as adoption
+
+        adoption.validate_approval(harness_approval)
+        adoption.validate_source(source_approval, approved_head)
+        payload = (ROOT / "scripts/probe_harness_adoption.py").read_text(encoding="utf-8")
+        return (
+            "import sys\nsys.dont_write_bytecode=True\n"
+            + f"exec(compile({payload!r},'<separately pinned probe dispatcher>','exec'))\n"
+            + f"run_probe({nonce!r},{harness_approval!r},{source_approval!r},{approved_head!r})\n"
+        )
     if phase == "repair-environmentfile":
         raise ValueError("Installed repair checkpoint consumed; repair cannot be repeated")
     if phase not in (
@@ -205,7 +219,21 @@ def main():
     parser.add_argument("--approved-source-head")
     parser.add_argument("--readiness-approval", type=Path)
     parser.add_argument("--readiness-approval-sha256")
+    parser.add_argument("--probe-harness-approval", type=Path)
+    parser.add_argument("--probe-harness-approval-sha256")
     args = parser.parse_args()
+    harness_approval = None
+    if args.probe_harness_approval or args.probe_harness_approval_sha256:
+        if args.phase != "probe" or not all(
+            (args.probe_harness_approval, args.probe_harness_approval_sha256)
+        ):
+            parser.error("probe harness requires probe phase and separate approval/pin")
+        harness_approval = read_pinned_json(
+            args.probe_harness_approval, args.probe_harness_approval_sha256
+        )
+        from scripts.probe_harness_adoption import validate_approval
+
+        validate_approval(harness_approval)
     if args.phase == "repair-environmentfile":
         parser.error("Installed repair checkpoint consumed; repair cannot be repeated")
     if args.phase != "readiness-only" and (
@@ -249,7 +277,9 @@ def main():
         )
     elif any(supplied):
         parser.error("continuation approval arguments are valid ONLY for resume-after-sudo")
-    program = guest_program(args.phase, receipt["nonce"], **resume)
+    program = guest_program(
+        args.phase, receipt["nonce"], harness_approval=harness_approval, **resume
+    )
     provider.validate_registration(provider.registration())
     observations = provider.preflight(receipt)
     args.evidence_dir.mkdir(parents=True, exist_ok=True)
@@ -268,6 +298,7 @@ def main():
             "--pipe",
             "--collect",
             "/opt/knxoh-test-venv/bin/python",
+            *(["-I"] if harness_approval is not None else []),
             "-B",
             "-",
         ],

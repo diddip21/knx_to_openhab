@@ -8,7 +8,13 @@ from typing import Any
 
 from config import config, datapoint_mappings, normalize_string
 from ets_helpers import flags_match, get_co_flags, get_dpt_from_dco
-from knx_things import KnxChannel, KnxThingsModel, render_dsl_channels
+from knx_things import (
+    KnxChannel,
+    KnxThingsModel,
+    get_active_things_output,
+    render_dsl_channels,
+    render_yaml,
+)
 from utils import get_datapoint_type
 
 logger = logging.getLogger(__name__)
@@ -915,28 +921,50 @@ def export_output(items, sitemap, things, configuration=None):
     write_partial_report(cfg)
 
     # export things:
+    things_path = cfg.get("things_path", "<unconfigured>")
     try:
-        things_template = open("things.template", "r", encoding="utf8").read()
-        if GWIP:
-            things_template = things_template.replace("###gwip###", GWIP)
+        if isinstance(things, KnxThingsModel):
+            things_path, things_format = get_active_things_output(cfg)
+            if things_format == "yaml":
+                things_output = render_yaml(things)
+            else:
+                things_template = open("things.template", "r", encoding="utf8").read()
+                gateway_ip = things.gateway_config.get("ipAddress")
+                if gateway_ip:
+                    things_template = things_template.replace("###gwip###", str(gateway_ip))
+                else:
+                    things_template = things_template.replace('type="TUNNEL"', 'type="ROUTER"')
+                    things_template = re.sub(r'.*ipAddress="###gwip###",.*\n', "", things_template)
+                    things_template = re.sub(r".*portNumber=3671,.*\n", "", things_template)
+                    things_template = things_template.replace(
+                        "autoReconnectPeriod=30", "autoReconnectPeriod=60"
+                    )
+                things_output = things_template.replace("###things###", render_dsl_channels(things))
         else:
-            logger.info("No Gateway IP found. Using KNX Router mode (multicast).")
-            things_template = things_template.replace('type="TUNNEL"', 'type="ROUTER"')
-            things_template = re.sub(r'.*ipAddress="###gwip###",.*\n', "", things_template)
-            things_template = re.sub(r".*portNumber=3671,.*\n", "", things_template)
-            things_template = things_template.replace(
-                "autoReconnectPeriod=30", "autoReconnectPeriod=60"
-            )
+            things_path = cfg["things_path"]
+            things_template = open("things.template", "r", encoding="utf8").read()
+            if GWIP:
+                things_template = things_template.replace("###gwip###", GWIP)
+            else:
+                logger.info("No Gateway IP found. Using KNX Router mode (multicast).")
+                things_template = things_template.replace('type="TUNNEL"', 'type="ROUTER"')
+                things_template = re.sub(r'.*ipAddress="###gwip###",.*\n', "", things_template)
+                things_template = re.sub(r".*portNumber=3671,.*\n", "", things_template)
+                things_template = things_template.replace(
+                    "autoReconnectPeriod=30", "autoReconnectPeriod=60"
+                )
+            things_output = things_template.replace("###things###", things)
 
-        things = things_template.replace("###things###", things)
-        os.makedirs(os.path.dirname(cfg["things_path"]), exist_ok=True)
-        with open(cfg["things_path"], "w", encoding="utf8") as f:
-            f.write(things)
+        os.makedirs(os.path.dirname(things_path), exist_ok=True)
+        with open(things_path, "w", encoding="utf8") as f:
+            f.write(things_output)
         logger.info(
-            f"Successfully wrote things file to {cfg['things_path']} with {things.count(chr(10)) + 1} lines"
+            "Successfully wrote things file to %s with %d lines",
+            things_path,
+            things_output.count("\n") + 1,
         )
     except Exception as e:
-        logger.error(f"Failed to write things file to {cfg['things_path']}: {e}")
+        logger.error("Failed to write things file to %s: %s", things_path, e)
         raise
     # export items:
     try:
@@ -1029,7 +1057,7 @@ def export_output(items, sitemap, things, configuration=None):
 def main(configuration=None):
     """Main function"""
     logging.basicConfig()
-    items, sitemap, things = gen_building()
+    items, sitemap, things = gen_building_model()
     check_unused_addresses()
     export_output(items, sitemap, things, configuration=configuration)
 

@@ -5,3 +5,4 @@ requests
 gunicorn
 argon2-cffi>=23.1.0
 pytest-dependency>=0.5.1
+PyYAML>=6.0

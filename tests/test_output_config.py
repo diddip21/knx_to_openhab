@@ -18,7 +18,40 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
+from knx_things import get_active_things_output
+
 logger = logging.getLogger(__name__)
+
+
+def test_active_things_output_defaults_to_legacy_dsl_path():
+    path, format_name = get_active_things_output({"things_path": "openhab/things/knx.things"})
+
+    assert (path, format_name) == ("openhab/things/knx.things", "dsl")
+
+
+def test_active_things_output_uses_selected_yaml_path():
+    path, format_name = get_active_things_output(
+        {
+            "things_format": "yaml",
+            "yaml_path": "openhab/yaml/knx.yaml",
+            "things_path": "openhab/things/knx.things",
+        }
+    )
+
+    assert (path, format_name) == ("openhab/yaml/knx.yaml", "yaml")
+
+
+def test_generator_configuration_preserves_dsl_default_and_empty_yaml_path():
+    project_root = Path(__file__).resolve().parents[1]
+    generator_config = json.loads((project_root / "config.json").read_text(encoding="utf-8"))
+    schema = json.loads(
+        (project_root / "web_ui" / "backend" / "config_schema.json").read_text(encoding="utf-8")
+    )
+
+    assert generator_config["things_format"] == "dsl"
+    assert generator_config["yaml_path"] == ""
+    assert schema["properties"]["things_format"]["default"] == "dsl"
+    assert schema["properties"]["things_format"]["enum"] == ["dsl", "yaml"]
 
 
 class TestOutputConfig:

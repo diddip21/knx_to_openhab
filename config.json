@@ -497,5 +497,7 @@
   },
   "sitemaps_path": "openhab/sitemaps/knx.sitemap",
   "things_path": "openhab/things/knx.things",
+  "things_format": "dsl",
+  "yaml_path": "",
   "transform_dir_path": "openhab/transform"
 }

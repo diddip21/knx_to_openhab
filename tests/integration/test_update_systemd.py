@@ -10,6 +10,7 @@ import re
 import stat
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from uuid import UUID, uuid4
 
@@ -278,10 +279,76 @@ def test_real_boot_tmpfiles_recovery_writer_order_and_no_cycle(disposable):
     assert "ordering cycle" not in journal.stdout.lower()
 
 
+def _sample_hostile_processes(unit, candidate):
+    """Read-only live evidence; no candidate instrumentation or root execution."""
+    cgroup = "/system.slice/" + unit
+    try:
+        pids = (Path("/sys/fs/cgroup" + cgroup) / "cgroup.procs").read_text().split()
+    except FileNotFoundError:
+        return {}  # not yet started or already torn down; never sufficient proof
+    samples = {}
+    for pid in pids:
+        proc = Path("/proc") / pid
+        try:
+            argv = proc.joinpath("cmdline").read_bytes().decode().strip("\0").split("\0")
+            # Do not mistake systemd's pre-exec root setup task for installed
+            # helper/candidate execution. Missing actual exec evidence fails below.
+            if not any(
+                path in argv
+                for path in (
+                    "/usr/local/libexec/knx_to_openhab/update_prepare.py",
+                    str(candidate / "installer/config_migrations.py"),
+                )
+            ):
+                continue
+            status = dict(line.split(":", 1) for line in (proc / "status").read_text().splitlines())
+            assert "0::" + cgroup in (proc / "cgroup").read_text().splitlines()
+            samples[int(pid)] = dict(
+                uid=[int(value) for value in status["Uid"].split()],
+                gid=[int(value) for value in status["Gid"].split()],
+                nnp=status["NoNewPrivs"].strip(),
+                caps=[
+                    int(status[key], 16)
+                    for key in ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb")
+                ],
+                mnt=os.readlink(proc / "ns/mnt"),
+                net=os.readlink(proc / "ns/net"),
+                observer_mnt=os.readlink("/proc/self/ns/mnt"),
+                observer_net=os.readlink("/proc/self/ns/net"),
+                interfaces=[
+                    line.split(":", 1)[0].strip()
+                    for line in (proc / "net/dev").read_text().splitlines()[2:]
+                ],
+                ipv4_routes=(proc / "net/route").read_text().splitlines()[1:],
+                ipv6_interfaces=[
+                    line.split()[-1]
+                    for name in ("ipv6_route", "if_inet6")
+                    for line in (proc / "net" / name).read_text().splitlines()
+                ],
+                argv=argv,
+                sigign=int(status["SigIgn"], 16),
+            )
+        except (FileNotFoundError, ProcessLookupError):
+            continue  # process exit race; a missing sample cannot establish PASS
+    return samples
+
+
+def _assert_hostile_process(proof, worker):
+    assert proof["uid"] == [worker.pw_uid] * 4
+    assert proof["gid"] == [worker.pw_gid] * 4
+    assert proof["nnp"] == "1" and proof["caps"] == [0] * 5
+    for namespace in ("mnt", "net"):
+        assert proof[namespace] and proof["observer_" + namespace]
+        assert proof[namespace] != proof["observer_" + namespace]
+    assert proof["interfaces"] == ["lo"] and proof["ipv4_routes"] == []
+    assert set(proof["ipv6_interfaces"]) <= {"lo"}
+
+
 def test_real_migration_child_no_live_state_sudo_or_surviving_writer(disposable):
     import pwd
 
     from installer.update_core.protocol import Limits
+    from installer.update_core.systemd import _path
 
     _settings, paths = disposable
     worker = pwd.getpwnam("knxohupdate")
@@ -319,17 +386,117 @@ def test_real_migration_child_no_live_state_sudo_or_surviving_writer(disposable)
     )
     adapter = SystemdAdapter(request_id)
     try:
-        adapter.run_child("migrate", paths, workspace, candidate)
+        # This fixture intentionally forces a FAILED operation, not a successful
+        # migration. Keep the production adapter fail-closed and collect live
+        # evidence while it waits for the normal 15s SIGTERM/SIGKILL teardown.
+        observed = {}
+        unit = adapter._unit("migrate")
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            child = pool.submit(adapter.run_child, "migrate", paths, workspace, candidate)
+            while not child.done():
+                for pid, proof in _sample_hostile_processes(unit, candidate).items():
+                    if pid not in observed:
+                        print("HOSTILE live evidence", pid, json.dumps(proof), flush=True)
+                    _assert_hostile_process(proof, worker)
+                    observed[pid] = proof
+                time.sleep(0.02)
+            # No generic CalledProcessError suppression: only the exact owned
+            # systemd-run failure plus ALL independent evidence below may pass.
+            with pytest.raises(subprocess.CalledProcessError) as failed:
+                child.result()
+        error = failed.value
+        assert error.returncode == 1
+        assert error.cmd[:4] == ["/usr/bin/systemd-run", "--wait", "--quiet", "--unit=" + unit]
+        assert error.cmd[-9:] == [
+            "--",
+            "/usr/bin/python3",
+            "-I",
+            "/usr/local/libexec/knx_to_openhab/update_prepare.py",
+            "migrate",
+            "--workspace",
+            _path(workspace),
+            "--candidate",
+            _path(candidate),
+        ]
+        assert "migrate" in adapter.stopped
+        expected = dict(
+            Id=unit,
+            LoadState="loaded",
+            ActiveState="failed",
+            SubState="failed",
+            Result="timeout",
+            ExecMainCode="1",
+            ExecMainStatus="0",
+            ControlGroup="",
+            MainPID="0",
+            ControlPID="0",
+            TimeoutStopUSec="15s",
+        )
+        final = show(unit, *expected)
+        print("HOSTILE final unit evidence", json.dumps(final), flush=True)
+        assert final == expected
+        assert not Path("/sys/fs/cgroup/system.slice/" + unit).exists()
+        assert observed, "Missing live worker/namespace evidence"
+        assert any(
+            "/usr/local/libexec/knx_to_openhab/update_prepare.py" in proof["argv"]
+            for proof in observed.values()
+        ), "Missing installed helper execution evidence"
+        journal = subprocess.run(
+            ["journalctl", "-b", "--no-pager", "-o", "json", "--unit=" + unit],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        killed = set()
+        for line in journal.stdout.splitlines():
+            entry = json.loads(line)
+            match = re.search(
+                r"Killing process ([0-9]+) .* with signal SIGKILL\.", entry.get("MESSAGE", "")
+            )
+            if entry.get("_PID") == "1" and entry.get("UNIT") == unit and match:
+                killed.add(int(match[1]))
+        # Link systemd's real SIGKILL to the observed candidate fork which ignored
+        # SIGTERM, not a different unit/PID or a property-only SendSIGKILL claim.
+        assert any(
+            pid in killed and proof["sigign"] & (1 << 14) and str(script) in proof["argv"]
+            for pid, proof in observed.items()
+        ), "Missing own SIGTERM-ignoring candidate SIGKILL evidence"
+        assert all(not Path("/proc/" + str(pid)).exists() for pid in observed)
+        assert (output / "probe.json").stat().st_size < Limits.CONFIG_BYTES
+        probe = json.loads((output / "probe.json").read_text())
+        assert probe["uid"] == worker.pw_uid
+        assert probe["denied"] == [
+            str(paths.config_dir / "config.json"),
+            str(paths.config_dir / "secrets.env"),
+            str(paths.data_dir),
+            str(paths.backup_dir),
+            str(paths.config_dir / ".updater-state"),
+        ]
+        assert type(probe["sudo"]) is int and probe["sudo"] != 0
+        heartbeat = (output / "heartbeat").read_bytes()
+        assert heartbeat, "Missing heartbeat evidence"
+        time.sleep(0.2)
+        assert (output / "heartbeat").read_bytes() == heartbeat
+        print(
+            "HOSTILE termination evidence",
+            json.dumps(
+                dict(
+                    observed=observed,
+                    sigkill_pids=sorted(killed),
+                    observed_pids_absent=True,
+                    cgroup_absent=True,
+                    probe=probe,
+                    heartbeat_stable=True,
+                    heartbeat_bytes=len(heartbeat),
+                )
+            ),
+            flush=True,
+        )
     finally:
         adapter.stop_children(request_id)
     assert adapter.stopped == {"metadata", "download", "extract", "dependencies", "migrate"}
-    probe = json.loads((output / "probe.json").read_text())
-    assert probe["uid"] == worker.pw_uid and len(probe["denied"]) == 5
-    assert probe["sudo"] != 0
-    heartbeat = (output / "heartbeat").read_bytes()
-    time.sleep(0.2)
-    assert (output / "heartbeat").read_bytes() == heartbeat
-    assert (output / "probe.json").stat().st_size < Limits.CONFIG_BYTES
+    print("HOSTILE expected operation failure; confinement/termination PASS", flush=True)
     # Retain this guest's evidence for review; destroy the whole guest afterward.
 
 

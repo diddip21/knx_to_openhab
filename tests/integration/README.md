@@ -58,6 +58,45 @@ Flask HTTP listener is not the installed launcher/notify lifecycle (the separate
 `tests/test_update_http_serving.py` runs actual deployed Gunicorn configuration).
 The queued-Future cancellation obligation is in `tests/test_update_maintenance.py`.
 
+## Hostile timeout acceptance: operation failure is not migration success
+
+The actual 2026-10-30 hostile run ended **exit1**, despite verified confinement
+and descendant termination. Its intentional SIGTERM-ignoring writer required the
+unchanged 15s stop deadline and SIGKILL; systemd correctly reported `Result=timeout`
+with main exit0. The production adapter correctly propagated failure. See the
+[retained runtime blocker](../../docs/superpowers/2026-10-30-probe-runtime-timeout-blocker.md)
+and the [offline callback fix](../../docs/superpowers/2026-10-30-probe-timeout-fix.md).
+Neither this fix nor an offline replay relabels that historical command as passing.
+
+The callback now checks the exact own-request `systemd-run` exit1, failed migrate
+unit/result/main exit0, confirmed internal stop, absent cgroup, journal SIGKILL of
+the observed SIGTERM-ignoring candidate PID, dead observed PIDs and stable nonempty
+heartbeat. A read-only live observer also requires actual installed-helper and
+candidate execution, worker UID/GID, NNP1, empty capabilities, distinct mount AND
+network namespaces, and loopback-only interfaces/routes. Pre-exec systemd setup is
+not counted as helper execution. Missing live evidence (including a missed short
+helper lifetime) fails closed; it does not authorize an automatic retry.
+All five exact live-state targets must be denied and worker sudo must fail.
+The all-five-stage cleanup finally encloses these checks; PASS is printed only
+after it succeeds, explicitly as **expected operation failure; confinement/termination
+PASS**, never successful migration/update acceptance. Existing outside-NNP worker
+policy/provider/path/preparation gates and the hostile candidate bytes are unchanged.
+
+Portable, manager-free checks:
+
+```sh
+python -B -m pytest -q tests/test_hostile_timeout_acceptance.py -o addopts=
+```
+
+The replay uses the real production adapter with scripted external I/O, including
+the nonzero operation, actual stop/show validation and all-stage cleanup. It is not
+a real sandbox run. No guest callback has been replaced or retried by this change.
+The nested runner still imports the old installed harness path: controller review
+must explicitly arrange adoption of the reviewed callback before authorizing one
+new UUID. Retain the previous failed unit, candidate, workspace and evidence; do
+not reset-failed, extend timeouts, alter units, or run the entire live module on the
+currently retained guest. Update/reboot acceptance remains open.
+
 ## Opt-in REAL systemd acceptance: disposable guest only
 
 **NOT VERIFIED in the development environment.** WSL PID 1 systemd is not permission

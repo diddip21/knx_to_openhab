@@ -77,7 +77,8 @@ def test_yaml_provisioning_uses_one_fixed_root_owned_action():
     assert "/usr/local/sbin/knxohui-service-update provision-yaml" in policy
     assert "sudo -n /usr/local/sbin/knxohui-service-update provision-yaml" in update
     assert "interactive SSH terminal" in update
-    assert update.index("provision-yaml") < update.index("# Restart the service")
+    restart_index = update.index('log "Restarting $SERVICE_NAME..."')
+    assert update.index("provision-yaml") < restart_index
     assert "managed_openhab_root" in setup_provisioner
     assert "os.fchown(descriptor, 0, service_gid)" in setup_provisioner
     assert "os.fchmod(descriptor, 0o640)" in setup_provisioner

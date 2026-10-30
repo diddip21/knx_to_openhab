@@ -27,6 +27,10 @@ BOOT_ID = "4ef02c08-118a-4630-be3d-a348c9937c91"
 INITIAL = PurePosixPath(state.BASE.as_posix()) / "releases/0.1.0"
 LIBEXEC = PurePosixPath("/usr/local/libexec/knx_to_openhab")
 SYSTEMD = PurePosixPath("/etc/systemd/system")
+SHARED_COMPONENT_PARENTS = {
+    "/etc/sudoers.d": (0o750, ("knxohui",)),
+    "/etc/tmpfiles.d": (0o755, ("knxohui.conf",)),
+}
 WRITERS = (state.UNITS[0], state.UNITS[2], state.UNITS[1])
 MANAGER_FIELDS = (
     "LoadState",
@@ -295,6 +299,8 @@ def collect_installed():
         raise ValueError("Installed inventory requires authorized nested root")
     inventory = state.collect_inventory(details=True, entry_reader=inventory_entry)
     entries = inventory["entries"]
+    for name in SHARED_COMPONENT_PARENTS:
+        entries[name] = _collect_shared_parent(Path(name))
     roots = [state.BASE / "releases", state.CONFIG, LIBEXEC, state.PREPARATION, state.OUTPUT]
     roots.extend(Path("/usr/local/libexec").glob(".knxohui-bundle-*"))
     roots.extend(SYSTEMD / (unit + ".d") for unit in state.UNITS)
@@ -308,7 +314,23 @@ def collect_installed():
             if not stat.S_ISLNK(before.st_mode):
                 raise ValueError("Unknown special fixture artifact")
             value["target"] = os.readlink(path)
-            if path.lstat() != before:
+            after = path.lstat()
+            # readlink may update atime itself; identity and mutation metadata
+            # must remain stable, but our own read is not a link replacement.
+            if any(
+                getattr(before, field) != getattr(after, field)
+                for field in (
+                    "st_dev",
+                    "st_ino",
+                    "st_uid",
+                    "st_gid",
+                    "st_mode",
+                    "st_nlink",
+                    "st_size",
+                    "st_mtime_ns",
+                    "st_ctime_ns",
+                )
+            ):
                 raise ValueError("Fixture link changed during read")
     inventory.update(
         machine_id=Path("/etc/machine-id").read_text().strip(),
@@ -325,6 +347,36 @@ def _directory(entries, path, uid, gid, mode, children=None):
         expected["children"] = sorted(children)
     if any(value.get(k) != v for k, v in expected.items()):
         raise ValueError("Invalid repair checkpoint directory: " + str(path))
+
+
+def _validate_shared_parent(entries, path):
+    name = path.as_posix()
+    mode, names = SHARED_COMPONENT_PARENTS[name]
+    _directory(entries, path, 0, 0, mode)
+    children = entries[name].get("children", [])
+    # These are shared system-policy directories, not exclusive app drop-ins.
+    # Pin all names, but never read unrelated policy bytes or bless extra app names.
+    own = sorted(child for child in children if child.startswith("knxoh"))
+    if own != list(names):
+        raise ValueError("Unknown shared-parent application artifact: " + name)
+
+
+def _collect_shared_parent(path):
+    from installer.update_core import secure_fs as fs
+
+    with fs._parent(path) as (stack, parent, name, chain):
+        pinned = fs._open(stack, parent, name, {0}, None, directory=True)
+        value = _metadata(pinned.info)
+        value["children"] = sorted(os.listdir(pinned.fd))
+        after = os.fstat(pinned.fd)
+        if value["children"] != sorted(os.listdir(pinned.fd)) or any(
+            getattr(pinned.info, field) != getattr(after, field)
+            for field in ("st_size", "st_mtime_ns", "st_ctime_ns")
+        ):
+            raise ValueError("Shared component parent changed during inventory")
+        fs._check([*chain, pinned])
+        _validate_shared_parent({path.as_posix(): value}, path)
+        return value
 
 
 def _systemd_enable_links():
@@ -483,6 +535,8 @@ def validate_known_inventory(inventory, nonce):
             or value["children"] != sorted(set(value["children"]))
         ):
             raise ValueError("Invalid repair checkpoint children")
+        if name in SHARED_COMPONENT_PARENTS:
+            _validate_shared_parent(entries, path)
         _validate_systemd_entry(name, value)
         if kind == "other":
             allowed = {(state.BASE / "current").as_posix(): str(INITIAL), **_systemd_enable_links()}
@@ -650,7 +704,10 @@ def _validate_component_bytes(inventory, expected):
             for p in set(expected) | {str(p) for p in roots}
             if PurePosixPath(p) != root and root in PurePosixPath(p).parents
         }
-        _directory(entries, root, 0, 0, mode, children)
+        if root.as_posix() in SHARED_COMPONENT_PARENTS:
+            _validate_shared_parent(entries, root)
+        else:
+            _directory(entries, root, 0, 0, mode, children)
     allowed = set(expected) | {str(p) for p in roots}
     noncomponents = _noncomponent_directories()
     for name in entries:

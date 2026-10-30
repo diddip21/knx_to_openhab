@@ -89,6 +89,15 @@ def test_web_updater_checks_external_credentials_before_backup_or_git_changes():
     assert preflight < update.index('git -c "safe.directory=$INSTALL_DIR" fetch origin')
 
 
+def test_setup_checks_for_terminal_before_stopping_services():
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+
+    assert "exec 3<>/dev/tty" in setup
+    assert "No service, package or runtime data was changed." in setup
+    assert setup.index("exec 3<>/dev/tty") < setup.index(
+        'echo "Stopping the Web UI and backup cleanup during migration"'
+    )
+
 def test_setup_restores_previously_active_services_after_failure():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
 

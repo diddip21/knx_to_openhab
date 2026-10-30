@@ -100,6 +100,66 @@ def verify_repair_sources(checkpoint, approval, head):
     return state.verify_source_approval(_legacy_manifest(approval), head)
 
 
+def _probe_source_baseline(approval):
+    """Hash-only comparison data, NOT a new approval or collected checkpoint."""
+    old = _legacy_manifest(approval)
+    old.update(
+        head=OLD_HEAD,
+        root="/opt/knxoh-source-" + OLD_HEAD,
+        archive_sha256=OLD_ARCHIVE_SHA256,
+    )
+    old["files"].update(
+        {
+            "installer/update_bootstrap.py": {
+                "sha256": "cefc0a3672618270f05d3be5bbc2f63dbd06aa1bc59ee2c7d4566f7e0bea8d7c",
+                "mode": 0o644,
+            },
+            "tests/test_update_units.py": {
+                "sha256": "4b3a842060eba22075f260af070d8b0ec5170984c99292a1eeb1e79ddbbf1cba",
+                "mode": 0o644,
+            },
+        }
+    )
+    old["files"].pop("tests/integration/test_update_environment_runtime.py", None)
+    return old
+
+
+def validate_probe_source(approval, head):
+    """Probe-only selection using the canonical repair purpose/base/delta parser.
+
+    Its full baseline-map/archive pins authenticate reconstructed comparison data.
+    Neither the supplied approval nor an on-disk manifest is changed.
+    """
+    if (
+        type(approval) is not dict
+        or approval.get("purpose") != "reviewed-environmentfile-fix-source"
+    ):
+        return state.validate_source_manifest(approval, head)
+    if head != REPAIRED_HEAD or type(approval.get("files")) is not dict:
+        raise ValueError("Exact installed repaired probe source required")
+    old = _probe_source_baseline(approval)
+    root = validate_repair_source(approval, head, old)
+    digest = hashlib.sha256(
+        json.dumps(approval["files"], sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    if (
+        digest != "e8272d16c145e963bcae7e8c2a9fcb2f5e562a71cd1240de6d6fd054feed4611"
+        or approval["archive_sha256"]
+        != "cdc7a01174a34bb450d7bcb08ae9718df916e70261b0c20f323d166a9183a4f4"
+    ):
+        raise ValueError("Unknown installed repaired probe source")
+    return root
+
+
+def verify_probe_source(approval, head):
+    validate_probe_source(approval, head)
+    if approval["purpose"] == "reviewed-environmentfile-fix-source":
+        return verify_repair_sources(
+            {"old_source_approval": _probe_source_baseline(approval)}, approval, head
+        )
+    return state.verify_source_approval(approval, head)
+
+
 def manager_state():
     """Fixed, read-only PID-1 queries; no app manager effects."""
     units = {}

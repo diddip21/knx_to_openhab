@@ -113,9 +113,9 @@ def guest_program(
         validate_checkpoint(checkpoint, checkpoint["inventory"], nonce)
         validate_source_manifest(source_approval, approved_head)
     elif phase == "probe" and (source_approval is not None or approved_head is not None):
-        from scripts.nested_fixture_state import validate_source_manifest
+        from scripts.nested_fixture_repair import validate_probe_source
 
-        validate_source_manifest(source_approval, approved_head)
+        validate_probe_source(source_approval, approved_head)
     fixture = (ROOT / "scripts/nested_systemd_fixture.py").read_text(encoding="utf-8")
     state = (ROOT / "scripts/nested_fixture_state.py").read_text(encoding="utf-8")
     code = (
@@ -150,8 +150,12 @@ def guest_program(
             + f"resume_after_sudo(EXPECTED_NONCE,{checkpoint!r},{source_approval!r},{approved_head!r})\n"
         )
     if phase == "probe" and source_approval is not None:
+        repair = (ROOT / "scripts/nested_fixture_repair.py").read_text(encoding="utf-8")
         return (
             code
+            + "module=types.ModuleType('scripts.nested_fixture_repair')\n"
+            + "sys.modules[module.__name__]=module\n"
+            + f"exec(compile({repair!r},'<trusted repair boundary>','exec'),module.__dict__)\n"
             + f"probe(EXPECTED_NONCE,source_approval={source_approval!r},approved_head={approved_head!r})\n"
         )
     if phase != "sudo-regression":

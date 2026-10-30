@@ -261,7 +261,9 @@ def probe(nonce, source_approval=None, approved_head=None):
     if source_approval is None and approved_head is None:
         harness._check_worker_policy()
     else:
-        admin = load_approved_admin(verify_source_approval(source_approval, approved_head))
+        from scripts.nested_fixture_repair import verify_probe_source
+
+        admin = load_approved_admin(verify_probe_source(source_approval, approved_head))
         admin.check_worker()
         admin.check_worker_sudo()
     harness.test_real_migration_child_no_live_state_sudo_or_surviving_writer(({}, paths))

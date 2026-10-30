@@ -238,6 +238,7 @@ def test_probe_can_use_explicit_reviewed_fix_policy_without_old_module_cache(mon
     from types import SimpleNamespace
 
     from installer.update_core import transaction
+    from scripts import nested_fixture_repair as repair
 
     calls = []
     harness = SimpleNamespace(
@@ -257,7 +258,7 @@ def test_probe_can_use_explicit_reviewed_fix_policy_without_old_module_cache(mon
     )
     monkeypatch.setattr(fixture, "validate_preparation", lambda: calls.append("preparation"))
     monkeypatch.setattr(
-        fixture, "verify_source_approval", lambda *args: calls.append("source") or fixture.SOURCE
+        repair, "verify_probe_source", lambda *args: calls.append("source") or fixture.SOURCE
     )
     monkeypatch.setattr(fixture, "load_approved_admin", lambda path: admin)
     fixture.probe("nonce", source_approval={}, approved_head="de" * 20)

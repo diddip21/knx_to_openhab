@@ -3,6 +3,7 @@
 import copy
 import json
 import stat
+from contextlib import contextmanager
 from subprocess import CompletedProcess
 from types import SimpleNamespace
 
@@ -44,6 +45,8 @@ def fake_guest(monkeypatch):
         boot=BOOT,
         machine=MACHINE,
         virt="kvm",
+        kernel="6.8.0-generic",
+        kernel_reads=[],
         pid1="systemd",
         calls=[],
         mutations=[],
@@ -66,6 +69,8 @@ def fake_guest(monkeypatch):
             return self.path in guest.raw and self.path not in guest.missing
 
         def lstat(self):
+            if self.path == "/etc/knxoh-nested-acceptance.json" and self.path not in guest.raw:
+                raise FileNotFoundError(self.path)
             return SimpleNamespace(
                 st_uid=guest.owners.get(self.path, 0),
                 st_mode=stat.S_IFREG | guest.modes.get(self.path, 0o600),
@@ -94,6 +99,24 @@ def fake_guest(monkeypatch):
         return CompletedProcess(argv, 0, "", "")
 
     monkeypatch.setattr(harness, "Path", FakePath)
+
+    def kernel_release():
+        guest.kernel_reads.append("read")
+        if guest.kernel is None:
+            raise OSError("kernel signal unavailable")
+        return guest.kernel
+
+    monkeypatch.setattr(harness, "_kernel_release", kernel_release, raising=False)
+
+    def provider_receipt(path):
+        # This fixture models data/policy gating only. The pinned reader has
+        # separate tests below; no real POSIX open is attempted on Windows.
+        info = path.lstat()
+        assert stat.S_ISREG(info.st_mode) and info.st_uid == 0
+        assert stat.S_IMODE(info.st_mode) == 0o600
+        return harness._read_attestation(path)
+
+    monkeypatch.setattr(harness, "_read_provider_receipt", provider_receipt)
     monkeypatch.setattr(harness.os, "environ", env)
     monkeypatch.setattr(harness, "_root_process", lambda: True, raising=False)
     monkeypatch.setattr(
@@ -483,3 +506,158 @@ def test_nested_provider_refuses_before_worker_or_service_effects(nested_guest, 
     else:
         guest.raw["/proc/self/mountinfo"] = "1 0 0:1 / /mnt/c rw - 9p C: rw\n"
     assert_refused_without_effect(guest)
+
+
+@pytest.mark.parametrize("virt", ["systemd-nspawn", "docker", "kvm"])
+@pytest.mark.parametrize(
+    "kernel", ["6.6.87.2-microsoft-standard-WSL2", "5.15.0-Microsoft", "6.1-WSL2"]
+)
+@pytest.mark.parametrize("unsafe", ["missing", "nonce", "mount", "owner", "container"])
+def test_wsl_kernel_cannot_select_generic_provider_path(nested_guest, virt, kernel, unsafe):
+    guest = nested_guest
+    guest.virt, guest.kernel = virt, kernel
+    path = "/etc/knxoh-nested-acceptance.json"
+    if unsafe == "missing":
+        guest.raw.pop(path)
+    elif unsafe == "nonce":
+        receipt = json.loads(guest.raw[path])
+        receipt["nonce"] = "b2" * 32
+        guest.raw[path] = json.dumps(receipt)
+    elif unsafe == "owner":
+        guest.owners[path] = 1000
+    elif unsafe == "container":
+        guest.raw["/run/systemd/container"] = "wsl"
+    else:
+        guest.raw["/proc/self/mountinfo"] = (
+            "172 175 0:36 / /usr/lib/wsl/drivers ro,nosuid,nodev - 9p drivers ro\n"
+        )
+    assert_refused_without_effect(guest)
+    assert guest.kernel_reads == ["read"]
+
+
+@pytest.mark.parametrize("virt", ["systemd-nspawn", "docker", "kvm", "wsl"])
+def test_valid_nested_wsl_requires_receipt_even_with_alternate_detection(nested_guest, virt):
+    nested_guest.virt = virt
+    nested_guest.kernel = "6.6.87.2-microsoft-standard-WSL2"
+    harness.disposable.__wrapped__()
+    assert nested_guest.policy == ["checked"]
+    assert nested_guest.kernel_reads == ["read"]
+    assert nested_guest.mutations == []
+
+
+def test_explicit_provider_receipt_does_not_fall_through_on_generic_kernel(nested_guest):
+    nested_guest.virt = "systemd-nspawn"
+    nested_guest.raw["/run/systemd/container"] = "wsl"
+    assert_refused_without_effect(nested_guest)
+
+
+def test_explicit_provider_selection_requires_receipt_on_generic_kernel(fake_guest):
+    fake_guest.env["KNXOH_DISPOSABLE_SYSTEMD_PROVIDER"] = "fresh-wsl2-nspawn"
+    assert_refused_without_effect(fake_guest)
+
+
+def test_unavailable_kernel_signal_cannot_fall_through(fake_guest):
+    fake_guest.kernel = None
+    assert_refused_without_effect(fake_guest)
+
+
+@pytest.mark.parametrize("virt", ["kvm", "docker", "systemd-nspawn"])
+def test_real_nonwsl_generic_provider_flow_remains_available(fake_guest, virt):
+    fake_guest.virt = virt
+    harness.disposable.__wrapped__()
+    assert fake_guest.kernel_reads == ["read"]
+    assert fake_guest.policy == ["checked"]
+    assert fake_guest.mutations == []
+
+
+def test_kernel_reader_uses_independent_proc_signal(monkeypatch):
+    reads = []
+
+    def path(value):
+        reads.append(value)
+        return SimpleNamespace(read_text=lambda: "6.6.87.2-microsoft-standard-WSL2\n")
+
+    monkeypatch.setattr(harness, "Path", path)
+    assert harness._kernel_release() == "6.6.87.2-microsoft-standard-WSL2"
+    assert reads == ["/proc/sys/kernel/osrelease"]
+
+
+@pytest.fixture
+def pinned_receipt_fs():
+    """Portable reader-boundary fake; secure_fs owns the actual POSIX traversal."""
+    value = {"test": "receipt"}
+    raw = json.dumps(value).encode()
+    info = SimpleNamespace(
+        st_mode=stat.S_IFREG | 0o600, st_dev=1, st_size=len(raw), st_mtime_ns=1, st_ctime_ns=2
+    )
+    state = SimpleNamespace(
+        unsafe_ancestor=False,
+        replaced=False,
+        bytes=raw,
+        info=info,
+        after=info,
+        reads=[],
+        opened=[],
+        checked=[],
+    )
+    entry = SimpleNamespace(info=info, fd=42)
+
+    @contextmanager
+    def parent(path):
+        if state.unsafe_ancestor:
+            raise ValueError("Unsafe updater ownership or mode")
+        yield None, 41, "receipt.json", ["pinned-ancestor"]
+
+    def open_entry(stack, parent, name, owners, device):
+        state.opened.append((parent, name, owners, device))
+        return entry
+
+    def read(fd, size):
+        assert fd == 42
+        state.reads.append(size)
+        chunk, state.bytes = state.bytes[:size], state.bytes[size:]
+        return chunk
+
+    def check(chain):
+        state.checked.append(chain)
+        if state.replaced:
+            raise ValueError("Raced updater directory entry")
+
+    fs = SimpleNamespace(
+        _parent=parent,
+        _open=open_entry,
+        _check=check,
+        os=SimpleNamespace(read=read, fstat=lambda fd: info if fd == 41 else state.after),
+    )
+    return state, fs, value
+
+
+def test_provider_receipt_reads_only_bounded_pinned_open_object(pinned_receipt_fs):
+    state, fs, expected = pinned_receipt_fs
+    assert harness._read_provider_receipt("/etc/receipt.json", fs=fs) == expected
+    assert state.opened == [(41, "receipt.json", {0}, 1)]
+    assert state.reads[0] == 4097 and max(state.reads) <= 4097
+    assert state.checked and state.checked[0][0] == "pinned-ancestor"
+
+
+@pytest.mark.parametrize(
+    "unsafe", ["ancestor", "replacement", "mode", "oversize", "grew", "changed"]
+)
+def test_provider_receipt_refuses_untrusted_or_changed_pinned_object(pinned_receipt_fs, unsafe):
+    state, fs, _expected = pinned_receipt_fs
+    if unsafe == "ancestor":
+        state.unsafe_ancestor = True
+    elif unsafe == "replacement":
+        state.replaced = True
+    elif unsafe == "mode":
+        state.info.st_mode = stat.S_IFREG | 0o644
+    elif unsafe == "oversize":
+        state.info.st_size = 4097
+    elif unsafe == "grew":
+        state.bytes = b" " * 4097
+    else:
+        state.after = SimpleNamespace(**{**vars(state.info), "st_mtime_ns": 9})
+    with pytest.raises(ValueError):
+        harness._read_provider_receipt("/etc/receipt.json", fs=fs)
+    if unsafe in ("ancestor", "mode", "oversize"):
+        assert state.reads == []

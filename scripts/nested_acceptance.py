@@ -177,14 +177,21 @@ def validate_outer(receipt, observed):
     if observed["machine_id"] != receipt["outer_machine_id"]:
         raise ValueError("Wrong outer guest")
     _host_integration(observed, outer=True)
-    config = configparser.ConfigParser()
-    config.read_string(observed["wsl_conf"])
+    config = configparser.ConfigParser(interpolation=None)
+    try:
+        config.read_string(observed["wsl_conf"])
+    except configparser.Error as error:
+        raise ValueError("Malformed WSL configuration") from error
+    # Python's DEFAULT inheritance is not WSL configuration semantics. Refuse
+    # defaults entirely so get() below can only see explicit section-local keys.
+    if config.defaults():
+        raise ValueError("WSL settings must not use DEFAULT inheritance")
     for section, option in (
         ("automount", "enabled"),
         ("interop", "enabled"),
         ("interop", "appendWindowsPath"),
     ):
-        if config.getboolean(section, option, fallback=True):
+        if config.get(section, option, raw=True, fallback=None) != "false":
             raise ValueError("Host integration not explicitly disabled")
 
 

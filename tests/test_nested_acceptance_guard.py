@@ -295,3 +295,31 @@ def test_preflight_uses_only_explicit_guest_and_stdin_observers(evidence):
         "--collect",
         "/usr/bin/python3",
     ]
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        "[DEFAULT]\nenabled=false\nappendWindowsPath=false\n[automount]\n[interop]\n",
+        "[DEFAULT]\nsafe=false\n[automount]\nenabled=%(safe)s\n[interop]\nenabled=%(safe)s\nappendWindowsPath=%(safe)s\n",
+        "[automount]\nsafe=false\nenabled=%(safe)s\n[interop]\nenabled=false\nappendWindowsPath=false\n",
+        "[automount]\nenabled=false\n[interop]\nenabled=false\nappendWindowsPath=%(enabled)s\n",
+        "[automount]\nenabled=false\n[interop]\nenabled=false\n",
+        "[automount]\nenabled=off\n[interop]\nenabled=no\nappendWindowsPath=0\n",
+        "[automount]\nenabled=false\nenabled=false\n[interop]\nenabled=false\nappendWindowsPath=false\n",
+        "enabled=false\n[interop]\nenabled=false\nappendWindowsPath=false\n",
+    ],
+)
+def test_nonliteral_or_malformed_wsl_config_refused_before_inner_query(evidence, config):
+    receipt, _ = evidence
+    observed = {**outer_evidence(receipt, DRIVER), "wsl_conf": config}
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        assert len(calls) == 1, "invalid WSL configuration reached inner manager"
+        return CompletedProcess(argv, 0, json.dumps(observed), "")
+
+    with pytest.raises(ValueError):
+        guard.preflight(receipt, run=run)
+    assert len(calls) == 1

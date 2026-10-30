@@ -134,6 +134,17 @@ provider and offline transcript are mandatory independent prerequisites.
 Marker/configuration objects have exactly the fields shown above (no duplicate or
 unknown keys); Boolean attestations must be JSON `true`, not numbers/strings. All
 schema/nonce/machine/boot validation precedes subprocess queries and any mutation.
+The harness independently reads the kernel release: any WSL/Microsoft kernel or
+explicit nested-provider context requires the full nested guard even when
+`systemd-detect-virt` reports `systemd-nspawn`, `docker`, or another layer. Optional
+`KNXOH_DISPOSABLE_SYSTEMD_PROVIDER=fresh-wsl2-nspawn` explicitly selects that same
+strict guard; it does not authorize a provider or disable any check. Ordinary
+non-WSL providers without that context retain the generic guard. Outer WSL
+settings must be literal section-local `false`, never INI defaults/interpolation.
+The guest provider receipt uses the trusted no-follow, bounded, pinned filesystem
+reader with root-only mode and trusted root-owned/non-writable ancestry. Generic
+marker/configuration readers still require trusted containing directories as a
+fixture prerequisite; leaf checks alone do not authenticate an entire path.
 Root ownership, regular-file permissions, virtualization/PID-1, custom paths and
 preprovisioning gates remain mandatory. Portable fake/read-only guard tests live
 in `test_update_systemd_guard.py`; they cannot establish guest isolation.

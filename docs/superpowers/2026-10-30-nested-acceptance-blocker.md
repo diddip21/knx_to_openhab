@@ -7,6 +7,36 @@ explicitly authorized narrow outer-only policy. Live read-only preflight and
 source-only transfer now pass. Independent guard review is the next checkpoint;
 **application provisioning and hazardous acceptance have NOT run**.
 
+## Guard-review corrections (pending rereview)
+
+- The hazardous harness reads `/proc/sys/kernel/osrelease` independently of
+  `systemd-detect-virt`. A WSL/Microsoft kernel, detection result `wsl`, presence
+  of the fixed provider receipt (including an unsafe/broken leaf), or explicit
+  `KNXOH_DISPOSABLE_SYSTEMD_PROVIDER=fresh-wsl2-nspawn` selection requires the full
+  nested receipt/nonce/identity/PID-1/mount/interop checks, regardless of the
+  detector reporting `systemd-nspawn`, `docker`, `kvm`, or another layer. Missing
+  kernel evidence fails closed. A genuinely non-WSL VM/container without explicit
+  nested-provider context retains the existing generic disposable guard flow.
+- Outer WSL configuration requires the literal value `false` for each required
+  section-local key. Interpolation is disabled, nonempty `[DEFAULT]` is rejected,
+  and malformed/duplicate/inherited/interpolated settings cannot reach the inner
+  query. The recorded literal configuration and exact outer driver policy remain
+  accepted; the driver-share exception itself is unchanged.
+- Guest provider receipts are now read from one bounded no-follow opened regular
+  inode through the existing trusted `secure_fs` primitives. Root-owned,
+  non-writable ancestry, root-only leaf mode, pinned directory entries and stable
+  leaf metadata are required; no stat-then-path-reopen authenticates the read.
+  This hardening is harness-only: no production loader or filesystem primitive
+  was changed. Portable tests model rejected unsafe ancestry/replacement and the
+  pinned reader boundary; they are not a real POSIX race acceptance run.
+
+Trust limits remain explicit: generic marker/configuration paths require trusted
+root-owned, non-writable containing directories; their existing readers were not
+redesigned. The Windows receipt remains trusted operator input. Preflight binds
+explicit invocation to observed machine IDs, not a cryptographic nonce challenge
+or proof of fresh import, absence of every host channel, or runtime namespace
+enforcement. No protection against a malicious guest administrator is claimed.
+
 The explicitly authorized fresh WSL2 distribution has a real nested nspawn systemd
 manager with an independent machine ID. The new read-only preflight rejected the
 outer guest on the initial attempt before source transfer or application provisioning: WSL automatically
@@ -99,9 +129,12 @@ probes or this preflight refusal. See `tests/integration/README.md` for obligati
 
 Verification at this checkpoint:
 
-- Focused guard command plus `tests/test_update_sandbox.py` after the policy change:
-  **232 passed, 8 skipped** (three real-manager tests and five POSIX-only sandbox
-  tests on Windows). RED first showed 3 failures/29 passes for the policy
+- Final focused guard command plus `tests/test_update_sandbox.py` and
+  `tests/test_update_secure_fs.py` after review corrections:
+  **303 passed, 58 skipped** (three real-manager tests, five POSIX sandbox tests
+  and fifty POSIX filesystem tests on Windows). Read-only preflight passes again;
+  no updated harness transfer/application setup occurred. RED first showed
+  3 failures/29 passes for the original policy
   cases; the real kernel tmpfs bind-root regression separately failed before its
   parser correction. Neither test run contacted a live manager.
 - Native Windows/Python 3.11 core: **21 failed, 795 passed, 681 skipped**. Failures

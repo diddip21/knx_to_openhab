@@ -92,9 +92,55 @@ def _check_worker_policy():
     check_worker_sudo()
 
 
+def _kernel_release():
+    # Independent of detect-virt's choice of virtualization layer. Missing or
+    # empty kernel evidence must not select the generic-provider fallback.
+    value = Path("/proc/sys/kernel/osrelease").read_text().strip()
+    if not value:
+        raise ValueError("Missing kernel release evidence")
+    return value
+
+
+def _read_provider_receipt(path, *, fs=None):
+    # Reuse the existing trusted POSIX traversal, not a new production loader.
+    # Every ancestor is root-owned/non-writable and no-follow opened; directory
+    # entries and the one opened regular leaf are pinned until after the read.
+    if fs is None:
+        from installer.update_core import secure_fs as fs
+    from scripts.nested_acceptance import decode_receipt
+
+    with fs._parent(path) as (stack, parent, name, chain):
+        entry = fs._open(stack, parent, name, {0}, fs.os.fstat(parent).st_dev)
+        if stat.S_IMODE(entry.info.st_mode) != 0o600 or entry.info.st_size > 4096:
+            raise ValueError("Provider receipt must be bounded root-only data")
+        raw = bytearray()
+        while len(raw) <= 4096:
+            chunk = fs.os.read(entry.fd, 4097 - len(raw))
+            if not chunk:
+                break
+            raw.extend(chunk)
+        fs._check([*chain, entry])
+        after = fs.os.fstat(entry.fd)
+        fields = ("st_size", "st_mtime_ns", "st_ctime_ns")
+        if len(raw) > 4096 or any(getattr(entry.info, f) != getattr(after, f) for f in fields):
+            raise ValueError("Oversized or changed provider receipt")
+    return decode_receipt(raw.decode("utf-8"))
+
+
 def _check_virtualization(virt, nonce):
     assert virt not in ("", "none"), "nonvirtual host is forbidden"
-    if virt != "wsl":
+    kernel = _kernel_release().casefold()
+    selected = os.environ.get("KNXOH_DISPOSABLE_SYSTEMD_PROVIDER")
+    if selected not in (None, "fresh-wsl2-nspawn"):
+        raise ValueError("Unknown explicit disposable provider")
+    receipt_path = Path("/etc/knxoh-nested-acceptance.json")
+    try:
+        receipt_path.lstat()  # presence includes broken links; authentication is below
+    except FileNotFoundError:
+        marked = False
+    else:
+        marked = True
+    if not (virt == "wsl" or "microsoft" in kernel or "wsl" in kernel or selected or marked):
         return
     # WSL's detect-virt result masks nested nspawn. Never admit ordinary WSL:
     # require the explicit fresh-import receipt PLUS live nested PID-1/mount
@@ -103,10 +149,7 @@ def _check_virtualization(virt, nonce):
     # sandbox properties actually took effect: runtime probes remain required.
     from scripts.nested_acceptance import validate_inner
 
-    receipt_path = Path("/etc/knxoh-nested-acceptance.json")
-    info = receipt_path.lstat()
-    assert stat.S_ISREG(info.st_mode) and info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o600
-    receipt = _read_attestation(receipt_path)
+    receipt = _read_provider_receipt(receipt_path)
     assert receipt["nonce"] == nonce
     validate_inner(
         receipt,

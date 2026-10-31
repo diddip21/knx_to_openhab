@@ -741,36 +741,65 @@ function computeLineDiff(original, current) {
   return result
 }
 
-let packagePollInterval = null
+let packagePollTimeout = null
+let packagePollInFlight = false
+let packagePollRequested = false
+let packagePollCompletionStage = 0
+let servicesRefreshGeneration = 0
+let cloudInfoGeneration = 0
 
 function startPackageOperationPolling() {
-  if (packagePollInterval) return
-  packagePollInterval = setInterval(async () => {
+  packagePollCompletionStage = 0
+  packagePollRequested = true
+  if (packagePollTimeout || packagePollInFlight) return
+
+  const poll = async () => {
+    packagePollTimeout = null
+    packagePollInFlight = true
+    packagePollRequested = false
+    let continuePolling = true
     const statusEl = document.getElementById('packageOperationStatus')
     try {
       const response = await apiFetch('/api/service/updates/status')
       if (!response.ok) throw new Error('Status nicht erreichbar')
       const task = await response.json()
       statusEl.textContent = task.state === 'idle' ? '' : `${task.action}: ${task.message}`
-      if (task.state !== 'running') {
-        clearInterval(packagePollInterval)
-        packagePollInterval = null
+      if (task.state === 'running') {
+        if (packagePollCompletionStage > 0) {
+          packagePollCompletionStage = 0
+          await refreshServices()
+        }
+      } else if (packagePollCompletionStage < 2) {
         await refreshServices()
+        packagePollCompletionStage = packagePollRequested
+          ? 1
+          : packagePollCompletionStage + 1
+      } else {
+        packagePollCompletionStage = 0
+        continuePolling = false
+        document.getElementById('refreshPackagesBtn').disabled = false
       }
     } catch (e) {
       statusEl.textContent = `Status nicht erreichbar: ${e.message}`
+    } finally {
+      packagePollInFlight = false
+      if (continuePolling || packagePollRequested) packagePollTimeout = setTimeout(poll, 2000)
     }
-  }, 2000)
+  }
+
+  packagePollTimeout = setTimeout(poll, 2000)
 }
 
 async function refreshServices() {
+  const refreshGeneration = ++servicesRefreshGeneration
   const services = ['openhab.service', 'evcc.service']
-  servicesListEl.innerHTML = ''
+  const serviceItems = document.createDocumentFragment()
   let task = { state: 'idle' }
   try {
     const taskResponse = await apiFetch('/api/service/updates/status')
     if (taskResponse.ok) task = await taskResponse.json()
   } catch (e) { console.error('Package status unavailable:', e) }
+  if (refreshGeneration !== servicesRefreshGeneration) return
   const busy = task.state === 'running'
   if (busy) startPackageOperationPolling()
   document.getElementById('refreshPackagesBtn').disabled = busy
@@ -786,6 +815,7 @@ async function refreshServices() {
       ])
       const status = await res.json()
       const version = await versionRes.json()
+      if (refreshGeneration !== servicesRefreshGeneration) return
 
       const div = document.createElement('div')
       div.className = 'service-item'
@@ -827,11 +857,13 @@ async function refreshServices() {
           startPackageOperation(pkg, version.candidate)
         }
       })
-      servicesListEl.appendChild(div)
+      serviceItems.appendChild(div)
     } catch (e) {
       console.error('Error fetching service status:', e)
     }
   }
+  if (refreshGeneration !== servicesRefreshGeneration) return
+  servicesListEl.replaceChildren(serviceItems)
   await loadCloudInfo()
 }
 
@@ -850,12 +882,12 @@ async function startPackageOperation(action, version = null) {
 }
 
 async function loadCloudInfo() {
-  const existing = document.getElementById('cloud-info-card')
-  if (existing) existing.remove()
+  const refreshGeneration = ++cloudInfoGeneration
 
   try {
     const res = await apiFetch('/api/openhab/cloud-info')
     const data = await res.json()
+    if (refreshGeneration !== cloudInfoGeneration) return
     const card = document.createElement('div')
     card.id = 'cloud-info-card'
     card.className = 'cloud-info-card'
@@ -896,7 +928,9 @@ async function loadCloudInfo() {
         ${data.uuid_path ? `<div class="cloud-info-paths"><small>📁 ${data.uuid_path}</small></div>` : ''}
       `
     }
-    servicesListEl.appendChild(card)
+    const existing = document.getElementById('cloud-info-card')
+    if (existing) existing.replaceWith(card)
+    else servicesListEl.appendChild(card)
   } catch (e) {
     console.error('Failed to load cloud info:', e)
   }
@@ -1190,54 +1224,78 @@ window.updateStatisticsDisplay = updateStatisticsDisplay
 // Configuration Management
 let currentConfig = {}
 let gatewayState = null
-let loadedThingsFormat = 'dsl'
+let loadedOutputFormat = 'legacy'
 let installedOpenhabVersion = null
 const DEFAULT_YAML_THINGS_PATH = 'openhab/yaml/knx.yaml'
 
-function thingsOutputPath(format, config = currentConfig) {
+function modelOutputPath(format, config = currentConfig) {
   return format === 'yaml'
     ? (config.yaml_path || DEFAULT_YAML_THINGS_PATH)
-    : (config.things_path || 'openhab/things/knx.things')
+    : [
+        config.items_path || 'openhab/items/knx.items',
+        config.things_path || 'openhab/things/knx.things',
+        config.sitemaps_path || 'openhab/sitemaps/knx.sitemap'
+      ].join(', ')
 }
 
 function updateGatewayFormatControls() {
-  const formatSelect = document.getElementById('conf-things-format')
+  const formatSelect = document.getElementById('conf-output-format')
   if (!formatSelect) return
 
-  const selectedFormat = formatSelect.value || 'dsl'
-  const yamlPathGroup = document.getElementById('conf-yaml-path-group')
+  const selectedFormat = formatSelect.value || 'legacy'
+  const yamlPathGroup = document.getElementById('yaml-path-group')
+  const legacyPaths = document.getElementById('legacy-model-paths')
   const migrationPreview = document.getElementById('gateway-migration-preview')
   const warning = document.getElementById('gateway-format-warning')
   const yamlPath = document.getElementById('conf-yaml-path')
   const reprocessButton = document.getElementById('save-reprocess-config')
 
-  yamlPathGroup.style.display = selectedFormat === 'yaml' ? '' : 'none'
   if (!yamlPath.value) yamlPath.value = DEFAULT_YAML_THINGS_PATH
+  const useYaml = selectedFormat === 'yaml'
+  yamlPathGroup.hidden = !useYaml
+  legacyPaths.hidden = useYaml
 
   const installedVersion = String(installedOpenhabVersion || '')
   const versionMatch = installedVersion.match(/^(\d+)\.(\d+)/)
-  const knownUnsupported = selectedFormat === 'yaml' && versionMatch && Number(versionMatch[1]) < 5
+  const versionAtLeast52 = Boolean(
+    versionMatch
+      && (Number(versionMatch[1]) > 5
+        || (Number(versionMatch[1]) === 5 && Number(versionMatch[2]) >= 2))
+  )
+  const knownUnsupported = useYaml && versionMatch && !versionAtLeast52
   if (knownUnsupported) {
-    warning.textContent = `YAML requires OpenHAB 5.0 or newer. Installed version: ${installedVersion}. YAML generation and deployment are blocked.`
+    warning.textContent = `YAML requires OpenHAB 5.2 or newer. Installed version: ${installedVersion}. YAML generation and deployment are blocked.`
     warning.style.display = ''
-  } else if (selectedFormat === 'yaml' && !versionMatch) {
+  } else if (useYaml && !versionMatch) {
     warning.textContent = 'OpenHAB version could not be determined; YAML compatibility cannot be confirmed.'
     warning.style.display = ''
   } else {
     warning.textContent = ''
     warning.style.display = 'none'
   }
-  reprocessButton.disabled = Boolean(knownUnsupported)
+  if (reprocessButton) reprocessButton.disabled = Boolean(knownUnsupported)
 
-  if (loadedThingsFormat !== selectedFormat) {
-    document.getElementById('gateway-migration-from').textContent = thingsOutputPath(loadedThingsFormat)
-    document.getElementById('gateway-migration-to').textContent = selectedFormat === 'yaml'
-      ? (yamlPath.value || DEFAULT_YAML_THINGS_PATH)
-      : document.getElementById('conf-things-path').value
+  const deployedFormat = gatewayState?.things_format === 'yaml'
+    ? 'yaml'
+    : (gatewayState?.things_format === 'dsl' ? 'legacy' : loadedOutputFormat)
+  if (deployedFormat !== selectedFormat) {
+    document.getElementById('gateway-migration-from').textContent = gatewayState?.managed_path
+      || modelOutputPath(deployedFormat)
+    document.getElementById('gateway-migration-to').textContent = modelOutputPath(selectedFormat, {
+      ...currentConfig,
+      yaml_path: yamlPath.value.trim() || DEFAULT_YAML_THINGS_PATH,
+      things_path: document.getElementById('conf-things-path').value,
+      items_path: document.getElementById('conf-items-path').value,
+      sitemaps_path: document.getElementById('conf-sitemaps-path').value
+    })
     migrationPreview.style.display = ''
   } else {
     migrationPreview.style.display = 'none'
   }
+}
+
+function updateOutputPathVisibility() {
+  updateGatewayFormatControls()
 }
 
 async function loadOpenhabVersion() {
@@ -1267,8 +1325,13 @@ function updateGatewayLiveActionControls() {
     && gatewayState.managed_path.trim() !== ''
   const version = String(installedOpenhabVersion || '')
   const versionMatch = version.match(/^(\d+)\.(\d+)/)
+  const versionAtLeast52 = Boolean(
+    versionMatch
+      && (Number(versionMatch[1]) > 5
+        || (Number(versionMatch[1]) === 5 && Number(versionMatch[2]) >= 2))
+  )
   const yamlCompatible = targetFormat !== 'yaml'
-    || Boolean(versionMatch && Number(versionMatch[1]) >= 5)
+    || versionAtLeast52
 
   if (!hasDeployedTarget) {
     warning.textContent = 'Live gateway actions are unavailable because no usable successfully deployed KNX Things target is available.'
@@ -1277,7 +1340,7 @@ function updateGatewayLiveActionControls() {
     const versionDetail = versionMatch
       ? ` Installed version: ${version}.`
       : ' Installed version could not be determined.'
-    warning.textContent = `Live gateway actions are disabled because the deployed YAML Things file requires a known OpenHAB 5.0 or newer installation.${versionDetail}`
+    warning.textContent = `Live gateway actions are disabled because the deployed YAML model requires a known OpenHAB 5.2 or newer installation.${versionDetail}`
     warning.style.display = ''
   } else {
     warning.textContent = ''
@@ -1307,6 +1370,7 @@ async function loadGatewayState() {
     gatewayState = null
     stateElement.textContent = `Managed gateway file state unavailable: ${error.message}`
   }
+  updateGatewayFormatControls()
   updateGatewayLiveActionControls()
 }
 
@@ -1425,6 +1489,9 @@ async function loadConfig() {
 
     // Populate General Tab
     // ETS export path removed
+    document.getElementById('conf-output-format').value = currentConfig.output_format || 'legacy'
+    updateOutputPathVisibility()
+    document.getElementById('conf-yaml-path').value = currentConfig.yaml_path || 'openhab/yaml/knx.yaml'
     document.getElementById('conf-items-path').value = currentConfig.items_path || ''
     document.getElementById('conf-things-path').value = currentConfig.things_path || ''
     document.getElementById('conf-sitemaps-path').value = currentConfig.sitemaps_path || ''
@@ -1449,9 +1516,7 @@ async function loadConfig() {
     const gw = dev.gateway || {}
     document.getElementById('conf-gateway-names').value = (gw.hardware_name || []).join(', ')
     document.getElementById('conf-gateway-ip').value = gw.ip_address || ''
-    document.getElementById('conf-things-format').value = currentConfig.things_format || 'dsl'
-    document.getElementById('conf-yaml-path').value = currentConfig.yaml_path || DEFAULT_YAML_THINGS_PATH
-    loadedThingsFormat = currentConfig.things_format || 'dsl'
+    loadedOutputFormat = currentConfig.output_format || 'legacy'
 
     updateGatewayFormatControls()
     await Promise.all([loadGatewayState(), loadOpenhabVersion()])
@@ -1575,20 +1640,32 @@ async function saveConfig(reprocess = false) {
   const configStatus = document.getElementById('configStatus')
 
   try {
-    const selectedThingsFormat = document.getElementById('conf-things-format').value || 'dsl'
+    const selectedOutputFormat = document.getElementById('conf-output-format').value || 'legacy'
     const versionMatch = String(installedOpenhabVersion || '').match(/^(\d+)\.(\d+)/)
-    if (reprocess && selectedThingsFormat === 'yaml' && versionMatch && Number(versionMatch[1]) < 5) {
-      configStatus.textContent = '✗ YAML requires OpenHAB 5.0 or newer.'
+    const versionAtLeast52 = Boolean(
+      versionMatch
+        && (Number(versionMatch[1]) > 5
+          || (Number(versionMatch[1]) === 5 && Number(versionMatch[2]) >= 2))
+    )
+    if (reprocess && selectedOutputFormat === 'yaml' && versionMatch && !versionAtLeast52) {
+      configStatus.textContent = '✗ YAML requires OpenHAB 5.2 or newer.'
       configStatus.className = 'status-message error'
       return
     }
-    if (reprocess && selectedThingsFormat !== loadedThingsFormat) {
-      const oldPath = thingsOutputPath(loadedThingsFormat)
-      const newPath = selectedThingsFormat === 'yaml'
-        ? (document.getElementById('conf-yaml-path').value || DEFAULT_YAML_THINGS_PATH)
-        : document.getElementById('conf-things-path').value
+    const deployedFormat = gatewayState?.things_format === 'yaml'
+      ? 'yaml'
+      : (gatewayState?.things_format === 'dsl' ? 'legacy' : loadedOutputFormat)
+    if (reprocess && selectedOutputFormat !== deployedFormat) {
+      const oldPath = gatewayState?.managed_path || modelOutputPath(deployedFormat)
+      const newPath = modelOutputPath(selectedOutputFormat, {
+        ...currentConfig,
+        yaml_path: document.getElementById('conf-yaml-path').value.trim() || DEFAULT_YAML_THINGS_PATH,
+        things_path: document.getElementById('conf-things-path').value,
+        items_path: document.getElementById('conf-items-path').value,
+        sitemaps_path: document.getElementById('conf-sitemaps-path').value
+      })
       const confirmed = window.confirm(
-        `Migrate KNX Things from ${oldPath} to ${newPath}? The old file will be backed up and deactivated. Manual edits inside the generator-owned file are backed up but not translated.`
+        `Migrate the generated OpenHAB model from ${oldPath} to ${newPath}? Managed old outputs are backed up and retired; manual files are not changed.`
       )
       if (!confirmed) return
     }
@@ -1600,15 +1677,17 @@ async function saveConfig(reprocess = false) {
 
     // General
     // ETS export path removed
+    newConfig.output_format = selectedOutputFormat
+    newConfig.yaml_path = document.getElementById('conf-yaml-path').value.trim() || DEFAULT_YAML_THINGS_PATH
     newConfig.items_path = document.getElementById('conf-items-path').value
     newConfig.things_path = document.getElementById('conf-things-path').value
     newConfig.sitemaps_path = document.getElementById('conf-sitemaps-path').value
     newConfig.influx_path = document.getElementById('conf-influx-path').value
     newConfig.fenster_path = document.getElementById('conf-fenster-path').value
-    newConfig.things_format = selectedThingsFormat
-    newConfig.yaml_path = document.getElementById('conf-yaml-path').value.trim() || DEFAULT_YAML_THINGS_PATH
+    delete newConfig.things_format
 
     newConfig.general = {
+      ...(newConfig.general || {}),
       FloorNameAsItIs: document.getElementById('conf-floor-asis').checked,
       FloorNameFromDescription: document.getElementById('conf-floor-desc').checked,
       RoomNameAsItIs: document.getElementById('conf-room-asis').checked,
@@ -2115,9 +2194,12 @@ function startEvents(jobId) {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('conf-things-format').addEventListener('change', updateGatewayFormatControls)
+  document.getElementById('conf-output-format').addEventListener('change', updateOutputPathVisibility)
   document.getElementById('conf-things-path').addEventListener('input', updateGatewayFormatControls)
+  document.getElementById('conf-items-path').addEventListener('input', updateGatewayFormatControls)
+  document.getElementById('conf-sitemaps-path').addEventListener('input', updateGatewayFormatControls)
   document.getElementById('conf-yaml-path').addEventListener('input', updateGatewayFormatControls)
+  updateOutputPathVisibility()
   document.getElementById('gateway-apply-ip').addEventListener('click', applyGatewayIpLive)
   document.getElementById('gateway-reset-ip').addEventListener('click', restoreGatewayIp)
   document.getElementById('gateway-undo-ip').addEventListener('click', undoGatewayIpLive)

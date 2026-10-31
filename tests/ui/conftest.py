@@ -47,6 +47,61 @@ def base_url():
 
 
 @pytest.fixture(scope="session")
+def ui_server_environment(tmp_path_factory):
+    """Keep browser-server configuration and generated state outside the repo."""
+    project_root = Path(__file__).resolve().parents[2]
+    temp_root = tmp_path_factory.mktemp("ui-server")
+    config_dir = temp_root / "config"
+    data_dir = temp_root / "data"
+    backup_dir = temp_root / "backups"
+    config_dir.mkdir()
+    data_dir.mkdir()
+    backup_dir.mkdir()
+
+    generator_config_file = data_dir / "generator.json"
+    original_generator_config = (project_root / "config.json").read_bytes()
+    generator_config_file.write_bytes(original_generator_config)
+    (config_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "openhab_path": str(project_root / "openhab"),
+                "bind_host": "127.0.0.1",
+                "port": 8085,
+                "auth": {"enabled": False, "user": "admin"},
+                "retention": {
+                    "days": 14,
+                    "max_backups": 50,
+                    "max_backups_size_mb": 500,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    return {
+        "environment": {
+            "KNXOH_INSTALL_DIR": str(project_root),
+            "KNXOH_CONFIG_DIR": str(config_dir),
+            "KNXOH_DATA_DIR": str(data_dir),
+            "KNXOH_BACKUP_DIR": str(backup_dir),
+            "KNXOH_PATHS_FILE": str(temp_root / "missing-paths.env"),
+        },
+        "generator_config_file": generator_config_file,
+        "original_generator_config": original_generator_config,
+    }
+
+
+@pytest.fixture(autouse=True)
+def isolate_ui_generator_config(ui_server_environment):
+    """Reset config mutations after each browser test to avoid cross-test leakage."""
+    config_file = ui_server_environment["generator_config_file"]
+    baseline = ui_server_environment["original_generator_config"]
+    config_file.write_bytes(baseline)
+    yield
+    config_file.write_bytes(baseline)
+
+
+@pytest.fixture(scope="session")
 def browser_context_args(browser_context_args):
     """Configure browser context for testing (basic auth + defaults)."""
     username = os.getenv("UI_AUTH_USER")
@@ -58,11 +113,12 @@ def browser_context_args(browser_context_args):
 
 
 @pytest.fixture(scope="session")
-def flask_server(base_url):
+def flask_server(base_url, ui_server_environment):
     """Start Flask server as subprocess for UI tests."""
     # Start server using subprocess
     env = os.environ.copy()
     env["FLASK_ENV"] = "testing"
+    env.update(ui_server_environment["environment"])
 
     # Use -m to run as module, which triggers __main__.py
     server_process = subprocess.Popen(

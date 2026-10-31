@@ -3,17 +3,17 @@
   "description": "Configuration settings for the KNX to OpenHAB converter",
   "type": "object",
   "properties": {
-    "things_format": {
+    "output_format": {
       "type": "string",
-      "title": "KNX Things Format",
-      "description": "Output format for generated KNX Things",
-      "enum": ["dsl", "yaml"],
-      "default": "dsl"
+      "title": "OpenHAB Model Format",
+      "description": "Use legacy textual files or one native openHAB 5.2 YAML model",
+      "enum": ["legacy", "yaml"],
+      "default": "legacy"
     },
     "yaml_path": {
       "type": "string",
-      "title": "KNX Things YAML Path",
-      "description": "Dedicated generator-owned YAML file for KNX Things",
+      "title": "YAML Output Path",
+      "description": "Target path for the native openHAB 5.2 YAML model",
       "default": "openhab/yaml/knx.yaml"
     },
     "general": {

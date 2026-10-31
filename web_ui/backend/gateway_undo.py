@@ -11,13 +11,18 @@ from typing import Any
 
 from .storage import save_json_atomic
 
-SNAPSHOT_VERSION = 1
+SNAPSHOT_VERSION = 2
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _validate_snapshot(snapshot: Any) -> dict[str, Any]:
-    if not isinstance(snapshot, dict) or snapshot.get("version") != SNAPSHOT_VERSION:
+    if not isinstance(snapshot, dict):
         raise ValueError("Invalid KNX gateway undo snapshot")
+    version = snapshot.get("version")
+    if type(version) is not int or version not in (1, SNAPSHOT_VERSION):
+        raise ValueError("Invalid KNX gateway undo snapshot")
+    if not isinstance(snapshot.get("job_id"), str) or not snapshot["job_id"]:
+        raise ValueError("Invalid KNX gateway undo snapshot job ID")
     required_strings = (
         "file_content_b64",
         "previous_gateway_override",
@@ -28,8 +33,10 @@ def _validate_snapshot(snapshot: Any) -> dict[str, Any]:
     )
     if any(not isinstance(snapshot.get(key), str) for key in required_strings):
         raise ValueError("Invalid KNX gateway undo snapshot")
-    if "job_id" in snapshot and (not isinstance(snapshot["job_id"], str) or not snapshot["job_id"]):
-        raise ValueError("Invalid KNX gateway undo snapshot job ID")
+    if version == SNAPSHOT_VERSION and (
+        not isinstance(snapshot.get("deployment_id"), str) or not snapshot["deployment_id"]
+    ):
+        raise ValueError("Invalid KNX gateway undo snapshot deployment ID")
     if snapshot["things_format"] not in ("dsl", "yaml"):
         raise ValueError("Invalid KNX gateway undo snapshot format")
     if not _SHA256.fullmatch(snapshot["post_change_sha256"]):

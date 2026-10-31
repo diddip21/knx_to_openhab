@@ -50,9 +50,12 @@ system-wide legacy source directories. Only after a successful copy does it
 remove legacy job or backup directories inside the application tree. The old
 root `config.json` is copied to `generator.json` before the application tree is
 reset to the packaged defaults. Existing user-chosen Web UI passwords are converted to
-Argon2id hashes in the restricted secrets file. The shipped default password is discarded,
-and setup prompts for a replacement. A fresh install also prompts for a unique password;
-runtime settings remain in `config.json`.
+Argon2id hashes in the restricted secrets file. If no usable password exists, setup
+generates a random password, stores only its hash, and prints the new password once. This
+also replaces the old shared default and lets setup recover after a partially completed
+migration without an interactive prompt. Save that output before continuing; the password
+is not written to a plaintext file. Use the password helper below to set a different
+password later. Runtime settings remain in `config.json`.
 
 The Web UI and generator both read the saved path environment, so the Settings
 screen writes `/var/lib/knx_to_openhab/generator.json` and future releases do not
@@ -92,8 +95,12 @@ grant a shell, arbitrary Git commands, or wildcard command arguments. Re-running
 `visudo -cf`.
 
 The package update buttons use the root-owned `/usr/local/sbin/knxohui-service-update`
-helper. Sudoers allows only its `refresh`, `openhab`, and `evcc` actions. The
-installer preserves an existing `web_ui/backend/config.json` when copying new code.
+helper. Sudoers allows only its `refresh`, `openhab`, `evcc`, and `provision-yaml`
+actions. The YAML action runs a separate root-owned helper that provisions only the
+configured `.yaml` target directly under the protected OpenHAB `yaml/` directory;
+it does not import or execute code from the application tree. The installer preserves
+an existing `web_ui/backend/config.json` when copying new code and records the
+resolved OpenHAB root in protected configuration for that helper.
 
 ### Existing installations
 
@@ -108,10 +115,10 @@ sudo bash installer/setup.sh
 ```
 
 The installer preserves the existing runtime configuration while installing the
-root-owned package helper and its exact sudoers entries. It also replaces and
-validates the old policy. If only the least-privilege migration is needed, use
-`sudo bash installer/migrate_sudoers.sh`; that script changes only the sudoers
-file.
+root-owned package and YAML-provisioning helpers and their exact sudoers entries.
+It also replaces and validates the old policy. If only the least-privilege
+migration is needed, use `sudo bash installer/migrate_sudoers.sh`; that script
+changes only the sudoers file.
 
 > **Note:** For local development without systemd installation, see [DEVELOPMENT.md](../DEVELOPMENT.md)
 

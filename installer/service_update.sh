@@ -8,6 +8,9 @@ if [[ $# -ne 1 ]]; then
 fi
 
 case "$1" in
+  provision-yaml)
+    /usr/bin/python3 -I /usr/local/libexec/knx_to_openhab/provision_managed_outputs.py
+    ;;
   refresh)
     /usr/bin/apt-get update --error-on=any
     ;;

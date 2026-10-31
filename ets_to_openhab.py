@@ -8,12 +8,17 @@ from typing import Any
 
 from config import config, datapoint_mappings, normalize_string
 from ets_helpers import flags_match, get_co_flags, get_dpt_from_dco
-from knx_things import (
-    KnxChannel,
-    KnxThingsModel,
-    get_active_things_output,
-    render_dsl_channels,
-    render_yaml,
+from openhab_yaml import (
+    add_channel,
+    add_item,
+    new_model,
+    normalize_icon,
+    parse_assignments,
+    parse_item_type,
+    parse_metadata,
+    parse_tags,
+    parse_visibility,
+    write_yaml,
 )
 from utils import get_datapoint_type
 
@@ -23,7 +28,7 @@ pattern_items_Name: str = config["regexpattern"]["items_Name"]
 pattern_items_Label: str = config["regexpattern"]["items_Label"]
 
 # global house,all_addresses,used_addresses
-GWIP = None
+GWIP: str | None = None
 B_HOMEKIT = False
 B_ALEXA = False
 HOMEKIT_MAX_ACCESSORIES_PER_INSTANCE = 130
@@ -39,8 +44,8 @@ FENSTERKONTAKTE: list[str] = []
 PRJ_NAME = "Our Home"
 
 
-def gen_building_model() -> tuple[str, str, KnxThingsModel]:
-    """Generate Items, Sitemap, and structured KNX Things from the ETS data."""
+def gen_building(include_yaml_model=False):
+    """Generates a Building from an ETS Project"""
 
     def get_co_by_functiontext(cos, config_functiontexts, checkwriteflag=True):
         """
@@ -276,7 +281,7 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
         # floor_configuration += f"Group:Switch:OR(ON, OFF)       map{floor_nr}_Presence       \"{floor_variables['name']} Präsenz [MAP(presence.map):%s]\"      <presence>         (map{floor_nr},Base)                  [\"Presence\"] \n"
         # floor_configuration += f"Group:Contact:OR(OPEN, CLOSED) map{floor_nr}_Contacts       \"{floor_variables['name']} Öffnungsmelder\"                      <contact>          (map{floor_nr})                [\"OpenState\"] \n"
         # floor_configuration += f"Group:Number:Temperature:AVG   map{floor_nr}_Temperature    \"{floor_variables['name']} Ø Temperatur\"                        <temperature>      (map{floor_nr})             [\"Measurement\", \"Temperature\"]        {{stateDescription=\"\"[pattern=\"%.1f %unit%\"]}} \n"
-        return floor_configuration, floor_name
+        return floor_configuration, floor_name, floor_variables
 
     def generate_room_configuration(room, floor_nr, room_nr):
         """
@@ -302,15 +307,34 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
 
     items = ""
     sitemap = ""
-    channels: list[KnxChannel] = []
+    things = ""
+    yaml_model = new_model(PRJ_NAME, GWIP, config.get("sitemap_label", "MiCasa"))
+    yaml_sitemap_widgets = yaml_model["sitemaps"]["knx"]["widgets"]
     floor_nr = 0
     homekit_instance = 1
     homekit_accessorie = 0
     for floor in floors:
         floor_nr += 1
-        floor_configuration, floor_name = generate_floor_configuration(floor, floor_nr)
+        floor_configuration, floor_name, floor_variables = generate_floor_configuration(
+            floor, floor_nr
+        )
         items += floor_configuration
         sitemap += f'Frame label="{floor_name}" {{\n'
+        floor_item: dict[str, Any] = {
+            "type": "Group",
+            "label": floor_variables["name"],
+            "icon": normalize_icon(floor_variables["icon"]),
+            "groups": ["Base"],
+            "tags": parse_tags(floor_variables["semantic"]),
+            "metadata": parse_metadata(floor_variables["synonyms"]),
+        }
+        add_item(yaml_model, f"map{floor_nr}", floor_item)
+        yaml_floor_widget: dict[str, Any] = {
+            "type": "Frame",
+            "label": floor_name,
+            "widgets": [],
+        }
+        yaml_sitemap_widgets.append(yaml_floor_widget)
 
         room_nr = 0
         for room in floor["rooms"]:
@@ -321,6 +345,24 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
             items += room_configuration
             sitemap += f"     Group item=map{floor_nr}_{room_nr} {room_variables['visibility']} label=\"{room_name}\" "
             group = ""
+            room_item: dict[str, Any] = {
+                "type": "Group",
+                "label": room_variables["name"],
+                "icon": normalize_icon(room_variables["icon"]),
+                "groups": [f"map{floor_nr}"],
+                "tags": parse_tags(room_variables["semantic"]),
+                "metadata": parse_metadata(room_variables["synonyms"]),
+            }
+            room_item_name = f"map{floor_nr}_{room_nr}"
+            add_item(yaml_model, room_item_name, room_item)
+            yaml_room_widget: dict[str, Any] = {
+                "type": "Group",
+                "item": room_item_name,
+                "label": room_name,
+            }
+            if visibility := parse_visibility(room_variables["visibility"]):
+                yaml_room_widget["visibilityRules"] = visibility
+            yaml_floor_widget["widgets"].append(yaml_room_widget)
 
             addresses = room["Addresses"]
             logger.debug("Room: %s and %s Adresses", room_name, len(addresses))
@@ -354,7 +396,7 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
                     lovely_name = address["Group name"]
                     item_label = lovely_name
                     item_type = ""
-                    thing_address_info: dict[str, str] = {}
+                    thing_address_info = ""
                     description = address["Description"].casefold().split(";")
                     equipment = ""
                     equip_homekit = ""
@@ -402,8 +444,9 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
                                 )
                                 if drop_addr:
                                     used_addresses.append(drop_addr["Address"])
-                            relative_value = None
-                            switch_value = None
+                            relative_option = ""
+                            switch_option = ""
+                            switch_option_status = ""
                             if dimmwert_status:
                                 used = True
                                 used_addresses.append(dimmwert_status["Address"])
@@ -412,7 +455,9 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
                                 )
                                 if relative_command:
                                     used_addresses.append(relative_command["Address"])
-                                    relative_value = relative_command["Address"]
+                                    relative_option = (
+                                        f", increaseDecrease=\"{relative_command['Address']}\""
+                                    )
                                 switch_command = get_address_from_dco_enhanced(
                                     co, "switch_suffix", define
                                 )
@@ -423,22 +468,14 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
                                     )
                                     if switch_status_command:
                                         used_addresses.append(switch_status_command["Address"])
-                                        switch_value = (
-                                            f"{switch_command['Address']}+<"
-                                            f"{switch_status_command['Address']}"
+                                        switch_option_status = (
+                                            f"+<{switch_status_command['Address']}"
                                         )
-                                    else:
-                                        switch_value = switch_command["Address"]
+                                    switch_option = f", switch=\"{switch_command['Address']}{switch_option_status}\""
 
                                 auto_add = True
                                 item_type = "Dimmer"
-                                thing_address_info = {
-                                    "position": f"{address['Address']}+<{dimmwert_status['Address']}"
-                                }
-                                if switch_value:
-                                    thing_address_info["switch"] = switch_value
-                                if relative_value:
-                                    thing_address_info["increaseDecrease"] = relative_value
+                                thing_address_info = f"position=\"{address['Address']}+<{dimmwert_status['Address']}\"{switch_option}{relative_option}"
                                 equipment = "Lightbulb"
                                 semantic_info = '["Light"]'
                                 item_icon = "light"
@@ -478,9 +515,10 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
                                 )
                                 if drop_addr:
                                     used_addresses.append(drop_addr["Address"])
-                            stop_value = None
-                            position_absolute = ""
-                            position_status = ""
+                            option_stop = ""
+                            option_position = ""
+                            option_position_absolute = ""
+                            option_position_status = ""
                             if fahren_auf_ab:
                                 used_addresses.append(fahren_auf_ab["Address"])
                                 fahren_stop = get_address_from_dco_enhanced(
@@ -488,7 +526,7 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
                                 )
                                 if fahren_stop:
                                     used_addresses.append(fahren_stop["Address"])
-                                    stop_value = fahren_stop["Address"]
+                                    option_stop = f", stopMove=\"{fahren_stop['Address']}\""
                                 absolute_position = get_address_from_dco_enhanced(
                                     co, "absolute_position_suffix", define
                                 )
@@ -498,27 +536,22 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
                                 if absolute_position or absolute_position_status:
                                     if absolute_position:
                                         used_addresses.append(absolute_position["Address"])
-                                        position_absolute = absolute_position["Address"]
+                                        option_position_absolute = f"{absolute_position['Address']}"
                                     if absolute_position_status:
                                         used_addresses.append(absolute_position_status["Address"])
                                         if absolute_position:
-                                            position_status = (
+                                            option_position_status = (
                                                 f"+<{absolute_position_status['Address']}"
                                             )
                                         else:
-                                            position_status = (
+                                            option_position_status = (
                                                 f"<{absolute_position_status['Address']}"
                                             )
+                                    option_position = f', position="{option_position_absolute}{option_position_status}"'
 
                                 auto_add = True
                                 item_type = "Rollershutter"
-                                thing_address_info = {"upDown": fahren_auf_ab["Address"]}
-                                if stop_value:
-                                    thing_address_info["stopMove"] = stop_value
-                                if position_absolute or position_status:
-                                    thing_address_info["position"] = (
-                                        f"{position_absolute}{position_status}"
-                                    )
+                                thing_address_info = f"upDown=\"{fahren_auf_ab['Address']}\"{option_stop}{option_position}"
                                 equipment = "Blinds"
                                 semantic_info = '["Blinds"]'
                                 item_icon = "rollershutter"
@@ -559,9 +592,9 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
                                 if address["DatapointType"] == "DPST-20-102":
                                     item_type = "Number"
                                     ga = "20.102"
-                                thing_address_info = {
-                                    "ga": f"{ga}:{address['Address']}{option_status_betriebsmodus}"
-                                }
+                                thing_address_info = (
+                                    f"ga=\"{ga}:{address['Address']}{option_status_betriebsmodus}\""
+                                )
                                 item_label = f"{lovely_name}"
                                 equipment = "HVAC"
                                 if B_HOMEKIT:
@@ -593,12 +626,12 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
                             if status:
                                 auto_add = True
                                 used_addresses.append(status["Address"])
-                                thing_address_info = {
-                                    "ga": f"{address['Address']}+<{status['Address']}"
-                                }
+                                thing_address_info = (
+                                    f"ga=\"{address['Address']}+<{status['Address']}\""
+                                )
                             else:
                                 auto_add = True
-                                thing_address_info = {"ga": address["Address"]}
+                                thing_address_info = f"ga=\"{address['Address']}\""
                             semantic_info = '["Switch"]'
                             item_icon = "switch"
                             if B_HOMEKIT:
@@ -617,15 +650,14 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
                                 item_type = mapping_info["item_type"]
                                 if item_type.casefold() in config["defines"]:
                                     define = config["defines"][item_type.casefold()]
-                                channel_config_key = "ga"
-                                channel_config_value = (
-                                    f"{mapping_info['ga_prefix']}:{address['Address']}"
+                                thing_address_info = (
+                                    f"ga=\"{mapping_info['ga_prefix']}:{address['Address']}\""
                                 )
                                 if "=" in mapping_info["ga_prefix"]:
                                     split_info = mapping_info["ga_prefix"].split("=")
-                                    channel_config_key = split_info[0]
-                                    channel_config_value = f"{split_info[1]}:{address['Address']}"
-                                thing_address_info = {channel_config_key: channel_config_value}
+                                    thing_address_info = (
+                                        f"{split_info[0]}=\"{split_info[1]}:{address['Address']}\""
+                                    )
                                 item_label = f"{lovely_name}"
                                 metadata = f"{mapping_info['metadata']}"
                                 if B_HOMEKIT:
@@ -671,7 +703,7 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
 
                                 auto_add = True
                                 item_type = "Number"
-                                thing_address_info = {"ga": f"{ga}:{address['Address']}"}
+                                thing_address_info = f"ga=\"{ga}:{address['Address']}\""
                                 semantic_info = '["Equipment"]'
                                 item_icon = "movecontrol"
                                 sitemap_type = "Selection"
@@ -745,13 +777,13 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
                         item_label = item_label.strip()
 
                         thing_type = item_type.lower().split(":")[0]
-                        channels.append(
-                            KnxChannel(
-                                channel_id=item_name,
-                                channel_type=thing_type,
-                                label=address["Group name"],
-                                config=thing_address_info,
-                            )
+                        things += f"Type {thing_type}    :   {item_name}   \"{address['Group name']}\"   [ {thing_address_info} ]\n"
+                        channel_uid = add_channel(
+                            yaml_model,
+                            item_name,
+                            thing_type,
+                            address["Group name"],
+                            parse_assignments(thing_address_info),
                         )
 
                         root = f"map{floor_nr}_{room_nr}"
@@ -774,6 +806,18 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
                                 if grp_metadata:
                                     grp_metadata = f"{{ {grp_metadata} }}"
                                 items += f'Group   equipment_{item_name}   "{item_label}"  {item_icon}  ({root})   ["{equipment}"] {grp_metadata}\n'
+                                add_item(
+                                    yaml_model,
+                                    f"equipment_{item_name}",
+                                    {
+                                        "type": "Group",
+                                        "label": item_label,
+                                        "icon": normalize_icon(item_icon),
+                                        "groups": [root],
+                                        "tags": [equipment],
+                                        "metadata": parse_metadata(grp_metadata),
+                                    },
+                                )
                                 root = f"equipment_{item_name}"
                             else:
                                 root = f"equipment_{equipments[item_label]}"
@@ -795,6 +839,26 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
 
                         items += f'{item_type}   {item_name}   "{item_label}"   {item_icon}   ({root})   {semantic_info}    {{ channel="knx:device:bridge:generic:{item_name}" {metadata}{synonyms} }}\n'
                         group += f"        {sitemap_type} item={item_name} label=\"{item_label}\" {item_variables['visibility']}\n"
+                        yaml_item = parse_item_type(item_type)
+                        yaml_item.update(
+                            {
+                                "label": item_label,
+                                "icon": normalize_icon(item_icon),
+                                "groups": [entry.strip() for entry in root.split(",")],
+                                "tags": parse_tags(semantic_info),
+                                "channel": channel_uid,
+                                "metadata": parse_metadata(metadata, synonyms),
+                            }
+                        )
+                        add_item(yaml_model, item_name, yaml_item)
+                        yaml_widget: dict[str, Any] = {
+                            "type": sitemap_type,
+                            "item": item_name,
+                            "label": item_label,
+                        }
+                        if visibility := parse_visibility(item_variables["visibility"]):
+                            yaml_widget["visibilityRules"] = visibility
+                        yaml_room_widget.setdefault("widgets", []).append(yaml_widget)
 
                         if homekit_accessorie >= HOMEKIT_MAX_ACCESSORIES_PER_INSTANCE:
                             homekit_accessorie = 0
@@ -815,24 +879,9 @@ def gen_building_model() -> tuple[str, str, KnxThingsModel]:
             else:
                 sitemap += "\n"
         sitemap += "}\n"
-    if GWIP:
-        gateway_config = {
-            "type": "TUNNEL",
-            "ipAddress": GWIP,
-            "portNumber": 3671,
-            "autoReconnectPeriod": 30,
-        }
-    else:
-        gateway_config = {"type": "ROUTER", "autoReconnectPeriod": 60}
-
-    model = KnxThingsModel(gateway_config=gateway_config, channels=tuple(channels))
-    return items, sitemap, model
-
-
-def gen_building() -> tuple[str, str, str]:
-    """Compatibility wrapper returning the KNX channel declarations as DSL."""
-    items, sitemap, model = gen_building_model()
-    return items, sitemap, render_dsl_channels(model)
+    if include_yaml_model:
+        return items, sitemap, things, yaml_model
+    return items, sitemap, things
 
 
 def data_of_name(data, name, suffix, replace=""):
@@ -912,59 +961,30 @@ def write_partial_report(cfg):
         logger.warning("Failed to write partial_report.json: %s", e)
 
 
-def export_output(items, sitemap, things, configuration=None):
-    """Exports things / items / sitemap / ...  Files"""
-    # Use provided configuration or fallback to global config
-    cfg = configuration if configuration is not None else config
-
-    # write partial report if any
-    write_partial_report(cfg)
-
-    # export things:
-    things_path = cfg.get("things_path", "<unconfigured>")
+def _export_legacy_model(items, sitemap, things, cfg):
+    """Write the pre-5.2 textual Things, Items and Sitemap files."""
     try:
-        if isinstance(things, KnxThingsModel):
-            things_path, things_format = get_active_things_output(cfg)
-            if things_format == "yaml":
-                things_output = render_yaml(things)
-            else:
-                things_template = open("things.template", "r", encoding="utf8").read()
-                gateway_ip = things.gateway_config.get("ipAddress")
-                if gateway_ip:
-                    things_template = things_template.replace("###gwip###", str(gateway_ip))
-                else:
-                    things_template = things_template.replace('type="TUNNEL"', 'type="ROUTER"')
-                    things_template = re.sub(r'.*ipAddress="###gwip###",.*\n', "", things_template)
-                    things_template = re.sub(r".*portNumber=3671,.*\n", "", things_template)
-                    things_template = things_template.replace(
-                        "autoReconnectPeriod=30", "autoReconnectPeriod=60"
-                    )
-                things_output = things_template.replace("###things###", render_dsl_channels(things))
+        things_template = open("things.template", "r", encoding="utf8").read()
+        if GWIP:
+            things_template = things_template.replace("###gwip###", GWIP)
         else:
-            things_path = cfg["things_path"]
-            things_template = open("things.template", "r", encoding="utf8").read()
-            if GWIP:
-                things_template = things_template.replace("###gwip###", GWIP)
-            else:
-                logger.info("No Gateway IP found. Using KNX Router mode (multicast).")
-                things_template = things_template.replace('type="TUNNEL"', 'type="ROUTER"')
-                things_template = re.sub(r'.*ipAddress="###gwip###",.*\n', "", things_template)
-                things_template = re.sub(r".*portNumber=3671,.*\n", "", things_template)
-                things_template = things_template.replace(
-                    "autoReconnectPeriod=30", "autoReconnectPeriod=60"
-                )
-            things_output = things_template.replace("###things###", things)
+            logger.info("No Gateway IP found. Using KNX Router mode (multicast).")
+            things_template = things_template.replace('type="TUNNEL"', 'type="ROUTER"')
+            things_template = re.sub(r'.*ipAddress="###gwip###",.*\n', "", things_template)
+            things_template = re.sub(r".*portNumber=3671,.*\n", "", things_template)
+            things_template = things_template.replace(
+                "autoReconnectPeriod=30", "autoReconnectPeriod=60"
+            )
 
-        os.makedirs(os.path.dirname(things_path), exist_ok=True)
-        with open(things_path, "w", encoding="utf8") as f:
-            f.write(things_output)
+        things = things_template.replace("###things###", things)
+        os.makedirs(os.path.dirname(cfg["things_path"]), exist_ok=True)
+        with open(cfg["things_path"], "w", encoding="utf8") as f:
+            f.write(things)
         logger.info(
-            "Successfully wrote things file to %s with %d lines",
-            things_path,
-            things_output.count("\n") + 1,
+            f"Successfully wrote things file to {cfg['things_path']} with {things.count(chr(10)) + 1} lines"
         )
     except Exception as e:
-        logger.error("Failed to write things file to %s: %s", things_path, e)
+        logger.error(f"Failed to write things file to {cfg['things_path']}: {e}")
         raise
     # export items:
     try:
@@ -993,6 +1013,49 @@ def export_output(items, sitemap, things, configuration=None):
     except Exception as e:
         logger.error(f"Failed to write sitemap file to {cfg['sitemaps_path']}: {e}")
         raise
+
+
+def _retire_existing_model_files(paths, active_paths=()):
+    """Empty existing inactive model files without creating missing targets."""
+    active_paths = {os.path.normcase(os.path.abspath(path)) for path in active_paths if path}
+    for path in paths:
+        if not path or not os.path.lexists(path):
+            continue
+        if os.path.normcase(os.path.abspath(path)) in active_paths:
+            continue
+        if os.path.islink(path) or not os.path.isfile(path):
+            raise ValueError(f"Refusing to retire a non-regular model output: {path}")
+        if os.stat(path).st_nlink > 1:
+            raise ValueError(f"Refusing to retire a model output with multiple hard links: {path}")
+        with open(path, "w", encoding="utf8"):
+            pass
+
+
+def export_output(items, sitemap, things, configuration=None, yaml_model=None):
+    """Export the generated openHAB model plus legacy persistence/rules files."""
+    cfg = configuration if configuration is not None else config
+    output_format = str(cfg.get("output_format", "legacy")).casefold()
+    if output_format not in {"legacy", "yaml"}:
+        raise ValueError('output_format must be either "legacy" or "yaml"')
+
+    write_partial_report(cfg)
+
+    if output_format == "yaml":
+        if yaml_model is None:
+            raise ValueError("yaml_model is required when output_format is yaml")
+        yaml_path = cfg.get("yaml_path", "openhab/yaml/knx.yaml")
+        write_yaml(yaml_path, yaml_model)
+        _retire_existing_model_files(
+            (cfg.get("items_path"), cfg.get("things_path"), cfg.get("sitemaps_path")),
+            active_paths=(yaml_path,),
+        )
+        logger.info("Successfully wrote openHAB 5.2 YAML configuration to %s", yaml_path)
+    else:
+        _export_legacy_model(items, sitemap, things, cfg)
+        _retire_existing_model_files(
+            (cfg.get("yaml_path", "openhab/yaml/knx.yaml"),),
+            active_paths=(cfg.get("items_path"), cfg.get("things_path"), cfg.get("sitemaps_path")),
+        )
 
     # export persistent
     private_persistence = ""
@@ -1057,9 +1120,23 @@ def export_output(items, sitemap, things, configuration=None):
 def main(configuration=None):
     """Main function"""
     logging.basicConfig()
-    items, sitemap, things = gen_building_model()
+    cfg = configuration if configuration is not None else config
+    include_yaml_model = str(cfg.get("output_format", "legacy")).casefold() == "yaml"
+    generated = gen_building(include_yaml_model=include_yaml_model)
+    if include_yaml_model:
+        items, sitemap, things, yaml_model = generated
+    else:
+        items, sitemap, things = generated
+        yaml_model = None
     check_unused_addresses()
-    export_output(items, sitemap, things, configuration=configuration)
+    export_output(
+        items,
+        sitemap,
+        things,
+        configuration=configuration,
+        yaml_model=yaml_model,
+    )
+    return {"things": things, "yaml_model": yaml_model}
 
 
 if __name__ == "__main__":

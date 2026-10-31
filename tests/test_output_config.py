@@ -18,41 +18,47 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
-from knx_things import get_active_things_output
-
 logger = logging.getLogger(__name__)
 
 
-def test_active_things_output_defaults_to_legacy_dsl_path():
-    path, format_name = get_active_things_output({"things_path": "openhab/things/knx.things"})
-
-    assert (path, format_name) == ("openhab/things/knx.things", "dsl")
-
-
-def test_active_things_output_uses_selected_yaml_path():
-    path, format_name = get_active_things_output(
-        {
-            "things_format": "yaml",
-            "yaml_path": "openhab/yaml/knx.yaml",
-            "things_path": "openhab/things/knx.things",
-        }
-    )
-
-    assert (path, format_name) == ("openhab/yaml/knx.yaml", "yaml")
-
-
-def test_generator_configuration_preserves_dsl_default_and_dedicated_yaml_path():
+def test_generator_configuration_uses_complete_model_format_schema():
     project_root = Path(__file__).resolve().parents[1]
     generator_config = json.loads((project_root / "config.json").read_text(encoding="utf-8"))
     schema = json.loads(
         (project_root / "web_ui" / "backend" / "config_schema.json").read_text(encoding="utf-8")
     )
 
-    assert generator_config["things_format"] == "dsl"
+    assert generator_config["output_format"] == "legacy"
     assert generator_config["yaml_path"] == "openhab/yaml/knx.yaml"
-    assert schema["properties"]["things_format"]["default"] == "dsl"
-    assert schema["properties"]["things_format"]["enum"] == ["dsl", "yaml"]
+    assert "things_format" not in schema["properties"]
+    assert schema["properties"]["output_format"]["default"] == "legacy"
+    assert schema["properties"]["output_format"]["enum"] == ["legacy", "yaml"]
     assert schema["properties"]["yaml_path"]["default"] == "openhab/yaml/knx.yaml"
+
+
+def test_generator_main_defaults_to_legacy_when_output_format_is_missing(monkeypatch):
+    import ets_to_openhab
+
+    generated = {}
+    exported = {}
+
+    def fake_gen_building(*, include_yaml_model):
+        generated["include_yaml_model"] = include_yaml_model
+        return "items", "sitemap", "things"
+
+    monkeypatch.setattr(ets_to_openhab, "gen_building", fake_gen_building)
+    monkeypatch.setattr(ets_to_openhab, "check_unused_addresses", lambda: None)
+    monkeypatch.setattr(
+        ets_to_openhab,
+        "export_output",
+        lambda *args, **kwargs: exported.update(kwargs),
+    )
+
+    result = ets_to_openhab.main(configuration={})
+
+    assert generated["include_yaml_model"] is False
+    assert exported["yaml_model"] is None
+    assert result == {"things": "things", "yaml_model": None}
 
 
 class TestOutputConfig:
@@ -107,6 +113,7 @@ class TestOutputConfig:
 
         expected_items = str(Path("/etc/openhab") / "items" / "knx.items")
         assert config.config["items_path"] == expected_items
+        assert config.config["yaml_path"] == str(Path("/etc/openhab") / "yaml" / "knx.yaml")
         assert config.config["target_user"] == "openhab"
         assert config.config["target_group"] == "openhab"
         logger.info(f"✓ OpenHAB CLI detection: items_path={config.config['items_path']}")

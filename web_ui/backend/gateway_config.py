@@ -8,8 +8,6 @@ from typing import Any
 
 import yaml
 
-from knx_things import get_active_things_output
-
 from .deploy_policy import configured_managed_paths, read_managed_file
 from .things_format import FORMAT_OUTPUT_KEYS
 
@@ -156,7 +154,8 @@ def _set_dsl_property(configuration: str, key: str, value: str) -> str:
     if "\n" in configuration:
         newline = "\r\n" if "\r\n" in configuration else "\n"
         last_line = trimmed.rsplit("\n", 1)[-1]
-        indent = re.match(r"[ \t]*", last_line).group(0)
+        indent_match = re.match(r"[ \t]*", last_line)
+        indent = indent_match.group(0) if indent_match else ""
         return f"{trimmed}{separator}{newline}{indent}{key}={value}{trailing_whitespace}"
     return f"{trimmed}{separator} {key}={value}{trailing_whitespace}"
 
@@ -260,21 +259,27 @@ def _dsl_unquote(value: str | None) -> str | None:
 
 def _read_gateway_config(content: str, format_name: str) -> tuple[str | None, str | None]:
     if format_name == "dsl":
-        _opening, _closing, configuration = _dsl_bridge_config(content)
-        mode = _dsl_unquote(_get_dsl_property(configuration, "type"))
-        gateway_ip = _dsl_unquote(_get_dsl_property(configuration, "ipAddress"))
+        _opening, _closing, dsl_configuration = _dsl_bridge_config(content)
+        mode = _dsl_unquote(_get_dsl_property(dsl_configuration, "type"))
+        gateway_ip = _dsl_unquote(_get_dsl_property(dsl_configuration, "ipAddress"))
         return gateway_ip, mode
     document = _load_yaml(content)
-    _bridge, configuration = _yaml_bridge(document)
-    gateway_ip = configuration.get("ipAddress")
-    mode = configuration.get("type")
+    _bridge, bridge_configuration = _yaml_bridge(document)
+    gateway_ip = bridge_configuration.get("ipAddress")
+    mode = bridge_configuration.get("type")
     return (str(gateway_ip) if gateway_ip is not None else None, str(mode) if mode else None)
 
 
 def read_gateway_state(config: Mapping[str, Any], project_root: str) -> dict[str, Any]:
     """Read the active managed bridge configuration without querying OpenHAB."""
-    active_path, format_name = get_active_things_output(config)
+    output_format = str(config.get("output_format", "legacy")).casefold()
+    if output_format not in {"legacy", "yaml"}:
+        raise ValueError(f"Unsupported OpenHAB output format: {output_format}")
+    format_name = "dsl" if output_format == "legacy" else "yaml"
     key = FORMAT_OUTPUT_KEYS[format_name]
+    active_path = config.get(key)
+    if not isinstance(active_path, str) or not active_path:
+        raise ValueError(f"No managed output path is configured for {output_format}")
     openhab_root, managed_paths = configured_managed_paths(config, project_root)
     relative_path = managed_paths.get(key)
     if not relative_path:
@@ -286,6 +291,7 @@ def read_gateway_state(config: Mapping[str, Any], project_root: str) -> dict[str
     gateway_ip, gateway_mode = _read_gateway_config(content, format_name)
     saved_override = config.get("devices", {}).get("gateway", {}).get("ip_address", "") or ""
     return {
+        "output_format": output_format,
         "things_format": format_name,
         "managed_path": relative_path,
         "configured_path": active_path,

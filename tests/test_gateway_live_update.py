@@ -5,6 +5,7 @@ import hashlib
 import importlib
 import json
 import queue
+import re
 import threading
 from copy import deepcopy
 from pathlib import Path
@@ -23,7 +24,7 @@ from web_ui.backend.gateway_config import (
 from web_ui.backend.jobs import JobManager
 
 
-def _generate_gateway_job(tmp_path, monkeypatch, detected_ip):
+def _generate_gateway_job(tmp_path, monkeypatch, detected_ip, output_format="legacy"):
     openhab_root = tmp_path / "openhab"
     openhab_root.mkdir()
     managed = {
@@ -39,7 +40,7 @@ def _generate_gateway_job(tmp_path, monkeypatch, detected_ip):
     }
     configuration = {
         "openhab_path": str(openhab_root),
-        "things_format": "dsl",
+        "output_format": output_format,
         "items_path": "openhab/items/knx.items",
         "things_path": "openhab/things/knx.things",
         "sitemaps_path": "openhab/sitemaps/knx.sitemap",
@@ -79,9 +80,19 @@ def _generate_gateway_job(tmp_path, monkeypatch, detected_ip):
                 "influx_path",
                 "fenster_path",
             ):
+                if key not in configuration:
+                    continue
                 target = Path(configuration[key])
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text("generated\n", encoding="utf-8")
+            if configuration.get("output_format") == "yaml":
+                target = Path(configuration["yaml_path"])
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(
+                    "version: 1\nthings: {}\nitems: {}\nsitemaps: {}\n",
+                    encoding="utf-8",
+                )
+            return {"things": 'Type switch : test "Test" [ ga="1/1/1" ]\n'}
 
     monkeypatch.setattr(
         jobs_module,
@@ -136,6 +147,23 @@ def test_generation_persists_effective_override_and_detected_ets_ip(
     manager.executor.shutdown(wait=False)
 
 
+@pytest.mark.parametrize(
+    ("output_format", "expected_path"),
+    [("legacy", "things/knx.things"), ("yaml", "yaml/knx.yaml")],
+)
+def test_generation_records_selected_output_and_active_managed_path(
+    tmp_path, monkeypatch, output_format, expected_path
+):
+    manager, job, _openhab_root, _managed = _generate_gateway_job(
+        tmp_path, monkeypatch, detected_ip="192.168.20.30", output_format=output_format
+    )
+
+    assert job["output_format"] == output_format
+    assert job["active_things_path"] == expected_path
+    assert expected_path in job["managed_targets"]
+    manager.executor.shutdown(wait=False)
+
+
 def test_gateway_reset_source_requires_deployment_and_detected_metadata():
     manager = JobManager.__new__(JobManager)
     manager._jobs = {
@@ -143,7 +171,7 @@ def test_gateway_reset_source_requires_deployment_and_detected_metadata():
             "id": "staged",
             "deployed": False,
             "detected_gateway_ip": "192.168.20.30",
-            "things_format": "dsl",
+            "output_format": "legacy",
             "created": 30,
         }
     }
@@ -159,7 +187,7 @@ def test_gateway_reset_source_requires_deployment_and_detected_metadata():
         "deployed": True,
         "deployed_at": 50,
         "detected_gateway_ip": "192.168.20.30",
-        "things_format": "yaml",
+        "output_format": "yaml",
     }
     assert manager.get_last_deployed_gateway_source() == {
         "job_id": "deployed",
@@ -198,6 +226,24 @@ def test_failed_deploy_does_not_replace_source_but_successful_deploy_does(tmp_pa
         "detected_gateway_ip": "192.168.20.30",
         "things_format": "dsl",
     }
+    manager.executor.shutdown(wait=False)
+
+
+def test_redeploying_the_same_job_creates_a_new_deployment_identity(tmp_path, monkeypatch):
+    manager, job, openhab_root, _managed = _generate_gateway_job(
+        tmp_path, monkeypatch, "192.168.20.30"
+    )
+    config_module = SimpleNamespace(config={"openhab_path": str(openhab_root)})
+    monkeypatch.setattr(importlib, "reload", lambda _module: config_module)
+    monkeypatch.setattr(jobs_module, "deploy_staged_files", lambda mapping, *_args: len(mapping))
+
+    manager.deploy(job["id"])
+    first_deployment_id = job.get("deployment_id")
+    assert first_deployment_id
+
+    manager.deploy(job["id"])
+
+    assert job["deployment_id"] != first_deployment_id
     manager.executor.shutdown(wait=False)
 
 
@@ -395,7 +441,7 @@ def test_read_gateway_state_does_not_claim_runtime_status(tmp_path):
     config = {
         "openhab_path": "openhab",
         "things_path": "openhab/things/knx.things",
-        "things_format": "dsl",
+        "output_format": "legacy",
         "devices": {"gateway": {"ip_address": "192.168.20.45", "other": "keep"}},
     }
 
@@ -407,6 +453,34 @@ def test_read_gateway_state_does_not_claim_runtime_status(tmp_path):
     assert state["saved_override"] == "192.168.20.45"
     assert state["reset_available"] is False
     assert "runtime_status" not in state
+
+
+def test_read_gateway_state_uses_complete_model_output_format(tmp_path):
+    root = tmp_path / "openhab"
+    yaml_path = root / "yaml" / "knx.yaml"
+    yaml_path.parent.mkdir(parents=True)
+    yaml_path.write_text(
+        "version: 1\n"
+        "things:\n"
+        "  knx:ip:bridge:\n"
+        "    isBridge: true\n"
+        "    config: {type: TUNNEL, ipAddress: 192.168.20.45}\n"
+        "items: {}\nsitemaps: {}\n",
+        encoding="utf-8",
+    )
+    config = {
+        "openhab_path": "openhab",
+        "output_format": "yaml",
+        "yaml_path": "openhab/yaml/knx.yaml",
+        "things_path": "openhab/things/knx.things",
+        "devices": {"gateway": {"ip_address": "192.168.20.45"}},
+    }
+
+    state = read_gateway_state(config, str(tmp_path))
+
+    assert state["things_format"] == "yaml"
+    assert state["managed_path"] == "yaml/knx.yaml"
+    assert state["gateway_ip"] == "192.168.20.45"
 
 
 def _live_update_manager(monkeypatch, tmp_path, gateway_source=None, things_format="dsl"):
@@ -426,7 +500,8 @@ def _live_update_manager(monkeypatch, tmp_path, gateway_source=None, things_form
             "id": "deployed",
             "deployed": True,
             "deployed_at": 1,
-            "things_format": things_format,
+            "deployment_id": "deployment-1",
+            "output_format": "legacy" if things_format == "dsl" else "yaml",
             "openhab_root": str(openhab_root),
             "active_things_path": managed_path,
             "managed_targets": ["things/knx.things", "yaml/knx.yaml"],
@@ -436,7 +511,7 @@ def _live_update_manager(monkeypatch, tmp_path, gateway_source=None, things_form
     state = {
         "config": {
             "openhab_path": "openhab",
-            "things_format": things_format,
+            "output_format": "legacy" if things_format == "dsl" else "yaml",
             "things_path": "openhab/things/knx.things",
             "yaml_path": "openhab/yaml/knx.yaml",
             "devices": {
@@ -470,6 +545,25 @@ def _live_update_manager(monkeypatch, tmp_path, gateway_source=None, things_form
                         "knx:device:bridge:generic": {
                             "channels": {"light": {"type": "switch", "config": {"ga": "1/1/1"}}}
                         },
+                        "knx:other:device": {
+                            "label": "Other Thing",
+                            "config": {"address": "2/2/2", "enabled": True},
+                            "channels": {"status": {"type": "contact", "config": {"ga": "2/2/3"}}},
+                        },
+                    },
+                    "items": {
+                        "Base": {"type": "Group", "label": "Home", "tags": ["Location"]},
+                        "i_living_light": {
+                            "type": "Switch",
+                            "label": "Living Light",
+                            "channel": "knx:device:bridge:generic:light",
+                        },
+                    },
+                    "sitemaps": {
+                        "knx": {
+                            "label": "Home",
+                            "widgets": [{"type": "Text", "item": "i_living_light"}],
+                        }
                     },
                 },
                 sort_keys=False,
@@ -494,7 +588,7 @@ def _live_update_manager(monkeypatch, tmp_path, gateway_source=None, things_form
     monkeypatch.setattr(
         jobs_module, "load_generator_config", lambda *_args: deepcopy(state["config"])
     )
-    monkeypatch.setattr(jobs_module, "package_version", lambda _package: {"installed": "5.0.0"})
+    monkeypatch.setattr(jobs_module, "package_version", lambda _package: {"installed": "5.2.0"})
 
     def save_config(configuration, *_args):
         state["save_calls"].append(deepcopy(configuration))
@@ -550,6 +644,34 @@ def test_apply_updates_active_file_and_only_gateway_override(tmp_path, monkeypat
     assert "runtime status was not checked" in result["message"]
 
 
+@pytest.mark.parametrize("operation", ["apply", "reset"])
+def test_yaml_live_action_preserves_complete_model_outside_bridge_config(
+    tmp_path, monkeypatch, operation
+):
+    source = {
+        "job_id": "deployed",
+        "detected_gateway_ip": "192.168.20.30",
+        "things_format": "yaml",
+    }
+    manager, state, _read_state = _live_update_manager(
+        monkeypatch,
+        tmp_path,
+        gateway_source=source if operation == "reset" else None,
+        things_format="yaml",
+    )
+    before = yaml.safe_load(state["content"])
+    expected = deepcopy(before)
+    expected_config = expected["things"]["knx:ip:bridge"]["config"]
+    if operation == "apply":
+        manager.apply_gateway_ip("192.168.20.99")
+        expected_config.update(type="TUNNEL", ipAddress="192.168.20.99")
+    else:
+        manager.restore_gateway_ip()
+        expected_config.update(type="TUNNEL", ipAddress="192.168.20.30")
+
+    assert yaml.safe_load(state["content"]) == expected
+
+
 def test_apply_rejects_invalid_ip_without_writing(tmp_path, monkeypatch):
     manager, state, _read_state = _live_update_manager(monkeypatch, tmp_path)
     original_config = deepcopy(state["config"])
@@ -591,12 +713,71 @@ def test_apply_persists_previous_file_and_override_for_durable_undo(tmp_path, mo
     assert base64.b64decode(snapshot["file_content_b64"]) == previous_content
     assert snapshot["previous_gateway_override"] == "192.168.20.45"
     assert snapshot["job_id"] == "deployed"
+    assert snapshot["deployment_id"] == "deployment-1"
     assert snapshot["openhab_root"] == str(tmp_path / "openhab")
     assert snapshot["managed_path"] == "things/knx.things"
     assert snapshot["things_format"] == "dsl"
     assert snapshot["post_change_sha256"] == hashlib.sha256(state["content"]).hexdigest()
     assert result["undo_available"] is True
     assert manager.get_gateway_state()["undo_available"] is True
+
+
+def test_undo_snapshot_requires_deployment_job_id(tmp_path):
+    with pytest.raises(ValueError, match="snapshot job ID"):
+        gateway_undo.save_snapshot(
+            str(tmp_path / "gateway-live-undo.json"),
+            {
+                "file_content_b64": base64.b64encode(b"prior file\n").decode("ascii"),
+                "previous_gateway_override": "192.168.20.45",
+                "openhab_root": str(tmp_path / "openhab"),
+                "managed_path": "things/knx.things",
+                "things_format": "dsl",
+                "post_change_sha256": hashlib.sha256(b"updated file\n").hexdigest(),
+            },
+        )
+
+
+def test_new_undo_snapshots_require_a_deployment_identity(tmp_path):
+    with pytest.raises(ValueError, match="deployment ID"):
+        gateway_undo.save_snapshot(
+            str(tmp_path / "gateway-live-undo.json"),
+            {
+                "job_id": "deployed",
+                "file_content_b64": base64.b64encode(b"prior file\n").decode("ascii"),
+                "previous_gateway_override": "192.168.20.45",
+                "openhab_root": str(tmp_path / "openhab"),
+                "managed_path": "things/knx.things",
+                "things_format": "dsl",
+                "post_change_sha256": hashlib.sha256(b"updated file\n").hexdigest(),
+            },
+        )
+
+
+def test_legacy_undo_snapshot_loads_but_cannot_be_used_for_current_deployment(
+    tmp_path, monkeypatch
+):
+    manager, state, _read_state = _live_update_manager(monkeypatch, tmp_path)
+    snapshot_path = manager._gateway_undo_path()
+    gateway_undo.save_snapshot(
+        snapshot_path,
+        {
+            "version": 1,
+            "job_id": "deployed",
+            "file_content_b64": base64.b64encode(b"prior file\n").decode("ascii"),
+            "previous_gateway_override": "192.168.20.45",
+            "openhab_root": str(tmp_path / "openhab"),
+            "managed_path": "things/knx.things",
+            "things_format": "dsl",
+            "post_change_sha256": hashlib.sha256(state["content"]).hexdigest(),
+        },
+    )
+
+    assert gateway_undo.load_snapshot(snapshot_path)["version"] == 1
+    assert manager.get_gateway_state()["undo_available"] is False
+    with pytest.raises(
+        ValueError, match="Undo snapshot is stale because the deployed target has changed"
+    ):
+        manager.undo_gateway_ip()
 
 
 def test_failed_live_apply_preserves_previous_undo_snapshot(tmp_path, monkeypatch):
@@ -701,7 +882,7 @@ def test_undo_refuses_a_new_deployment_to_the_same_target(tmp_path, monkeypatch)
         "id": "later-deployment",
         "deployed": True,
         "deployed_at": 2,
-        "things_format": "dsl",
+        "output_format": "legacy",
         "openhab_root": str(tmp_path / "openhab"),
         "active_things_path": "things/knx.things",
         "managed_targets": ["things/knx.things", "yaml/knx.yaml"],
@@ -715,6 +896,29 @@ def test_undo_refuses_a_new_deployment_to_the_same_target(tmp_path, monkeypatch)
     assert state["config"] == live_config
     assert state["write_calls"] == writes_before_undo
     assert (Path(manager.backups_dir) / "gateway-live-undo.json").is_file()
+
+
+def test_undo_is_invalidated_when_the_same_job_is_redeployed_with_unchanged_content(
+    tmp_path, monkeypatch
+):
+    manager, state, _read_state = _live_update_manager(monkeypatch, tmp_path)
+    manager.apply_gateway_ip("192.168.20.99")
+    current_content = state["content"]
+    live_config = deepcopy(state["config"])
+    writes_before_undo = list(state["write_calls"])
+
+    # A successful redeployment of the same job can leave identical file bytes.
+    manager._jobs["deployed"]["deployment_id"] = "deployment-2"
+
+    assert manager.get_gateway_state()["undo_available"] is False
+    with pytest.raises(
+        ValueError, match="Undo snapshot is stale because the deployed target has changed"
+    ):
+        manager.undo_gateway_ip()
+
+    assert state["content"] == current_content
+    assert state["config"] == live_config
+    assert state["write_calls"] == writes_before_undo
 
 
 def test_failed_undo_compensates_and_retains_snapshot(tmp_path, monkeypatch):
@@ -919,8 +1123,21 @@ def test_live_apply_does_not_call_service_or_network_clients(tmp_path, monkeypat
 
 
 @pytest.mark.parametrize("operation", ["apply", "reset", "undo"])
-@pytest.mark.parametrize("installed_version", ["4.4.0", "5.0.0", None, "unknown"])
-def test_yaml_live_operations_require_known_openhab_five(
+@pytest.mark.parametrize(
+    "installed_version",
+    [
+        "4.4.0",
+        "5.0.0",
+        "5.1.12",
+        None,
+        "unknown",
+        "not-a-version",
+        "5.2.0",
+        "5.2.7",
+        "6.0.0",
+    ],
+)
+def test_yaml_live_operations_require_known_openhab_5_2(
     tmp_path, monkeypatch, operation, installed_version
 ):
     source = {
@@ -943,6 +1160,7 @@ def test_yaml_live_operations_require_known_openhab_five(
             manager._gateway_undo_path(),
             {
                 "job_id": "deployed",
+                "deployment_id": "deployment-1",
                 "file_content_b64": base64.b64encode(b"prior file\n").decode("ascii"),
                 "previous_gateway_override": "192.168.20.45",
                 "openhab_root": str(tmp_path / "openhab"),
@@ -956,14 +1174,15 @@ def test_yaml_live_operations_require_known_openhab_five(
         "reset": manager.restore_gateway_ip,
         "undo": manager.undo_gateway_ip,
     }[operation]
-    allow_yaml = installed_version == "5.0.0"
+    version_match = re.match(r"^(\d+)\.(\d+)", installed_version or "")
+    allow_yaml = bool(version_match and tuple(map(int, version_match.groups())) >= (5, 2))
     original_content = state["content"]
     original_config = deepcopy(state["config"])
 
     if allow_yaml:
         assert method()["success"] is True
     else:
-        with pytest.raises(ValueError, match="OpenHAB 5.0 or newer"):
+        with pytest.raises(ValueError, match="OpenHAB 5.2 or newer"):
             method()
         assert state["content"] == original_content
         assert state["config"] == original_config
@@ -978,7 +1197,7 @@ def test_last_deployed_things_target_ignores_pending_and_older_jobs():
             "id": "old",
             "deployed": True,
             "deployed_at": 10,
-            "things_format": "dsl",
+            "output_format": "legacy",
             "openhab_root": "/srv/openhab-old",
             "active_things_path": "things/old.things",
             "managed_targets": ["things/old.things"],
@@ -987,7 +1206,7 @@ def test_last_deployed_things_target_ignores_pending_and_older_jobs():
             "id": "staged",
             "deployed": False,
             "deployed_at": 30,
-            "things_format": "dsl",
+            "output_format": "legacy",
             "openhab_root": "/srv/openhab-staged",
             "active_things_path": "things/staged.things",
             "managed_targets": ["things/staged.things"],
@@ -996,7 +1215,7 @@ def test_last_deployed_things_target_ignores_pending_and_older_jobs():
             "id": "deployed",
             "deployed": True,
             "deployed_at": 20,
-            "things_format": "yaml",
+            "output_format": "yaml",
             "openhab_root": "/srv/openhab-active",
             "active_things_path": "yaml/knx.yaml",
             "managed_targets": ["items/knx.items", "yaml/knx.yaml"],
@@ -1006,15 +1225,40 @@ def test_last_deployed_things_target_ignores_pending_and_older_jobs():
 
     assert manager.get_last_deployed_things_target() == {
         "job_id": "deployed",
+        "deployment_id": "deployed:20",
         "openhab_root": "/srv/openhab-active",
         "managed_path": "yaml/knx.yaml",
+        "output_format": "yaml",
         "things_format": "yaml",
     }
 
 
-def test_last_deployed_things_target_rejects_legacy_metadata_without_managed_path(
-    tmp_path, monkeypatch
-):
+def test_last_deployed_legacy_target_uses_things_path_not_pending_yaml():
+    manager = JobManager.__new__(JobManager)
+    manager._jobs = {
+        "deployed": {
+            "id": "deployed",
+            "deployed": True,
+            "deployed_at": 20,
+            "output_format": "legacy",
+            "openhab_root": "/srv/openhab",
+            "active_things_path": "things/knx.things",
+            "managed_targets": ["items/knx.items", "things/knx.things", "yaml/knx.yaml"],
+        }
+    }
+    manager._reload_jobs = lambda: None
+
+    assert manager.get_last_deployed_things_target() == {
+        "job_id": "deployed",
+        "deployment_id": "deployed:20",
+        "openhab_root": "/srv/openhab",
+        "managed_path": "things/knx.things",
+        "output_format": "legacy",
+        "things_format": "dsl",
+    }
+
+
+def test_last_deployed_target_rejects_metadata_without_active_path(tmp_path, monkeypatch):
     manager = JobManager.__new__(JobManager)
     manager.operation_lock = threading.Lock()
     manager._jobs = {
@@ -1022,9 +1266,8 @@ def test_last_deployed_things_target_rejects_legacy_metadata_without_managed_pat
             "id": "legacy",
             "deployed": True,
             "deployed_at": 20,
-            "things_format": "yaml",
+            "output_format": "yaml",
             "openhab_root": "/srv/openhab",
-            "active_things_path": "yaml/knx.yaml",
         }
     }
     manager._reload_jobs = lambda: None
@@ -1062,7 +1305,7 @@ def test_live_apply_updates_deployed_yaml_not_pending_dsl_config(tmp_path, monke
     )
     config = {
         "openhab_path": str(pending_root),
-        "things_format": "dsl",
+        "output_format": "legacy",
         "things_path": str(pending_dsl),
         "yaml_path": str(pending_root / "yaml" / "knx.yaml"),
         "devices": {"gateway": {"ip_address": "192.168.20.45", "label": "keep"}},
@@ -1076,7 +1319,7 @@ def test_live_apply_updates_deployed_yaml_not_pending_dsl_config(tmp_path, monke
             "id": "deployed",
             "deployed": True,
             "deployed_at": 20,
-            "things_format": "yaml",
+            "output_format": "yaml",
             "openhab_root": str(deployed_root),
             "active_things_path": "yaml/knx.yaml",
             "managed_targets": ["items/knx.items", "yaml/knx.yaml"],
@@ -1086,7 +1329,7 @@ def test_live_apply_updates_deployed_yaml_not_pending_dsl_config(tmp_path, monke
     manager._reload_jobs = lambda: None
     saved_configs = []
     monkeypatch.setattr(jobs_module, "load_generator_config", lambda *_args: deepcopy(config))
-    monkeypatch.setattr(jobs_module, "package_version", lambda _package: {"installed": "5.0.0"})
+    monkeypatch.setattr(jobs_module, "package_version", lambda _package: {"installed": "5.2.0"})
     monkeypatch.setattr(
         jobs_module,
         "save_generator_config",

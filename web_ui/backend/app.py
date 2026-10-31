@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import os
+import subprocess
 import sys
 import tarfile
 import uuid
@@ -732,7 +733,8 @@ if FLASK_AVAILABLE:
                     {
                         "error": (
                             "A migrated Web UI password hash is required before updating. "
-                            f"Run 'sudo bash {project_root}/installer/setup.sh' as an administrator."
+                            f"Run 'sudo bash {project_root}/installer/setup.sh' from an interactive SSH terminal "
+                            "(for example, ssh -t). Setup will ask for a Web UI password; then retry the update."
                         )
                     }
                 ),
@@ -1022,9 +1024,47 @@ if FLASK_AVAILABLE:
             if not isinstance(new_config, dict):
                 return jsonify({"error": "Config must be a JSON object"}), 400
 
-            # Save to the main config file (which contains knxproject_to_openhab settings)
             with job_mgr.operation_lock:
+                # Keep provisioning serialized with live gateway edits and deployments.
+                previous_config = load_generator_config(project_root)
+                previous_yaml_path = previous_config.get("yaml_path", "openhab/yaml/knx.yaml")
+                new_yaml_path = new_config.get("yaml_path", "openhab/yaml/knx.yaml")
+                provision_yaml = (
+                    new_yaml_path != previous_yaml_path
+                    and get_paths(project_root).secrets_file is not None
+                )
                 save_generator_config(new_config, project_root)
+
+                if provision_yaml:
+                    try:
+                        result = subprocess.run(
+                            [
+                                "sudo",
+                                "-n",
+                                "/usr/local/sbin/knxohui-service-update",
+                                "provision-yaml",
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=30,
+                            check=False,
+                        )
+                        if result.returncode != 0:
+                            detail = result.stderr.strip() or result.stdout.strip()
+                            raise RuntimeError(detail or "root provisioning action failed")
+                    except Exception as error:
+                        rollback_config = dict(new_config)
+                        if "yaml_path" in previous_config:
+                            rollback_config["yaml_path"] = previous_config["yaml_path"]
+                        else:
+                            rollback_config.pop("yaml_path", None)
+                        try:
+                            save_generator_config(rollback_config, project_root)
+                        except Exception:
+                            logger.exception(
+                                "Could not restore YAML path after provisioning failed"
+                            )
+                        return jsonify({"error": f"Unable to provision YAML output: {error}"}), 500
 
             return jsonify({"message": "Configuration updated successfully"})
         except Exception as e:

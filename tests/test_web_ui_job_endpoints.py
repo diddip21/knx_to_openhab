@@ -1,5 +1,6 @@
 import importlib
 import json
+import subprocess
 import threading
 from types import SimpleNamespace
 from unittest.mock import Mock, mock_open
@@ -18,6 +19,103 @@ def client():
         app_module.cfg.setdefault("auth", {})
         app_module.cfg["auth"]["enabled"] = False
     return app_module.app.test_client()
+
+
+def test_config_change_provisions_new_yaml_path_with_fixed_root_action(client, monkeypatch):
+    previous_config = {
+        "output_format": "yaml",
+        "yaml_path": "openhab/yaml/knx.yaml",
+        "sitemap_label": "House",
+    }
+    new_config = {
+        **previous_config,
+        "yaml_path": "openhab/yaml/secondary.yaml",
+        "sitemap_label": "Home",
+    }
+    saved_configs = []
+    provision = Mock(return_value=SimpleNamespace(returncode=0, stdout="", stderr=""))
+    monkeypatch.setattr(app_module, "load_generator_config", lambda _root: previous_config)
+    monkeypatch.setattr(
+        app_module,
+        "get_paths",
+        lambda _root: SimpleNamespace(secrets_file="/etc/knx_to_openhab/secrets.env"),
+    )
+    monkeypatch.setattr(
+        app_module,
+        "save_generator_config",
+        lambda config, _root: saved_configs.append(config.copy()),
+    )
+    monkeypatch.setattr(subprocess, "run", provision)
+
+    response = client.post("/api/config", json=new_config)
+
+    assert response.status_code == 200
+    assert saved_configs == [new_config]
+    provision.assert_called_once()
+    assert provision.call_args.args[0] == [
+        "sudo",
+        "-n",
+        "/usr/local/sbin/knxohui-service-update",
+        "provision-yaml",
+    ]
+
+
+def test_config_change_restores_yaml_path_when_provisioning_fails(client, monkeypatch):
+    previous_config = {
+        "output_format": "yaml",
+        "yaml_path": "openhab/yaml/knx.yaml",
+        "sitemap_label": "House",
+    }
+    new_config = {
+        **previous_config,
+        "yaml_path": "openhab/yaml/secondary.yaml",
+        "sitemap_label": "Home",
+    }
+    saved_configs = []
+    provision = Mock(
+        return_value=SimpleNamespace(returncode=1, stdout="", stderr="target rejected")
+    )
+    monkeypatch.setattr(app_module, "load_generator_config", lambda _root: previous_config)
+    monkeypatch.setattr(
+        app_module,
+        "get_paths",
+        lambda _root: SimpleNamespace(secrets_file="/etc/knx_to_openhab/secrets.env"),
+    )
+    monkeypatch.setattr(
+        app_module,
+        "save_generator_config",
+        lambda config, _root: saved_configs.append(config.copy()),
+    )
+    monkeypatch.setattr(subprocess, "run", provision)
+
+    response = client.post("/api/config", json=new_config)
+
+    assert response.status_code == 500
+    assert [config["yaml_path"] for config in saved_configs] == [
+        "openhab/yaml/secondary.yaml",
+        "openhab/yaml/knx.yaml",
+    ]
+    assert saved_configs[-1]["sitemap_label"] == "Home"
+    assert response.get_json() == {"error": "Unable to provision YAML output: target rejected"}
+
+
+def test_config_change_skips_root_provisioning_in_local_development(client, monkeypatch):
+    previous_config = {"yaml_path": "openhab/yaml/knx.yaml"}
+    new_config = {"yaml_path": "openhab/yaml/secondary.yaml"}
+    provision = Mock()
+    monkeypatch.setattr(app_module, "load_generator_config", lambda _root: previous_config)
+    monkeypatch.setattr(
+        app_module,
+        "get_paths",
+        lambda _root: SimpleNamespace(secrets_file=None),
+    )
+    monkeypatch.setattr(app_module, "save_generator_config", lambda _config, _root: None)
+    monkeypatch.setattr(subprocess, "run", provision)
+
+    response = client.post("/api/config", json=new_config)
+
+    assert response.status_code == 200
+    provision.assert_not_called()
 
 
 def test_job_deploy_success(client, monkeypatch):
@@ -174,6 +272,7 @@ def test_gateway_state_returns_active_format_detected_source_and_unverified_stat
         "gateway_mode": "TUNNEL",
         "saved_override": "192.168.1.10",
         "reset_available": True,
+        "detected_gateway_ip": "192.168.1.5",
     }
     job_mgr.get_last_deployed_gateway_source.return_value = {
         "job_id": "deployed-job",
@@ -365,6 +464,11 @@ def test_config_save_uses_gateway_operation_lock(client, monkeypatch):
     job_mgr = Mock()
     job_mgr.operation_lock = operation_lock
     monkeypatch.setattr(app_module, "job_mgr", job_mgr)
+    monkeypatch.setattr(
+        app_module,
+        "get_paths",
+        lambda _root: SimpleNamespace(secrets_file=None),
+    )
     saved = {}
 
     def save_while_locked(config, _project_root):
@@ -373,8 +477,107 @@ def test_config_save_uses_gateway_operation_lock(client, monkeypatch):
 
     monkeypatch.setattr(app_module, "save_generator_config", save_while_locked)
 
-    response = client.post("/api/config", json={"things_format": "dsl"})
+    config = {
+        "output_format": "legacy",
+        "yaml_path": "openhab/yaml/knx.yaml",
+        "devices": {"gateway": {"ip_address": "192.168.1.10"}},
+        "general": {"custom_sibling": True},
+    }
+    response = client.post("/api/config", json=config)
 
     assert response.status_code == 200
-    assert saved == {"things_format": "dsl"}
+    assert saved == config
+    assert not operation_lock.locked()
+
+
+def test_config_save_provisions_changed_yaml_path_under_operation_lock(client, monkeypatch):
+    operation_lock = threading.Lock()
+    job_mgr = Mock()
+    job_mgr.operation_lock = operation_lock
+    monkeypatch.setattr(app_module, "job_mgr", job_mgr)
+    monkeypatch.setattr(
+        app_module,
+        "get_paths",
+        lambda _root: SimpleNamespace(secrets_file="/etc/knx-to-openhab/secrets.json"),
+    )
+    previous = {
+        "output_format": "legacy",
+        "yaml_path": "openhab/yaml/old.yaml",
+        "general": {"existing": True},
+    }
+    monkeypatch.setattr(app_module, "load_generator_config", lambda _root: previous)
+    saves = []
+
+    def save_while_locked(config, _project_root):
+        assert operation_lock.locked()
+        saves.append(config.copy())
+
+    monkeypatch.setattr(app_module, "save_generator_config", save_while_locked)
+    command_calls = []
+
+    def provision(*args, **kwargs):
+        assert operation_lock.locked()
+        command_calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr(app_module.subprocess, "run", provision)
+    config = {
+        "output_format": "yaml",
+        "yaml_path": "openhab/yaml/new.yaml",
+        "things_path": "openhab/things/knx.things",
+        "general": {"existing": True, "new_setting": "keep"},
+        "devices": {"gateway": {"ip_address": "192.168.1.50"}},
+    }
+
+    response = client.post("/api/config", json=config)
+
+    assert response.status_code == 200
+    assert saves == [config]
+    assert len(command_calls) == 1
+    assert command_calls[0][0][0][0] == "sudo"
+    assert not operation_lock.locked()
+
+
+def test_config_save_provision_failure_rolls_back_only_yaml_path(client, monkeypatch):
+    operation_lock = threading.Lock()
+    job_mgr = Mock()
+    job_mgr.operation_lock = operation_lock
+    monkeypatch.setattr(app_module, "job_mgr", job_mgr)
+    monkeypatch.setattr(
+        app_module,
+        "get_paths",
+        lambda _root: SimpleNamespace(secrets_file="/etc/knx-to-openhab/secrets.json"),
+    )
+    previous = {"yaml_path": "openhab/yaml/old.yaml", "legacy_sibling": "preserve"}
+    monkeypatch.setattr(app_module, "load_generator_config", lambda _root: previous)
+    saves = []
+
+    def save_while_locked(config, _project_root):
+        assert operation_lock.locked()
+        saves.append(config.copy())
+
+    monkeypatch.setattr(app_module, "save_generator_config", save_while_locked)
+    monkeypatch.setattr(
+        app_module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=1, stderr="provision denied", stdout=""
+        ),
+    )
+    config = {
+        "output_format": "yaml",
+        "yaml_path": "openhab/yaml/new.yaml",
+        "general": {"new_sibling": "preserve"},
+        "devices": {"gateway": {"ip_address": "192.168.1.70"}},
+    }
+
+    response = client.post("/api/config", json=config)
+
+    assert response.status_code == 500
+    assert "provision denied" in response.get_json()["error"]
+    assert saves[0] == config
+    assert saves[1] == {
+        **config,
+        "yaml_path": "openhab/yaml/old.yaml",
+    }
     assert not operation_lock.locked()

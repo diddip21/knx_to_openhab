@@ -2,11 +2,10 @@
 
 import json
 import os
-import re
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Dialog, Page, expect
 
 
 def _open_settings(page: Page, base_url: str) -> None:
@@ -27,12 +26,12 @@ def _open_settings(page: Page, base_url: str) -> None:
     if not content.is_visible():
         settings.locator(".card-header").click()
     expect(content).to_be_visible()
-    expect(page.locator("#conf-items-path")).to_have_value(re.compile(r".+"), timeout=10000)
+    expect(page.locator("#configStatus")).to_contain_text("Configuration loaded", timeout=10000)
 
 
 def _stub_settings_routes(
     page: Page,
-    installed_version="5.0.0",
+    installed_version="5.2.0",
     reset_available=True,
     deployed_format="dsl",
     managed_path="things/knx.things",
@@ -41,7 +40,7 @@ def _stub_settings_routes(
 ):
     project_root = Path(__file__).resolve().parents[2]
     config_data = json.loads((project_root / "config.json").read_text(encoding="utf-8"))
-    config_data["things_format"] = "dsl"
+    config_data["output_format"] = "legacy"
     config_data["things_path"] = "openhab/things/knx.things"
     config_data["yaml_path"] = "openhab/yaml/knx.yaml"
     config_data["devices"]["gateway"]["ip_address"] = "192.0.2.42"
@@ -130,40 +129,43 @@ def _stub_settings_routes(
 def test_format_selector_shows_migration_paths_and_openhab_compatibility(page: Page, flask_server):
     _stub_settings_routes(page, installed_version=None)
     _open_settings(page, flask_server)
-    page.get_by_role("button", name="Devices").click()
 
-    format_select = page.locator("#conf-things-format")
-    expect(format_select).to_have_value("dsl")
-    expect(page.locator("#conf-yaml-path-group")).to_be_hidden()
+    format_select = page.locator("#conf-output-format")
+    expect(format_select).to_have_value("legacy")
+    expect(page.locator("#yaml-path-group")).to_be_hidden()
 
     format_select.select_option("yaml")
 
     expect(page.locator("#gateway-format-warning")).to_contain_text("could not be determined")
-    expect(page.locator("#conf-yaml-path-group")).to_be_visible()
+    expect(page.locator("#yaml-path-group")).to_be_visible()
     expect(page.locator("#conf-yaml-path")).to_have_value("openhab/yaml/knx.yaml")
-    expect(page.locator("#gateway-migration-preview")).to_contain_text("openhab/things/knx.things")
+    expect(page.locator("#gateway-migration-preview")).to_contain_text("things/knx.things")
     expect(page.locator("#gateway-migration-preview")).to_contain_text("openhab/yaml/knx.yaml")
     expect(page.locator("#gateway-migration-preview")).to_contain_text(
-        "Manual edits inside the generator-owned file are backed up but not translated"
+        "manual files remain untouched"
     )
 
-    dialog_messages = []
-    page.once("dialog", lambda dialog: (dialog_messages.append(dialog.message), dialog.dismiss()))
+    dialog_messages: list[str] = []
+
+    def dismiss_migration_dialog(dialog: Dialog) -> None:
+        dialog_messages.append(dialog.message)
+        dialog.dismiss()
+
+    page.once("dialog", dismiss_migration_dialog)
     page.get_by_role("button", name="Save & Reprocess Last Job").click()
-    assert "openhab/things/knx.things" in dialog_messages[0]
+    assert "things/knx.things" in dialog_messages[0]
     assert "openhab/yaml/knx.yaml" in dialog_messages[0]
-    assert "not translated" in dialog_messages[0]
+    assert "manual files are not changed" in dialog_messages[0]
 
 
 @pytest.mark.ui
-def test_yaml_format_is_blocked_on_openhab_four(page: Page, flask_server):
-    _stub_settings_routes(page, installed_version="4.3.6")
+def test_yaml_format_is_blocked_below_openhab_5_2(page: Page, flask_server):
+    _stub_settings_routes(page, installed_version="5.1.12")
     _open_settings(page, flask_server)
-    page.get_by_role("button", name="Devices").click()
 
-    page.locator("#conf-things-format").select_option("yaml")
+    page.locator("#conf-output-format").select_option("yaml")
 
-    expect(page.locator("#gateway-format-warning")).to_contain_text("requires OpenHAB 5.0 or newer")
+    expect(page.locator("#gateway-format-warning")).to_contain_text("requires OpenHAB 5.2 or newer")
     expect(page.get_by_role("button", name="Save & Reprocess Last Job")).to_be_disabled()
 
 
@@ -216,7 +218,9 @@ def test_live_target_display_uses_last_deployed_path_not_pending_format_or_absol
     expect(state).to_contain_text("DSL file things/deployed-knx.things")
     expect(state).not_to_contain_text("C:/temporary/demo")
 
-    page.locator("#conf-things-format").select_option("yaml")
+    page.get_by_role("button", name="General").click()
+    page.locator("#conf-output-format").select_option("yaml")
+    page.get_by_role("button", name="Devices").click()
 
     expect(state).to_contain_text("DSL file things/deployed-knx.things")
     expect(state).not_to_contain_text("yaml/knx.yaml")
@@ -239,7 +243,14 @@ def test_all_live_actions_are_disabled_without_a_deployed_target(page: Page, fla
 @pytest.mark.ui
 @pytest.mark.parametrize(
     ("installed_version", "should_enable"),
-    [("4.4.0", False), (None, False), ("5.0.0", True), ("5.1.2", True)],
+    [
+        ("4.4.0", False),
+        (None, False),
+        ("5.0.0", False),
+        ("5.1.2", False),
+        ("5.2.0", True),
+        ("5.2.7", True),
+    ],
 )
 def test_yaml_deployed_live_actions_follow_installed_openhab_compatibility(
     page: Page, flask_server, installed_version, should_enable
@@ -267,7 +278,7 @@ def test_yaml_deployed_live_actions_follow_installed_openhab_compatibility(
         expect(page.locator("#gateway-live-warning")).to_be_hidden()
     else:
         expect(page.locator("#gateway-live-warning")).to_contain_text(
-            "deployed YAML Things file requires a known OpenHAB 5.0 or newer installation"
+            "deployed YAML model requires a known OpenHAB 5.2 or newer installation"
         )
 
 

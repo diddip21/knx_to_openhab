@@ -115,16 +115,37 @@
           <div id="tab-general" class="tab-content active">
             <!-- ETS Export Path removed -->
             <div class="form-group">
-              <label>Items Path</label>
-              <input type="text" id="conf-items-path" class="form-control">
+              <label>OpenHAB Model Format</label>
+              <select id="conf-output-format" class="form-control">
+                <option value="legacy">Legacy DSL (.things/.items/.sitemap)</option>
+                <option value="yaml">openHAB 5.2 YAML</option>
+              </select>
+              <div class="checkbox-help">YAML combines Things, Items and the Sitemap in one versioned file. Persistence and the stateful window rule remain textual.</div>
             </div>
-            <div class="form-group">
-              <label>Things Path</label>
-              <input type="text" id="conf-things-path" class="form-control">
+            <div id="gateway-format-warning" class="info-box" role="status" style="display:none;"></div>
+            <div id="gateway-migration-preview" class="info-box" style="display:none;">
+              <strong>Output format migration preview</strong>
+              <p>Old generator output: <code id="gateway-migration-from"></code></p>
+              <p>New generator output: <code id="gateway-migration-to"></code></p>
+              <p>Only generator-owned targets are migrated; manual files remain untouched.</p>
             </div>
-            <div class="form-group">
-              <label>Sitemaps Path</label>
-              <input type="text" id="conf-sitemaps-path" class="form-control">
+            <div class="form-group" id="yaml-path-group">
+              <label>YAML Path</label>
+              <input type="text" id="conf-yaml-path" class="form-control">
+            </div>
+            <div id="legacy-model-paths">
+              <div class="form-group">
+                <label>Items Path</label>
+                <input type="text" id="conf-items-path" class="form-control">
+              </div>
+              <div class="form-group">
+                <label>Things Path</label>
+                <input type="text" id="conf-things-path" class="form-control">
+              </div>
+              <div class="form-group">
+                <label>Sitemaps Path</label>
+                <input type="text" id="conf-sitemaps-path" class="form-control">
+              </div>
             </div>
             <div class="form-group">
               <label>InfluxDB Path</label>
@@ -191,26 +212,6 @@
 
           <!-- Devices Tab -->
           <div id="tab-devices" class="tab-content">
-            <h3>KNX Things Output</h3>
-            <div class="form-group">
-              <label for="conf-things-format">Things Format</label>
-              <select id="conf-things-format" class="form-control">
-                <option value="dsl">DSL (default)</option>
-                <option value="yaml">YAML (OpenHAB 5.0+)</option>
-              </select>
-            </div>
-            <div class="form-group" id="conf-yaml-path-group" style="display:none;">
-              <label for="conf-yaml-path">YAML Things Path</label>
-              <input type="text" id="conf-yaml-path" class="form-control">
-            </div>
-            <div id="gateway-format-warning" class="info-box" role="status" style="display:none;"></div>
-            <div id="gateway-migration-preview" class="info-box" style="display:none;">
-              <strong>Format migration preview</strong>
-              <p>Old generator file: <code id="gateway-migration-from"></code></p>
-              <p>New generator file: <code id="gateway-migration-to"></code></p>
-              <p>Manual edits inside the generator-owned file are backed up but not translated.</p>
-            </div>
-
             <h3>Gateway</h3>
             <div class="form-group">
               <label>Hardware Names (comma separated)</label>
@@ -223,7 +224,7 @@
               <small id="conf-gateway-ip-help">Enter an IPv4 or IPv6 address to override the ETS value. Leave blank for automatic detection during a future generation.</small>
             </div>
             <div id="gateway-file-state" class="info-box" role="status">Loading managed gateway file state…</div>
-            <p class="muted">Live actions change only the Things file from the last successful deployment and the saved gateway override. Pending format or path changes take effect after deployment. OpenHAB is not restarted, and runtime status is not checked.</p>
+            <p class="muted">Live actions change only the managed model file from the last successful deployment and the saved gateway override. Pending format or path changes take effect after deployment. OpenHAB is not restarted, and runtime status is not checked.</p>
             <div id="gateway-live-warning" class="info-box" role="status" style="display:none;"></div>
             <div class="form-actions">
               <button type="button" id="gateway-apply-ip" class="btn-primary" disabled>Apply IP to live OpenHAB file</button>

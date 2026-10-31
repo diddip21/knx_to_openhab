@@ -14,8 +14,6 @@ from web_ui.backend.jobs import JobManager
 from web_ui.backend.things_format import (
     assert_no_unmanaged_bridge_definitions,
     find_unmanaged_bridge_definitions,
-    inactive_content,
-    plan_things_outputs,
     validate_yaml_compatibility,
 )
 
@@ -46,7 +44,7 @@ def _run_staged_generation(tmp_path, monkeypatch, current_format, previous_forma
 
     configuration = {
         "openhab_path": str(openhab_root),
-        "things_format": current_format,
+        "output_format": "legacy" if current_format == "dsl" else "yaml",
         "items_path": "openhab/items/knx.items",
         "things_path": "openhab/things/knx.things",
         "sitemaps_path": "openhab/sitemaps/knx.sitemap",
@@ -75,7 +73,7 @@ def _run_staged_generation(tmp_path, monkeypatch, current_format, previous_forma
                 target = Path(configuration[key])
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text("generated\n", encoding="utf-8")
-            if configuration["things_format"] == "yaml":
+            if configuration["output_format"] == "yaml":
                 target = Path(configuration["yaml_path"])
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(
@@ -129,7 +127,7 @@ def _run_staged_generation(tmp_path, monkeypatch, current_format, previous_forma
         "id": previous_id,
         "deployed": True,
         "deployed_at": 1,
-        "things_format": previous_format,
+        "output_format": "legacy" if previous_format == "dsl" else "yaml",
     }
     project_path = tmp_path / "project.json"
     project_path.write_text("{}", encoding="utf-8")
@@ -147,41 +145,6 @@ def _run_staged_generation(tmp_path, monkeypatch, current_format, previous_forma
     return manager, job, openhab_root, managed
 
 
-def test_inactive_content_is_valid_and_has_no_active_bridge():
-    assert inactive_content("dsl").startswith("//")
-    assert yaml.safe_load(inactive_content("yaml")) == {"version": 1}
-
-
-def test_format_staging_includes_only_the_selected_things_output():
-    managed = {
-        "items_path": "items/knx.items",
-        "things_path": "things/knx.things",
-        "sitemaps_path": "sitemaps/knx.sitemap",
-        "yaml_path": "yaml/knx.yaml",
-        "completeness_report.json": "completeness_report.json",
-    }
-
-    dsl_keys, dsl_deactivate = plan_things_outputs(
-        {"things_format": "dsl", "things_path": "openhab/things/knx.things"},
-        managed,
-        previous_format="dsl",
-    )
-    yaml_keys, yaml_deactivate = plan_things_outputs(
-        {
-            "things_format": "yaml",
-            "things_path": "openhab/things/knx.things",
-            "yaml_path": "openhab/yaml/knx.yaml",
-        },
-        managed,
-        previous_format="yaml",
-    )
-
-    assert "things_path" in dsl_keys and "yaml_path" not in dsl_keys
-    assert "yaml_path" in yaml_keys and "things_path" not in yaml_keys
-    assert dsl_deactivate is None
-    assert yaml_deactivate is None
-
-
 def test_last_deployed_format_defaults_legacy_jobs_to_dsl():
     manager = JobManager.__new__(JobManager)
     manager._jobs = {
@@ -190,7 +153,7 @@ def test_last_deployed_format_defaults_legacy_jobs_to_dsl():
             "id": "yaml",
             "deployed": True,
             "deployed_at": 20,
-            "things_format": "yaml",
+            "output_format": "yaml",
         },
     }
     manager._reload_jobs = lambda: None
@@ -199,33 +162,6 @@ def test_last_deployed_format_defaults_legacy_jobs_to_dsl():
 
     manager._jobs = {"legacy": {"id": "legacy", "deployed": True, "created": 10}}
     assert manager.get_last_deployed_things_format() == "dsl"
-
-
-@pytest.mark.parametrize(
-    ("current_format", "previous_format", "inactive_key"),
-    [("yaml", "dsl", "things_path"), ("dsl", "yaml", "yaml_path")],
-)
-def test_format_migration_stages_inactive_previous_output(
-    current_format, previous_format, inactive_key
-):
-    managed = {
-        "things_path": "things/knx.things",
-        "yaml_path": "yaml/knx.yaml",
-        "items_path": "items/knx.items",
-    }
-    configuration = {
-        "things_format": current_format,
-        "things_path": "openhab/things/knx.things",
-        "yaml_path": "openhab/yaml/knx.yaml",
-    }
-
-    output_keys, inactive = plan_things_outputs(
-        configuration, managed, previous_format=previous_format
-    )
-
-    assert inactive == inactive_key
-    assert inactive_key not in output_keys
-    assert ("yaml_path" if current_format == "yaml" else "things_path") in output_keys
 
 
 def test_format_switch_rejects_unmanaged_duplicate_bridge(tmp_path):
@@ -240,11 +176,14 @@ def test_format_switch_rejects_unmanaged_duplicate_bridge(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("things_format", "active_key", "inactive_key"),
-    [("dsl", "things_path", "yaml_path"), ("yaml", "yaml_path", "things_path")],
+    ("things_format", "active_key", "retired_key", "output_format"),
+    [
+        ("dsl", "things_path", "yaml_path", "legacy"),
+        ("yaml", "yaml_path", "things_path", "yaml"),
+    ],
 )
-def test_job_stages_only_the_selected_things_format(
-    tmp_path, monkeypatch, things_format, active_key, inactive_key
+def test_job_stages_selected_model_and_retired_output(
+    tmp_path, monkeypatch, things_format, active_key, retired_key, output_format
 ):
     manager, job, _root, managed = _run_staged_generation(
         tmp_path, monkeypatch, things_format, things_format
@@ -256,20 +195,27 @@ def test_job_stages_only_the_selected_things_format(
         for target in job["stage_mapping"].values()
     }
     assert managed[active_key] in targets
-    assert managed[inactive_key] not in targets
-    assert job["things_format"] == things_format
+    assert managed[retired_key] in targets
+    retired_staged = next(
+        Path(staged)
+        for staged, target in job["stage_mapping"].items()
+        if Path(target).resolve() == (Path(job["openhab_root"]) / managed[retired_key]).resolve()
+    )
+    assert retired_staged.read_text(encoding="utf-8") == ""
+    assert job["output_format"] == output_format
+    assert job["active_things_path"] == managed[active_key]
     manager.executor.shutdown(wait=False)
 
 
 @pytest.mark.parametrize(
-    ("current_format", "previous_format", "inactive_key", "marker"),
+    ("current_format", "previous_format", "retired_key"),
     [
-        ("yaml", "dsl", "things_path", "KNX Things inactive"),
-        ("dsl", "yaml", "yaml_path", "version: 1"),
+        ("yaml", "dsl", "things_path"),
+        ("dsl", "yaml", "yaml_path"),
     ],
 )
-def test_job_migration_stages_new_format_and_inactive_placeholder(
-    tmp_path, monkeypatch, current_format, previous_format, inactive_key, marker
+def test_job_migration_retires_previous_managed_model(
+    tmp_path, monkeypatch, current_format, previous_format, retired_key
 ):
     manager, job, _root, managed = _run_staged_generation(
         tmp_path, monkeypatch, current_format, previous_format
@@ -277,19 +223,20 @@ def test_job_migration_stages_new_format_and_inactive_placeholder(
 
     assert job["status"] == "completed"
     mapping = job["stage_mapping"]
-    targets = [
-        Path(target).relative_to(job["openhab_root"]).as_posix() for target in mapping.values()
-    ]
-    assert targets[0] == managed[inactive_key]
     active_key = "yaml_path" if current_format == "yaml" else "things_path"
+    targets = {
+        Path(target).relative_to(job["openhab_root"]).as_posix() for target in mapping.values()
+    }
     assert managed[active_key] in targets
-    inactive_staged = next(
+    assert managed[retired_key] in targets
+    retired_staged = next(
         Path(staged)
         for staged, target in mapping.items()
-        if Path(target).resolve() == (Path(job["openhab_root"]) / managed[inactive_key]).resolve()
+        if Path(target).resolve() == (Path(job["openhab_root"]) / managed[retired_key]).resolve()
     )
-    assert marker in inactive_staged.read_text(encoding="utf-8")
-    assert job["previous_things_format"] == previous_format
+    assert retired_staged.read_text(encoding="utf-8") == ""
+    assert job["output_format"] == ("legacy" if current_format == "dsl" else "yaml")
+    assert job["active_things_path"] == managed[active_key]
     manager.executor.shutdown(wait=False)
 
 
@@ -340,7 +287,7 @@ def test_format_switch_rolls_back_both_files_on_partial_deploy_failure(tmp_path,
     old_yaml = openhab_root / managed["yaml_path"]
     assert old_dsl.read_text(encoding="utf-8") == "before\n"
     assert old_yaml.read_text(encoding="utf-8") == "before\n"
-    monkeypatch.setattr(jobs_module, "package_version", lambda _package: {"installed": "5.0.0"})
+    monkeypatch.setattr(jobs_module, "package_version", lambda _package: {"installed": "5.2.0"})
 
     def fail_after_deactivating_old_format(mapping, _staging_dir, _openhab_root, _managed):
         staged, target = next(iter(mapping.items()))
@@ -372,16 +319,16 @@ def test_format_switch_rolls_back_both_files_on_partial_deploy_failure(tmp_path,
     manager.executor.shutdown(wait=False)
 
 
-def test_deploy_rejects_yaml_for_known_openhab_four_before_writing(tmp_path, monkeypatch):
+def test_deploy_rejects_yaml_for_known_openhab_51_before_writing(tmp_path, monkeypatch):
     manager, job, openhab_root, managed = _run_staged_generation(
         tmp_path, monkeypatch, "yaml", "yaml"
     )
     live_yaml = openhab_root / managed["yaml_path"]
     original = live_yaml.read_text(encoding="utf-8")
     backups_before = len(job["backups"])
-    monkeypatch.setattr(jobs_module, "package_version", lambda _package: {"installed": "4.3.6"})
+    monkeypatch.setattr(jobs_module, "package_version", lambda _package: {"installed": "5.1.12"})
 
-    with pytest.raises(ValueError, match="5.0"):
+    with pytest.raises(ValueError, match="5.2"):
         manager.deploy(job["id"])
 
     assert live_yaml.read_text(encoding="utf-8") == original
@@ -435,37 +382,23 @@ def test_invalid_unmanaged_yaml_fails_closed_with_its_path(tmp_path):
         find_unmanaged_bridge_definitions(str(tmp_path), set())
 
 
-def test_yaml_compatibility_rejects_openhab_four_and_warns_when_unknown():
-    with pytest.raises(ValueError, match="5.0"):
-        validate_yaml_compatibility("4.3.6")
+def test_yaml_compatibility_requires_openhab_5_2_and_warns_when_unknown():
+    with pytest.raises(ValueError, match="5.2"):
+        validate_yaml_compatibility("5.1.12")
 
-    assert validate_yaml_compatibility("5.0.0") is None
+    assert validate_yaml_compatibility("5.2.0") is None
     assert "not confirmed" in validate_yaml_compatibility(None)
 
 
-def test_completeness_report_reads_yaml_channels(tmp_path):
+def test_completeness_report_uses_generated_things_for_yaml_output(tmp_path):
     openhab = tmp_path / "openhab"
     openhab.mkdir()
-    things = openhab / "knx.yaml"
-    things.write_text(
-        "version: 1\n"
-        "things:\n"
-        "  knx:ip:bridge:\n"
-        "    isBridge: true\n"
-        "    config: {type: ROUTER}\n"
-        "  knx:device:bridge:generic:\n"
-        "    bridge: knx:ip:bridge\n"
-        "    channels:\n"
-        "      light:\n"
-        "        type: switch\n"
-        "        label: Light\n"
-        "        config: {ga: '1/1/1'}\n",
-        encoding="utf-8",
-    )
     manager = JobManager.__new__(JobManager)
 
     report_path = manager._write_completeness_report(
-        str(things), str(openhab), things_format="yaml"
+        None,
+        str(openhab),
+        things_text='Type switch : light "Light" [ ga="1/1/1" ]\n',
     )
 
     report = json.loads((openhab / "completeness_report.json").read_text(encoding="utf-8"))

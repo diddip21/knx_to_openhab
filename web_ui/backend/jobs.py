@@ -1577,6 +1577,10 @@ class JobManager:
 
         deployed_count = 0
         retired_count = len(retirement_targets)
+        previous_deployment_fields = {
+            field: (field in job, job.get(field))
+            for field in ("deployed", "deployed_at", "deployment_id")
+        }
         selected_things_format = "yaml" if job.get("output_format") == "yaml" else "dsl"
         if selected_things_format != previous_things_format:
             managed_things_relpaths = {
@@ -1608,6 +1612,11 @@ class JobManager:
 
         except Exception as e:
             logger.error(f"Deploy failed: {e}")
+            for field, (was_present, previous_value) in previous_deployment_fields.items():
+                if was_present:
+                    job[field] = previous_value
+                else:
+                    job.pop(field, None)
             try:
                 restore_managed_files(backup_path, openhab_path, managed_paths.values())
             except Exception as restore_error:

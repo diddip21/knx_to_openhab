@@ -1679,23 +1679,67 @@ class JobManager:
         return True
 
     def delete_job(self, job_id):
-        """Delete a job from history."""
-        if job_id not in self._jobs:
-            return False
-        with self.lock:
-            del self._jobs[job_id]
-            if job_id in self.queues:
-                del self.queues[job_id]
-            # SECURITY: Clear password from memory
-            passwords = getattr(self, "_passwords", {})
-            passwords.pop(job_id, None)
-            self._preview_cache.pop(job_id, None)
-            preview_path = os.path.join(self.jobs_dir, job_id, "project-preview.json")
-            try:
-                os.remove(preview_path)
-            except FileNotFoundError:
-                pass
-            except OSError:
-                logger.warning("Failed to remove cached preview for %s", job_id, exc_info=True)
-            save_jobs(self.jobs_dir, self._jobs)
-        return True
+        """Delete a job from history, invalidating gateway state if it was active."""
+        with self.operation_lock, self.gateway_state_lock:
+            with self.lock:
+                job = self._jobs.get(job_id)
+                if job is None:
+                    return False
+
+                deployed_jobs = [
+                    (deployed_id, deployed_job)
+                    for deployed_id, deployed_job in self._jobs.items()
+                    if deployed_job.get("deployed")
+                ]
+                active_job_id = None
+                if deployed_jobs:
+                    active_job_id, _active_job = max(
+                        deployed_jobs,
+                        key=lambda entry: entry[1].get("deployed_at", entry[1].get("created", 0)),
+                    )
+                deleting_active_job = active_job_id == job_id
+                previous_jobs = list(self._jobs.items())
+                previous_deployed = {
+                    deployed_id: ("deployed" in deployed_job, deployed_job.get("deployed"))
+                    for deployed_id, deployed_job in self._jobs.items()
+                }
+
+                if deleting_active_job:
+                    for deployed_job in self._jobs.values():
+                        if deployed_job.get("deployed"):
+                            deployed_job["deployed"] = False
+                del self._jobs[job_id]
+                try:
+                    save_jobs(self.jobs_dir, self._jobs)
+                except Exception:
+                    self._jobs.clear()
+                    self._jobs.update(previous_jobs)
+                    for deployed_id, (had_deployed_flag, was_deployed) in previous_deployed.items():
+                        deployed_job = self._jobs[deployed_id]
+                        if had_deployed_flag:
+                            deployed_job["deployed"] = was_deployed
+                        else:
+                            deployed_job.pop("deployed", None)
+                    raise
+
+                if deleting_active_job:
+                    try:
+                        gateway_undo.clear_snapshot(self._gateway_undo_path())
+                    except OSError:
+                        logger.warning(
+                            "Failed to clear the stale gateway undo snapshot after job deletion"
+                        )
+                if job_id in self.queues:
+                    del self.queues[job_id]
+                # SECURITY: Clear password from memory
+                passwords = getattr(self, "_passwords", {})
+                passwords.pop(job_id, None)
+                self._preview_cache.pop(job_id, None)
+                preview_path = os.path.join(self.jobs_dir, job_id, "project-preview.json")
+                try:
+                    os.remove(preview_path)
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    logger.warning("Failed to remove cached preview for %s", job_id, exc_info=True)
+                return True

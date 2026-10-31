@@ -279,7 +279,7 @@ def test_format_switch_rejects_unmanaged_duplicate_bridge_in_job(tmp_path, monke
     manager.executor.shutdown(wait=False)
 
 
-def test_format_switch_rechecks_unmanaged_bridges_before_deploy(tmp_path, monkeypatch):
+def test_format_switch_preflight_rejection_does_not_restore_backup(tmp_path, monkeypatch):
     manager, job, openhab_root, managed = _run_staged_generation(
         tmp_path, monkeypatch, "yaml", "dsl"
     )
@@ -287,7 +287,25 @@ def test_format_switch_rechecks_unmanaged_bridges_before_deploy(tmp_path, monkey
     manual_path.parent.mkdir(parents=True)
     manual_path.write_text('Bridge knx:ip:bridge [ type="ROUTER" ]\n', encoding="utf-8")
     monkeypatch.setattr(jobs_module, "package_version", lambda _package: {"installed": "5.2.0"})
+    managed_dsl = openhab_root / managed["things_path"]
+    restore_calls = []
     deploy_calls = []
+    original_preflight = jobs_module.assert_no_unmanaged_bridge_definitions
+
+    def edit_after_backup_then_reject(root, managed_relpaths):
+        managed_dsl.write_text("newer live edit\n", encoding="utf-8")
+        return original_preflight(root, managed_relpaths)
+
+    def record_rollback(_backup_path, _root, _managed_relatives):
+        restore_calls.append(True)
+        managed_dsl.write_text("before\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        jobs_module,
+        "assert_no_unmanaged_bridge_definitions",
+        edit_after_backup_then_reject,
+    )
+    monkeypatch.setattr(jobs_module, "restore_managed_files", record_rollback)
     monkeypatch.setattr(
         jobs_module,
         "deploy_staged_files",
@@ -299,9 +317,11 @@ def test_format_switch_rechecks_unmanaged_bridges_before_deploy(tmp_path, monkey
     ):
         manager.deploy(job["id"])
 
-    assert (openhab_root / managed["things_path"]).read_text(encoding="utf-8") == "before\n"
+    assert managed_dsl.read_text(encoding="utf-8") == "newer live edit\n"
     assert (openhab_root / managed["yaml_path"]).read_text(encoding="utf-8") == "before\n"
+    assert restore_calls == []
     assert deploy_calls == []
+    assert job["backups"]
     assert job.get("deployed") is not True
     manager.executor.shutdown(wait=False)
 

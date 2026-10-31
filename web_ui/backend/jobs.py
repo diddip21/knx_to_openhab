@@ -1568,16 +1568,19 @@ class JobManager:
 
         deployed_count = 0
         retired_count = len(retirement_targets)
-        try:
-            selected_things_format = "yaml" if job.get("output_format") == "yaml" else "dsl"
-            if selected_things_format != previous_things_format:
-                managed_things_relpaths = {
-                    managed_paths[key]
-                    for key in ("items_path", "things_path", "sitemaps_path", "yaml_path")
-                    if key in managed_paths
-                }
-                assert_no_unmanaged_bridge_definitions(openhab_path, managed_things_relpaths)
+        selected_things_format = "yaml" if job.get("output_format") == "yaml" else "dsl"
+        if selected_things_format != previous_things_format:
+            managed_things_relpaths = {
+                managed_paths[key]
+                for key in ("items_path", "things_path", "sitemaps_path", "yaml_path")
+                if key in managed_paths
+            }
+            # This check rejects before any managed-file write. Keep it outside
+            # the deployment rollback handler so a preflight failure cannot
+            # restore older backup contents over newer live edits.
+            assert_no_unmanaged_bridge_definitions(openhab_path, managed_things_relpaths)
 
+        try:
             deployed_count = deploy_staged_files(
                 mapping,
                 job.get("staging_dir", ""),

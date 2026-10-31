@@ -312,6 +312,7 @@ async function deployJob(jobId) {
     if (res.ok && data.success) {
       alert('Successfully deployed: ' + data.message)
       refreshJobs()
+      await loadGatewayState()
     } else {
       alert('Deploy error: ' + (data.error || 'Unknown error'))
       if (btn) {
@@ -340,6 +341,7 @@ async function doRollback() {
     const data = await res.json()
     if (data.ok) {
       rollbackStatusEl.textContent = '✓ Rollback successful: ' + data.output
+      await loadGatewayState()
       setTimeout(() => rollbackDialog.close(), 2000)
     } else {
       rollbackStatusEl.textContent = '✗ Error: ' + data.error

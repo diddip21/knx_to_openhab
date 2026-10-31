@@ -127,6 +127,75 @@ def _stub_settings_routes(
     return calls
 
 
+def _stub_job_transition_routes(page: Page, transition: str):
+    _stub_settings_routes(page)
+    state = {
+        "available": True,
+        "things_format": "dsl",
+        "managed_path": "things/initial-knx.things",
+    }
+    job = {
+        "id": "gateway-transition-job",
+        "name": "Gateway transition job",
+        "status": "completed",
+        "staged": True,
+        "deployed": transition == "rollback",
+        "backups": [{"name": "backup-current", "ts": "2026-01-01"}],
+        "created": 1700000000,
+        "stats": {},
+        "log": [],
+    }
+    state_requests = []
+
+    def fulfill(route, data, status=200):
+        route.fulfill(status=status, content_type="application/json", body=json.dumps(data))
+
+    def gateway_state_route(route):
+        state_requests.append(dict(state))
+        if not state["available"]:
+            return fulfill(route, {"error": "No usable deployed KNX Things target"}, status=409)
+        fulfill(
+            route,
+            {
+                "things_format": state["things_format"],
+                "managed_path": state["managed_path"],
+                "gateway_ip": "192.0.2.42",
+                "gateway_mode": "TUNNEL",
+                "saved_override": "192.0.2.42",
+                "detected_gateway_ip": "198.51.100.10",
+                "reset_available": True,
+                "undo_available": True,
+                "runtime_status": "not_checked",
+            },
+        )
+
+    def jobs_route(route):
+        fulfill(route, [dict(job)])
+
+    def job_route(route):
+        fulfill(route, dict(job))
+
+    def deploy_route(route):
+        job["deployed"] = True
+        state.update(
+            things_format="yaml",
+            managed_path="yaml/deployed-knx.yaml",
+        )
+        fulfill(route, {"success": True, "message": "Deployed successfully"})
+
+    def rollback_route(route):
+        job["deployed"] = False
+        state["available"] = False
+        fulfill(route, {"ok": True, "output": "restored backup-current"})
+
+    page.route("**/api/gateway/state", gateway_state_route)
+    page.route("**/api/jobs", jobs_route)
+    page.route("**/api/job/gateway-transition-job", job_route)
+    page.route("**/api/job/gateway-transition-job/deploy", deploy_route)
+    page.route("**/api/job/gateway-transition-job/rollback", rollback_route)
+    return state_requests
+
+
 @pytest.mark.ui
 def test_format_selector_shows_migration_paths_and_openhab_compatibility(page: Page, flask_server):
     _stub_settings_routes(page, installed_version=None)
@@ -344,3 +413,49 @@ def test_reset_is_disabled_without_successfully_deployed_ets_source(page: Page, 
     page.get_by_role("button", name="Devices").click()
 
     expect(page.get_by_role("button", name="Restore ETS address")).to_be_disabled()
+
+
+@pytest.mark.ui
+def test_successful_deploy_refreshes_gateway_target_state(page: Page, flask_server):
+    state_requests = _stub_job_transition_routes(page, "deploy")
+    _open_settings(page, flask_server)
+    page.get_by_role("button", name="Devices").click()
+    gateway_state = page.locator("#gateway-file-state")
+    expect(gateway_state).to_contain_text("things/initial-knx.things")
+
+    page.on("dialog", lambda dialog: dialog.accept())
+    page.locator(".job-item button:has-text('Deploy')").click()
+
+    expect(gateway_state).to_contain_text("YAML file yaml/deployed-knx.yaml")
+    assert len(state_requests) >= 2
+    assert state_requests[-1] == {
+        "available": True,
+        "things_format": "yaml",
+        "managed_path": "yaml/deployed-knx.yaml",
+    }
+
+
+@pytest.mark.ui
+def test_successful_rollback_refreshes_gateway_target_availability(page: Page, flask_server):
+    state_requests = _stub_job_transition_routes(page, "rollback")
+    _open_settings(page, flask_server)
+    page.get_by_role("button", name="Devices").click()
+    gateway_state = page.locator("#gateway-file-state")
+    expect(gateway_state).to_contain_text("things/initial-knx.things")
+    expect(page.locator("#gateway-apply-ip")).to_be_enabled()
+
+    page.locator(".job-item button:has-text('Rollback')").click()
+    expect(page.locator("#rollbackDialog")).to_be_visible()
+    page.locator("#rollbackDialog button:has-text('Rollback')").click()
+
+    expect(gateway_state).to_contain_text("No usable deployed KNX Things target")
+    expect(page.locator("#gateway-apply-ip")).to_be_disabled()
+    assert len(state_requests) >= 2
+    assert state_requests[-1]["available"] is False
+    expect(page.locator("#rollbackDialog")).to_be_hidden(timeout=5000)
+    if os.getenv("SAVE_UI_SCREENSHOTS") == "1":
+        screenshot_path = Path(__file__).resolve().parents[2] / "docs" / "screenshots"
+        screenshot_path.mkdir(parents=True, exist_ok=True)
+        page.locator("#tab-devices").screenshot(
+            path=str(screenshot_path / "gateway-state-after-rollback.png")
+        )

@@ -590,6 +590,7 @@ def test_apply_persists_previous_file_and_override_for_durable_undo(tmp_path, mo
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
     assert base64.b64decode(snapshot["file_content_b64"]) == previous_content
     assert snapshot["previous_gateway_override"] == "192.168.20.45"
+    assert snapshot["job_id"] == "deployed"
     assert snapshot["openhab_root"] == str(tmp_path / "openhab")
     assert snapshot["managed_path"] == "things/knx.things"
     assert snapshot["things_format"] == "dsl"
@@ -681,6 +682,32 @@ def test_undo_refuses_a_changed_deployed_target_without_writing(tmp_path, monkey
     manager._jobs["deployed"]["managed_targets"].append("yaml/other.yaml")
     state["managed_paths"]["yaml_path"] = "yaml/other.yaml"
 
+    with pytest.raises(ValueError, match="Undo snapshot is stale.*deployed target has changed"):
+        manager.undo_gateway_ip()
+
+    assert state["content"] == live_content
+    assert state["config"] == live_config
+    assert state["write_calls"] == writes_before_undo
+    assert (Path(manager.backups_dir) / "gateway-live-undo.json").is_file()
+
+
+def test_undo_refuses_a_new_deployment_to_the_same_target(tmp_path, monkeypatch):
+    manager, state, _read_state = _live_update_manager(monkeypatch, tmp_path)
+    manager.apply_gateway_ip("192.168.20.99")
+    live_content = state["content"]
+    live_config = deepcopy(state["config"])
+    writes_before_undo = list(state["write_calls"])
+    manager._jobs["later-deployment"] = {
+        "id": "later-deployment",
+        "deployed": True,
+        "deployed_at": 2,
+        "things_format": "dsl",
+        "openhab_root": str(tmp_path / "openhab"),
+        "active_things_path": "things/knx.things",
+        "managed_targets": ["things/knx.things", "yaml/knx.yaml"],
+    }
+
+    assert manager.get_gateway_state()["undo_available"] is False
     with pytest.raises(ValueError, match="Undo snapshot is stale.*deployed target has changed"):
         manager.undo_gateway_ip()
 
@@ -915,6 +942,7 @@ def test_yaml_live_operations_require_known_openhab_five(
         gateway_undo.save_snapshot(
             manager._gateway_undo_path(),
             {
+                "job_id": "deployed",
                 "file_content_b64": base64.b64encode(b"prior file\n").decode("ascii"),
                 "previous_gateway_override": "192.168.20.45",
                 "openhab_root": str(tmp_path / "openhab"),

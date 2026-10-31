@@ -28,6 +28,8 @@ def _validate_snapshot(snapshot: Any) -> dict[str, Any]:
     )
     if any(not isinstance(snapshot.get(key), str) for key in required_strings):
         raise ValueError("Invalid KNX gateway undo snapshot")
+    if "job_id" in snapshot and (not isinstance(snapshot["job_id"], str) or not snapshot["job_id"]):
+        raise ValueError("Invalid KNX gateway undo snapshot job ID")
     if snapshot["things_format"] not in ("dsl", "yaml"):
         raise ValueError("Invalid KNX gateway undo snapshot format")
     if not _SHA256.fullmatch(snapshot["post_change_sha256"]):

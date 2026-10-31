@@ -189,12 +189,12 @@ class JobManager:
     def get_last_deployed_things_target(self):
         """Return the latest deployed, explicitly managed KNX Things target."""
         self._reload_jobs()
-        deployed_jobs = [job for job in self._jobs.values() if job.get("deployed")]
+        deployed_jobs = [(job_id, job) for job_id, job in self._jobs.items() if job.get("deployed")]
         if not deployed_jobs:
             return None
-        latest = max(
+        latest_key, latest = max(
             deployed_jobs,
-            key=lambda job: job.get("deployed_at", job.get("created", 0)),
+            key=lambda entry: entry[1].get("deployed_at", entry[1].get("created", 0)),
         )
         things_format = latest.get("things_format")
         openhab_root = latest.get("openhab_root")
@@ -209,8 +209,11 @@ class JobManager:
             or managed_path not in managed_targets
         ):
             return None
+        job_id = latest.get("id") or latest_key
+        if not isinstance(job_id, str) or not job_id:
+            return None
         return {
-            "job_id": latest.get("id", ""),
+            "job_id": job_id,
             "openhab_root": openhab_root,
             "managed_path": managed_path,
             "things_format": things_format,
@@ -271,7 +274,8 @@ class JobManager:
             if snapshot is None:
                 return False
             if (
-                snapshot["openhab_root"] != openhab_root
+                snapshot.get("job_id") != target["job_id"]
+                or snapshot["openhab_root"] != openhab_root
                 or snapshot["managed_path"] != target["managed_path"]
                 or snapshot["things_format"] != target["things_format"]
             ):
@@ -352,6 +356,7 @@ class JobManager:
         previous_snapshot = gateway_undo.load_snapshot(undo_path)
         new_snapshot = {
             "version": gateway_undo.SNAPSHOT_VERSION,
+            "job_id": target["job_id"],
             "file_content_b64": base64.b64encode(old_content).decode("ascii"),
             "previous_gateway_override": previous_override,
             "openhab_root": openhab_root,
@@ -453,7 +458,8 @@ class JobManager:
             if snapshot is None:
                 raise ValueError("No live gateway undo snapshot is available")
             if (
-                snapshot["openhab_root"] != openhab_root
+                snapshot.get("job_id") != target["job_id"]
+                or snapshot["openhab_root"] != openhab_root
                 or snapshot["managed_path"] != target["managed_path"]
                 or snapshot["things_format"] != target["things_format"]
             ):

@@ -946,6 +946,72 @@ if FLASK_AVAILABLE:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/gateway/state", methods=["GET"])
+    def get_gateway_state():
+        """Return generator-file state; OpenHAB runtime status is never queried."""
+        try:
+            state = dict(job_mgr.get_gateway_state())
+            source = job_mgr.get_last_deployed_gateway_source()
+            state["active_path"] = state.get("configured_path") or state.get("managed_path")
+            state["detected_gateway_ip"] = (
+                source.get("detected_gateway_ip") if source is not None else None
+            )
+            state["reset_available"] = source is not None
+            state["runtime_status"] = "not_checked"
+            return jsonify(state)
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 409
+        except Exception as error:
+            logger.exception("Failed to read KNX gateway state")
+            return jsonify({"error": str(error)}), 500
+
+    @app.route("/api/gateway/ip", methods=["POST"])
+    def apply_gateway_ip():
+        """Apply a validated gateway IP to the managed file and generator config."""
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "Request body must be a JSON object"}), 400
+        ip_address = payload.get("ip_address")
+        if not isinstance(ip_address, str) or not ip_address.strip():
+            return jsonify({"error": "A non-empty IP address is required"}), 400
+
+        try:
+            result = dict(job_mgr.apply_gateway_ip(ip_address))
+            result["runtime_status"] = "not_checked"
+            return jsonify(result)
+        except ValueError as error:
+            status = 400 if "IP address" in str(error) else 409
+            return jsonify({"error": str(error)}), status
+        except Exception as error:
+            logger.exception("Failed to apply KNX gateway IP")
+            return jsonify({"error": str(error)}), 500
+
+    @app.route("/api/gateway/ip/reset", methods=["POST"])
+    def reset_gateway_ip():
+        """Restore the last successfully deployed ETS gateway configuration."""
+        try:
+            result = dict(job_mgr.restore_gateway_ip())
+            result["runtime_status"] = "not_checked"
+            return jsonify(result)
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 409
+        except Exception as error:
+            logger.exception("Failed to restore KNX gateway IP")
+            return jsonify({"error": str(error)}), 500
+
+    @app.route("/api/gateway/ip/undo", methods=["POST"])
+    def undo_gateway_ip():
+        """Undo the latest live gateway update without restoring other outputs."""
+        try:
+            result = dict(job_mgr.undo_gateway_ip())
+            result["runtime_status"] = "not_checked"
+            return jsonify(result)
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 409
+        except Exception as error:
+            logger.exception("Failed to undo KNX gateway IP change")
+            return jsonify({"error": str(error)}), 500
+
     @app.route("/api/config", methods=["POST"])
     def set_config():
         """Update the configuration."""
@@ -958,45 +1024,47 @@ if FLASK_AVAILABLE:
             if not isinstance(new_config, dict):
                 return jsonify({"error": "Config must be a JSON object"}), 400
 
-            # The root helper reads the persisted generator config and validates the YAML
-            # target against the protected OpenHAB root, so save before invoking it.
-            previous_config = load_generator_config(project_root)
-            previous_yaml_path = previous_config.get("yaml_path", "openhab/yaml/knx.yaml")
-            new_yaml_path = new_config.get("yaml_path", "openhab/yaml/knx.yaml")
-            provision_yaml = (
-                new_yaml_path != previous_yaml_path
-                and get_paths(project_root).secrets_file is not None
-            )
-            save_generator_config(new_config, project_root)
+            with job_mgr.operation_lock, job_mgr.gateway_state_lock:
+                # Keep provisioning serialized with live gateway edits and deployments.
+                previous_config = load_generator_config(project_root)
+                previous_yaml_path = previous_config.get("yaml_path", "openhab/yaml/knx.yaml")
+                new_yaml_path = new_config.get("yaml_path", "openhab/yaml/knx.yaml")
+                provision_yaml = (
+                    new_yaml_path != previous_yaml_path
+                    and get_paths(project_root).secrets_file is not None
+                )
+                save_generator_config(new_config, project_root)
 
-            if provision_yaml:
-                try:
-                    result = subprocess.run(
-                        [
-                            "sudo",
-                            "-n",
-                            "/usr/local/sbin/knxohui-service-update",
-                            "provision-yaml",
-                        ],
-                        capture_output=True,
-                        text=True,
-                        timeout=30,
-                        check=False,
-                    )
-                    if result.returncode != 0:
-                        detail = result.stderr.strip() or result.stdout.strip()
-                        raise RuntimeError(detail or "root provisioning action failed")
-                except Exception as error:
-                    rollback_config = dict(new_config)
-                    if "yaml_path" in previous_config:
-                        rollback_config["yaml_path"] = previous_config["yaml_path"]
-                    else:
-                        rollback_config.pop("yaml_path", None)
+                if provision_yaml:
                     try:
-                        save_generator_config(rollback_config, project_root)
-                    except Exception:
-                        logger.exception("Could not restore YAML path after provisioning failed")
-                    return jsonify({"error": f"Unable to provision YAML output: {error}"}), 500
+                        result = subprocess.run(
+                            [
+                                "sudo",
+                                "-n",
+                                "/usr/local/sbin/knxohui-service-update",
+                                "provision-yaml",
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=30,
+                            check=False,
+                        )
+                        if result.returncode != 0:
+                            detail = result.stderr.strip() or result.stdout.strip()
+                            raise RuntimeError(detail or "root provisioning action failed")
+                    except Exception as error:
+                        rollback_config = dict(new_config)
+                        if "yaml_path" in previous_config:
+                            rollback_config["yaml_path"] = previous_config["yaml_path"]
+                        else:
+                            rollback_config.pop("yaml_path", None)
+                        try:
+                            save_generator_config(rollback_config, project_root)
+                        except Exception:
+                            logger.exception(
+                                "Could not restore YAML path after provisioning failed"
+                            )
+                        return jsonify({"error": f"Unable to provision YAML output: {error}"}), 500
 
             return jsonify({"message": "Configuration updated successfully"})
         except Exception as e:

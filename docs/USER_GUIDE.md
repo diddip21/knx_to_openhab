@@ -104,7 +104,14 @@ The `config.json` file controls global settings for the generator.
 - **`switch`**: Configuration for switch detection.
   - `status_suffix`: Suffixes identifying the status GA (e.g., "Status", "Rückmeldung").
 
-## openHAB 5.2 YAML Output
+## Model Format and Live Gateway IP
+
+The Web UI exposes the model format under **Settings → General** and gateway controls under **Settings → Devices**.
+
+- **Legacy DSL** is the default and writes separate `.things`, `.items`, and `.sitemap` files.
+- **YAML** writes the complete native openHAB 5.2 `version: 1` model—including Things, Items, and Sitemaps—to `openhab/yaml/knx.yaml`. Known OpenHAB versions below 5.2 block YAML generation and deployment. If the installed version is unknown, the UI warns; live gateway actions remain disabled until version 5.2 or newer is confirmed.
+- Changing format is applied through the usual **Save & Reprocess → stage preview → Deploy** flow. The previous generator-owned model files are backed up and deactivated before the selected format is enabled. Deployment clears old model files in place so it does not need directory-delete permissions; rollback restores their previous contents.
+- Provision the YAML target file and its parent directory before deploying YAML. Deployment writes only to existing managed regular files and does not create a missing YAML target. Installer-managed targets are provisioned during setup; if you change `yaml_path`, provision that new target before deployment.
 
 Set `output_format` to `yaml` in the Web UI or `config.json` to generate a native openHAB 5.2 file:
 
@@ -120,6 +127,19 @@ The resulting document contains `version: 1` and the `things`, `items`, and `sit
 Migration is intentionally explicit: never load the generated legacy model files and `knx.yaml` at the same time, because they define the same entity IDs. A Web UI deployment backs up the live configuration and clears the generated model files from the other format. The empty files remain in place so deployment does not need directory-delete permissions; rollback restores their backed-up contents.
 
 `influxdb.persist` remains in the persistence directory. The existing stateful `fenster.rules` also remains textual; wrapping its body in a YAML Script action would reset its counters and change the 15-minute notification behavior.
+
+The gateway IP field has two distinct uses. The live action targets only the managed file from the last successful deployment, displayed relative to the OpenHAB root; pending format or path selections do not redirect it.
+
+1. **Save Config** stores an override for a future generation. Leave it blank to use ETS detection on a later generation.
+2. **Apply IP to live OpenHAB file** validates the IPv4/IPv6 address and updates only the gateway bridge configuration in the complete deployed model file, preserving all other YAML sections or DSL Things. It also stores the override for a future generation, without reprocessing ETS. This action does **not** restart OpenHAB or check whether the bridge came online; the message confirms only that the file was updated.
+
+Use **Restore ETS address** to return to the gateway address detected by the last successfully deployed ETS project and clear the saved override. The action is unavailable until a deployed ETS source is available. If that project had no detected gateway IP, reset restores the generated KNX router mode instead.
+
+After a successful live apply or ETS reset, **Undo last live change** can restore the prior managed model file and gateway override. Undo is one level only and is disabled after a new deployment, if the deployed job or target changes, or if the managed file contents no longer match the saved snapshot. It never overwrites later changes or restores other generated files; a subsequent live change replaces the one-level Undo snapshot.
+
+The live IP actions never restart the service or connect to the OpenHAB REST API. They do not claim that OpenHAB has reloaded the file or that the bridge is online. If OpenHAB does not reload the changed file, check the Things status in OpenHAB and restart the service manually using the existing service controls.
+
+See the [gateway settings screenshots](screenshots/knx-gateway-live-ip.md).
 
 Official format reference: [openHAB YAML Configuration](https://www.openhab.org/docs/configuration/yaml/).
 

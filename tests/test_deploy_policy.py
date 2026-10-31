@@ -10,6 +10,7 @@ from web_ui.backend.deploy_policy import (
     provision_managed_files,
     restore_managed_files,
     restrict_service_write_access,
+    write_managed_file,
 )
 
 
@@ -35,6 +36,117 @@ def test_configured_paths_reject_traversal_and_unmanaged_outputs(tmp_path):
     config["items_path"] = str(tmp_path / "manual.items")
     with pytest.raises(DeployPolicyError, match="under the OpenHAB"):
         configured_managed_paths(config, str(tmp_path))
+
+
+def test_yaml_output_is_managed_only_when_yaml_format_has_a_path(tmp_path):
+    root = tmp_path / "openhab"
+    root.mkdir()
+    config = {
+        "openhab_path": "openhab",
+        "things_path": "openhab/things/knx.things",
+        "things_format": "dsl",
+        "yaml_path": "",
+    }
+
+    _, managed = configured_managed_paths(config, str(tmp_path))
+    assert "yaml_path" not in managed
+
+    config["yaml_path"] = "openhab/yaml/knx.yaml"
+    _, managed = configured_managed_paths(config, str(tmp_path))
+    assert managed["yaml_path"] == "yaml/knx.yaml"
+
+
+def test_managed_writer_rejects_unlisted_and_outside_paths(tmp_path):
+    root = tmp_path / "openhab"
+    root.mkdir()
+    managed = {"things_path": "things/knx.things"}
+
+    with pytest.raises(DeployPolicyError, match="not managed"):
+        write_managed_file(str(root), "things/manual.things", b"changed", managed)
+
+    with pytest.raises(DeployPolicyError):
+        write_managed_file(str(root), "../outside.things", b"changed", managed)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="The managed writer relies on POSIX dir_fd semantics")
+def test_managed_writer_updates_only_the_existing_managed_inode(tmp_path):
+    root = tmp_path / "openhab"
+    target = root / "things" / "knx.things"
+    manual = root / "things" / "manual.things"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"before")
+    manual.write_bytes(b"manual")
+
+    write_managed_file(
+        str(root), "things/knx.things", b"after", {"things_path": "things/knx.things"}
+    )
+
+    assert target.read_bytes() == b"after"
+    assert manual.read_bytes() == b"manual"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Symlink creation is not enabled on all Windows hosts")
+def test_managed_writer_rejects_symlink_and_hard_link_targets(tmp_path):
+    root = tmp_path / "openhab"
+    things = root / "things"
+    things.mkdir(parents=True)
+    external = tmp_path / "external.things"
+    external.write_bytes(b"outside")
+    symlink = things / "symlink.things"
+    symlink.symlink_to(external)
+    hardlink = things / "hardlink.things"
+    os.link(external, hardlink)
+
+    with pytest.raises(OSError):
+        write_managed_file(
+            str(root), "things/symlink.things", b"changed", {"things_path": "things/symlink.things"}
+        )
+
+    with pytest.raises(DeployPolicyError, match="hard link"):
+        write_managed_file(
+            str(root),
+            "things/hardlink.things",
+            b"changed",
+            {"things_path": "things/hardlink.things"},
+        )
+    assert external.read_bytes() == b"outside"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="The managed writer relies on POSIX dir_fd semantics")
+def test_managed_writer_rejects_non_regular_target_and_preserves_other_files(tmp_path):
+    root = tmp_path / "openhab"
+    (root / "things" / "knx.things").mkdir(parents=True)
+    external = tmp_path / "external.txt"
+    external.write_text("unchanged", encoding="utf-8")
+
+    with pytest.raises(OSError):
+        write_managed_file(
+            str(root), "things/knx.things", b"changed", {"things_path": "things/knx.things"}
+        )
+    assert external.read_text(encoding="utf-8") == "unchanged"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="The managed writer relies on POSIX dir_fd semantics")
+def test_managed_writer_does_not_touch_unrelated_paths_when_write_fails(tmp_path, monkeypatch):
+    from web_ui.backend import deploy_policy
+
+    root = tmp_path / "openhab"
+    target = root / "things" / "knx.things"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"before")
+    external = tmp_path / "external.txt"
+    external.write_bytes(b"outside")
+
+    def fail_write(_fd, _content):
+        raise OSError("simulated write failure")
+
+    monkeypatch.setattr(deploy_policy, "_replace_file_contents", fail_write)
+    with pytest.raises(OSError, match="simulated write failure"):
+        write_managed_file(
+            str(root), "things/knx.things", b"changed", {"things_path": "things/knx.things"}
+        )
+
+    assert external.read_bytes() == b"outside"
 
 
 def test_provisioning_creates_only_exact_managed_files(tmp_path):

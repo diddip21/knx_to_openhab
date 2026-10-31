@@ -28,7 +28,7 @@ pattern_items_Name: str = config["regexpattern"]["items_Name"]
 pattern_items_Label: str = config["regexpattern"]["items_Label"]
 
 # global house,all_addresses,used_addresses
-GWIP = None
+GWIP: str | None = None
 B_HOMEKIT = False
 B_ALEXA = False
 HOMEKIT_MAX_ACCESSORIES_PER_INSTANCE = 130

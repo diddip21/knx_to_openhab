@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import io
 import json
 import logging
@@ -12,15 +14,33 @@ import threading
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
+from ipaddress import ip_address
+from pathlib import PurePosixPath
 
 from completeness import check_completeness, iter_thing_lines
 
+from . import gateway_config, gateway_undo
 from .deploy_policy import (
     configured_managed_paths,
     deploy_staged_files,
+    read_managed_file,
     restore_managed_files,
+    write_managed_file,
 )
-from .storage import ensure_dirs, load_jobs, save_jobs
+from .service_updates import package_version
+from .storage import (
+    ensure_dirs,
+    load_generator_config,
+    load_jobs,
+    save_generator_config,
+    save_jobs,
+)
+from .things_format import (
+    FORMAT_OUTPUT_KEYS,
+    assert_no_unmanaged_bridge_definitions,
+    validate_yaml_compatibility,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +203,8 @@ class JobManager:
         self._preview_cache = {}
         self.executor = ThreadPoolExecutor(max_workers=2)
         self.lock = threading.Lock()
+        self.operation_lock = threading.Lock()
+        self.gateway_state_lock = threading.Lock()
 
     def _reload_jobs(self):
         """Reload jobs from disk with a merge strategy to avoid clobbering active state."""
@@ -224,6 +246,400 @@ class JobManager:
         if job is not None:
             job["auto_place_unknown"] = self.cfg.get("general", {}).get("auto_place_unknown", False)
         return job
+
+    def get_last_deployed_things_format(self):
+        """Return the deployed output format normalized for KNX bridge handling."""
+        self._reload_jobs()
+        deployed_jobs = [job for job in self._jobs.values() if job.get("deployed")]
+        if not deployed_jobs:
+            return "dsl"
+        latest = max(
+            deployed_jobs,
+            key=lambda job: job.get("deployed_at", job.get("created", 0)),
+        )
+        output_format = latest.get("output_format", "legacy")
+        return "yaml" if output_format == "yaml" else "dsl"
+
+    def get_last_deployed_gateway_source(self):
+        """Return reset-source metadata from the latest deployed job, if available."""
+        self._reload_jobs()
+        deployed_jobs = [job for job in self._jobs.values() if job.get("deployed")]
+        if not deployed_jobs:
+            return None
+        latest = max(
+            deployed_jobs,
+            key=lambda job: job.get("deployed_at", job.get("created", 0)),
+        )
+        if "detected_gateway_ip" not in latest:
+            return None
+        output_format = latest.get("output_format", "legacy")
+        if output_format not in {"legacy", "yaml"}:
+            return None
+        return {
+            "job_id": latest["id"],
+            "detected_gateway_ip": latest["detected_gateway_ip"],
+            "things_format": "dsl" if output_format == "legacy" else "yaml",
+        }
+
+    def get_last_deployed_things_target(self):
+        """Return the latest deployed, explicitly managed KNX Things target."""
+        self._reload_jobs()
+        deployed_jobs = [(job_id, job) for job_id, job in self._jobs.items() if job.get("deployed")]
+        if not deployed_jobs:
+            return None
+        latest_key, latest = max(
+            deployed_jobs,
+            key=lambda entry: entry[1].get("deployed_at", entry[1].get("created", 0)),
+        )
+        output_format = latest.get("output_format")
+        things_format = {"legacy": "dsl", "yaml": "yaml"}.get(output_format)
+        openhab_root = latest.get("openhab_root")
+        managed_path = latest.get("active_things_path")
+        managed_targets = latest.get("managed_targets")
+        if (
+            output_format not in {"legacy", "yaml"}
+            or things_format not in FORMAT_OUTPUT_KEYS
+            or not isinstance(openhab_root, str)
+            or not openhab_root
+            or not isinstance(managed_path, str)
+            or not isinstance(managed_targets, list)
+            or managed_path not in managed_targets
+        ):
+            return None
+        job_id = latest.get("id") or latest_key
+        if not isinstance(job_id, str) or not job_id:
+            return None
+        deployment_id = latest.get("deployment_id")
+        if not isinstance(deployment_id, str) or not deployment_id:
+            deployment_id = f"{job_id}:{latest.get('deployed_at', latest.get('created', 0))}"
+        return {
+            "job_id": job_id,
+            "deployment_id": deployment_id,
+            "openhab_root": openhab_root,
+            "managed_path": managed_path,
+            "output_format": output_format,
+            "things_format": things_format,
+        }
+
+    def _gateway_target_configuration(self, configuration, project_root, target):
+        """Build and revalidate a minimal managed-path config for a deployed target."""
+        things_format = target["things_format"]
+        output_key = FORMAT_OUTPUT_KEYS[things_format]
+        openhab_root = target["openhab_root"]
+        managed_path = target["managed_path"]
+        target_config = {
+            "openhab_path": openhab_root,
+            "output_format": target["output_format"],
+            output_key: os.path.join(openhab_root, *PurePosixPath(managed_path).parts),
+            "devices": deepcopy(configuration.get("devices", {})),
+        }
+        try:
+            validated_root, managed_paths = configured_managed_paths(target_config, project_root)
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"Last deployed KNX Things target is not usable: {error}") from error
+        if validated_root != os.path.realpath(os.path.abspath(openhab_root)):
+            raise ValueError("Last deployed KNX Things target has an invalid OpenHAB root")
+        if managed_paths.get(output_key) != managed_path:
+            raise ValueError("Last deployed KNX Things target is outside its managed output path")
+        return target_config, validated_root, managed_paths
+
+    def _require_live_format_compatibility(self, things_format: str) -> None:
+        """Reject YAML live operations unless a local OpenHAB 5.2+ version is known."""
+        if things_format == "dsl":
+            return
+        if things_format != "yaml":
+            raise ValueError(f"Unsupported KNX Things format: {things_format}")
+        version_info = package_version("openhab")
+        installed = version_info.get("installed") if isinstance(version_info, dict) else None
+        version_match = (
+            re.match(r"^(\d+)\.(\d+)(?:\.|[-+]|$)", installed)
+            if isinstance(installed, str)
+            else None
+        )
+        if version_match is None or (int(version_match.group(1)), int(version_match.group(2))) < (
+            5,
+            2,
+        ):
+            detail = (
+                f" Installed version: {installed}."
+                if installed
+                else " Installed version is unknown."
+            )
+            raise ValueError(f"YAML live changes require OpenHAB 5.2 or newer.{detail}")
+
+    def _gateway_undo_path(self):
+        return os.path.join(self.backups_dir, "gateway-live-undo.json")
+
+    def _gateway_undo_available(
+        self, target, openhab_root, managed_paths, current_gateway_override
+    ):
+        try:
+            snapshot = gateway_undo.load_snapshot(self._gateway_undo_path())
+            if snapshot is None:
+                return False
+            if (
+                snapshot.get("job_id") != target["job_id"]
+                or snapshot.get("deployment_id") != target["deployment_id"]
+                or snapshot["openhab_root"] != openhab_root
+                or snapshot["managed_path"] != target["managed_path"]
+                or snapshot["things_format"] != target["things_format"]
+            ):
+                return False
+            if snapshot.get("post_change_gateway_override") != current_gateway_override:
+                return False
+            current_content = read_managed_file(openhab_root, target["managed_path"], managed_paths)
+            return hashlib.sha256(current_content).hexdigest() == snapshot["post_change_sha256"]
+        except (OSError, ValueError) as error:
+            logger.warning("KNX gateway undo snapshot is unavailable: %s", error)
+            return False
+
+    def get_gateway_state(self):
+        """Read active managed bridge settings under the narrow live-file lock."""
+        with self.gateway_state_lock:
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            configuration = load_generator_config(project_root)
+            target = self.get_last_deployed_things_target()
+            if target is None:
+                raise ValueError("No usable successfully deployed KNX Things target is available")
+            state_config, openhab_root, _managed_paths = self._gateway_target_configuration(
+                configuration, project_root, target
+            )
+            state_config["_gateway_reset_available"] = (
+                self.get_last_deployed_gateway_source() is not None
+            )
+            state = gateway_config.read_gateway_state(state_config, project_root)
+            state["configured_path"] = os.path.join(
+                openhab_root, *PurePosixPath(target["managed_path"]).parts
+            )
+            devices = configuration.get("devices", {})
+            gateway = devices.get("gateway", {}) if isinstance(devices, dict) else {}
+            current_override = gateway.get("ip_address", "") if isinstance(gateway, dict) else ""
+            current_override = current_override or ""
+            if not isinstance(current_override, str):
+                raise ValueError("Generator gateway IP override must be a string")
+            state["saved_override"] = current_override
+            state["undo_available"] = self._gateway_undo_available(
+                target, openhab_root, _managed_paths, current_override
+            )
+            return state
+
+    def _update_live_gateway(self, transform, gateway_ip, gateway_mode, override):
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        original_config = load_generator_config(project_root)
+        target = self.get_last_deployed_things_target()
+        if target is None:
+            raise ValueError("No usable successfully deployed KNX Things target is available")
+        state_config, openhab_root, managed_paths = self._gateway_target_configuration(
+            original_config, project_root, target
+        )
+        self._require_live_format_compatibility(target["things_format"])
+        state_config["_gateway_reset_available"] = (
+            self.get_last_deployed_gateway_source() is not None
+        )
+        state = gateway_config.read_gateway_state(state_config, project_root)
+        relative_path = target["managed_path"]
+        if (
+            state["managed_path"] != relative_path
+            or state["things_format"] != target["things_format"]
+        ):
+            raise ValueError("Last deployed KNX Things target did not resolve consistently")
+        if relative_path not in managed_paths.values():
+            raise ValueError("Active KNX Things file is not a managed output")
+
+        old_content = read_managed_file(openhab_root, relative_path, managed_paths)
+        try:
+            old_text = old_content.decode("utf-8")
+        except UnicodeError as error:
+            raise ValueError(f"Active KNX Things file is not valid UTF-8: {error}") from error
+        new_text = transform(old_text, state["things_format"])
+        new_content = new_text.encode("utf-8")
+
+        updated_config = deepcopy(original_config)
+        devices = updated_config.setdefault("devices", {})
+        if not isinstance(devices, dict):
+            raise ValueError("Generator devices configuration must be an object")
+        gateway = devices.setdefault("gateway", {})
+        if not isinstance(gateway, dict):
+            raise ValueError("Generator gateway configuration must be an object")
+        previous_override = gateway.get("ip_address", "") or ""
+        if not isinstance(previous_override, str):
+            raise ValueError("Generator gateway IP override must be a string")
+        gateway["ip_address"] = override
+
+        undo_path = self._gateway_undo_path()
+        previous_snapshot = gateway_undo.load_snapshot(undo_path)
+        new_snapshot = {
+            "version": gateway_undo.SNAPSHOT_VERSION,
+            "job_id": target["job_id"],
+            "deployment_id": target["deployment_id"],
+            "file_content_b64": base64.b64encode(old_content).decode("ascii"),
+            "previous_gateway_override": previous_override,
+            "post_change_gateway_override": override,
+            "openhab_root": openhab_root,
+            "managed_path": relative_path,
+            "things_format": state["things_format"],
+            "post_change_sha256": hashlib.sha256(new_content).hexdigest(),
+        }
+        gateway_undo.save_snapshot(undo_path, new_snapshot)
+
+        try:
+            save_generator_config(updated_config, project_root)
+            write_managed_file(openhab_root, relative_path, new_content, managed_paths)
+        except Exception as update_error:
+            restore_errors = []
+            try:
+                write_managed_file(openhab_root, relative_path, old_content, managed_paths)
+            except Exception as restore_error:
+                restore_errors.append(f"live file: {restore_error}")
+            try:
+                save_generator_config(original_config, project_root)
+            except Exception as restore_error:
+                restore_errors.append(f"generator configuration: {restore_error}")
+            try:
+                if previous_snapshot is None:
+                    gateway_undo.clear_snapshot(undo_path)
+                else:
+                    gateway_undo.save_snapshot(undo_path, previous_snapshot)
+            except Exception as restore_error:
+                restore_errors.append(f"undo snapshot: {restore_error}")
+            if restore_errors:
+                raise RuntimeError(
+                    f"Gateway update failed: {update_error}; compensation failed: "
+                    + "; ".join(restore_errors)
+                ) from update_error
+            raise
+
+        return {
+            "success": True,
+            "things_format": state["things_format"],
+            "managed_path": relative_path,
+            "gateway_ip": gateway_ip,
+            "gateway_mode": gateway_mode,
+            "saved_override": override,
+            "undo_available": True,
+            "message": (
+                "KNX gateway configuration file updated; OpenHAB runtime status was not checked."
+            ),
+        }
+
+    def apply_gateway_ip(self, ip_address_value):
+        """Update only the active KNX gateway settings and saved IP override."""
+        try:
+            normalized_ip = str(ip_address(ip_address_value.strip()))
+        except (AttributeError, ValueError) as error:
+            raise ValueError(f"Invalid IP address: {ip_address_value}") from error
+
+        with self.operation_lock, self.gateway_state_lock:
+            return self._update_live_gateway(
+                lambda content, format_name: gateway_config.update_gateway_file(
+                    content, format_name, normalized_ip
+                ),
+                gateway_ip=normalized_ip,
+                gateway_mode="TUNNEL",
+                override=normalized_ip,
+            )
+
+    def restore_gateway_ip(self):
+        """Restore the last deployed ETS gateway address or KNX router mode."""
+        with self.operation_lock, self.gateway_state_lock:
+            source = self.get_last_deployed_gateway_source()
+            if source is None:
+                raise ValueError("No successfully deployed ETS gateway source is available")
+            detected_ip = source["detected_gateway_ip"]
+            normalized_ip = str(ip_address(detected_ip)) if detected_ip is not None else None
+            return self._update_live_gateway(
+                lambda content, format_name: gateway_config.restore_ets_gateway_file(
+                    content, format_name, normalized_ip
+                ),
+                gateway_ip=normalized_ip,
+                gateway_mode="TUNNEL" if normalized_ip is not None else "ROUTER",
+                override="",
+            )
+
+    def undo_gateway_ip(self):
+        """Restore the exact prior managed file and override from the last live action."""
+        with self.operation_lock, self.gateway_state_lock:
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            original_config = load_generator_config(project_root)
+            target = self.get_last_deployed_things_target()
+            if target is None:
+                raise ValueError("No usable successfully deployed KNX Things target is available")
+            _target_config, openhab_root, managed_paths = self._gateway_target_configuration(
+                original_config, project_root, target
+            )
+            self._require_live_format_compatibility(target["things_format"])
+
+            undo_path = self._gateway_undo_path()
+            snapshot = gateway_undo.load_snapshot(undo_path)
+            if snapshot is None:
+                raise ValueError("No live gateway undo snapshot is available")
+            if (
+                snapshot.get("job_id") != target["job_id"]
+                or snapshot.get("deployment_id") != target["deployment_id"]
+                or snapshot["openhab_root"] != openhab_root
+                or snapshot["managed_path"] != target["managed_path"]
+                or snapshot["things_format"] != target["things_format"]
+            ):
+                raise ValueError("Undo snapshot is stale because the deployed target has changed")
+
+            devices = original_config.get("devices", {})
+            gateway = devices.get("gateway", {}) if isinstance(devices, dict) else {}
+            current_override = gateway.get("ip_address", "") if isinstance(gateway, dict) else ""
+            current_override = current_override or ""
+            if not isinstance(current_override, str):
+                raise ValueError("Generator gateway IP override must be a string")
+            if snapshot.get("post_change_gateway_override") != current_override:
+                raise ValueError(
+                    "Undo snapshot is stale because the saved gateway override has changed"
+                )
+
+            relative_path = target["managed_path"]
+            current_content = read_managed_file(openhab_root, relative_path, managed_paths)
+            current_digest = hashlib.sha256(current_content).hexdigest()
+            if current_digest != snapshot["post_change_sha256"]:
+                raise ValueError("Undo snapshot is stale because the managed file has changed")
+            previous_content = base64.b64decode(snapshot["file_content_b64"], validate=True)
+
+            updated_config = deepcopy(original_config)
+            devices = updated_config.setdefault("devices", {})
+            if not isinstance(devices, dict):
+                raise ValueError("Generator devices configuration must be an object")
+            gateway = devices.setdefault("gateway", {})
+            if not isinstance(gateway, dict):
+                raise ValueError("Generator gateway configuration must be an object")
+            previous_override = snapshot["previous_gateway_override"]
+            gateway["ip_address"] = previous_override
+
+            try:
+                save_generator_config(updated_config, project_root)
+                write_managed_file(openhab_root, relative_path, previous_content, managed_paths)
+                gateway_undo.clear_snapshot(undo_path)
+            except Exception as update_error:
+                restore_errors = []
+                try:
+                    write_managed_file(openhab_root, relative_path, current_content, managed_paths)
+                except Exception as restore_error:
+                    restore_errors.append(f"live file: {restore_error}")
+                try:
+                    save_generator_config(original_config, project_root)
+                except Exception as restore_error:
+                    restore_errors.append(f"generator configuration: {restore_error}")
+                if restore_errors:
+                    raise RuntimeError(
+                        f"Gateway undo failed: {update_error}; compensation failed: "
+                        + "; ".join(restore_errors)
+                    ) from update_error
+                raise
+
+            return {
+                "success": True,
+                "things_format": target["things_format"],
+                "managed_path": relative_path,
+                "gateway_ip": previous_override or None,
+                "saved_override": previous_override,
+                "undo_available": False,
+                "message": ("KNX gateway file restored; OpenHAB runtime status was not checked."),
+            }
 
     def get_queue(self, job_id):
         # Ensure job exists before returning queue
@@ -325,6 +741,10 @@ class JobManager:
         q.put(msg)
 
     def _run_job(self, job_id):
+        with self.operation_lock:
+            self._run_job_serialized(job_id)
+
+    def _run_job_serialized(self, job_id):
         job = self._jobs[job_id]
         q = self.queues[job_id]
         job["status"] = "running"
@@ -366,6 +786,25 @@ class JobManager:
             )
             job["openhab_root"] = openhab_path
             job["managed_targets"] = sorted(set(managed_paths.values()))
+            output_format = str(
+                global_config_module.config.get("output_format", "legacy")
+            ).casefold()
+            if output_format not in {"legacy", "yaml"}:
+                raise ValueError('output_format must be either "legacy" or "yaml"')
+            selected_format = "dsl" if output_format == "legacy" else "yaml"
+            active_output_key = FORMAT_OUTPUT_KEYS[selected_format]
+            if active_output_key not in managed_paths:
+                raise ValueError(f"{active_output_key} is required for {output_format} output")
+            job["output_format"] = output_format
+            job["active_things_path"] = managed_paths[active_output_key]
+            previous_format = self.get_last_deployed_things_format()
+            if selected_format != previous_format:
+                managed_things_relpaths = {
+                    managed_paths[key]
+                    for key in ("items_path", "things_path", "sitemaps_path", "yaml_path")
+                    if key in managed_paths
+                }
+                assert_no_unmanaged_bridge_definitions(openhab_path, managed_things_relpaths)
 
             # Back up the same effective OpenHAB root that generation and deploy use.
             ts = __import__("time").strftime("%Y%m%d-%H%M%S")
@@ -419,7 +858,6 @@ class JobManager:
             knxmod.config["openhab_path"] = staged_config["openhab_path"]
 
             # Stage the selected model output and an empty file for the retired format.
-            output_format = str(staged_config.get("output_format", "legacy")).casefold()
             model_output_keys = (
                 ["yaml_path"]
                 if output_format == "yaml"
@@ -435,7 +873,6 @@ class JobManager:
                 for key in retired_keys
                 if key in managed_paths and key in global_config_module.config
             ]
-            job["output_format"] = output_format
             output_keys = [
                 key
                 for key in (*model_output_keys, *retired_keys, "influx_path", "fenster_path")
@@ -546,6 +983,9 @@ class JobManager:
                     )
                 prj_name = house[0].get("name_long") if house else None
                 ip = knxmod.get_gateway_ip(project)
+                detected_ip = knxmod.detect_gateway_ip(project)
+                job["gateway_ip"] = ip
+                job["detected_gateway_ip"] = detected_ip
                 homekit_enabled = knxmod.is_homekit_enabled(project)
                 alexa_enabled = knxmod.is_alexa_enabled(project)
 
@@ -583,7 +1023,7 @@ class JobManager:
                 # Generate completeness report from staged knx.things
                 try:
                     report_path = self._write_completeness_report(
-                        staged_config.get("things_path"),
+                        staged_config.get(FORMAT_OUTPUT_KEYS[selected_format]),
                         staged_config.get("openhab_path", ""),
                         things_text=generation_result.get("things"),
                     )
@@ -976,8 +1416,9 @@ class JobManager:
 
     def rollback(self, job_id, backup_name=None):
         """Restore a job's managed files, serialized with deployments."""
-        with self.lock:
-            return self._rollback_locked(job_id, backup_name)
+        with self.operation_lock:
+            with self.lock:
+                return self._rollback_locked(job_id, backup_name)
 
     def _rollback_locked(self, job_id, backup_name=None):
         job = self._jobs.get(job_id)
@@ -1021,10 +1462,23 @@ class JobManager:
 
     def deploy(self, job_id):
         """Deploy staged files to live environment."""
-        with self.lock:
-            return self._deploy_locked(job_id)
+        with self.operation_lock, self.gateway_state_lock:
+            with self.lock:
+                deployed_jobs = [job for job in self._jobs.values() if job.get("deployed")]
+                if deployed_jobs:
+                    latest = max(
+                        deployed_jobs,
+                        key=lambda job: job.get("deployed_at", job.get("created", 0)),
+                    )
+                    previous_things_format = (
+                        "yaml" if latest.get("output_format") == "yaml" else "dsl"
+                    )
+                else:
+                    previous_things_format = "dsl"
+            with self.lock:
+                return self._deploy_locked(job_id, previous_things_format)
 
-    def _deploy_locked(self, job_id):
+    def _deploy_locked(self, job_id, previous_things_format):
         job = self._jobs.get(job_id)
         if not job:
             raise ValueError("Job not found")
@@ -1035,6 +1489,17 @@ class JobManager:
         mapping = job.get("stage_mapping", {})
         if not mapping:
             raise ValueError("No staged files found")
+
+        if job.get("output_format", "legacy") == "yaml":
+            version_info = package_version("openhab")
+            installed_version = (
+                version_info.get("installed") if isinstance(version_info, dict) else None
+            )
+            compatibility_warning = validate_yaml_compatibility(installed_version)
+            if compatibility_warning:
+                job["compatibility_warning"] = compatibility_warning
+            else:
+                job.pop("compatibility_warning", None)
 
         import importlib
 
@@ -1083,6 +1548,15 @@ class JobManager:
         deployed_count = 0
         retired_count = len(retirement_targets)
         try:
+            selected_things_format = "yaml" if job.get("output_format") == "yaml" else "dsl"
+            if selected_things_format != previous_things_format:
+                managed_things_relpaths = {
+                    managed_paths[key]
+                    for key in ("items_path", "things_path", "sitemaps_path", "yaml_path")
+                    if key in managed_paths
+                }
+                assert_no_unmanaged_bridge_definitions(openhab_path, managed_things_relpaths)
+
             deployed_count = deploy_staged_files(
                 mapping,
                 job.get("staging_dir", ""),
@@ -1091,6 +1565,8 @@ class JobManager:
             )
 
             job["deployed"] = True
+            job["deployed_at"] = __import__("time").time()
+            job["deployment_id"] = uuid.uuid4().hex
             save_jobs(self.jobs_dir, self._jobs)
             return (
                 True,

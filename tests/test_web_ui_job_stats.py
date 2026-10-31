@@ -240,22 +240,28 @@ def test_rollback_does_not_restore_files_when_metadata_persistence_fails(tmp_pat
         "restore_managed_files",
         lambda *_args: restore_calls.append(True),
     )
+    manager._jobs = {
+        "job": {
+            "id": "job",
+            "status": "completed",
+            "deployed": True,
+            "deployed_at": 1,
+            "deployment_id": "deployment-1",
+            "output_format": "legacy",
+            "openhab_root": str(openhab_path),
+            "active_things_path": "things/knx.things",
+            "managed_targets": ["things/knx.things"],
+            "detected_gateway_ip": "192.0.2.42",
+            "backups": [{"name": backup_path.name, "path": str(backup_path)}],
+        }
+    }
+    save_jobs = jobs_module.save_jobs
+    save_jobs(manager.jobs_dir, manager._jobs)
 
     def fail_metadata_persistence(*_args):
         raise OSError("simulated metadata persistence failure")
 
     monkeypatch.setattr(jobs_module, "save_jobs", fail_metadata_persistence)
-    manager._jobs = {
-        "job": {
-            "id": "job",
-            "deployed": True,
-            "output_format": "legacy",
-            "openhab_root": str(openhab_path),
-            "active_things_path": "things/knx.things",
-            "managed_targets": ["things/knx.things"],
-            "backups": [{"name": backup_path.name, "path": str(backup_path)}],
-        }
-    }
 
     with pytest.raises(OSError, match="simulated metadata persistence failure"):
         manager.rollback("job")
@@ -263,6 +269,19 @@ def test_rollback_does_not_restore_files_when_metadata_persistence_fails(tmp_pat
     assert live_file.read_bytes() == b"current live content\n"
     assert restore_calls == []
     assert manager._jobs["job"]["deployed"] is True
+    assert manager.get_last_deployed_things_target() == {
+        "job_id": "job",
+        "deployment_id": "deployment-1",
+        "openhab_root": str(openhab_path),
+        "managed_path": "things/knx.things",
+        "output_format": "legacy",
+        "things_format": "dsl",
+    }
+    assert manager.get_last_deployed_gateway_source() == {
+        "job_id": "job",
+        "detected_gateway_ip": "192.0.2.42",
+        "things_format": "dsl",
+    }
 
 
 def test_rollback_restore_failure_keeps_gateway_target_unavailable(tmp_path, monkeypatch):

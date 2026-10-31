@@ -257,7 +257,8 @@ def _dsl_unquote(value: str | None) -> str | None:
     return value
 
 
-def _read_gateway_config(content: str, format_name: str) -> tuple[str | None, str | None]:
+def read_gateway_config(content: str, format_name: str) -> tuple[str | None, str | None]:
+    """Parse the gateway IP and mode from DSL or YAML Things text."""
     if format_name == "dsl":
         _opening, _closing, dsl_configuration = _dsl_bridge_config(content)
         mode = _dsl_unquote(_get_dsl_property(dsl_configuration, "type"))
@@ -288,7 +289,7 @@ def read_gateway_state(config: Mapping[str, Any], project_root: str) -> dict[str
         content = read_managed_file(openhab_root, relative_path, managed_paths).decode("utf-8")
     except (OSError, UnicodeError) as error:
         raise ValueError(f"Could not read the managed KNX Things file: {error}") from error
-    gateway_ip, gateway_mode = _read_gateway_config(content, format_name)
+    gateway_ip, gateway_mode = read_gateway_config(content, format_name)
     saved_override = config.get("devices", {}).get("gateway", {}).get("ip_address", "") or ""
     return {
         "output_format": output_format,

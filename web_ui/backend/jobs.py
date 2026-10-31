@@ -599,6 +599,15 @@ class JobManager:
             if current_digest != snapshot["post_change_sha256"]:
                 raise ValueError("Undo snapshot is stale because the managed file has changed")
             previous_content = base64.b64decode(snapshot["file_content_b64"], validate=True)
+            try:
+                previous_file_text = previous_content.decode("utf-8")
+            except UnicodeError as error:
+                raise ValueError(
+                    "Undo snapshot does not contain valid UTF-8 file content"
+                ) from error
+            previous_file_gateway_ip, _previous_file_gateway_mode = (
+                gateway_config.read_gateway_config(previous_file_text, target["things_format"])
+            )
 
             updated_config = deepcopy(original_config)
             devices = updated_config.setdefault("devices", {})
@@ -635,7 +644,7 @@ class JobManager:
                 "success": True,
                 "things_format": target["things_format"],
                 "managed_path": relative_path,
-                "gateway_ip": previous_override or None,
+                "gateway_ip": previous_file_gateway_ip,
                 "saved_override": previous_override,
                 "undo_available": False,
                 "message": ("KNX gateway file restored; OpenHAB runtime status was not checked."),

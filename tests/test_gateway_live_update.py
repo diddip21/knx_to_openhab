@@ -839,6 +839,20 @@ def test_undo_restores_only_the_previous_file_and_gateway_override(tmp_path, mon
     assert not (Path(manager.backups_dir) / "gateway-live-undo.json").exists()
 
 
+def test_undo_reports_restored_file_ip_when_previous_override_is_empty(tmp_path, monkeypatch):
+    manager, state, _read_state = _live_update_manager(monkeypatch, tmp_path)
+    state["config"]["devices"]["gateway"]["ip_address"] = ""
+    original_content = state["content"]
+
+    manager.apply_gateway_ip("192.168.20.99")
+    result = manager.undo_gateway_ip()
+
+    assert state["content"] == original_content
+    assert state["config"]["devices"]["gateway"]["ip_address"] == ""
+    assert result["gateway_ip"] == "192.168.20.45"
+    assert result["saved_override"] == ""
+
+
 def test_undo_refuses_a_changed_managed_file_without_writing(tmp_path, monkeypatch):
     manager, state, _read_state = _live_update_manager(monkeypatch, tmp_path)
     manager.apply_gateway_ip("192.168.20.99")
@@ -1215,7 +1229,7 @@ def test_yaml_live_operations_require_known_openhab_5_2(
             {
                 "job_id": "deployed",
                 "deployment_id": "deployment-1",
-                "file_content_b64": base64.b64encode(b"prior file\n").decode("ascii"),
+                "file_content_b64": base64.b64encode(state["content"]).decode("ascii"),
                 "previous_gateway_override": "192.168.20.45",
                 "post_change_gateway_override": "192.168.20.45",
                 "openhab_root": str(tmp_path / "openhab"),

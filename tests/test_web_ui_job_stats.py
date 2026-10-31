@@ -219,6 +219,97 @@ def test_rollback_invalidates_gateway_deployment_metadata_and_undo_snapshot(tmp_
     assert gateway_undo.load_snapshot(snapshot_path) is None
 
 
+def test_rollback_does_not_restore_files_when_metadata_persistence_fails(tmp_path, monkeypatch):
+    openhab_path = tmp_path / "openhab"
+    live_file = openhab_path / "things" / "knx.things"
+    live_file.parent.mkdir(parents=True)
+    live_file.write_bytes(b"current live content\n")
+    backup_path = tmp_path / "backups" / "before-rollback.tar.gz"
+
+    manager = JobManager.__new__(JobManager)
+    _prepare_deploy_manager(monkeypatch, manager, openhab_path)
+    backup_path.write_bytes(b"backup placeholder")
+    monkeypatch.setattr(
+        jobs_module,
+        "configured_managed_paths",
+        lambda *_args: (str(openhab_path), {"things_path": "things/knx.things"}),
+    )
+    restore_calls = []
+    monkeypatch.setattr(
+        jobs_module,
+        "restore_managed_files",
+        lambda *_args: restore_calls.append(True),
+    )
+
+    def fail_metadata_persistence(*_args):
+        raise OSError("simulated metadata persistence failure")
+
+    monkeypatch.setattr(jobs_module, "save_jobs", fail_metadata_persistence)
+    manager._jobs = {
+        "job": {
+            "id": "job",
+            "deployed": True,
+            "output_format": "legacy",
+            "openhab_root": str(openhab_path),
+            "active_things_path": "things/knx.things",
+            "managed_targets": ["things/knx.things"],
+            "backups": [{"name": backup_path.name, "path": str(backup_path)}],
+        }
+    }
+
+    with pytest.raises(OSError, match="simulated metadata persistence failure"):
+        manager.rollback("job")
+
+    assert live_file.read_bytes() == b"current live content\n"
+    assert restore_calls == []
+    assert manager._jobs["job"]["deployed"] is True
+
+
+def test_rollback_restore_failure_keeps_gateway_target_unavailable(tmp_path, monkeypatch):
+    openhab_path = tmp_path / "openhab"
+    live_file = openhab_path / "things" / "knx.things"
+    live_file.parent.mkdir(parents=True)
+    live_file.write_bytes(b"current live content\n")
+    backup_path = tmp_path / "backups" / "before-rollback.tar.gz"
+
+    manager = JobManager.__new__(JobManager)
+    _prepare_deploy_manager(monkeypatch, manager, openhab_path)
+    backup_path.write_bytes(b"backup placeholder")
+    monkeypatch.setattr(
+        jobs_module,
+        "configured_managed_paths",
+        lambda *_args: (str(openhab_path), {"things_path": "things/knx.things"}),
+    )
+
+    def fail_restore(*_args):
+        raise OSError("simulated file restoration failure")
+
+    monkeypatch.setattr(jobs_module, "restore_managed_files", fail_restore)
+    manager._jobs = {
+        "job": {
+            "id": "job",
+            "deployed": True,
+            "deployed_at": 1,
+            "deployment_id": "deployment-1",
+            "output_format": "legacy",
+            "openhab_root": str(openhab_path),
+            "active_things_path": "things/knx.things",
+            "managed_targets": ["things/knx.things"],
+            "detected_gateway_ip": "192.0.2.42",
+            "backups": [{"name": backup_path.name, "path": str(backup_path)}],
+        }
+    }
+
+    with pytest.raises(OSError, match="simulated file restoration failure"):
+        manager.rollback("job")
+
+    assert live_file.read_bytes() == b"current live content\n"
+    persisted_jobs = json.loads((tmp_path / "jobs" / "jobs.json").read_text(encoding="utf-8"))
+    assert persisted_jobs["job"]["deployed"] is False
+    assert manager.get_last_deployed_things_target() is None
+    assert manager.get_last_deployed_gateway_source() is None
+
+
 def test_deploy_rejects_retirement_outside_openhab_before_writing(tmp_path, monkeypatch):
     openhab_path = tmp_path / "openhab"
     yaml_path = openhab_path / "yaml" / "knx.yaml"

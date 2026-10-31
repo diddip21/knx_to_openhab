@@ -9,6 +9,72 @@ FORMAT_OUTPUT_KEYS = {"dsl": "things_path", "yaml": "yaml_path"}
 _DSL_BRIDGE = re.compile(r"^Bridge\s+knx:ip:bridge(?:\s|\[)", re.IGNORECASE)
 
 
+def _strip_dsl_comments(content: str, path: Path) -> str:
+    """Replace DSL comments with whitespace while preserving strings and lines."""
+    cleaned = []
+    quote = None
+    escaped = False
+    line_comment = False
+    block_comment = False
+    index = 0
+
+    while index < len(content):
+        char = content[index]
+        next_pair = content[index : index + 2]
+
+        if block_comment:
+            if next_pair == "*/":
+                cleaned.extend("  ")
+                block_comment = False
+                index += 2
+            else:
+                cleaned.append(char if char in "\r\n" else " ")
+                index += 1
+            continue
+
+        if line_comment:
+            if char in "\r\n":
+                cleaned.append(char)
+                line_comment = False
+            else:
+                cleaned.append(" ")
+            index += 1
+            continue
+
+        if quote is not None:
+            cleaned.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            index += 1
+            continue
+
+        if char in ('"', "'"):
+            quote = char
+            cleaned.append(char)
+            index += 1
+        elif next_pair == "//":
+            cleaned.extend("  ")
+            line_comment = True
+            index += 2
+        elif next_pair == "/*":
+            cleaned.extend("  ")
+            block_comment = True
+            index += 2
+        else:
+            cleaned.append(char)
+            index += 1
+
+    if block_comment:
+        raise ValueError(
+            f"Cannot inspect DSL configuration file {path}: unterminated block comment"
+        )
+    return "".join(cleaned)
+
+
 def find_unmanaged_bridge_definitions(openhab_root: str, managed_relpaths: set[str]) -> list[str]:
     """Find unowned DSL/YAML files that define the KNX IP bridge UID.
 
@@ -35,14 +101,11 @@ def find_unmanaged_bridge_definitions(openhab_root: str, managed_relpaths: set[s
 
         if suffix == ".things":
             try:
-                lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+                content = path.read_text(encoding="utf-8", errors="replace")
             except OSError as error:
                 raise ValueError(f"Cannot inspect configuration file {path}: {error}") from error
-            if any(
-                _DSL_BRIDGE.match(line.strip())
-                for line in lines
-                if not line.strip().startswith("//")
-            ):
+            lines = _strip_dsl_comments(content, path).splitlines()
+            if any(_DSL_BRIDGE.match(line.strip()) for line in lines):
                 definitions.append(relative)
             continue
 

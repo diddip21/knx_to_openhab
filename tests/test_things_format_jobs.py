@@ -175,6 +175,46 @@ def test_format_switch_rejects_unmanaged_duplicate_bridge(tmp_path):
         )
 
 
+def test_unmanaged_dsl_bridge_inside_multiline_block_comment_is_ignored(tmp_path):
+    manual = tmp_path / "manual.things"
+    manual.write_text(
+        '/* disabled bridge example\nBridge knx:ip:bridge [ type="ROUTER" ]\n*/\n',
+        encoding="utf-8",
+    )
+
+    assert find_unmanaged_bridge_definitions(str(tmp_path), set()) == []
+
+
+def test_unmanaged_dsl_bridge_after_block_comment_is_detected(tmp_path):
+    manual = tmp_path / "manual.things"
+    manual.write_text(
+        '/* a disabled example */\nBridge knx:ip:bridge [ type="ROUTER" ]\n',
+        encoding="utf-8",
+    )
+
+    assert find_unmanaged_bridge_definitions(str(tmp_path), set()) == ["manual.things"]
+
+
+@pytest.mark.parametrize("comment_marker", ["/*", "//"])
+def test_dsl_comment_markers_inside_quoted_strings_do_not_hide_bridges(tmp_path, comment_marker):
+    manual = tmp_path / "manual.things"
+    manual.write_text(
+        f'Thing demo:device:sample [ label="{comment_marker}" ]\n'
+        'Bridge knx:ip:bridge [ type="ROUTER" ]\n',
+        encoding="utf-8",
+    )
+
+    assert find_unmanaged_bridge_definitions(str(tmp_path), set()) == ["manual.things"]
+
+
+def test_unterminated_dsl_block_comment_fails_closed_with_path(tmp_path):
+    manual = tmp_path / "manual.things"
+    manual.write_text("/* unfinished comment\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="manual.things.*unterminated block comment"):
+        find_unmanaged_bridge_definitions(str(tmp_path), set())
+
+
 @pytest.mark.parametrize(
     ("things_format", "active_key", "retired_key", "output_format"),
     [

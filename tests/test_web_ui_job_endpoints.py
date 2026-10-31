@@ -322,9 +322,7 @@ def test_gateway_undo_route_delegates_and_reports_file_only_success(client, monk
     job_mgr.undo_gateway_ip.assert_called_once_with()
 
 
-def test_gateway_undo_route_returns_conflict_for_unavailable_or_stale_snapshot(
-    client, monkeypatch
-):
+def test_gateway_undo_route_returns_conflict_for_unavailable_or_stale_snapshot(client, monkeypatch):
     job_mgr = Mock()
     job_mgr.undo_gateway_ip.side_effect = ValueError("Undo snapshot is stale")
     monkeypatch.setattr(app_module, "job_mgr", job_mgr)

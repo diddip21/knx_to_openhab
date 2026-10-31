@@ -13,8 +13,8 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from web_ui.backend import jobs as jobs_module
 from web_ui.backend import gateway_undo
+from web_ui.backend import jobs as jobs_module
 from web_ui.backend.gateway_config import (
     read_gateway_state,
     restore_ets_gateway_file,
@@ -672,9 +672,7 @@ def test_undo_refuses_a_changed_managed_file_without_writing(tmp_path, monkeypat
 
 
 def test_undo_refuses_a_changed_deployed_target_without_writing(tmp_path, monkeypatch):
-    manager, state, _read_state = _live_update_manager(
-        monkeypatch, tmp_path, things_format="yaml"
-    )
+    manager, state, _read_state = _live_update_manager(monkeypatch, tmp_path, things_format="yaml")
     manager.apply_gateway_ip("192.168.20.99")
     live_content = state["content"]
     live_config = deepcopy(state["config"])
@@ -1077,9 +1075,12 @@ def test_live_apply_updates_deployed_yaml_not_pending_dsl_config(tmp_path, monke
 
     assert result["things_format"] == "yaml"
     assert result["managed_path"] == "yaml/knx.yaml"
-    assert yaml.safe_load(deployed_yaml.read_text(encoding="utf-8"))["things"]["knx:ip:bridge"][
-        "config"
-    ]["ipAddress"] == "192.168.20.99"
+    assert (
+        yaml.safe_load(deployed_yaml.read_text(encoding="utf-8"))["things"]["knx:ip:bridge"][
+            "config"
+        ]["ipAddress"]
+        == "192.168.20.99"
+    )
     assert 'ipAddress="192.168.20.45"' in pending_dsl.read_text(encoding="utf-8")
     assert saved_configs[0]["devices"]["gateway"] == {
         "ip_address": "192.168.20.99",

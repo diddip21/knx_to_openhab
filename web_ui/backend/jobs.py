@@ -229,9 +229,7 @@ class JobManager:
             "devices": deepcopy(configuration.get("devices", {})),
         }
         try:
-            validated_root, managed_paths = configured_managed_paths(
-                target_config, project_root
-            )
+            validated_root, managed_paths = configured_managed_paths(target_config, project_root)
         except (TypeError, ValueError) as error:
             raise ValueError(f"Last deployed KNX Things target is not usable: {error}") from error
         if validated_root != os.path.realpath(os.path.abspath(openhab_root)):
@@ -257,7 +255,11 @@ class JobManager:
             5,
             0,
         ):
-            detail = f" Installed version: {installed}." if installed else " Installed version is unknown."
+            detail = (
+                f" Installed version: {installed}."
+                if installed
+                else " Installed version is unknown."
+            )
             raise ValueError(f"YAML live changes require OpenHAB 5.0 or newer.{detail}")
 
     def _gateway_undo_path(self):
@@ -274,12 +276,8 @@ class JobManager:
                 or snapshot["things_format"] != target["things_format"]
             ):
                 return False
-            current_content = read_managed_file(
-                openhab_root, target["managed_path"], managed_paths
-            )
-            return hashlib.sha256(current_content).hexdigest() == snapshot[
-                "post_change_sha256"
-            ]
+            current_content = read_managed_file(openhab_root, target["managed_path"], managed_paths)
+            return hashlib.sha256(current_content).hexdigest() == snapshot["post_change_sha256"]
         except (OSError, ValueError) as error:
             logger.warning("KNX gateway undo snapshot is unavailable: %s", error)
             return False
@@ -322,7 +320,10 @@ class JobManager:
         )
         state = gateway_config.read_gateway_state(state_config, project_root)
         relative_path = target["managed_path"]
-        if state["managed_path"] != relative_path or state["things_format"] != target["things_format"]:
+        if (
+            state["managed_path"] != relative_path
+            or state["things_format"] != target["things_format"]
+        ):
             raise ValueError("Last deployed KNX Things target did not resolve consistently")
         if relative_path not in managed_paths.values():
             raise ValueError("Active KNX Things file is not a managed output")
@@ -503,9 +504,7 @@ class JobManager:
                 "gateway_ip": previous_override or None,
                 "saved_override": previous_override,
                 "undo_available": False,
-                "message": (
-                    "KNX gateway file restored; OpenHAB runtime status was not checked."
-                ),
+                "message": ("KNX gateway file restored; OpenHAB runtime status was not checked."),
             }
 
     def get_queue(self, job_id):

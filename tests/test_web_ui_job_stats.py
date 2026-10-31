@@ -1,10 +1,14 @@
+import hashlib
 import importlib
+import json
 import tarfile
 import threading
 from types import SimpleNamespace
 
 import pytest
 
+from web_ui.backend import gateway_undo
+from web_ui.backend import jobs as jobs_module
 from web_ui.backend.jobs import JobManager
 
 
@@ -124,6 +128,79 @@ def test_deploy_clears_legacy_model_only_after_backup(tmp_path, monkeypatch):
     assert restored is True
     assert legacy_path.read_text(encoding="utf-8") == "legacy\n"
     assert yaml_path.read_text(encoding="utf-8") == "old yaml\n"
+
+
+def test_rollback_invalidates_gateway_deployment_metadata_and_undo_snapshot(tmp_path, monkeypatch):
+    openhab_path = tmp_path / "openhab"
+    openhab_path.mkdir()
+    backup_path = tmp_path / "backups" / "before-rollback.tar.gz"
+
+    manager = JobManager.__new__(JobManager)
+    _prepare_deploy_manager(monkeypatch, manager, openhab_path)
+    backup_path.write_bytes(b"not inspected by the rollback stub")
+    managed_paths = {"yaml_path": "yaml/knx.yaml"}
+    monkeypatch.setattr(
+        jobs_module,
+        "configured_managed_paths",
+        lambda *_args: (str(openhab_path), managed_paths),
+    )
+    restored = []
+
+    def restore_backup(_backup_path, _openhab_path, relative_paths):
+        restored.append(set(relative_paths))
+
+    monkeypatch.setattr(jobs_module, "restore_managed_files", restore_backup)
+    manager._jobs = {
+        "job": {
+            "id": "job",
+            "status": "completed",
+            "deployed": True,
+            "deployed_at": 2,
+            "output_format": "yaml",
+            "openhab_root": str(openhab_path),
+            "active_things_path": "yaml/knx.yaml",
+            "managed_targets": ["yaml/knx.yaml"],
+            "detected_gateway_ip": "192.0.2.42",
+            "backups": [{"name": backup_path.name, "path": str(backup_path)}],
+        },
+        "older-job": {
+            "id": "older-job",
+            "status": "completed",
+            "deployed": True,
+            "deployed_at": 1,
+            "output_format": "legacy",
+        },
+    }
+    snapshot_path = manager._gateway_undo_path()
+    gateway_undo.save_snapshot(
+        snapshot_path,
+        {
+            "job_id": "job",
+            "deployment_id": "deployment-2",
+            "file_content_b64": "Y29udGVudA==",
+            "previous_gateway_override": "192.0.2.41",
+            "openhab_root": str(openhab_path),
+            "managed_path": "yaml/knx.yaml",
+            "things_format": "yaml",
+            "post_change_sha256": hashlib.sha256(b"current").hexdigest(),
+            "post_change_gateway_override": "192.0.2.42",
+        },
+    )
+
+    assert manager.get_last_deployed_things_target() is not None
+    assert manager.get_last_deployed_gateway_source() is not None
+    assert gateway_undo.load_snapshot(snapshot_path) is not None
+
+    restored_ok, _message = manager.rollback("job")
+
+    assert restored_ok is True
+    assert restored == [{"yaml/knx.yaml"}]
+    assert all(not job.get("deployed") for job in manager._jobs.values())
+    persisted_jobs = json.loads((tmp_path / "jobs" / "jobs.json").read_text(encoding="utf-8"))
+    assert all(not job.get("deployed") for job in persisted_jobs.values())
+    assert manager.get_last_deployed_things_target() is None
+    assert manager.get_last_deployed_gateway_source() is None
+    assert gateway_undo.load_snapshot(snapshot_path) is None
 
 
 def test_deploy_rejects_retirement_outside_openhab_before_writing(tmp_path, monkeypatch):

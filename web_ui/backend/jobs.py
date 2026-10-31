@@ -1415,8 +1415,8 @@ class JobManager:
         return diff_lines
 
     def rollback(self, job_id, backup_name=None):
-        """Restore a job's managed files, serialized with deployments."""
-        with self.operation_lock:
+        """Restore managed files and invalidate live targets, serialized with writes."""
+        with self.operation_lock, self.gateway_state_lock:
             with self.lock:
                 return self._rollback_locked(job_id, backup_name)
 
@@ -1457,7 +1457,28 @@ class JobManager:
         ):
             raise ValueError("backup path is outside the configured backup directory")
 
+        previous_deployed = {
+            job_id: ("deployed" in job, job.get("deployed")) for job_id, job in self._jobs.items()
+        }
+        for deployed_job in self._jobs.values():
+            if deployed_job.get("deployed"):
+                deployed_job["deployed"] = False
+        try:
+            save_jobs(self.jobs_dir, self._jobs)
+        except Exception:
+            for deployed_job_id, (had_deployed_flag, was_deployed) in previous_deployed.items():
+                deployed_job = self._jobs[deployed_job_id]
+                if had_deployed_flag:
+                    deployed_job["deployed"] = was_deployed
+                else:
+                    deployed_job.pop("deployed", None)
+            raise
+
         restore_managed_files(backup_path, openhab_root, restore_relatives)
+        try:
+            gateway_undo.clear_snapshot(self._gateway_undo_path())
+        except OSError:
+            logger.warning("Failed to clear the stale gateway undo snapshot after rollback")
         return True, f'restored managed files from {backup["name"]}'
 
     def deploy(self, job_id):

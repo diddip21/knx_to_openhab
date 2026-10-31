@@ -11,7 +11,7 @@ _DSL_BRIDGE = re.compile(r"^Bridge\s+knx:ip:bridge(?:\s|\[)", re.IGNORECASE)
 
 def _strip_dsl_comments(content: str, path: Path) -> str:
     """Replace DSL comments with whitespace while preserving strings and lines."""
-    cleaned = []
+    cleaned: list[str] = []
     quote = None
     escaped = False
     line_comment = False

@@ -204,6 +204,7 @@ class JobManager:
         self.executor = ThreadPoolExecutor(max_workers=2)
         self.lock = threading.Lock()
         self.operation_lock = threading.Lock()
+        self.gateway_state_lock = threading.Lock()
 
     def _reload_jobs(self):
         """Reload jobs from disk with a merge strategy to avoid clobbering active state."""
@@ -369,7 +370,9 @@ class JobManager:
     def _gateway_undo_path(self):
         return os.path.join(self.backups_dir, "gateway-live-undo.json")
 
-    def _gateway_undo_available(self, target, openhab_root, managed_paths):
+    def _gateway_undo_available(
+        self, target, openhab_root, managed_paths, current_gateway_override
+    ):
         try:
             snapshot = gateway_undo.load_snapshot(self._gateway_undo_path())
             if snapshot is None:
@@ -382,6 +385,8 @@ class JobManager:
                 or snapshot["things_format"] != target["things_format"]
             ):
                 return False
+            if snapshot.get("post_change_gateway_override") != current_gateway_override:
+                return False
             current_content = read_managed_file(openhab_root, target["managed_path"], managed_paths)
             return hashlib.sha256(current_content).hexdigest() == snapshot["post_change_sha256"]
         except (OSError, ValueError) as error:
@@ -389,8 +394,8 @@ class JobManager:
             return False
 
     def get_gateway_state(self):
-        """Read active managed bridge settings and reset availability under the operation lock."""
-        with self.operation_lock:
+        """Read active managed bridge settings under the narrow live-file lock."""
+        with self.gateway_state_lock:
             project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
             configuration = load_generator_config(project_root)
             target = self.get_last_deployed_things_target()
@@ -406,8 +411,15 @@ class JobManager:
             state["configured_path"] = os.path.join(
                 openhab_root, *PurePosixPath(target["managed_path"]).parts
             )
+            devices = configuration.get("devices", {})
+            gateway = devices.get("gateway", {}) if isinstance(devices, dict) else {}
+            current_override = gateway.get("ip_address", "") if isinstance(gateway, dict) else ""
+            current_override = current_override or ""
+            if not isinstance(current_override, str):
+                raise ValueError("Generator gateway IP override must be a string")
+            state["saved_override"] = current_override
             state["undo_available"] = self._gateway_undo_available(
-                target, openhab_root, _managed_paths
+                target, openhab_root, _managed_paths, current_override
             )
             return state
 
@@ -462,6 +474,7 @@ class JobManager:
             "deployment_id": target["deployment_id"],
             "file_content_b64": base64.b64encode(old_content).decode("ascii"),
             "previous_gateway_override": previous_override,
+            "post_change_gateway_override": override,
             "openhab_root": openhab_root,
             "managed_path": relative_path,
             "things_format": state["things_format"],
@@ -516,7 +529,7 @@ class JobManager:
         except (AttributeError, ValueError) as error:
             raise ValueError(f"Invalid IP address: {ip_address_value}") from error
 
-        with self.operation_lock:
+        with self.operation_lock, self.gateway_state_lock:
             return self._update_live_gateway(
                 lambda content, format_name: gateway_config.update_gateway_file(
                     content, format_name, normalized_ip
@@ -528,7 +541,7 @@ class JobManager:
 
     def restore_gateway_ip(self):
         """Restore the last deployed ETS gateway address or KNX router mode."""
-        with self.operation_lock:
+        with self.operation_lock, self.gateway_state_lock:
             source = self.get_last_deployed_gateway_source()
             if source is None:
                 raise ValueError("No successfully deployed ETS gateway source is available")
@@ -545,7 +558,7 @@ class JobManager:
 
     def undo_gateway_ip(self):
         """Restore the exact prior managed file and override from the last live action."""
-        with self.operation_lock:
+        with self.operation_lock, self.gateway_state_lock:
             project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
             original_config = load_generator_config(project_root)
             target = self.get_last_deployed_things_target()
@@ -568,6 +581,17 @@ class JobManager:
                 or snapshot["things_format"] != target["things_format"]
             ):
                 raise ValueError("Undo snapshot is stale because the deployed target has changed")
+
+            devices = original_config.get("devices", {})
+            gateway = devices.get("gateway", {}) if isinstance(devices, dict) else {}
+            current_override = gateway.get("ip_address", "") if isinstance(gateway, dict) else ""
+            current_override = current_override or ""
+            if not isinstance(current_override, str):
+                raise ValueError("Generator gateway IP override must be a string")
+            if snapshot.get("post_change_gateway_override") != current_override:
+                raise ValueError(
+                    "Undo snapshot is stale because the saved gateway override has changed"
+                )
 
             relative_path = target["managed_path"]
             current_content = read_managed_file(openhab_root, relative_path, managed_paths)
@@ -1438,11 +1462,23 @@ class JobManager:
 
     def deploy(self, job_id):
         """Deploy staged files to live environment."""
-        with self.operation_lock:
+        with self.operation_lock, self.gateway_state_lock:
             with self.lock:
-                return self._deploy_locked(job_id)
+                deployed_jobs = [job for job in self._jobs.values() if job.get("deployed")]
+                if deployed_jobs:
+                    latest = max(
+                        deployed_jobs,
+                        key=lambda job: job.get("deployed_at", job.get("created", 0)),
+                    )
+                    previous_things_format = (
+                        "yaml" if latest.get("output_format") == "yaml" else "dsl"
+                    )
+                else:
+                    previous_things_format = "dsl"
+            with self.lock:
+                return self._deploy_locked(job_id, previous_things_format)
 
-    def _deploy_locked(self, job_id):
+    def _deploy_locked(self, job_id, previous_things_format):
         job = self._jobs.get(job_id)
         if not job:
             raise ValueError("Job not found")
@@ -1512,6 +1548,15 @@ class JobManager:
         deployed_count = 0
         retired_count = len(retirement_targets)
         try:
+            selected_things_format = "yaml" if job.get("output_format") == "yaml" else "dsl"
+            if selected_things_format != previous_things_format:
+                managed_things_relpaths = {
+                    managed_paths[key]
+                    for key in ("items_path", "things_path", "sitemaps_path", "yaml_path")
+                    if key in managed_paths
+                }
+                assert_no_unmanaged_bridge_definitions(openhab_path, managed_things_relpaths)
+
             deployed_count = deploy_staged_files(
                 mapping,
                 job.get("staging_dir", ""),

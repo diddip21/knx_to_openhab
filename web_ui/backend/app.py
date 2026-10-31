@@ -1024,7 +1024,7 @@ if FLASK_AVAILABLE:
             if not isinstance(new_config, dict):
                 return jsonify({"error": "Config must be a JSON object"}), 400
 
-            with job_mgr.operation_lock:
+            with job_mgr.operation_lock, job_mgr.gateway_state_lock:
                 # Keep provisioning serialized with live gateway edits and deployments.
                 previous_config = load_generator_config(project_root)
                 previous_yaml_path = previous_config.get("yaml_path", "openhab/yaml/knx.yaml")

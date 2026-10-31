@@ -279,6 +279,33 @@ def test_format_switch_rejects_unmanaged_duplicate_bridge_in_job(tmp_path, monke
     manager.executor.shutdown(wait=False)
 
 
+def test_format_switch_rechecks_unmanaged_bridges_before_deploy(tmp_path, monkeypatch):
+    manager, job, openhab_root, managed = _run_staged_generation(
+        tmp_path, monkeypatch, "yaml", "dsl"
+    )
+    manual_path = openhab_root / "manual" / "manual.things"
+    manual_path.parent.mkdir(parents=True)
+    manual_path.write_text('Bridge knx:ip:bridge [ type="ROUTER" ]\n', encoding="utf-8")
+    monkeypatch.setattr(jobs_module, "package_version", lambda _package: {"installed": "5.2.0"})
+    deploy_calls = []
+    monkeypatch.setattr(
+        jobs_module,
+        "deploy_staged_files",
+        lambda *_args: deploy_calls.append(True),
+    )
+
+    with pytest.raises(
+        ValueError, match="Unmanaged KNX bridge definition found: manual/manual.things"
+    ):
+        manager.deploy(job["id"])
+
+    assert (openhab_root / managed["things_path"]).read_text(encoding="utf-8") == "before\n"
+    assert (openhab_root / managed["yaml_path"]).read_text(encoding="utf-8") == "before\n"
+    assert deploy_calls == []
+    assert job.get("deployed") is not True
+    manager.executor.shutdown(wait=False)
+
+
 def test_format_switch_rolls_back_both_files_on_partial_deploy_failure(tmp_path, monkeypatch):
     manager, job, openhab_root, managed = _run_staged_generation(
         tmp_path, monkeypatch, "yaml", "dsl"

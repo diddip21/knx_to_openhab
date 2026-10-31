@@ -24,6 +24,7 @@ def _prepare_deploy_manager(monkeypatch, manager, openhab_path):
     manager.jobs_dir = str(openhab_path.parent / "jobs")
     manager.lock = threading.Lock()
     manager.operation_lock = threading.Lock()
+    manager.gateway_state_lock = threading.Lock()
     (openhab_path.parent / "backups").mkdir()
     (openhab_path.parent / "jobs").mkdir()
 

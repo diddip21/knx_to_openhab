@@ -461,8 +461,10 @@ def test_gateway_state_maps_missing_bridge_to_conflict(client, monkeypatch):
 
 def test_config_save_uses_gateway_operation_lock(client, monkeypatch):
     operation_lock = threading.Lock()
+    gateway_state_lock = threading.Lock()
     job_mgr = Mock()
     job_mgr.operation_lock = operation_lock
+    job_mgr.gateway_state_lock = gateway_state_lock
     monkeypatch.setattr(app_module, "job_mgr", job_mgr)
     monkeypatch.setattr(
         app_module,
@@ -473,6 +475,7 @@ def test_config_save_uses_gateway_operation_lock(client, monkeypatch):
 
     def save_while_locked(config, _project_root):
         assert operation_lock.locked()
+        assert gateway_state_lock.locked()
         saved.update(config)
 
     monkeypatch.setattr(app_module, "save_generator_config", save_while_locked)
@@ -492,8 +495,10 @@ def test_config_save_uses_gateway_operation_lock(client, monkeypatch):
 
 def test_config_save_provisions_changed_yaml_path_under_operation_lock(client, monkeypatch):
     operation_lock = threading.Lock()
+    gateway_state_lock = threading.Lock()
     job_mgr = Mock()
     job_mgr.operation_lock = operation_lock
+    job_mgr.gateway_state_lock = gateway_state_lock
     monkeypatch.setattr(app_module, "job_mgr", job_mgr)
     monkeypatch.setattr(
         app_module,
@@ -510,6 +515,7 @@ def test_config_save_provisions_changed_yaml_path_under_operation_lock(client, m
 
     def save_while_locked(config, _project_root):
         assert operation_lock.locked()
+        assert gateway_state_lock.locked()
         saves.append(config.copy())
 
     monkeypatch.setattr(app_module, "save_generator_config", save_while_locked)
@@ -517,6 +523,7 @@ def test_config_save_provisions_changed_yaml_path_under_operation_lock(client, m
 
     def provision(*args, **kwargs):
         assert operation_lock.locked()
+        assert gateway_state_lock.locked()
         command_calls.append((args, kwargs))
         return SimpleNamespace(returncode=0, stderr="", stdout="")
 
@@ -540,8 +547,10 @@ def test_config_save_provisions_changed_yaml_path_under_operation_lock(client, m
 
 def test_config_save_provision_failure_rolls_back_only_yaml_path(client, monkeypatch):
     operation_lock = threading.Lock()
+    gateway_state_lock = threading.Lock()
     job_mgr = Mock()
     job_mgr.operation_lock = operation_lock
+    job_mgr.gateway_state_lock = gateway_state_lock
     monkeypatch.setattr(app_module, "job_mgr", job_mgr)
     monkeypatch.setattr(
         app_module,
@@ -554,6 +563,7 @@ def test_config_save_provision_failure_rolls_back_only_yaml_path(client, monkeyp
 
     def save_while_locked(config, _project_root):
         assert operation_lock.locked()
+        assert gateway_state_lock.locked()
         saves.append(config.copy())
 
     monkeypatch.setattr(app_module, "save_generator_config", save_while_locked)

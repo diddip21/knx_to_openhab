@@ -489,6 +489,7 @@ def _live_update_manager(monkeypatch, tmp_path, gateway_source=None, things_form
     manager = JobManager.__new__(JobManager)
     manager.cfg = {}
     manager.operation_lock = threading.Lock()
+    manager.gateway_state_lock = threading.Lock()
     manager.jobs_dir = str(tmp_path / "jobs")
     manager.backups_dir = str(tmp_path / "backups")
     manager._reload_jobs = lambda: None
@@ -718,6 +719,7 @@ def test_apply_persists_previous_file_and_override_for_durable_undo(tmp_path, mo
     assert snapshot["managed_path"] == "things/knx.things"
     assert snapshot["things_format"] == "dsl"
     assert snapshot["post_change_sha256"] == hashlib.sha256(state["content"]).hexdigest()
+    assert snapshot["post_change_gateway_override"] == "192.168.20.99"
     assert result["undo_available"] is True
     assert manager.get_gateway_state()["undo_available"] is True
 
@@ -729,6 +731,7 @@ def test_undo_snapshot_requires_deployment_job_id(tmp_path):
             {
                 "file_content_b64": base64.b64encode(b"prior file\n").decode("ascii"),
                 "previous_gateway_override": "192.168.20.45",
+                "post_change_gateway_override": "192.168.20.45",
                 "openhab_root": str(tmp_path / "openhab"),
                 "managed_path": "things/knx.things",
                 "things_format": "dsl",
@@ -745,6 +748,7 @@ def test_new_undo_snapshots_require_a_deployment_identity(tmp_path):
                 "job_id": "deployed",
                 "file_content_b64": base64.b64encode(b"prior file\n").decode("ascii"),
                 "previous_gateway_override": "192.168.20.45",
+                "post_change_gateway_override": "192.168.20.45",
                 "openhab_root": str(tmp_path / "openhab"),
                 "managed_path": "things/knx.things",
                 "things_format": "dsl",
@@ -851,6 +855,23 @@ def test_undo_refuses_a_changed_managed_file_without_writing(tmp_path, monkeypat
     assert state["write_calls"] == writes_before_undo
     assert (Path(manager.backups_dir) / "gateway-live-undo.json").is_file()
     assert manager.get_gateway_state()["undo_available"] is False
+
+
+def test_undo_refuses_a_changed_saved_gateway_override_without_writing(tmp_path, monkeypatch):
+    manager, state, _read_state = _live_update_manager(monkeypatch, tmp_path)
+    manager.apply_gateway_ip("192.168.20.99")
+    live_content = state["content"]
+    state["config"]["devices"]["gateway"]["ip_address"] = "192.168.20.77"
+    saved_config = deepcopy(state["config"])
+    writes_before_undo = list(state["write_calls"])
+
+    assert manager.get_gateway_state()["undo_available"] is False
+    with pytest.raises(ValueError, match="Undo snapshot is stale.*gateway override has changed"):
+        manager.undo_gateway_ip()
+
+    assert state["content"] == live_content
+    assert state["config"] == saved_config
+    assert state["write_calls"] == writes_before_undo
 
 
 def test_undo_refuses_a_changed_deployed_target_without_writing(tmp_path, monkeypatch):
@@ -1036,6 +1057,39 @@ def test_live_gateway_operation_holds_shared_operation_lock(tmp_path, monkeypatc
     manager.apply_gateway_ip("192.168.20.99")
 
 
+def test_gateway_state_read_does_not_wait_for_generation_lock(tmp_path, monkeypatch):
+    manager, _state, _read_state = _live_update_manager(monkeypatch, tmp_path)
+    manager.gateway_state_lock = threading.Lock()
+    operation_entered = threading.Event()
+    release_operation = threading.Event()
+    state_read_finished = threading.Event()
+
+    def hold_generation(*_args):
+        operation_entered.set()
+        assert release_operation.wait(2)
+
+    manager._run_job_serialized = hold_generation
+    job_thread = threading.Thread(target=lambda: manager._run_job("active-job"))
+    job_thread.start()
+    assert operation_entered.wait(1)
+
+    def read_state():
+        manager.get_gateway_state()
+        state_read_finished.set()
+
+    state_thread = threading.Thread(target=read_state)
+    state_thread.start()
+    read_completed_during_generation = state_read_finished.wait(1)
+
+    release_operation.set()
+    job_thread.join(2)
+    state_thread.join(2)
+
+    assert not job_thread.is_alive()
+    assert not state_thread.is_alive()
+    assert read_completed_during_generation
+
+
 @pytest.mark.parametrize("blocking_operation", ["generation", "deploy"])
 def test_live_update_serializes_with_job_generation_and_deploy(
     tmp_path, monkeypatch, blocking_operation
@@ -1163,6 +1217,7 @@ def test_yaml_live_operations_require_known_openhab_5_2(
                 "deployment_id": "deployment-1",
                 "file_content_b64": base64.b64encode(b"prior file\n").decode("ascii"),
                 "previous_gateway_override": "192.168.20.45",
+                "post_change_gateway_override": "192.168.20.45",
                 "openhab_root": str(tmp_path / "openhab"),
                 "managed_path": "yaml/knx.yaml",
                 "things_format": "yaml",
@@ -1261,6 +1316,7 @@ def test_last_deployed_legacy_target_uses_things_path_not_pending_yaml():
 def test_last_deployed_target_rejects_metadata_without_active_path(tmp_path, monkeypatch):
     manager = JobManager.__new__(JobManager)
     manager.operation_lock = threading.Lock()
+    manager.gateway_state_lock = threading.Lock()
     manager._jobs = {
         "legacy": {
             "id": "legacy",
@@ -1313,6 +1369,7 @@ def test_live_apply_updates_deployed_yaml_not_pending_dsl_config(tmp_path, monke
     manager = JobManager.__new__(JobManager)
     manager.cfg = {}
     manager.operation_lock = threading.Lock()
+    manager.gateway_state_lock = threading.Lock()
     manager.backups_dir = str(tmp_path / "backups")
     manager._jobs = {
         "deployed": {

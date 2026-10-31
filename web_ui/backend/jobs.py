@@ -240,6 +240,26 @@ class JobManager:
             raise ValueError("Last deployed KNX Things target is outside its managed output path")
         return target_config, validated_root, managed_paths
 
+    def _require_live_format_compatibility(self, things_format: str) -> None:
+        """Reject YAML live operations unless a local OpenHAB 5.0+ version is known."""
+        if things_format == "dsl":
+            return
+        if things_format != "yaml":
+            raise ValueError(f"Unsupported KNX Things format: {things_format}")
+        version_info = package_version("openhab")
+        installed = version_info.get("installed") if isinstance(version_info, dict) else None
+        version_match = (
+            re.match(r"^(\d+)\.(\d+)(?:\.|[-+]|$)", installed)
+            if isinstance(installed, str)
+            else None
+        )
+        if version_match is None or (int(version_match.group(1)), int(version_match.group(2))) < (
+            5,
+            0,
+        ):
+            detail = f" Installed version: {installed}." if installed else " Installed version is unknown."
+            raise ValueError(f"YAML live changes require OpenHAB 5.0 or newer.{detail}")
+
     def _gateway_undo_path(self):
         return os.path.join(self.backups_dir, "gateway-live-undo.json")
 
@@ -296,6 +316,7 @@ class JobManager:
         state_config, openhab_root, managed_paths = self._gateway_target_configuration(
             original_config, project_root, target
         )
+        self._require_live_format_compatibility(target["things_format"])
         state_config["_gateway_reset_available"] = (
             self.get_last_deployed_gateway_source() is not None
         )
@@ -424,6 +445,7 @@ class JobManager:
             _target_config, openhab_root, managed_paths = self._gateway_target_configuration(
                 original_config, project_root, target
             )
+            self._require_live_format_compatibility(target["things_format"])
 
             undo_path = self._gateway_undo_path()
             snapshot = gateway_undo.load_snapshot(undo_path)

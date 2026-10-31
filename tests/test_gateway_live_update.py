@@ -14,6 +14,7 @@ import pytest
 import yaml
 
 from web_ui.backend import jobs as jobs_module
+from web_ui.backend import gateway_undo
 from web_ui.backend.gateway_config import (
     read_gateway_state,
     restore_ets_gateway_file,
@@ -493,6 +494,7 @@ def _live_update_manager(monkeypatch, tmp_path, gateway_source=None, things_form
     monkeypatch.setattr(
         jobs_module, "load_generator_config", lambda *_args: deepcopy(state["config"])
     )
+    monkeypatch.setattr(jobs_module, "package_version", lambda _package: {"installed": "5.0.0"})
 
     def save_config(configuration, *_args):
         state["save_calls"].append(deepcopy(configuration))
@@ -891,6 +893,58 @@ def test_live_apply_does_not_call_service_or_network_clients(tmp_path, monkeypat
     assert result["success"] is True
 
 
+@pytest.mark.parametrize("operation", ["apply", "reset", "undo"])
+@pytest.mark.parametrize("installed_version", ["4.4.0", "5.0.0", None, "unknown"])
+def test_yaml_live_operations_require_known_openhab_five(
+    tmp_path, monkeypatch, operation, installed_version
+):
+    source = {
+        "job_id": "deployed",
+        "detected_gateway_ip": "192.168.20.45",
+        "things_format": "yaml",
+    }
+    gateway_source = None if operation == "apply" else source
+    manager, state, _read_state = _live_update_manager(
+        monkeypatch,
+        tmp_path,
+        gateway_source=gateway_source,
+        things_format="yaml",
+    )
+    monkeypatch.setattr(
+        jobs_module, "package_version", lambda _package: {"installed": installed_version}
+    )
+    if operation == "undo":
+        gateway_undo.save_snapshot(
+            manager._gateway_undo_path(),
+            {
+                "file_content_b64": base64.b64encode(b"prior file\n").decode("ascii"),
+                "previous_gateway_override": "192.168.20.45",
+                "openhab_root": str(tmp_path / "openhab"),
+                "managed_path": "yaml/knx.yaml",
+                "things_format": "yaml",
+                "post_change_sha256": hashlib.sha256(state["content"]).hexdigest(),
+            },
+        )
+    method = {
+        "apply": lambda: manager.apply_gateway_ip("192.168.20.99"),
+        "reset": manager.restore_gateway_ip,
+        "undo": manager.undo_gateway_ip,
+    }[operation]
+    allow_yaml = installed_version == "5.0.0"
+    original_content = state["content"]
+    original_config = deepcopy(state["config"])
+
+    if allow_yaml:
+        assert method()["success"] is True
+    else:
+        with pytest.raises(ValueError, match="OpenHAB 5.0 or newer"):
+            method()
+        assert state["content"] == original_content
+        assert state["config"] == original_config
+        assert state["write_calls"] == []
+        assert state["save_calls"] == []
+
+
 def test_last_deployed_things_target_ignores_pending_and_older_jobs():
     manager = JobManager.__new__(JobManager)
     manager._jobs = {
@@ -1006,6 +1060,7 @@ def test_live_apply_updates_deployed_yaml_not_pending_dsl_config(tmp_path, monke
     manager._reload_jobs = lambda: None
     saved_configs = []
     monkeypatch.setattr(jobs_module, "load_generator_config", lambda *_args: deepcopy(config))
+    monkeypatch.setattr(jobs_module, "package_version", lambda _package: {"installed": "5.0.0"})
     monkeypatch.setattr(
         jobs_module,
         "save_generator_config",

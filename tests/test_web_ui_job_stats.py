@@ -1,5 +1,6 @@
 import hashlib
 import importlib
+import io
 import json
 import tarfile
 import threading
@@ -133,11 +134,18 @@ def test_deploy_clears_legacy_model_only_after_backup(tmp_path, monkeypatch):
 def test_rollback_invalidates_gateway_deployment_metadata_and_undo_snapshot(tmp_path, monkeypatch):
     openhab_path = tmp_path / "openhab"
     openhab_path.mkdir()
+    managed_file = openhab_path / "yaml" / "knx.yaml"
+    managed_file.parent.mkdir()
+    managed_file.write_bytes(b"new live content\n")
     backup_path = tmp_path / "backups" / "before-rollback.tar.gz"
 
     manager = JobManager.__new__(JobManager)
     _prepare_deploy_manager(monkeypatch, manager, openhab_path)
-    backup_path.write_bytes(b"not inspected by the rollback stub")
+    backup_content = b"previous managed content\n"
+    with tarfile.open(backup_path, "w:gz") as archive:
+        member = tarfile.TarInfo("openhab/yaml/knx.yaml")
+        member.size = len(backup_content)
+        archive.addfile(member, io.BytesIO(backup_content))
     managed_paths = {"yaml_path": "yaml/knx.yaml"}
     monkeypatch.setattr(
         jobs_module,
@@ -146,8 +154,15 @@ def test_rollback_invalidates_gateway_deployment_metadata_and_undo_snapshot(tmp_
     )
     restored = []
 
-    def restore_backup(_backup_path, _openhab_path, relative_paths):
-        restored.append(set(relative_paths))
+    def restore_backup(archive_path, _root, relative_paths):
+        restored_paths = set(relative_paths)
+        with tarfile.open(archive_path, "r:gz") as archive:
+            for relative in restored_paths:
+                member = archive.extractfile(f"{openhab_path.name}/{relative}")
+                if member is not None:
+                    with member:
+                        (openhab_path / relative).write_bytes(member.read())
+        restored.append(restored_paths)
 
     monkeypatch.setattr(jobs_module, "restore_managed_files", restore_backup)
     manager._jobs = {
@@ -195,6 +210,7 @@ def test_rollback_invalidates_gateway_deployment_metadata_and_undo_snapshot(tmp_
 
     assert restored_ok is True
     assert restored == [{"yaml/knx.yaml"}]
+    assert managed_file.read_bytes() == backup_content
     assert all(not job.get("deployed") for job in manager._jobs.values())
     persisted_jobs = json.loads((tmp_path / "jobs" / "jobs.json").read_text(encoding="utf-8"))
     assert all(not job.get("deployed") for job in persisted_jobs.values())

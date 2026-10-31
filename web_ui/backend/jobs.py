@@ -13,6 +13,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from ipaddress import ip_address
+from pathlib import PurePosixPath
 
 from completeness import check_completeness, iter_thing_lines
 
@@ -183,27 +184,96 @@ class JobManager:
             "things_format": latest.get("things_format", "dsl"),
         }
 
+    def get_last_deployed_things_target(self):
+        """Return the latest deployed, explicitly managed KNX Things target."""
+        self._reload_jobs()
+        deployed_jobs = [job for job in self._jobs.values() if job.get("deployed")]
+        if not deployed_jobs:
+            return None
+        latest = max(
+            deployed_jobs,
+            key=lambda job: job.get("deployed_at", job.get("created", 0)),
+        )
+        things_format = latest.get("things_format")
+        openhab_root = latest.get("openhab_root")
+        managed_path = latest.get("active_things_path")
+        managed_targets = latest.get("managed_targets")
+        if (
+            things_format not in FORMAT_OUTPUT_KEYS
+            or not isinstance(openhab_root, str)
+            or not openhab_root
+            or not isinstance(managed_path, str)
+            or not isinstance(managed_targets, list)
+            or managed_path not in managed_targets
+        ):
+            return None
+        return {
+            "job_id": latest.get("id", ""),
+            "openhab_root": openhab_root,
+            "managed_path": managed_path,
+            "things_format": things_format,
+        }
+
+    def _gateway_target_configuration(self, configuration, project_root, target):
+        """Build and revalidate a minimal managed-path config for a deployed target."""
+        things_format = target["things_format"]
+        output_key = FORMAT_OUTPUT_KEYS[things_format]
+        openhab_root = target["openhab_root"]
+        managed_path = target["managed_path"]
+        target_config = {
+            "openhab_path": openhab_root,
+            "things_format": things_format,
+            output_key: os.path.join(openhab_root, *PurePosixPath(managed_path).parts),
+            "devices": deepcopy(configuration.get("devices", {})),
+        }
+        try:
+            validated_root, managed_paths = configured_managed_paths(
+                target_config, project_root
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"Last deployed KNX Things target is not usable: {error}") from error
+        if validated_root != os.path.realpath(os.path.abspath(openhab_root)):
+            raise ValueError("Last deployed KNX Things target has an invalid OpenHAB root")
+        if managed_paths.get(output_key) != managed_path:
+            raise ValueError("Last deployed KNX Things target is outside its managed output path")
+        return target_config, validated_root, managed_paths
+
     def get_gateway_state(self):
         """Read active managed bridge settings and reset availability under the operation lock."""
         with self.operation_lock:
             project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
             configuration = load_generator_config(project_root)
-            state_config = deepcopy(configuration)
+            target = self.get_last_deployed_things_target()
+            if target is None:
+                raise ValueError("No usable successfully deployed KNX Things target is available")
+            state_config, openhab_root, _managed_paths = self._gateway_target_configuration(
+                configuration, project_root, target
+            )
             state_config["_gateway_reset_available"] = (
                 self.get_last_deployed_gateway_source() is not None
             )
-            return gateway_config.read_gateway_state(state_config, project_root)
+            state = gateway_config.read_gateway_state(state_config, project_root)
+            state["configured_path"] = os.path.join(
+                openhab_root, *PurePosixPath(target["managed_path"]).parts
+            )
+            return state
 
     def _update_live_gateway(self, transform, gateway_ip, gateway_mode, override):
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         original_config = load_generator_config(project_root)
-        state_config = deepcopy(original_config)
+        target = self.get_last_deployed_things_target()
+        if target is None:
+            raise ValueError("No usable successfully deployed KNX Things target is available")
+        state_config, openhab_root, managed_paths = self._gateway_target_configuration(
+            original_config, project_root, target
+        )
         state_config["_gateway_reset_available"] = (
             self.get_last_deployed_gateway_source() is not None
         )
         state = gateway_config.read_gateway_state(state_config, project_root)
-        openhab_root, managed_paths = configured_managed_paths(original_config, project_root)
-        relative_path = state["managed_path"]
+        relative_path = target["managed_path"]
+        if state["managed_path"] != relative_path or state["things_format"] != target["things_format"]:
+            raise ValueError("Last deployed KNX Things target did not resolve consistently")
         if relative_path not in managed_paths.values():
             raise ValueError("Active KNX Things file is not a managed output")
 

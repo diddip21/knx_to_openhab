@@ -414,9 +414,21 @@ def _live_update_manager(monkeypatch, tmp_path, gateway_source=None, things_form
     manager.operation_lock = threading.Lock()
     manager.jobs_dir = str(tmp_path / "jobs")
     manager.backups_dir = str(tmp_path / "backups")
-    manager._jobs = {}
     manager._reload_jobs = lambda: None
     manager.get_last_deployed_gateway_source = lambda: gateway_source
+    openhab_root = tmp_path / "openhab"
+    managed_path = "things/knx.things" if things_format == "dsl" else "yaml/knx.yaml"
+    manager._jobs = {
+        "deployed": {
+            "id": "deployed",
+            "deployed": True,
+            "deployed_at": 1,
+            "things_format": things_format,
+            "openhab_root": str(openhab_root),
+            "active_things_path": managed_path,
+            "managed_targets": ["things/knx.things", "yaml/knx.yaml"],
+        }
+    }
 
     state = {
         "config": {
@@ -465,7 +477,6 @@ def _live_update_manager(monkeypatch, tmp_path, gateway_source=None, things_form
         "write_calls": [],
         "save_calls": [],
     }
-    openhab_root = tmp_path / "openhab"
     managed = {"things_path": "things/knx.things", "yaml_path": "yaml/knx.yaml"}
     read_state = {
         "things_format": things_format,
@@ -745,3 +756,143 @@ def test_live_apply_does_not_call_service_or_network_clients(tmp_path, monkeypat
     result = manager.apply_gateway_ip("192.168.20.99")
 
     assert result["success"] is True
+
+
+def test_last_deployed_things_target_ignores_pending_and_older_jobs():
+    manager = JobManager.__new__(JobManager)
+    manager._jobs = {
+        "old": {
+            "id": "old",
+            "deployed": True,
+            "deployed_at": 10,
+            "things_format": "dsl",
+            "openhab_root": "/srv/openhab-old",
+            "active_things_path": "things/old.things",
+            "managed_targets": ["things/old.things"],
+        },
+        "staged": {
+            "id": "staged",
+            "deployed": False,
+            "deployed_at": 30,
+            "things_format": "dsl",
+            "openhab_root": "/srv/openhab-staged",
+            "active_things_path": "things/staged.things",
+            "managed_targets": ["things/staged.things"],
+        },
+        "deployed": {
+            "id": "deployed",
+            "deployed": True,
+            "deployed_at": 20,
+            "things_format": "yaml",
+            "openhab_root": "/srv/openhab-active",
+            "active_things_path": "yaml/knx.yaml",
+            "managed_targets": ["items/knx.items", "yaml/knx.yaml"],
+        },
+    }
+    manager._reload_jobs = lambda: None
+
+    assert manager.get_last_deployed_things_target() == {
+        "job_id": "deployed",
+        "openhab_root": "/srv/openhab-active",
+        "managed_path": "yaml/knx.yaml",
+        "things_format": "yaml",
+    }
+
+
+def test_last_deployed_things_target_rejects_legacy_metadata_without_managed_path(
+    tmp_path, monkeypatch
+):
+    manager = JobManager.__new__(JobManager)
+    manager.operation_lock = threading.Lock()
+    manager._jobs = {
+        "legacy": {
+            "id": "legacy",
+            "deployed": True,
+            "deployed_at": 20,
+            "things_format": "yaml",
+            "openhab_root": "/srv/openhab",
+            "active_things_path": "yaml/knx.yaml",
+        }
+    }
+    manager._reload_jobs = lambda: None
+    monkeypatch.setattr(jobs_module, "load_generator_config", lambda *_args: {})
+
+    assert manager.get_last_deployed_things_target() is None
+    with pytest.raises(ValueError, match="No usable successfully deployed KNX Things target"):
+        manager.get_gateway_state()
+    with pytest.raises(ValueError, match="No usable successfully deployed KNX Things target"):
+        manager.apply_gateway_ip("192.168.20.99")
+
+
+def test_live_apply_updates_deployed_yaml_not_pending_dsl_config(tmp_path, monkeypatch):
+    deployed_root = tmp_path / "deployed-openhab"
+    pending_root = tmp_path / "pending-openhab"
+    deployed_yaml = deployed_root / "yaml" / "knx.yaml"
+    pending_dsl = pending_root / "things" / "knx.things"
+    deployed_yaml.parent.mkdir(parents=True)
+    pending_dsl.parent.mkdir(parents=True)
+    deployed_yaml.write_text(
+        "version: 1\n"
+        "things:\n"
+        "  knx:ip:bridge:\n"
+        "    isBridge: true\n"
+        "    config:\n"
+        "      type: TUNNEL\n"
+        "      ipAddress: 192.168.20.45\n"
+        "      portNumber: 3671\n",
+        encoding="utf-8",
+    )
+    pending_dsl.write_text(
+        'Bridge knx:ip:bridge [ type="TUNNEL", ipAddress="192.168.20.45", '
+        "portNumber=3671 ] { }\n",
+        encoding="utf-8",
+    )
+    config = {
+        "openhab_path": str(pending_root),
+        "things_format": "dsl",
+        "things_path": str(pending_dsl),
+        "yaml_path": str(pending_root / "yaml" / "knx.yaml"),
+        "devices": {"gateway": {"ip_address": "192.168.20.45", "label": "keep"}},
+    }
+    manager = JobManager.__new__(JobManager)
+    manager.cfg = {}
+    manager.operation_lock = threading.Lock()
+    manager._jobs = {
+        "deployed": {
+            "id": "deployed",
+            "deployed": True,
+            "deployed_at": 20,
+            "things_format": "yaml",
+            "openhab_root": str(deployed_root),
+            "active_things_path": "yaml/knx.yaml",
+            "managed_targets": ["items/knx.items", "yaml/knx.yaml"],
+            "detected_gateway_ip": "192.168.20.45",
+        }
+    }
+    manager._reload_jobs = lambda: None
+    saved_configs = []
+    monkeypatch.setattr(jobs_module, "load_generator_config", lambda *_args: deepcopy(config))
+    monkeypatch.setattr(
+        jobs_module,
+        "save_generator_config",
+        lambda updated, *_args: saved_configs.append(deepcopy(updated)),
+    )
+
+    state = manager.get_gateway_state()
+
+    assert state["things_format"] == "yaml"
+    assert state["managed_path"] == "yaml/knx.yaml"
+    assert state["configured_path"] == str(deployed_yaml)
+
+    result = manager.apply_gateway_ip("192.168.20.99")
+
+    assert result["things_format"] == "yaml"
+    assert result["managed_path"] == "yaml/knx.yaml"
+    assert yaml.safe_load(deployed_yaml.read_text(encoding="utf-8"))["things"]["knx:ip:bridge"][
+        "config"
+    ]["ipAddress"] == "192.168.20.99"
+    assert 'ipAddress="192.168.20.45"' in pending_dsl.read_text(encoding="utf-8")
+    assert saved_configs[0]["devices"]["gateway"] == {
+        "ip_address": "192.168.20.99",
+        "label": "keep",
+    }

@@ -293,6 +293,30 @@ def test_job_migration_stages_new_format_and_inactive_placeholder(
     manager.executor.shutdown(wait=False)
 
 
+def test_yaml_deploy_without_provisioned_target_preserves_dsl_and_deployment_metadata(
+    tmp_path, monkeypatch
+):
+    manager, job, openhab_root, managed = _run_staged_generation(
+        tmp_path, monkeypatch, "yaml", "dsl"
+    )
+    dsl_target = openhab_root / managed["things_path"]
+    original_dsl = dsl_target.read_bytes()
+    yaml_target = openhab_root / managed["yaml_path"]
+    yaml_target.unlink()
+    yaml_target.parent.rmdir()
+
+    with pytest.raises(FileNotFoundError):
+        manager.deploy(job["id"])
+
+    assert dsl_target.read_bytes() == original_dsl
+    assert not yaml_target.exists()
+    assert not yaml_target.parent.exists()
+    assert job.get("deployed") is not True
+    assert manager.get_last_deployed_things_format() == "dsl"
+    assert manager._jobs["previous"].get("deployed") is True
+    manager.executor.shutdown(wait=False)
+
+
 def test_format_switch_rejects_unmanaged_duplicate_bridge_in_job(tmp_path, monkeypatch):
     manager, job, _root, _managed = _run_staged_generation(
         tmp_path,

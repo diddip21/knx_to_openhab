@@ -141,6 +141,21 @@ def test_render_yaml_supports_router_mode_without_ip_address():
     assert bridge["config"] == {"type": "ROUTER", "autoReconnectPeriod": 60}
 
 
+def test_render_yaml_emits_generic_device_with_empty_channel_mapping():
+    model = KnxThingsModel(
+        gateway_config={"type": "ROUTER"},
+        channels=(),
+    )
+
+    document = yaml.safe_load(render_yaml(model))
+
+    assert document["things"]["knx:device:bridge:generic"] == {
+        "bridge": "knx:ip:bridge",
+        "label": "KNX generic device",
+        "channels": {},
+    }
+
+
 def test_inactive_outputs_are_valid_and_do_not_define_a_bridge():
     assert yaml.safe_load(render_inactive_yaml()) == {"version": 1}
     assert "Bridge knx:ip:bridge" not in render_inactive_dsl()

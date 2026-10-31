@@ -59,20 +59,19 @@ def render_yaml(model: KnxThingsModel) -> str:
             "config": dict(model.gateway_config),
         }
     }
-    if model.channels:
-        channels = {
-            channel.channel_id: {
-                "type": channel.channel_type,
-                "label": channel.label,
-                "config": dict(channel.config),
-            }
-            for channel in model.channels
+    channels = {
+        channel.channel_id: {
+            "type": channel.channel_type,
+            "label": channel.label,
+            "config": dict(channel.config),
         }
-        things["knx:device:bridge:generic"] = {
-            "bridge": "knx:ip:bridge",
-            "label": "KNX generic device",
-            "channels": channels,
-        }
+        for channel in model.channels
+    }
+    things["knx:device:bridge:generic"] = {
+        "bridge": "knx:ip:bridge",
+        "label": "KNX generic device",
+        "channels": channels,
+    }
     return yaml.safe_dump({"version": 1, "things": things}, sort_keys=False, allow_unicode=True)
 
 

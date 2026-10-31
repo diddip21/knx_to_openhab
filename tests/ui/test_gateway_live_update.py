@@ -37,6 +37,7 @@ def _stub_settings_routes(
     managed_path="things/knx.things",
     target_available=True,
     undo_available=True,
+    apply_saved_override="192.0.2.42",
 ):
     project_root = Path(__file__).resolve().parents[2]
     config_data = json.loads((project_root / "config.json").read_text(encoding="utf-8"))
@@ -44,6 +45,7 @@ def _stub_settings_routes(
     config_data["things_path"] = "openhab/things/knx.things"
     config_data["yaml_path"] = "openhab/yaml/knx.yaml"
     config_data["devices"]["gateway"]["ip_address"] = "192.0.2.42"
+    config_data["devices"]["gateway"]["hardware_name"] = ["KNX IP Interface"]
     calls = []
 
     def config_route(route):
@@ -116,7 +118,7 @@ def _stub_settings_routes(
                     "message": "KNX gateway configuration file updated; OpenHAB runtime status was not checked.",
                     "runtime_status": "not_checked",
                     "undo_available": not undo,
-                    "saved_override": "192.0.2.42",
+                    "saved_override": apply_saved_override,
                 }
             ),
         )
@@ -200,6 +202,35 @@ def test_live_apply_and_reset_use_dedicated_file_only_routes(page: Page, flask_s
     assert gateway_urls[1].endswith("/api/gateway/ip/reset")
     assert not any(call[0] == "config" and call[1] == "POST" for call in calls)
     assert not any("/rerun" in str(call[0]) for call in calls)
+
+
+@pytest.mark.ui
+def test_live_apply_saves_backend_canonical_ipv6_override(page: Page, flask_server):
+    calls = _stub_settings_routes(page, apply_saved_override="2001:db8::1")
+    _open_settings(page, flask_server)
+    page.get_by_role("button", name="Devices").click()
+    page.locator("#conf-gateway-ip").fill("2001:0db8::1")
+
+    page.once("dialog", lambda dialog: dialog.accept())
+    page.get_by_role("button", name="Apply IP to live OpenHAB file").click()
+
+    expect(page.locator("#conf-gateway-ip")).to_have_value("2001:db8::1")
+    expect(page.locator("#gateway-action-status")).to_contain_text(
+        "Datei aktualisiert; OpenHAB-Laufzeitstatus nicht geprüft"
+    )
+    if os.getenv("SAVE_UI_SCREENSHOTS") == "1":
+        screenshot_path = Path(__file__).resolve().parents[2] / "docs" / "screenshots"
+        screenshot_path.mkdir(parents=True, exist_ok=True)
+        page.locator("#tab-devices").screenshot(
+            path=str(screenshot_path / "gateway-ip-canonicalized.png")
+        )
+
+    page.get_by_role("button", name="Save Config").click()
+    expect(page.locator("#configStatus")).to_contain_text("Configuration saved")
+
+    saved_configs = [call[2] for call in calls if call[0] == "config" and call[1] == "POST"]
+    assert saved_configs
+    assert saved_configs[-1]["devices"]["gateway"]["ip_address"] == "2001:db8::1"
 
 
 @pytest.mark.ui

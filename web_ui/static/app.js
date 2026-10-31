@@ -1394,8 +1394,15 @@ async function applyGatewayIpLive() {
     })
     const result = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`)
+    const savedOverride = typeof result.saved_override === 'string'
+      ? result.saved_override
+      : ipAddress
+    document.getElementById('conf-gateway-ip').value = savedOverride
     currentConfig.devices = currentConfig.devices || {}
-    currentConfig.devices.gateway = { ...(currentConfig.devices.gateway || {}), ip_address: ipAddress }
+    currentConfig.devices.gateway = {
+      ...(currentConfig.devices.gateway || {}),
+      ip_address: savedOverride
+    }
     status.textContent = '✓ Datei aktualisiert; OpenHAB-Laufzeitstatus nicht geprüft'
     status.className = 'status-message success'
     await loadGatewayState()

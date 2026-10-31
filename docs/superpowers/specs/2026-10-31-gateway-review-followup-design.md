@@ -43,6 +43,29 @@ generic rollback.
 The user selected the fail-closed behavior because a generic rollback can select
 a backup whose deployment identity is not reliably known.
 
+## Follow-up findings on `0548a86`
+
+The user selected **invalidate deployment metadata when the active job is
+deleted**. Deleting the active history record will remain allowed, but the
+operation must persist all deployed flags as false before removing that record
+from memory, then clear the gateway Undo snapshot. This prevents lookups from
+falling back to an older job whose files are not live. If persistence fails,
+retain the job and its prior metadata.
+
+When a deploy writes files but cannot persist its new deployment metadata,
+restore the previous `deployed`, `deployed_at`, and `deployment_id` values in
+memory while restoring files from the pre-deploy backup. This preserves a
+previously committed deployment identity during a failed same-job redeploy.
+
+After successful deploy or generic rollback, the browser must reload gateway
+state so the Devices pane and its available controls match the backend's
+current deployment target. Failed actions do not report a successful
+transition.
+
+Capture a safe sample screenshot of the Devices pane after rollback invalidates
+the deployment target, showing the refreshed unavailable state and disabled
+live controls.
+
 ## Proposed behavior
 
 - Serialize generic rollback with both deployment and gateway-state operations.

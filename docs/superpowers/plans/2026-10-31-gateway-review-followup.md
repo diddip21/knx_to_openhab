@@ -237,3 +237,38 @@ git commit -m "fix: report restored gateway file IP after undo"
 - [ ] Push to `feat/live-knx-gateway-ip-dsl-yaml` with a normal fast-forward push; never force-push.
 - [ ] Reply to each new GitHub finding with its disposition and resolve only findings addressed by the final code.
 - [ ] Request `@codex review` on the resulting PR head. Merge only when Codex reports no unresolved findings and all required CI checks pass; otherwise stop and report the remaining blocker.
+
+### Follow-up tasks for review findings on `0548a86`
+
+#### Task 7: Invalidate deployment state when deleting the active job
+
+**Files:**
+- Modify: `web_ui/backend/jobs.py:1681-1701`
+- Test: `tests/test_web_ui_job_stats.py`
+
+- [x] Add regression coverage with a deployed active job, older deployed history, and an Undo snapshot. Delete the active job and assert the job is removed, all deployment targets/sources are unavailable, and the snapshot is cleared rather than falling back to older metadata.
+- [x] Add/retain a persistence-failure assertion that deletion and invalidation are not partially applied in memory.
+- [x] Implement under `operation_lock` then `gateway_state_lock` then `lock`; persist invalidation before removing the active record, and clear Undo only after successful persistence.
+- [x] Run focused tests and format/lint checks; commit with a conventional `fix:` message.
+
+#### Task 8: Restore previous deployment metadata after failed persistence
+
+**Files:**
+- Modify: `web_ui/backend/jobs.py:1592-1617`
+- Test: `tests/test_web_ui_job_stats.py`
+
+- [x] Add a regression that fails only the post-write metadata save during a same-job redeploy. Assert live bytes are restored, prior deployment fields remain in memory and on disk, and the prior gateway target/source and Undo identity remain usable.
+- [x] Restore the previous `deployed`, `deployed_at`, and `deployment_id` values when the metadata save fails, while retaining the existing backup recovery path.
+- [x] Run focused tests and format/lint checks; commit with a conventional `fix:` message.
+
+#### Task 9: Refresh gateway state after deploy and rollback
+
+**Files:**
+- Modify: `web_ui/static/app.js:296-350`
+- Test: `tests/ui/test_gateway_live_update.py`
+- Create: `docs/screenshots/gateway-state-after-rollback.png` (opt-in Playwright screenshot)
+
+- [x] Add browser regressions proving successful deploy and rollback each issue a new gateway-state request and render the returned target/availability.
+- [x] Await `loadGatewayState()` after each successful transition so stale controls/paths are not shown. Do not treat failed operations as successful transitions.
+- [x] Capture and inspect `gateway-state-after-rollback.png` with safe sample addresses and no credentials/personal data.
+- [x] Run focused UI tests and relevant UI suite; commit with a conventional `fix:` message.

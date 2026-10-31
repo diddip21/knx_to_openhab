@@ -1251,11 +1251,47 @@ async function loadOpenhabVersion() {
     installedOpenhabVersion = null
   }
   updateGatewayFormatControls()
+  updateGatewayLiveActionControls()
+}
+
+function updateGatewayLiveActionControls() {
+  const applyButton = document.getElementById('gateway-apply-ip')
+  const resetButton = document.getElementById('gateway-reset-ip')
+  const undoButton = document.getElementById('gateway-undo-ip')
+  const warning = document.getElementById('gateway-live-warning')
+  if (!applyButton || !resetButton || !undoButton || !warning) return
+
+  const targetFormat = gatewayState?.things_format
+  const hasDeployedTarget = ['dsl', 'yaml'].includes(targetFormat)
+    && typeof gatewayState?.managed_path === 'string'
+    && gatewayState.managed_path.trim() !== ''
+  const version = String(installedOpenhabVersion || '')
+  const versionMatch = version.match(/^(\d+)\.(\d+)/)
+  const yamlCompatible = targetFormat !== 'yaml'
+    || Boolean(versionMatch && Number(versionMatch[1]) >= 5)
+
+  if (!hasDeployedTarget) {
+    warning.textContent = 'Live gateway actions are unavailable because no usable successfully deployed KNX Things target is available.'
+    warning.style.display = ''
+  } else if (!yamlCompatible) {
+    const versionDetail = versionMatch
+      ? ` Installed version: ${version}.`
+      : ' Installed version could not be determined.'
+    warning.textContent = `Live gateway actions are disabled because the deployed YAML Things file requires a known OpenHAB 5.0 or newer installation.${versionDetail}`
+    warning.style.display = ''
+  } else {
+    warning.textContent = ''
+    warning.style.display = 'none'
+  }
+
+  const actionsBlocked = !hasDeployedTarget || !yamlCompatible
+  applyButton.disabled = actionsBlocked
+  resetButton.disabled = actionsBlocked || !gatewayState?.reset_available
+  undoButton.disabled = actionsBlocked || !gatewayState?.undo_available
 }
 
 async function loadGatewayState() {
   const stateElement = document.getElementById('gateway-file-state')
-  const resetButton = document.getElementById('gateway-reset-ip')
   try {
     const response = await apiFetch('/api/gateway/state')
     const data = await response.json().catch(() => ({}))
@@ -1264,13 +1300,14 @@ async function loadGatewayState() {
     const address = data.gateway_ip || 'not configured'
     const mode = data.gateway_mode || 'unknown mode'
     const detected = data.detected_gateway_ip || 'no ETS IP detected'
-    stateElement.textContent = `Managed ${String(data.things_format || 'KNX')} file ${data.active_path || ''}: ${mode} at ${address}. ETS source: ${detected}. Runtime status not checked.`
-    resetButton.disabled = !data.reset_available
+    const deployedFormat = String(data.things_format || 'KNX').toUpperCase()
+    const managedPath = data.managed_path || 'unknown deployed path'
+    stateElement.textContent = `Managed ${deployedFormat} file ${managedPath}: ${mode} at ${address}. ETS source: ${detected}. Runtime status not checked.`
   } catch (error) {
     gatewayState = null
     stateElement.textContent = `Managed gateway file state unavailable: ${error.message}`
-    resetButton.disabled = true
   }
+  updateGatewayLiveActionControls()
 }
 
 async function applyGatewayIpLive() {
@@ -1323,6 +1360,30 @@ async function restoreGatewayIp() {
     await loadGatewayState()
   } catch (error) {
     status.textContent = `✗ ${error.message || 'Gateway reset failed'}`
+    status.className = 'status-message error'
+  }
+}
+
+async function undoGatewayIpLive() {
+  const status = document.getElementById('gateway-action-status')
+  if (!gatewayState?.undo_available) return
+  if (!window.confirm('Undo the last live change to the deployed KNX Things file and saved gateway override? OpenHAB runtime status will not be checked.')) return
+
+  status.textContent = 'Undoing the last live gateway file change…'
+  status.className = 'status-message'
+  try {
+    const response = await apiFetch('/api/gateway/ip/undo', { method: 'POST' })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`)
+    const override = result.saved_override || ''
+    document.getElementById('conf-gateway-ip').value = override
+    currentConfig.devices = currentConfig.devices || {}
+    currentConfig.devices.gateway = { ...(currentConfig.devices.gateway || {}), ip_address: override }
+    status.textContent = '✓ Datei wiederhergestellt; OpenHAB-Laufzeitstatus nicht geprüft'
+    status.className = 'status-message success'
+    await loadGatewayState()
+  } catch (error) {
+    status.textContent = `✗ ${error.message || 'Gateway undo failed'}`
     status.className = 'status-message error'
   }
 }
@@ -2059,6 +2120,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('conf-yaml-path').addEventListener('input', updateGatewayFormatControls)
   document.getElementById('gateway-apply-ip').addEventListener('click', applyGatewayIpLive)
   document.getElementById('gateway-reset-ip').addEventListener('click', restoreGatewayIp)
+  document.getElementById('gateway-undo-ip').addEventListener('click', undoGatewayIpLive)
   document.getElementById('refreshPackagesBtn').addEventListener('click', () => startPackageOperation('refresh'))
   refreshJobs()
   refreshServices()

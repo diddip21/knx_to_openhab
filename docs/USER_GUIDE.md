@@ -97,6 +97,28 @@ The `config.json` file controls global settings for the generator.
 - **`switch`**: Configuration for switch detection.
   - `status_suffix`: Suffixes identifying the status GA (e.g., "Status", "Rückmeldung").
 
+## KNX Things Format and Gateway IP
+
+The Web UI exposes the KNX Things format and gateway controls under **Settings → Devices**.
+
+- **DSL** is the default and continues to write `openhab/things/knx.things`.
+- **YAML** writes the dedicated `openhab/yaml/knx.yaml` file and requires OpenHAB 5.0 or newer. If the UI cannot determine the installed version, it warns that compatibility is unverified rather than claiming YAML is supported. YAML live gateway actions are disabled unless the installed version is known to be 5.0 or newer.
+- Changing the format is applied through the usual **Save & Reprocess → stage preview → Deploy** flow. The previous generator-owned file is backed up and deactivated before the new format is enabled. Manual edits inside that generated file are backed up but are not translated to the other format; files outside the generator-owned targets are not changed.
+- Provision the YAML target file and its directory before deploying YAML. Deployment writes only to existing managed regular files; generation and deployment do not create a missing YAML target.
+
+The gateway IP field has two distinct uses:
+
+1. **Save Config** stores the override for a future generation. Leave it blank to use ETS detection on a later generation.
+2. **Apply IP to live OpenHAB file** validates the IPv4/IPv6 address and updates only the Things file from the last successful deployment and the saved override, without reprocessing ETS. Pending format or path selections do not change the live target; deploy them first. This action does **not** restart OpenHAB or check whether the bridge came online; the message confirms only that the file was updated.
+
+Use **Restore ETS address** to return to the gateway address detected by the last successfully deployed ETS project and clear the saved override. The action is unavailable until a deployed ETS source is available. If that project had no detected gateway IP, reset restores the generated KNX router mode instead.
+
+After a successful live apply or ETS reset, **Undo last live change** can restore the prior managed Things file and gateway override. Undo is one level only and is disabled if the last deployed target changes or the file contents no longer match the saved snapshot; it never overwrites those later changes or restores other generated files.
+
+If OpenHAB does not reload the changed file, check the Things status in OpenHAB and restart the OpenHAB service manually using the existing service controls. The live IP actions never restart the service automatically and do not connect to the OpenHAB REST API.
+
+See the [gateway settings screenshots](screenshots/knx-gateway-live-ip.md).
+
 ---
 
 ## ETS Project Preparation

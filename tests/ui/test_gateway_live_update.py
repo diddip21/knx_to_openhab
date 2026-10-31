@@ -30,13 +30,21 @@ def _open_settings(page: Page, base_url: str) -> None:
     expect(page.locator("#conf-items-path")).to_have_value(re.compile(r".+"), timeout=10000)
 
 
-def _stub_settings_routes(page: Page, installed_version="5.0.0", reset_available=True):
+def _stub_settings_routes(
+    page: Page,
+    installed_version="5.0.0",
+    reset_available=True,
+    deployed_format="dsl",
+    managed_path="things/knx.things",
+    target_available=True,
+    undo_available=True,
+):
     project_root = Path(__file__).resolve().parents[2]
     config_data = json.loads((project_root / "config.json").read_text(encoding="utf-8"))
     config_data["things_format"] = "dsl"
     config_data["things_path"] = "openhab/things/knx.things"
     config_data["yaml_path"] = "openhab/yaml/knx.yaml"
-    config_data["devices"]["gateway"]["ip_address"] = "192.168.1.10"
+    config_data["devices"]["gateway"]["ip_address"] = "192.0.2.42"
     calls = []
 
     def config_route(route):
@@ -51,25 +59,36 @@ def _stub_settings_routes(page: Page, installed_version="5.0.0", reset_available
             )
 
     page.route("**/api/config", config_route)
-    page.route(
-        "**/api/gateway/state",
-        lambda route: route.fulfill(
+    undo_done = {"value": False}
+
+    def gateway_state_route(route):
+        if not target_available:
+            route.fulfill(
+                status=409,
+                content_type="application/json",
+                body=json.dumps({"error": "No usable deployed KNX Things target"}),
+            )
+            return
+        route.fulfill(
             status=200,
             content_type="application/json",
             body=json.dumps(
                 {
-                    "things_format": "dsl",
-                    "active_path": "openhab/things/knx.things",
-                    "gateway_ip": "192.168.1.10",
+                    "things_format": deployed_format,
+                    "managed_path": managed_path,
+                    "active_path": "C:/temporary/demo/openhab/" + managed_path,
+                    "gateway_ip": "192.0.2.42",
                     "gateway_mode": "TUNNEL",
-                    "saved_override": "192.168.1.10",
-                    "detected_gateway_ip": "192.168.1.5",
+                    "saved_override": "192.0.2.42",
+                    "detected_gateway_ip": "198.51.100.10",
                     "reset_available": reset_available,
+                    "undo_available": undo_available and not undo_done["value"],
                     "runtime_status": "not_checked",
                 }
             ),
-        ),
-    )
+        )
+
+    page.route("**/api/gateway/state", gateway_state_route)
     page.route(
         "**/api/service/openhab/version",
         lambda route: route.fulfill(
@@ -82,6 +101,9 @@ def _stub_settings_routes(page: Page, installed_version="5.0.0", reset_available
     def gateway_action(route):
         calls.append((route.request.url, route.request.method, route.request.post_data_json))
         reset = route.request.url.endswith("/reset")
+        undo = route.request.url.endswith("/undo")
+        if undo:
+            undo_done["value"] = True
         route.fulfill(
             status=200,
             content_type="application/json",
@@ -94,6 +116,8 @@ def _stub_settings_routes(page: Page, installed_version="5.0.0", reset_available
                     "gateway_mode": "ROUTER" if reset else "TUNNEL",
                     "message": "KNX gateway configuration file updated; OpenHAB runtime status was not checked.",
                     "runtime_status": "not_checked",
+                    "undo_available": not undo,
+                    "saved_override": "192.0.2.42",
                 }
             ),
         )
@@ -149,7 +173,7 @@ def test_live_apply_and_reset_use_dedicated_file_only_routes(page: Page, flask_s
     _open_settings(page, flask_server)
     page.get_by_role("button", name="Devices").click()
 
-    expect(page.locator("#gateway-file-state")).to_contain_text("192.168.1.10")
+    expect(page.locator("#gateway-file-state")).to_contain_text("192.0.2.42")
     expect(page.locator("#gateway-file-state")).to_contain_text("Runtime status not checked")
     expect(page.locator("#gateway-reset-ip")).to_be_enabled()
     page.locator("#conf-gateway-ip").fill("2001:db8::1")
@@ -159,6 +183,7 @@ def test_live_apply_and_reset_use_dedicated_file_only_routes(page: Page, flask_s
     expect(page.locator("#gateway-action-status")).to_contain_text(
         "Datei aktualisiert; OpenHAB-Laufzeitstatus nicht geprüft"
     )
+    assert "online" not in page.locator("#gateway-action-status").inner_text().lower()
 
     page.once("dialog", lambda dialog: dialog.accept())
     page.get_by_role("button", name="Restore ETS address").click()
@@ -173,6 +198,101 @@ def test_live_apply_and_reset_use_dedicated_file_only_routes(page: Page, flask_s
     assert gateway_urls[1].endswith("/api/gateway/ip/reset")
     assert not any(call[0] == "config" and call[1] == "POST" for call in calls)
     assert not any("/rerun" in str(call[0]) for call in calls)
+
+
+@pytest.mark.ui
+def test_live_target_display_uses_last_deployed_path_not_pending_format_or_absolute_path(
+    page: Page, flask_server
+):
+    _stub_settings_routes(
+        page,
+        deployed_format="dsl",
+        managed_path="things/deployed-knx.things",
+    )
+    _open_settings(page, flask_server)
+    page.get_by_role("button", name="Devices").click()
+
+    state = page.locator("#gateway-file-state")
+    expect(state).to_contain_text("DSL file things/deployed-knx.things")
+    expect(state).not_to_contain_text("C:/temporary/demo")
+
+    page.locator("#conf-things-format").select_option("yaml")
+
+    expect(state).to_contain_text("DSL file things/deployed-knx.things")
+    expect(state).not_to_contain_text("yaml/knx.yaml")
+
+
+@pytest.mark.ui
+def test_all_live_actions_are_disabled_without_a_deployed_target(page: Page, flask_server):
+    _stub_settings_routes(page, target_available=False)
+    _open_settings(page, flask_server)
+    page.get_by_role("button", name="Devices").click()
+
+    expect(page.locator("#gateway-apply-ip")).to_be_disabled()
+    expect(page.locator("#gateway-reset-ip")).to_be_disabled()
+    expect(page.get_by_role("button", name="Undo last live change")).to_be_disabled()
+    expect(page.locator("#gateway-live-warning")).to_contain_text(
+        "no usable successfully deployed KNX Things target"
+    )
+
+
+@pytest.mark.ui
+@pytest.mark.parametrize(
+    ("installed_version", "should_enable"),
+    [("4.4.0", False), (None, False), ("5.0.0", True), ("5.1.2", True)],
+)
+def test_yaml_deployed_live_actions_follow_installed_openhab_compatibility(
+    page: Page, flask_server, installed_version, should_enable
+):
+    _stub_settings_routes(
+        page,
+        installed_version=installed_version,
+        deployed_format="yaml",
+        managed_path="yaml/deployed-knx.yaml",
+    )
+    _open_settings(page, flask_server)
+    page.get_by_role("button", name="Devices").click()
+
+    controls = [
+        page.locator("#gateway-apply-ip"),
+        page.locator("#gateway-reset-ip"),
+        page.get_by_role("button", name="Undo last live change"),
+    ]
+    for control in controls:
+        if should_enable:
+            expect(control).to_be_enabled()
+        else:
+            expect(control).to_be_disabled()
+    if should_enable:
+        expect(page.locator("#gateway-live-warning")).to_be_hidden()
+    else:
+        expect(page.locator("#gateway-live-warning")).to_contain_text(
+            "deployed YAML Things file requires a known OpenHAB 5.0 or newer installation"
+        )
+
+
+@pytest.mark.ui
+def test_undo_uses_only_undo_route_and_disables_after_success(page: Page, flask_server):
+    calls = _stub_settings_routes(page, undo_available=True)
+    _open_settings(page, flask_server)
+    page.get_by_role("button", name="Devices").click()
+    undo_button = page.get_by_role("button", name="Undo last live change")
+    expect(undo_button).to_be_enabled()
+
+    page.once("dialog", lambda dialog: dialog.accept())
+    undo_button.click()
+
+    expect(page.locator("#gateway-action-status")).to_contain_text(
+        "Datei wiederhergestellt; OpenHAB-Laufzeitstatus nicht geprüft"
+    )
+    expect(undo_button).to_be_disabled()
+    assert "online" not in page.locator("#gateway-action-status").inner_text().lower()
+    gateway_urls = [
+        call[0] for call in calls if isinstance(call[0], str) and "/api/gateway/ip" in call[0]
+    ]
+    assert gateway_urls == ["http://127.0.0.1/api/gateway/ip/undo"] or (
+        len(gateway_urls) == 1 and gateway_urls[0].endswith("/api/gateway/ip/undo")
+    )
 
 
 @pytest.mark.ui

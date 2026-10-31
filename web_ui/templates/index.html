@@ -223,10 +223,12 @@
               <small id="conf-gateway-ip-help">Enter an IPv4 or IPv6 address to override the ETS value. Leave blank for automatic detection during a future generation.</small>
             </div>
             <div id="gateway-file-state" class="info-box" role="status">Loading managed gateway file state…</div>
-            <p class="muted">Applying an IP changes only the selected generator-owned file and saved override. The KNX link may briefly reconnect. OpenHAB is not restarted, and runtime status is not checked.</p>
+            <p class="muted">Live actions change only the Things file from the last successful deployment and the saved gateway override. Pending format or path changes take effect after deployment. OpenHAB is not restarted, and runtime status is not checked.</p>
+            <div id="gateway-live-warning" class="info-box" role="status" style="display:none;"></div>
             <div class="form-actions">
-              <button type="button" id="gateway-apply-ip" class="btn-primary">Apply IP to live OpenHAB file</button>
+              <button type="button" id="gateway-apply-ip" class="btn-primary" disabled>Apply IP to live OpenHAB file</button>
               <button type="button" id="gateway-reset-ip" class="btn-secondary" disabled>Restore ETS address</button>
+              <button type="button" id="gateway-undo-ip" class="btn-secondary" disabled>Undo last live change</button>
             </div>
             <div id="gateway-action-status" class="status-message" role="status" aria-live="polite"></div>
           </div>

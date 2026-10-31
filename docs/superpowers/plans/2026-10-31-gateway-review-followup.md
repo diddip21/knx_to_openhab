@@ -228,11 +228,11 @@ git commit -m "fix: report restored gateway file IP after undo"
 - Include: `docs/superpowers/specs/2026-10-31-gateway-review-followup-design.md`
 - Include: `docs/superpowers/plans/2026-10-31-gateway-review-followup.md`
 
-- [ ] Run all focused backend regressions from Tasks 1, 2, 4, and 5.
-- [ ] Run the focused Playwright regression from Task 3 and applicable UI tests.
-- [ ] Run the full pytest suite, `python -m black --check .`, isort/flake8 on changed Python files, and `git diff --check`; report Windows-only failures accurately.
-- [ ] Run a fresh read-only code-review subagent against the completed commit range; fix any Critical or Important issue before publishing.
-- [ ] Commit the design and plan documents with a conventional `docs:` commit.
+- [x] Run all focused backend regressions from Tasks 1, 2, 4, and 5.
+- [x] Run the focused Playwright regression from Task 3 and applicable UI tests.
+- [x] Run the full pytest suite, `python -m black --check .`, isort/flake8 on changed Python files, and `git diff --check`; report Windows-only failures accurately. Full suite on this Windows host: 639 passed, 23 skipped, 46 failed; failures trace to POSIX-only APIs/path semantics, symlink permissions, Bash path handling, and a locked UI fixture. Baseline before implementation had the same 46 Windows/POSIX failures.
+- [x] Run a fresh read-only code-review subagent against the completed commit range; fix any Critical or Important issue before publishing. Review of `62c9a93..86e73eb` approved with no findings.
+- [x] Commit the design and plan documents with a conventional `docs:` commit (`fb649e3`).
 - [ ] Reference the committed screenshot from the PR with a short explanation of the view.
 - [ ] Push to `feat/live-knx-gateway-ip-dsl-yaml` with a normal fast-forward push; never force-push.
 - [ ] Reply to each new GitHub finding with its disposition and resolve only findings addressed by the final code.

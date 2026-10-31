@@ -997,6 +997,19 @@ if FLASK_AVAILABLE:
             logger.exception("Failed to restore KNX gateway IP")
             return jsonify({"error": str(error)}), 500
 
+    @app.route("/api/gateway/ip/undo", methods=["POST"])
+    def undo_gateway_ip():
+        """Undo the latest live gateway update without restoring other outputs."""
+        try:
+            result = dict(job_mgr.undo_gateway_ip())
+            result["runtime_status"] = "not_checked"
+            return jsonify(result)
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 409
+        except Exception as error:
+            logger.exception("Failed to undo KNX gateway IP change")
+            return jsonify({"error": str(error)}), 500
+
     @app.route("/api/config", methods=["POST"])
     def set_config():
         """Update the configuration."""

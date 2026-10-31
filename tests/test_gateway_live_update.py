@@ -1,5 +1,7 @@
 """Tests for persisting the ETS gateway source used by live reset."""
 
+import base64
+import hashlib
 import importlib
 import json
 import queue
@@ -478,6 +480,7 @@ def _live_update_manager(monkeypatch, tmp_path, gateway_source=None, things_form
         "save_calls": [],
     }
     managed = {"things_path": "things/knx.things", "yaml_path": "yaml/knx.yaml"}
+    state["managed_paths"] = managed
     read_state = {
         "things_format": things_format,
         "managed_path": "things/knx.things" if things_format == "dsl" else "yaml/knx.yaml",
@@ -572,6 +575,136 @@ def test_apply_compensates_file_and_config_when_managed_write_fails(tmp_path, mo
     assert state["content"] == original_content
     assert len(state["save_calls"]) == 2
     assert len(state["write_calls"]) == 2
+
+
+def test_apply_persists_previous_file_and_override_for_durable_undo(tmp_path, monkeypatch):
+    manager, state, _read_state = _live_update_manager(monkeypatch, tmp_path)
+    previous_content = state["content"]
+
+    result = manager.apply_gateway_ip("192.168.20.99")
+
+    snapshot_path = Path(manager.backups_dir) / "gateway-live-undo.json"
+    assert snapshot_path.is_file(), "successful live apply must persist an undo snapshot"
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    assert base64.b64decode(snapshot["file_content_b64"]) == previous_content
+    assert snapshot["previous_gateway_override"] == "192.168.20.45"
+    assert snapshot["openhab_root"] == str(tmp_path / "openhab")
+    assert snapshot["managed_path"] == "things/knx.things"
+    assert snapshot["things_format"] == "dsl"
+    assert snapshot["post_change_sha256"] == hashlib.sha256(state["content"]).hexdigest()
+    assert result["undo_available"] is True
+    assert manager.get_gateway_state()["undo_available"] is True
+
+
+def test_failed_live_apply_preserves_previous_undo_snapshot(tmp_path, monkeypatch):
+    manager, state, _read_state = _live_update_manager(monkeypatch, tmp_path)
+    original_content = state["content"]
+    original_config = deepcopy(state["config"])
+    manager.apply_gateway_ip("192.168.20.99")
+    snapshot_path = Path(manager.backups_dir) / "gateway-live-undo.json"
+    assert snapshot_path.is_file(), "successful live apply must persist an undo snapshot"
+    previous_snapshot = snapshot_path.read_bytes()
+
+    state["content"] = original_content
+    state["config"] = original_config
+    state["fail_write_after_change"] = True
+
+    with pytest.raises(OSError, match="simulated managed-file write failure"):
+        manager.apply_gateway_ip("192.168.20.88")
+
+    assert state["content"] == original_content
+    assert state["config"] == original_config
+    assert snapshot_path.read_bytes() == previous_snapshot
+
+
+def test_live_apply_does_not_change_file_when_undo_snapshot_cannot_be_saved(tmp_path, monkeypatch):
+    manager, state, _read_state = _live_update_manager(monkeypatch, tmp_path)
+    original_content = state["content"]
+    original_config = deepcopy(state["config"])
+    backup_path_blocker = tmp_path / "not-a-directory"
+    backup_path_blocker.write_text("block", encoding="utf-8")
+    manager.backups_dir = str(backup_path_blocker)
+
+    with pytest.raises(OSError):
+        manager.apply_gateway_ip("192.168.20.99")
+
+    assert state["content"] == original_content
+    assert state["config"] == original_config
+    assert state["save_calls"] == []
+    assert state["write_calls"] == []
+
+
+def test_undo_restores_only_the_previous_file_and_gateway_override(tmp_path, monkeypatch):
+    manager, state, _read_state = _live_update_manager(monkeypatch, tmp_path)
+    original_content = state["content"]
+    original_config = deepcopy(state["config"])
+    manager.apply_gateway_ip("192.168.20.99")
+
+    result = manager.undo_gateway_ip()
+
+    assert state["content"] == original_content
+    assert state["config"]["devices"]["gateway"] == original_config["devices"]["gateway"]
+    assert state["config"]["devices"]["other_device"] == {"enabled": True}
+    assert result["success"] is True
+    assert result["saved_override"] == "192.168.20.45"
+    assert result["undo_available"] is False
+    assert not (Path(manager.backups_dir) / "gateway-live-undo.json").exists()
+
+
+def test_undo_refuses_a_changed_managed_file_without_writing(tmp_path, monkeypatch):
+    manager, state, _read_state = _live_update_manager(monkeypatch, tmp_path)
+    manager.apply_gateway_ip("192.168.20.99")
+    live_config = deepcopy(state["config"])
+    writes_before_undo = list(state["write_calls"])
+    state["content"] += b"// changed outside the live gateway action\n"
+    changed_content = state["content"]
+
+    with pytest.raises(ValueError, match="Undo snapshot is stale.*managed file has changed"):
+        manager.undo_gateway_ip()
+
+    assert state["content"] == changed_content
+    assert state["config"] == live_config
+    assert state["write_calls"] == writes_before_undo
+    assert (Path(manager.backups_dir) / "gateway-live-undo.json").is_file()
+    assert manager.get_gateway_state()["undo_available"] is False
+
+
+def test_undo_refuses_a_changed_deployed_target_without_writing(tmp_path, monkeypatch):
+    manager, state, _read_state = _live_update_manager(
+        monkeypatch, tmp_path, things_format="yaml"
+    )
+    manager.apply_gateway_ip("192.168.20.99")
+    live_content = state["content"]
+    live_config = deepcopy(state["config"])
+    writes_before_undo = list(state["write_calls"])
+    manager._jobs["deployed"]["active_things_path"] = "yaml/other.yaml"
+    manager._jobs["deployed"]["managed_targets"].append("yaml/other.yaml")
+    state["managed_paths"]["yaml_path"] = "yaml/other.yaml"
+
+    with pytest.raises(ValueError, match="Undo snapshot is stale.*deployed target has changed"):
+        manager.undo_gateway_ip()
+
+    assert state["content"] == live_content
+    assert state["config"] == live_config
+    assert state["write_calls"] == writes_before_undo
+    assert (Path(manager.backups_dir) / "gateway-live-undo.json").is_file()
+
+
+def test_failed_undo_compensates_and_retains_snapshot(tmp_path, monkeypatch):
+    manager, state, _read_state = _live_update_manager(monkeypatch, tmp_path)
+    manager.apply_gateway_ip("192.168.20.99")
+    live_content = state["content"]
+    live_config = deepcopy(state["config"])
+    snapshot_path = Path(manager.backups_dir) / "gateway-live-undo.json"
+    snapshot_before_undo = snapshot_path.read_bytes()
+    state["fail_write_after_change"] = True
+
+    with pytest.raises(OSError, match="simulated managed-file write failure"):
+        manager.undo_gateway_ip()
+
+    assert state["content"] == live_content
+    assert state["config"] == live_config
+    assert snapshot_path.read_bytes() == snapshot_before_undo
 
 
 def test_apply_compensates_managed_file_when_config_save_fails(tmp_path, monkeypatch):
@@ -857,6 +990,7 @@ def test_live_apply_updates_deployed_yaml_not_pending_dsl_config(tmp_path, monke
     manager = JobManager.__new__(JobManager)
     manager.cfg = {}
     manager.operation_lock = threading.Lock()
+    manager.backups_dir = str(tmp_path / "backups")
     manager._jobs = {
         "deployed": {
             "id": "deployed",

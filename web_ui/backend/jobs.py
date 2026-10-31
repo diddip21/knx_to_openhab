@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import io
 import json
 import logging
@@ -17,7 +19,7 @@ from pathlib import PurePosixPath
 
 from completeness import check_completeness, iter_thing_lines
 
-from . import gateway_config
+from . import gateway_config, gateway_undo
 from .deploy_policy import (
     configured_managed_paths,
     deploy_staged_files,
@@ -238,6 +240,30 @@ class JobManager:
             raise ValueError("Last deployed KNX Things target is outside its managed output path")
         return target_config, validated_root, managed_paths
 
+    def _gateway_undo_path(self):
+        return os.path.join(self.backups_dir, "gateway-live-undo.json")
+
+    def _gateway_undo_available(self, target, openhab_root, managed_paths):
+        try:
+            snapshot = gateway_undo.load_snapshot(self._gateway_undo_path())
+            if snapshot is None:
+                return False
+            if (
+                snapshot["openhab_root"] != openhab_root
+                or snapshot["managed_path"] != target["managed_path"]
+                or snapshot["things_format"] != target["things_format"]
+            ):
+                return False
+            current_content = read_managed_file(
+                openhab_root, target["managed_path"], managed_paths
+            )
+            return hashlib.sha256(current_content).hexdigest() == snapshot[
+                "post_change_sha256"
+            ]
+        except (OSError, ValueError) as error:
+            logger.warning("KNX gateway undo snapshot is unavailable: %s", error)
+            return False
+
     def get_gateway_state(self):
         """Read active managed bridge settings and reset availability under the operation lock."""
         with self.operation_lock:
@@ -255,6 +281,9 @@ class JobManager:
             state = gateway_config.read_gateway_state(state_config, project_root)
             state["configured_path"] = os.path.join(
                 openhab_root, *PurePosixPath(target["managed_path"]).parts
+            )
+            state["undo_available"] = self._gateway_undo_available(
+                target, openhab_root, _managed_paths
             )
             return state
 
@@ -292,7 +321,23 @@ class JobManager:
         gateway = devices.setdefault("gateway", {})
         if not isinstance(gateway, dict):
             raise ValueError("Generator gateway configuration must be an object")
+        previous_override = gateway.get("ip_address", "") or ""
+        if not isinstance(previous_override, str):
+            raise ValueError("Generator gateway IP override must be a string")
         gateway["ip_address"] = override
+
+        undo_path = self._gateway_undo_path()
+        previous_snapshot = gateway_undo.load_snapshot(undo_path)
+        new_snapshot = {
+            "version": gateway_undo.SNAPSHOT_VERSION,
+            "file_content_b64": base64.b64encode(old_content).decode("ascii"),
+            "previous_gateway_override": previous_override,
+            "openhab_root": openhab_root,
+            "managed_path": relative_path,
+            "things_format": state["things_format"],
+            "post_change_sha256": hashlib.sha256(new_content).hexdigest(),
+        }
+        gateway_undo.save_snapshot(undo_path, new_snapshot)
 
         try:
             save_generator_config(updated_config, project_root)
@@ -307,6 +352,13 @@ class JobManager:
                 save_generator_config(original_config, project_root)
             except Exception as restore_error:
                 restore_errors.append(f"generator configuration: {restore_error}")
+            try:
+                if previous_snapshot is None:
+                    gateway_undo.clear_snapshot(undo_path)
+                else:
+                    gateway_undo.save_snapshot(undo_path, previous_snapshot)
+            except Exception as restore_error:
+                restore_errors.append(f"undo snapshot: {restore_error}")
             if restore_errors:
                 raise RuntimeError(
                     f"Gateway update failed: {update_error}; compensation failed: "
@@ -321,6 +373,7 @@ class JobManager:
             "gateway_ip": gateway_ip,
             "gateway_mode": gateway_mode,
             "saved_override": override,
+            "undo_available": True,
             "message": (
                 "KNX gateway configuration file updated; OpenHAB runtime status was not checked."
             ),
@@ -359,6 +412,79 @@ class JobManager:
                 gateway_mode="TUNNEL" if normalized_ip is not None else "ROUTER",
                 override="",
             )
+
+    def undo_gateway_ip(self):
+        """Restore the exact prior managed file and override from the last live action."""
+        with self.operation_lock:
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            original_config = load_generator_config(project_root)
+            target = self.get_last_deployed_things_target()
+            if target is None:
+                raise ValueError("No usable successfully deployed KNX Things target is available")
+            _target_config, openhab_root, managed_paths = self._gateway_target_configuration(
+                original_config, project_root, target
+            )
+
+            undo_path = self._gateway_undo_path()
+            snapshot = gateway_undo.load_snapshot(undo_path)
+            if snapshot is None:
+                raise ValueError("No live gateway undo snapshot is available")
+            if (
+                snapshot["openhab_root"] != openhab_root
+                or snapshot["managed_path"] != target["managed_path"]
+                or snapshot["things_format"] != target["things_format"]
+            ):
+                raise ValueError("Undo snapshot is stale because the deployed target has changed")
+
+            relative_path = target["managed_path"]
+            current_content = read_managed_file(openhab_root, relative_path, managed_paths)
+            current_digest = hashlib.sha256(current_content).hexdigest()
+            if current_digest != snapshot["post_change_sha256"]:
+                raise ValueError("Undo snapshot is stale because the managed file has changed")
+            previous_content = base64.b64decode(snapshot["file_content_b64"], validate=True)
+
+            updated_config = deepcopy(original_config)
+            devices = updated_config.setdefault("devices", {})
+            if not isinstance(devices, dict):
+                raise ValueError("Generator devices configuration must be an object")
+            gateway = devices.setdefault("gateway", {})
+            if not isinstance(gateway, dict):
+                raise ValueError("Generator gateway configuration must be an object")
+            previous_override = snapshot["previous_gateway_override"]
+            gateway["ip_address"] = previous_override
+
+            try:
+                save_generator_config(updated_config, project_root)
+                write_managed_file(openhab_root, relative_path, previous_content, managed_paths)
+                gateway_undo.clear_snapshot(undo_path)
+            except Exception as update_error:
+                restore_errors = []
+                try:
+                    write_managed_file(openhab_root, relative_path, current_content, managed_paths)
+                except Exception as restore_error:
+                    restore_errors.append(f"live file: {restore_error}")
+                try:
+                    save_generator_config(original_config, project_root)
+                except Exception as restore_error:
+                    restore_errors.append(f"generator configuration: {restore_error}")
+                if restore_errors:
+                    raise RuntimeError(
+                        f"Gateway undo failed: {update_error}; compensation failed: "
+                        + "; ".join(restore_errors)
+                    ) from update_error
+                raise
+
+            return {
+                "success": True,
+                "things_format": target["things_format"],
+                "managed_path": relative_path,
+                "gateway_ip": previous_override or None,
+                "saved_override": previous_override,
+                "undo_available": False,
+                "message": (
+                    "KNX gateway file restored; OpenHAB runtime status was not checked."
+                ),
+            }
 
     def get_queue(self, job_id):
         # Ensure job exists before returning queue

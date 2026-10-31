@@ -304,6 +304,53 @@ def test_gateway_reset_route_returns_conflict_without_deployed_source(client, mo
     assert "deployed ETS gateway source" in response.get_json()["error"]
 
 
+def test_gateway_undo_route_delegates_and_reports_file_only_success(client, monkeypatch):
+    job_mgr = Mock()
+    job_mgr.undo_gateway_ip.return_value = {
+        "success": True,
+        "undo_available": False,
+        "message": "KNX gateway file restored; OpenHAB runtime status was not checked.",
+    }
+    monkeypatch.setattr(app_module, "job_mgr", job_mgr)
+
+    response = client.post("/api/gateway/ip/undo")
+
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
+    assert response.get_json()["undo_available"] is False
+    assert response.get_json()["runtime_status"] == "not_checked"
+    job_mgr.undo_gateway_ip.assert_called_once_with()
+
+
+def test_gateway_undo_route_returns_conflict_for_unavailable_or_stale_snapshot(
+    client, monkeypatch
+):
+    job_mgr = Mock()
+    job_mgr.undo_gateway_ip.side_effect = ValueError("Undo snapshot is stale")
+    monkeypatch.setattr(app_module, "job_mgr", job_mgr)
+
+    response = client.post("/api/gateway/ip/undo")
+
+    assert response.status_code == 409
+    assert response.get_json() == {"error": "Undo snapshot is stale"}
+
+
+def test_gateway_undo_route_requires_authentication_when_enabled(client, monkeypatch):
+    monkeypatch.setitem(
+        app_module.cfg,
+        "auth",
+        {"enabled": True, "user": "operator", "legacy_password": "configured"},
+    )
+    job_mgr = Mock()
+    monkeypatch.setattr(app_module, "job_mgr", job_mgr)
+
+    response = client.post("/api/gateway/ip/undo")
+
+    assert response.status_code == 401
+    assert response.get_json() == {"error": "authentication required"}
+    job_mgr.undo_gateway_ip.assert_not_called()
+
+
 def test_gateway_state_maps_missing_bridge_to_conflict(client, monkeypatch):
     job_mgr = Mock()
     job_mgr.get_gateway_state.side_effect = ValueError("KNX bridge not found")

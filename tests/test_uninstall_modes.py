@@ -83,7 +83,12 @@ exit 0
     fake_getent.chmod(0o755)
 
     environment = os.environ.copy()
-    for key in ("KNXOH_INSTALL_DIR", "KNXOH_CONFIG_DIR", "KNXOH_DATA_DIR", "KNXOH_BACKUP_DIR"):
+    for key in (
+        "KNXOH_INSTALL_DIR",
+        "KNXOH_CONFIG_DIR",
+        "KNXOH_DATA_DIR",
+        "KNXOH_BACKUP_DIR",
+    ):
         environment.pop(key, None)
     environment.update(
         {
@@ -259,6 +264,7 @@ def test_broad_or_traversal_path_is_rejected_before_sudo(tmp_path, unsafe_path):
     assert result.returncode == 2
     assert "path" in result.stderr.lower() or "refusing" in result.stderr.lower()
     assert not sudo_log.exists()
+
 
 def test_overlapping_or_symlinked_paths_are_rejected_before_sudo(tmp_path):
     environment, app, _, _, _, paths_file, sudo_log = create_fixture(tmp_path)

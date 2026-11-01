@@ -537,6 +537,12 @@
     'service.message.noCandidate': 'Für dieses Paket ist kein APT-Kandidat verfügbar.',
     'service.message.localCandidate': 'APT-Kandidat aus lokalen Paketlisten.',
     'service.message.infoUnreadable': 'APT-Paketinformationen konnten nicht gelesen werden.',
+    'service.message.noUpdate': 'Für dieses Paket ist kein APT-Update verfügbar.',
+    'service.message.candidateChanged': 'APT-Kandidat wurde geändert. Aktualisieren Sie die Ansicht und bestätigen Sie erneut.',
+    'service.message.helperMissing': 'Update-Hilfsprogramm ist nicht installiert. Führen Sie einmal sudo bash installer/setup.sh aus.',
+    'service.message.operationRunning': 'Ein anderer Paketvorgang wird bereits ausgeführt.',
+    'service.message.operationStarted': 'Paketvorgang gestartet.',
+    'service.message.unsupportedAction': 'Nicht unterstützte Aktion.',
     'service.statusUnavailable': 'Status nicht erreichbar: {error}',
     'service.operationFailed': 'Paketoperation fehlgeschlagen: {error}',
     'service.restartError': 'Fehler: {error}',
@@ -665,6 +671,12 @@
     'service.message.noCandidate': 'No APT candidate is available for this package.',
     'service.message.localCandidate': 'APT candidate from local package lists.',
     'service.message.infoUnreadable': 'APT package information could not be read.',
+    'service.message.noUpdate': 'No APT update is available for this package.',
+    'service.message.candidateChanged': 'APT candidate changed. Refresh the view and confirm again.',
+    'service.message.helperMissing': 'Update helper is not installed. Run sudo bash installer/setup.sh once.',
+    'service.message.operationRunning': 'Another package operation is already running.',
+    'service.message.operationStarted': 'Package operation started.',
+    'service.message.unsupportedAction': 'Unsupported action.',
     'service.statusUnavailable': 'Status unavailable: {error}',
     'service.operationFailed': 'Package operation failed: {error}',
     'service.restartError': 'Error: {error}',
@@ -799,6 +811,18 @@
       translated = t('service.message.localCandidate')
     } else if (/^APT package information could not be read\.$/i.test(body)) {
       translated = t('service.message.infoUnreadable')
+    } else if (/^No APT update is available for this package\.$/i.test(body)) {
+      translated = t('service.message.noUpdate')
+    } else if (/^APT candidate changed\. Refresh the view and confirm again\.$/i.test(body)) {
+      translated = t('service.message.candidateChanged')
+    } else if (/^Update helper is not installed\. Run sudo bash installer\/setup\.sh once\.$/i.test(body)) {
+      translated = t('service.message.helperMissing')
+    } else if (/^Another package operation is already running\.$/i.test(body)) {
+      translated = t('service.message.operationRunning')
+    } else if (/^Package operation started\.$/i.test(body)) {
+      translated = t('service.message.operationStarted')
+    } else if (/^Unsupported action\.$/i.test(body)) {
+      translated = t('service.message.unsupportedAction')
     } else if (/^(No usable deployed KNX Things target|No usable successfully deployed KNX Things target is available)$/i.test(body)) {
       translated = t('gateway.error.noTarget')
     } else if ((match = body.match(/^Invalid IP address: (.+)$/i))) {

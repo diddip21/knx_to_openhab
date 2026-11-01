@@ -66,6 +66,8 @@ function updateExpertToggleVisibility(stats) {
 let currentJobId = null
 let currentJobData = null
 let currentPackageTask = null
+let currentPackageOperationError = null
+let currentPackageOperationErrorHasPrefix = false
 let currentReportData = null
 let currentReportError = null
 const deployingJobIds = new Set()
@@ -85,8 +87,14 @@ function localizedJobStatus(status) {
   return window.I18N.catalogs[window.I18N.getLanguage()][key] ? window.I18N.t(key) : status
 }
 
+function localizedDateTime(value) {
+  const locale = window.I18N.getLanguage() === 'de' ? 'de-DE' : 'en-US'
+  return new Date(value).toLocaleString(locale)
+}
+
 function setLocalizedMessage(element, key, params = {}, className = null) {
   if (!element) return
+  delete element.dataset.translatableMessage
   element.dataset.messageKey = key
   element.dataset.messageParams = JSON.stringify(params)
   element.textContent = window.I18N.t(key, params)
@@ -97,6 +105,14 @@ function clearLocalizedMessage(element) {
   if (!element) return
   delete element.dataset.messageKey
   delete element.dataset.messageParams
+  delete element.dataset.translatableMessage
+}
+
+function setTranslatedMessage(element, message) {
+  if (!element) return
+  clearLocalizedMessage(element)
+  element.dataset.translatableMessage = message
+  element.textContent = window.I18N.translateMessage(message)
 }
 
 function refreshLocalizedMessages() {
@@ -108,6 +124,9 @@ function refreshLocalizedMessages() {
       params = {}
     }
     element.textContent = window.I18N.t(element.dataset.messageKey, params)
+  })
+  document.querySelectorAll('[data-translatable-message]').forEach(element => {
+    element.textContent = window.I18N.translateMessage(element.dataset.translatableMessage)
   })
 }
 
@@ -182,7 +201,7 @@ async function refreshJobs() {
     li.innerHTML = `
       <span class="job-status ${statusClass}">${escapeHtml(localizedJobStatus(j.status))}</span>
       <span class="job-name">${j.name}</span>
-      <span class="job-date">${new Date(j.created * 1000).toLocaleString()}</span>
+      <span class="job-date">${localizedDateTime(j.created * 1000)}</span>
       <button onclick="showJobDetail('${j.id}')">${window.I18N.t('job.action.details')}</button>
       <button onclick="loadStructureFromJob('${j.id}')">${window.I18N.t('job.action.structure')}</button>
       ${j.status === 'completed' && j.staged ? `<button onclick="showDiff('${j.id}')">${window.I18N.t('job.action.diff')}</button>` : ''}
@@ -210,7 +229,7 @@ function renderJobDetails(job) {
       <tr><td>${window.I18N.t('job.detail.id')}</td><td><code>${escapeHtml(job.id)}</code></td></tr>
       <tr><td>${window.I18N.t('job.detail.name')}</td><td>${escapeHtml(job.name)}</td></tr>
       <tr><td>${window.I18N.t('job.detail.status')}</td><td><span class="badge ${escapeHtml(job.status)}">${escapeHtml(localizedJobStatus(job.status))}</span></td></tr>
-      <tr><td>${window.I18N.t('job.detail.created')}</td><td>${new Date(job.created * 1000).toLocaleString()}</td></tr>
+      <tr><td>${window.I18N.t('job.detail.created')}</td><td>${localizedDateTime(job.created * 1000)}</td></tr>
       <tr><td>${window.I18N.t('job.detail.backups')}</td><td>${job.backups.length}</td></tr>
       ${job.backups.length > 0 ? `<tr><td>${window.I18N.t('job.detail.latestBackup')}</td><td>${escapeHtml(job.backups[job.backups.length - 1].name)}</td></tr>` : ''}
     </table>
@@ -424,6 +443,43 @@ async function restartService(service, btn) {
 }
 
 let currentPreviewData = null  // Store current preview data for view switching
+let currentJobDiff = null
+
+function renderJobDiff(jobId, diffs, openDialog = false) {
+  const dialog = document.getElementById('filePreviewDialog')
+  const content = document.getElementById('previewContent')
+  const diffContent = document.getElementById('diffContent')
+  const title = document.getElementById('previewFileName')
+  const finalBtn = document.getElementById('viewModeFinal')
+  const diffBtn = document.getElementById('viewModeDiff')
+  const legend = document.getElementById('diffLegend')
+
+  finalBtn.classList.remove('active')
+  diffBtn.classList.add('active')
+  legend.style.display = 'flex'
+  content.style.display = 'none'
+  diffContent.style.display = 'block'
+  title.textContent = window.I18N.t('job.diffTitle', { id: jobId })
+
+  const fileNames = Object.keys(diffs)
+  if (!fileNames.length) {
+    diffContent.innerHTML = `<div class="muted">${window.I18N.t('filePreview.noDiffs')}</div>`
+  } else {
+    let html = ''
+    if (diffs['unknown_report.json']) {
+      html += '<h4>unknown_report.json</h4>'
+      html += renderBackendDiff(diffs['unknown_report.json'])
+    }
+    for (const filename of fileNames) {
+      if (filename === 'unknown_report.json') continue
+      html += `<h4>${filename}</h4>`
+      html += renderBackendDiff(diffs[filename])
+    }
+    diffContent.innerHTML = html
+  }
+
+  if (openDialog) dialog.showModal()
+}
 
 async function showDiff(jobId) {
   currentJobId = jobId
@@ -431,42 +487,8 @@ async function showDiff(jobId) {
     const res = await apiFetch(`/api/job/${jobId}/diff`, { credentials: 'include' })
     if (!res.ok) throw new Error(`Diff API error ${res.status}`)
     const diffs = await res.json()
-
-    // Build a simple modal with per-file diff blocks
-    const dialog = document.getElementById('filePreviewDialog')
-    const content = document.getElementById('previewContent')
-    const diffContent = document.getElementById('diffContent')
-    const title = document.getElementById('previewFileName')
-    const finalBtn = document.getElementById('viewModeFinal')
-    const diffBtn = document.getElementById('viewModeDiff')
-    const legend = document.getElementById('diffLegend')
-
-    // Reset
-    finalBtn.classList.remove('active')
-    diffBtn.classList.add('active')
-    legend.style.display = 'flex'
-    content.style.display = 'none'
-    diffContent.style.display = 'block'
-    title.textContent = window.I18N.t('job.diffTitle', { id: jobId })
-
-    let html = ''
-    const fileNames = Object.keys(diffs)
-    if (!fileNames.length) {
-      html = `<div class="muted">${window.I18N.t('filePreview.noDiffs')}</div>`
-    } else {
-      // Wenn es einen Unknown-Report gibt, anzeigen
-      if (diffs["unknown_report.json"]) {
-        html += '<h4>unknown_report.json</h4>'
-        html += renderBackendDiff(diffs["unknown_report.json"])
-        delete diffs["unknown_report.json"]
-      }
-      for (const fn of Object.keys(diffs)) {
-        html += `<h4>${fn}</h4>`
-        html += renderBackendDiff(diffs[fn])
-      }
-    }
-    diffContent.innerHTML = html
-    dialog.showModal()
+    currentJobDiff = { jobId, diffs }
+    renderJobDiff(jobId, diffs, true)
   } catch (e) {
     alert(window.I18N.t('filePreview.diffLoadFailed', { error: e.message }))
   }
@@ -488,6 +510,7 @@ function resolvePreviewPath(filename) {
 
 async function previewFile(filename) {
   try {
+    currentJobDiff = null
     // Normalize path separators (backslash to forward slash) for cross-platform compatibility
     const normalizedPath = filename.replace(/\\/g, '/')
 
@@ -804,10 +827,27 @@ let servicesRefreshGeneration = 0
 let cloudInfoGeneration = 0
 let cloudSecretVisible = false
 
+function renderPackageOperationError(statusEl) {
+  if (!currentPackageOperationError) return false
+  if (currentPackageOperationErrorHasPrefix) {
+    setLocalizedMessage(statusEl, 'service.operationFailed', {
+      error: window.I18N.translateMessage(currentPackageOperationError)
+    })
+  } else {
+    setTranslatedMessage(statusEl, currentPackageOperationError)
+  }
+  return true
+}
+
 function renderPackageOperationStatus(task) {
   const statusEl = document.getElementById('packageOperationStatus')
   if (!statusEl || !task || task.state === 'idle') {
-    if (statusEl) statusEl.textContent = ''
+    if (statusEl) {
+      if (!renderPackageOperationError(statusEl)) {
+        clearLocalizedMessage(statusEl)
+        statusEl.textContent = ''
+      }
+    }
     return
   }
   setLocalizedMessage(statusEl, 'service.packageStatus', {
@@ -840,6 +880,8 @@ function startPackageOperationPolling() {
       if (!response.ok) throw new Error('Status unavailable')
       const task = await response.json()
       currentPackageTask = task
+      currentPackageOperationError = null
+      currentPackageOperationErrorHasPrefix = false
       renderPackageOperationStatus(task)
       if (task.state === 'running') {
         if (packagePollCompletionStage > 0) {
@@ -960,13 +1002,19 @@ async function startPackageOperation(action, version = null) {
     })
     const result = await response.json()
     if (!response.ok) {
-      statusEl.textContent = window.I18N.translateMessage(result.error || result.message || '')
+      currentPackageOperationError = result.error || result.message || ''
+      currentPackageOperationErrorHasPrefix = false
+      renderPackageOperationError(statusEl)
       return
     }
+    currentPackageOperationError = null
+    currentPackageOperationErrorHasPrefix = false
     await refreshServices()
     startPackageOperationPolling()
   } catch (e) {
-    setLocalizedMessage(statusEl, 'service.operationFailed', { error: e.message })
+    currentPackageOperationError = e.message
+    currentPackageOperationErrorHasPrefix = true
+    renderPackageOperationError(statusEl)
   }
 }
 
@@ -1188,6 +1236,13 @@ document.addEventListener('knx-language-change', () => {
   renderGatewayActionError()
   updateGatewayFormatControls()
   updateGatewayLiveActionControls()
+  const filePreviewDialog = document.getElementById('filePreviewDialog')
+  if (filePreviewDialog?.open && currentJobDiff
+      && document.getElementById('diffContent').style.display !== 'none') {
+    renderJobDiff(currentJobDiff.jobId, currentJobDiff.diffs)
+  }
+  const updateDialog = document.getElementById('updateDialog')
+  if (updateDialog?.open && latestVersionData) renderUpdateDialog(latestVersionData)
   refreshServices()
   refreshJobs()
 })
@@ -2504,19 +2559,23 @@ async function checkForUpdates() {
   }
 
 }
-function showUpdateDialog(updateData) {
+function renderUpdateDialog(updateData) {
   // Fill in current version
   document.getElementById('dialogCurrentCommit').textContent = updateData.current_commit
   document.getElementById('dialogCurrentMessage').textContent = updateData.current_message
   const currentDate = new Date(updateData.current_date)
-  document.getElementById('dialogCurrentDate').textContent = currentDate.toLocaleString()
+  document.getElementById('dialogCurrentDate').textContent = localizedDateTime(currentDate)
 
   // Fill in latest version
   document.getElementById('dialogLatestCommit').textContent = updateData.latest_commit
   document.getElementById('dialogLatestMessage').textContent = updateData.latest_message
   document.getElementById('dialogLatestAuthor').textContent = updateData.latest_author
   const latestDate = new Date(updateData.latest_date)
-  document.getElementById('dialogLatestDate').textContent = latestDate.toLocaleString()
+  document.getElementById('dialogLatestDate').textContent = localizedDateTime(latestDate)
+}
+
+function showUpdateDialog(updateData) {
+  renderUpdateDialog(updateData)
 
   // Reset status
   document.getElementById('dialogUpdateStatus').style.display = 'none'

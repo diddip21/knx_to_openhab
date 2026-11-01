@@ -18,6 +18,7 @@ def _stub_background_apis(
     config_payload=None,
     config_save_error=None,
     package_task=None,
+    package_operation_error=None,
     gateway_state=None,
     gateway_action_error=None,
     project_preview=None,
@@ -54,6 +55,17 @@ def _stub_background_apis(
                 status=400,
                 content_type="application/json",
                 body=json.dumps({"error": gateway_action_error}),
+            )
+            return
+        if "/api/service/updates/" in url and method == "POST":
+            route.fulfill(
+                status=409 if package_operation_error else 200,
+                content_type="application/json",
+                body=json.dumps(
+                    {"error": package_operation_error}
+                    if package_operation_error
+                    else {"success": True}
+                ),
             )
             return
         if url.endswith("/api/config") and method == "POST":
@@ -365,6 +377,88 @@ def test_job_list_actions_and_status_follow_selected_language(page: Page, flask_
 
 
 @pytest.mark.ui
+def test_job_dates_follow_selected_language(page: Page, flask_server):
+    timestamp = 1704196800
+    job_data = {
+        "id": "job-date-locale",
+        "name": "Date Locale Project",
+        "status": "completed",
+        "created": timestamp,
+        "backups": [],
+    }
+    _stub_background_apis(page, jobs=[job_data])
+    page.goto(flask_server, wait_until="domcontentloaded")
+    expected = page.evaluate(
+        "timestamp => ({de: new Date(timestamp * 1000).toLocaleString('de-DE'), "
+        "en: new Date(timestamp * 1000).toLocaleString('en-US')})",
+        timestamp,
+    )
+    assert expected["de"] != expected["en"]
+    expect(page.locator(".job-date")).to_have_text(expected["de"])
+    page.evaluate("job => { currentJobData = job; renderJobDetails(job) }", job_data)
+    expect(page.locator("#jobDetail")).to_contain_text(expected["de"])
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(page.locator(".job-date")).to_have_text(expected["en"])
+    expect(page.locator("#jobDetail")).to_contain_text(expected["en"])
+
+
+@pytest.mark.ui
+def test_empty_diff_dialog_copy_refreshes_after_language_change(page: Page, flask_server):
+    _stub_background_apis(page)
+    page.route(
+        "**/api/job/diff-locale/diff",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body="{}",
+        ),
+    )
+    page.goto(flask_server, wait_until="domcontentloaded")
+    page.evaluate("showDiff('diff-locale')")
+    expect(page.locator("#filePreviewDialog[open]")).to_be_visible()
+    expect(page.locator("#previewFileName")).to_have_text("Diff für Auftrag diff-locale")
+    expect(page.locator("#diffContent")).to_have_text("Keine Unterschiede vorhanden.")
+
+    page.evaluate("window.I18N.setLanguage('en')")
+    expect(page.locator("#previewFileName")).to_have_text("Diff for job diff-locale")
+    expect(page.locator("#diffContent")).to_have_text("No differences available.")
+
+
+@pytest.mark.ui
+def test_open_update_dialog_dates_follow_selected_language(page: Page, flask_server):
+    timestamp = "2024-01-02T12:00:00Z"
+    update_data = {
+        "current_commit": "abc123",
+        "current_message": "Current version",
+        "current_date": timestamp,
+        "latest_commit": "def456",
+        "latest_message": "New version",
+        "latest_author": "KNX Maintainer",
+        "latest_date": timestamp,
+    }
+    _stub_background_apis(page)
+    page.goto(flask_server, wait_until="domcontentloaded")
+    expected = page.evaluate(
+        "timestamp => ({de: new Date(timestamp).toLocaleString('de-DE'), "
+        "en: new Date(timestamp).toLocaleString('en-US')})",
+        timestamp,
+    )
+    assert expected["de"] != expected["en"]
+    page.evaluate(
+        "data => { latestVersionData = data; showUpdateDialog(data) }",
+        update_data,
+    )
+    expect(page.locator("#dialogCurrentDate")).to_have_text(expected["de"])
+    expect(page.locator("#dialogLatestDate")).to_have_text(expected["de"])
+
+    page.evaluate("window.I18N.setLanguage('en')")
+    expect(page.locator("#dialogCurrentDate")).to_have_text(expected["en"])
+    expect(page.locator("#dialogLatestDate")).to_have_text(expected["en"])
+    page.locator("#updateDialog").evaluate("dialog => dialog.close()")
+
+
+@pytest.mark.ui
 def test_deploy_action_stays_disabled_during_language_change(page: Page, flask_server):
     pending_deploy = []
     jobs = [
@@ -495,6 +589,35 @@ def test_package_operation_action_follows_selected_language(page: Page, flask_se
     expect(page.locator("#packageOperationStatus")).to_have_text(
         "Refresh package lists: Package lists refreshed."
     )
+
+
+@pytest.mark.ui
+@pytest.mark.parametrize(
+    ("error", "expected_de", "expected_en"),
+    [
+        (
+            "Update helper is not installed. Run sudo bash installer/setup.sh once.",
+            "Update-Hilfsprogramm ist nicht installiert. Führen Sie einmal sudo bash installer/setup.sh aus.",
+            "Update helper is not installed. Run sudo bash installer/setup.sh once.",
+        ),
+        (
+            "No APT update is available for this package.",
+            "Für dieses Paket ist kein APT-Update verfügbar.",
+            "No APT update is available for this package.",
+        ),
+    ],
+)
+def test_package_operation_errors_follow_selected_language(
+    page: Page, flask_server, error: str, expected_de: str, expected_en: str
+):
+    _stub_background_apis(page, package_operation_error=error)
+    page.goto(flask_server, wait_until="domcontentloaded")
+    page.evaluate("startPackageOperation('openhab')")
+    status = page.locator("#packageOperationStatus")
+    expect(status).to_have_text(expected_de)
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(status).to_have_text(expected_en)
 
 
 @pytest.mark.ui

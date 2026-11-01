@@ -288,6 +288,21 @@ def test_overlapping_or_symlinked_paths_are_rejected_before_sudo(tmp_path):
     assert not sudo_log.exists()
 
 
+
+def test_purge_refuses_a_regular_file_as_a_managed_directory(tmp_path):
+    environment, _, _, data, _, paths_file, sudo_log = create_fixture(tmp_path)
+    invalid_target = tmp_path / "test-root" / "runtime-file"
+    invalid_target.write_text("keep this file", encoding="utf-8")
+    contents = paths_file.read_text(encoding="utf-8").replace(str(data), str(invalid_target), 1)
+    paths_file.write_text(contents, encoding="utf-8")
+
+    result = run_uninstaller(environment, ["--purge", "--yes"])
+
+    assert result.returncode == 2
+    assert "not a directory" in result.stderr
+    assert invalid_target.read_text(encoding="utf-8") == "keep this file"
+    assert not sudo_log.exists()
+
 def test_failed_service_stop_prevents_file_removal(tmp_path):
     environment, app, _, _, _, _, sudo_log = create_fixture(tmp_path)
     environment["FAKE_ACTIVE"] = "1"

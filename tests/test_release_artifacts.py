@@ -117,5 +117,3 @@ def test_rejects_build_version_that_differs_from_version_file(tmp_path):
 
     with pytest.raises(ReleaseArtifactError, match="VERSION file"):
         build_release(root, "9.9.9", tmp_path / "artifacts")
-
-

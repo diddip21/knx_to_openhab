@@ -188,8 +188,6 @@ def _write_archive(repo_root: Path, version: str, archive_path: Path) -> None:
                         archive.addfile(_archive_info(archive_name, mode, size), source)
 
 
-
-
 def build_release(repo_root: Path, version: str, output_dir: Path) -> tuple[Path, Path]:
     """Build a reproducible source archive and standard sha256sum sidecar."""
     version = validate_semver(version)

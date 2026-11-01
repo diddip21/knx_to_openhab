@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-UNINSTALLER = ROOT / "work" / "issue28" / "uninstall.sh"
+UNINSTALLER = ROOT / "uninstall.sh"
 
 pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="Bash is required")
 
@@ -138,6 +138,17 @@ def test_noninteractive_default_requires_yes_before_any_system_call(tmp_path):
     assert not sudo_log.exists()
 
 
+def test_noninteractive_purge_requires_yes_before_any_system_call(tmp_path):
+    environment, app, config, data, backups, _, sudo_log = create_fixture(tmp_path)
+
+    result = run_uninstaller(environment, ["--purge"])
+
+    assert result.returncode == 2
+    assert "Non-interactive purge requires --purge --yes" in result.stderr
+    assert all(path.exists() for path in (app, config, data, backups))
+    assert not sudo_log.exists()
+
+
 def test_normal_uninstall_removes_app_but_preserves_user_data(tmp_path):
     environment, app, config, data, backups, paths_file, sudo_log = create_fixture(tmp_path)
 
@@ -166,7 +177,7 @@ def test_purge_removes_custom_paths_and_service_account_and_can_repeat(tmp_path)
     calls = sudo_arguments(sudo_log)
     assert "userdel" in calls
     assert "groupdel" in calls
-    assert "Purge lÃ¶scht zusÃ¤tzlich" in result.stdout
+    assert "Purge löscht zusätzlich" in result.stdout
 
     sudo_log.unlink()
     environment.update(
@@ -185,7 +196,8 @@ def test_purge_removes_custom_paths_and_service_account_and_can_repeat(tmp_path)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="A POSIX terminal is required")
-def test_interactive_purge_requires_and_accepts_exact_confirmation(tmp_path):
+@pytest.mark.parametrize(("confirmation", "expected_status"), [("PURGE", 0), ("purge", 2)])
+def test_interactive_purge_requires_exact_confirmation(tmp_path, confirmation, expected_status):
     environment, _, _, _, _, _, sudo_log = create_fixture(tmp_path)
     master_fd, slave_fd = pty.openpty()
     process = subprocess.Popen(
@@ -197,21 +209,26 @@ def test_interactive_purge_requires_and_accepts_exact_confirmation(tmp_path):
         close_fds=True,
     )
     os.close(slave_fd)
-    os.write(master_fd, b"PURGE\n")
+    os.write(master_fd, f"{confirmation}\n".encode())
     output = bytearray()
     while process.poll() is None:
         readable, _, _ = select.select([master_fd], [], [], 0.2)
         if readable:
-            output.extend(os.read(master_fd, 4096))
+            try:
+                output.extend(os.read(master_fd, 4096))
+            except OSError:
+                break
     readable, _, _ = select.select([master_fd], [], [], 0.2)
     if readable:
-        output.extend(os.read(master_fd, 4096))
+        try:
+            output.extend(os.read(master_fd, 4096))
+        except OSError:
+            pass
     os.close(master_fd)
 
-    assert process.returncode == 0, output.decode(errors="replace")
+    assert process.returncode == expected_status, output.decode(errors="replace")
     assert b"exakt PURGE" in output
-    assert sudo_log.exists()
-
+    assert sudo_log.exists() is (expected_status == 0)
 
 def test_paths_file_is_data_and_not_shell_executed(tmp_path):
     environment, app, _, _, _, paths_file, sudo_log = create_fixture(tmp_path)

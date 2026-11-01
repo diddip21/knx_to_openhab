@@ -192,7 +192,25 @@ validate_application_directory() {
         fi
     fi
 }
+
+validate_user_data_directories() {
+    local label path index
+    local -a names=(Configuration "Runtime data" Backups)
+    local -a paths=("$CONFIG_DIR" "$DATA_DIR" "$BACKUP_DIR")
+    for ((index = 0; index < ${#paths[@]}; index++)); do
+        label="${names[index]}"
+        path="${paths[index]}"
+        if [[ -e "$path" ]]; then
+            [[ -d "$path" && ! -L "$path" ]] || fail "$label path is not a directory: $path"
+            if command -v mountpoint >/dev/null 2>&1 && mountpoint -q -- "$path"; then
+                fail "$label path is a mount point; refusing to remove it: $path"
+            fi
+        fi
+    done
+}
+
 validate_application_directory
+validate_user_data_directories
 
 UNITS=(
     knxohui.service
@@ -266,6 +284,7 @@ DATA_DIR="$(normalize_and_validate_path 'Runtime data' "$DATA_DIR")"
 BACKUP_DIR="$(normalize_and_validate_path 'Backups' "$BACKUP_DIR")"
 validate_separate_paths
 validate_application_directory
+validate_user_data_directories
 
 for unit in "${UNITS[@]}"; do
     if sudo systemctl is-active --quiet "$unit"; then
@@ -291,10 +310,10 @@ done
 sudo rm -f -- "${UNIT_FILES[@]}" "${FIXED_FILES[@]}"
 sudo rm -rf -- /usr/local/libexec/knx_to_openhab
 sudo systemctl daemon-reload
-sudo rm -rf -- "$INSTALL_DIR"
+sudo rm --one-file-system -rf -- "$INSTALL_DIR"
 
 if ((PURGE)); then
-    sudo rm -rf -- "$CONFIG_DIR" "$DATA_DIR" "$BACKUP_DIR"
+    sudo rm --one-file-system -rf -- "$CONFIG_DIR" "$DATA_DIR" "$BACKUP_DIR"
     if command -v getent >/dev/null 2>&1 && getent passwd "$SERVICE_USER" >/dev/null; then
         sudo userdel -- "$SERVICE_USER"
     fi

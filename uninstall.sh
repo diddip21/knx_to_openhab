@@ -216,7 +216,7 @@ for path in /usr/local/libexec/knx_to_openhab "${UNIT_FILES[@]}" "${FIXED_FILES[
     [[ ! -e "$path" && ! -L "$path" ]] || has_uninstall_artifacts=1
 done
 if (( ! has_uninstall_artifacts )); then
-    printf '[OK] Anwendung und Systemintegration sind bereits entfernt; keine Nutzerdaten wurden verÃ¤ndert.\n'
+    printf '[OK] Anwendung und Systemintegration sind bereits entfernt; keine Nutzerdaten wurden verändert.\n'
     exit 0
 fi
 
@@ -235,7 +235,7 @@ show_target /usr/local/libexec/knx_to_openhab
 for path in "${UNIT_FILES[@]}" "${FIXED_FILES[@]}"; do show_target "$path"; done
 printf '  systemd-Dienste: %s\n' "${UNITS[*]}"
 if ((PURGE)); then
-    printf '\nPurge lÃ¶scht zusÃ¤tzlich die folgenden Nutzerdaten und das Dienstkonto:\n'
+    printf '\nPurge löscht zusÃ¤tzlich die folgenden Nutzerdaten und das Dienstkonto:\n'
     show_target "$CONFIG_DIR"
     show_target "$DATA_DIR"
     show_target "$BACKUP_DIR"
@@ -246,17 +246,17 @@ else
 fi
 
 if ((PURGE)) && [[ -t 0 ]]; then
-    printf '\nZum vollstÃ¤ndigen LÃ¶schen exakt PURGE eingeben: '
+    printf '\nZum vollständigen LÃ¶schen exakt PURGE eingeben: '
     expected="PURGE"
     IFS= read -r answer || answer=""
-    [[ "$answer" == "$expected" ]] || fail "BestÃ¤tigung stimmt nicht Ã¼berein. Keine SystemÃ¤nderungen wurden vorgenommen."
+    [[ "$answer" == "$expected" ]] || fail "Bestätigung stimmt nicht überein. Keine Systemänderungen wurden vorgenommen."
 elif ((PURGE)) && (( ! YES )); then
     fail "Non-interactive purge requires --purge --yes. No system changes were made."
 elif (( ! PURGE )) && (( ! YES )); then
     [[ -t 0 ]] || fail "Non-interactive use requires --yes. No system changes were made."
     printf '\nZum Fortfahren UNINSTALL eingeben: '
     IFS= read -r answer || answer=""
-    [[ "$answer" == "UNINSTALL" ]] || fail "BestÃ¤tigung stimmt nicht Ã¼berein. Keine SystemÃ¤nderungen wurden vorgenommen."
+    [[ "$answer" == "UNINSTALL" ]] || fail "Bestätigung stimmt nicht überein. Keine Systemänderungen wurden vorgenommen."
 fi
 
 # Paths may have changed while an interactive confirmation was open.

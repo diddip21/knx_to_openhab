@@ -34,7 +34,7 @@ def create_fixture(tmp_path):
         "KNXOH_BACKUP_DIR": backups,
     }
     path_file_contents = "# managed paths\n" + "\n".join(
-        f'{name}="{str(path).replace(chr(92), chr(92) * 2).replace(chr(34), chr(92) + chr(34))}"'
+        f'{name}="{path}"'
         for name, path in path_values.items()
     )
     paths_file.write_text(path_file_contents + "\n", encoding="utf-8")
@@ -150,7 +150,9 @@ def test_noninteractive_purge_requires_yes_before_any_system_call(tmp_path):
 
 
 def test_normal_uninstall_removes_app_but_preserves_user_data(tmp_path):
-    environment, app, config, data, backups, paths_file, sudo_log = create_fixture(tmp_path)
+    environment, app, config, data, backups, paths_file, sudo_log = create_fixture(
+        tmp_path
+    )
 
     result = run_uninstaller(environment, ["--yes"])
 
@@ -196,8 +198,12 @@ def test_purge_removes_custom_paths_and_service_account_and_can_repeat(tmp_path)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="A POSIX terminal is required")
-@pytest.mark.parametrize(("confirmation", "expected_status"), [("PURGE", 0), ("purge", 2)])
-def test_interactive_purge_requires_exact_confirmation(tmp_path, confirmation, expected_status):
+@pytest.mark.parametrize(
+    ("confirmation", "expected_status"), [("PURGE", 0), ("purge", 2)]
+)
+def test_interactive_purge_requires_exact_confirmation(
+    tmp_path, confirmation, expected_status
+):
     environment, _, _, _, _, _, sudo_log = create_fixture(tmp_path)
     master_fd, slave_fd = pty.openpty()
     process = subprocess.Popen(
@@ -229,6 +235,7 @@ def test_interactive_purge_requires_exact_confirmation(tmp_path, confirmation, e
     assert process.returncode == expected_status, output.decode(errors="replace")
     assert b"exakt PURGE" in output
     assert sudo_log.exists() is (expected_status == 0)
+
 
 def test_paths_file_is_data_and_not_shell_executed(tmp_path):
     environment, app, _, _, _, paths_file, sudo_log = create_fixture(tmp_path)

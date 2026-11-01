@@ -655,7 +655,22 @@ def create_json_dump(project: KNXProject, file_path: Path):
         json.dump(project, f, indent=2, ensure_ascii=False)
 
 
-def get_gateway_ip(project: KNXProject):
+def detect_gateway_ip(project: KNXProject) -> str | None:
+    """Detect the KNX gateway IP from the ETS project without applying an override."""
+    devices = project.get("devices", {})
+    gateway_names = config.get("devices", {}).get("gateway", {}).get("hardware_name", [])
+    for device in devices.values():
+        hw_name_lower = device.get("hardware_name", "").strip().lower()
+        for hw_name in gateway_names:
+            if hw_name.lower() in hw_name_lower:
+                description = device.get("description", "").strip()
+                ip_match = re.search(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", description)
+                if ip_match:
+                    return ip_match.group()
+    return None
+
+
+def get_gateway_ip(project: KNXProject) -> str | None:
     """Get the configured gateway IP or detect it from the KNX project."""
     configured_ip = (
         config.get("devices", {}).get("gateway", {}).get("ip_address", "") or ""
@@ -666,21 +681,7 @@ def get_gateway_ip(project: KNXProject):
         except ValueError as exc:
             raise ValueError(f"Invalid gateway IP address configured: {configured_ip}") from exc
 
-    devices = project["devices"]
-    if not devices:
-        logger.error("'devices' is empty.")
-        raise ValueError("'devices' is empty.")
-
-    for device in devices.values():
-        hw_name_lower = device["hardware_name"].strip().lower()
-        for hw_name in config["devices"]["gateway"]["hardware_name"]:
-            if hw_name.lower() in hw_name_lower:  # Prüft auf Teilstring
-                description = device["description"].strip()
-                ip_match = re.search(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", description)
-                if ip_match:
-                    return ip_match.group()
-
-    return None
+    return detect_gateway_ip(project)
 
 
 def get_distribution_board_devices(project: KNXProject):

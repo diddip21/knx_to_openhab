@@ -9,6 +9,48 @@
     "/api/service/{package}/version": {"get": {"description": "Installed and cached APT candidate version (openhab or evcc)"}},
     "/api/service/updates/status": {"get": {"description": "Current package operation state"}},
     "/api/service/updates/{action}": {"post": {"description": "Start package list refresh or upgrade one package (refresh, openhab, evcc)"}},
+    "/api/gateway/state": {
+      "get": {
+        "description": "Read active managed KNX gateway settings and live-action availability; OpenHAB runtime status is not queried.",
+        "responses": {
+          "200": {"description": "Gateway state including gateway_ip, gateway_mode, saved_override, managed_path, things_format, reset_available, undo_available, and runtime_status=not_checked."},
+          "409": {"description": "No usable successfully deployed KNX Things target is available."}
+        }
+      }
+    },
+    "/api/gateway/ip": {
+      "post": {
+        "description": "Apply a validated IP address to the active managed KNX Things file and saved gateway override; runtime status is not checked.",
+        "consumes": ["application/json"],
+        "requestBody": {
+          "required": true,
+          "schema": {"type": "object", "required": ["ip_address"], "properties": {"ip_address": {"type": "string", "description": "A non-empty IPv4 or IPv6 address."}}}
+        },
+        "responses": {
+          "200": {"description": "Gateway configuration updated; runtime_status is not_checked."},
+          "400": {"description": "Invalid or missing IP address."},
+          "409": {"description": "No usable deployed target or unsupported live-update format."}
+        }
+      }
+    },
+    "/api/gateway/ip/reset": {
+      "post": {
+        "description": "Restore the last successfully deployed ETS gateway address or KNX router mode; runtime status is not checked.",
+        "responses": {
+          "200": {"description": "Gateway configuration restored from the deployed ETS source."},
+          "409": {"description": "No usable deployed target or ETS gateway source is available."}
+        }
+      }
+    },
+    "/api/gateway/ip/undo": {
+      "post": {
+        "description": "Undo the latest live gateway update only while its deployed target, managed-file digest, and saved override match the snapshot; runtime status is not checked.",
+        "responses": {
+          "200": {"description": "The previous gateway file and saved override were restored."},
+          "409": {"description": "No current or valid undo snapshot is available."}
+        }
+      }
+    },
     "/api/status": {"get": {"description": "Health/status"}}
   }
 }

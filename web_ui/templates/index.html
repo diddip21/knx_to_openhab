@@ -122,6 +122,13 @@
               </select>
               <div class="checkbox-help">YAML combines Things, Items and the Sitemap in one versioned file. Persistence and the stateful window rule remain textual.</div>
             </div>
+            <div id="gateway-format-warning" class="info-box" role="status" style="display:none;"></div>
+            <div id="gateway-migration-preview" class="info-box" style="display:none;">
+              <strong>Output format migration preview</strong>
+              <p>Old generator output: <code id="gateway-migration-from"></code></p>
+              <p>New generator output: <code id="gateway-migration-to"></code></p>
+              <p>Only generator-owned targets are migrated; manual files remain untouched.</p>
+            </div>
             <div class="form-group" id="yaml-path-group">
               <label>YAML Path</label>
               <input type="text" id="conf-yaml-path" class="form-control">
@@ -214,8 +221,17 @@
             <div class="form-group">
               <label for="conf-gateway-ip">KNX Gateway IP Override</label>
               <input type="text" id="conf-gateway-ip" class="form-control" inputmode="text" autocomplete="off" spellcheck="false" placeholder="Auto-detect from ETS project" aria-describedby="conf-gateway-ip-help">
-              <small id="conf-gateway-ip-help">Enter an IPv4 or IPv6 address to override the ETS value. Leave blank for automatic detection. Save &amp; Reprocess applies changes to the selected job.</small>
+              <small id="conf-gateway-ip-help">Enter an IPv4 or IPv6 address to override the ETS value. Leave blank for automatic detection during a future generation.</small>
             </div>
+            <div id="gateway-file-state" class="info-box" role="status">Loading managed gateway file state…</div>
+            <p class="muted">Live actions change only the managed model file from the last successful deployment and the saved gateway override. Pending format or path changes take effect after deployment. OpenHAB is not restarted, and runtime status is not checked.</p>
+            <div id="gateway-live-warning" class="info-box" role="status" style="display:none;"></div>
+            <div class="form-actions">
+              <button type="button" id="gateway-apply-ip" class="btn-primary" disabled>Apply IP to live OpenHAB file</button>
+              <button type="button" id="gateway-reset-ip" class="btn-secondary" disabled>Restore ETS address</button>
+              <button type="button" id="gateway-undo-ip" class="btn-secondary" disabled>Undo last live change</button>
+            </div>
+            <div id="gateway-action-status" class="status-message" role="status" aria-live="polite"></div>
           </div>
 
           <!-- Mappings Tab -->
@@ -256,7 +272,7 @@
         <div class="settings-actions">
           <button onclick="loadConfig()" class="btn-secondary">Reload Config</button>
           <div class="spacer"></div>
-          <button onclick="saveConfig(true)" class="btn-secondary btn-outline">Save & Reprocess Last Job</button>
+          <button id="save-reprocess-config" onclick="saveConfig(true)" class="btn-secondary btn-outline">Save & Reprocess Last Job</button>
           <button onclick="saveConfig(false)" class="btn-primary">Save Config</button>
         </div>
         <div id="configStatus" class="status-message"></div>

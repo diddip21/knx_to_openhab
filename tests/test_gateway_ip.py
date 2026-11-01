@@ -52,6 +52,26 @@ def test_get_gateway_ip_keeps_ets_detection_when_override_is_blank(monkeypatch):
     assert knxproject_to_openhab.get_gateway_ip(project) == "192.168.10.30"
 
 
+def test_detect_gateway_ip_ignores_configured_override(monkeypatch):
+    _set_gateway_config(monkeypatch, "192.168.10.45")
+    project = {
+        "devices": {
+            "gateway": {
+                "hardware_name": "KNX IP Interface Secure",
+                "description": "Address 192.168.10.30",
+            }
+        }
+    }
+
+    assert knxproject_to_openhab.detect_gateway_ip(project) == "192.168.10.30"
+
+
+def test_detect_gateway_ip_returns_none_when_ets_has_no_address(monkeypatch):
+    _set_gateway_config(monkeypatch)
+
+    assert knxproject_to_openhab.detect_gateway_ip({"devices": {}}) is None
+
+
 def test_generator_modules_bind_fresh_config_during_reprocess(tmp_path):
     """The reprocess import order must expose the newly saved IP override to generation."""
     project_root = Path(__file__).resolve().parents[1]

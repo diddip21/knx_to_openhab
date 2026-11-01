@@ -234,7 +234,7 @@ def test_interactive_purge_requires_exact_confirmation(tmp_path, confirmation, e
 def test_paths_file_is_data_and_not_shell_executed(tmp_path):
     environment, app, _, _, _, paths_file, sudo_log = create_fixture(tmp_path)
     marker = tmp_path / "shell-was-executed"
-    content = paths_file.read_text(encoding="utf-8").replace(str(app), f'"$(touch {marker})"', 1)
+    content = paths_file.read_text(encoding="utf-8").replace(str(app), f'$(touch {marker})', 1)
 
     result = run_uninstaller(environment, ["--yes"])
 

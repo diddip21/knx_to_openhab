@@ -281,6 +281,68 @@ def test_update_dsl_router_adds_tunnel_fields_and_preserves_other_configuration(
     assert 'Type switch : light "Light" [ ga="1/1/1" ]' in updated
 
 
+def test_update_dsl_ignores_block_commented_bridge_duplicate():
+    commented_bridge = (
+        "/* Example only; do not edit:\n"
+        'Bridge knx:ip:bridge [ type="TUNNEL", ipAddress="192.0.2.1" ] {}\n'
+        "*/\n"
+    )
+    live_bridge = 'Bridge knx:ip:bridge [ type="ROUTER" ] {}\n'
+
+    updated = update_gateway_file(commented_bridge + live_bridge, "dsl", "192.0.2.99")
+
+    assert updated.startswith(commented_bridge)
+    assert updated.endswith(
+        'Bridge knx:ip:bridge [ type="TUNNEL", ipAddress="192.0.2.99", portNumber=3671 ] {}\n'
+    )
+    assert updated.count('ipAddress="192.0.2.99"') == 1
+
+
+def test_reset_dsl_ignores_block_commented_bridge_duplicate():
+    commented_bridge = (
+        "/* Example only; do not edit:\n"
+        'Bridge knx:ip:bridge [ type="TUNNEL", ipAddress="192.0.2.1" ] {}\n'
+        "*/\n"
+    )
+    live_bridge = (
+        'Bridge knx:ip:bridge [ type="TUNNEL", ipAddress="192.0.2.45", ' "portNumber=3672 ] {}\n"
+    )
+
+    restored = restore_ets_gateway_file(commented_bridge + live_bridge, "dsl", None)
+
+    assert restored.startswith(commented_bridge)
+    live_result = restored[len(commented_bridge) :]
+    assert 'type="ROUTER"' in live_result
+    assert "autoReconnectPeriod=60" in live_result
+    assert "ipAddress=" not in live_result
+    assert "portNumber=" not in live_result
+
+
+@pytest.mark.parametrize("mutation", ["apply", "reset"])
+def test_live_dsl_mutation_rejects_a_comment_only_bridge(mutation):
+    commented_bridge = "/* Example only:\n" 'Bridge knx:ip:bridge [ type="ROUTER" ] {}\n' "*/\n"
+
+    with pytest.raises(ValueError, match="KNX bridge not found in DSL Things file"):
+        if mutation == "apply":
+            update_gateway_file(commented_bridge, "dsl", "192.0.2.99")
+        else:
+            restore_ets_gateway_file(commented_bridge, "dsl", None)
+
+    assert "ipAddress" not in commented_bridge
+
+
+@pytest.mark.parametrize("comment_marker", ["/*", "//"])
+def test_live_dsl_mutation_preserves_comment_markers_inside_strings(comment_marker):
+    content = (
+        'Bridge knx:ip:bridge [ type="ROUTER", label="before ' f'{comment_marker} after" ] {{}}\n'
+    )
+
+    updated = update_gateway_file(content, "dsl", "192.0.2.99")
+
+    assert f'label="before {comment_marker} after"' in updated
+    assert 'ipAddress="192.0.2.99"' in updated
+
+
 def test_update_yaml_tunnel_changes_only_bridge_connection_values():
     document = {
         "version": 1,

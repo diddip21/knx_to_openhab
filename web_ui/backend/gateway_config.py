@@ -9,7 +9,7 @@ from typing import Any
 import yaml
 
 from .deploy_policy import configured_managed_paths, read_managed_file
-from .things_format import FORMAT_OUTPUT_KEYS
+from .things_format import FORMAT_OUTPUT_KEYS, strip_dsl_comments
 
 BRIDGE_UID = "knx:ip:bridge"
 _BRIDGE_DECLARATION = re.compile(rf"(?im)^[ \t]*Bridge\s+{re.escape(BRIDGE_UID)}(?=\s|\[)")
@@ -70,23 +70,24 @@ def _yaml_bridge(document: dict[str, Any]) -> tuple[dict[str, Any], dict[str, An
 
 
 def _dsl_bridge_config(content: str) -> tuple[int, int, str]:
-    declarations = list(_BRIDGE_DECLARATION.finditer(content))
+    uncommented = strip_dsl_comments(content)
+    declarations = list(_BRIDGE_DECLARATION.finditer(uncommented))
     if not declarations:
         raise ValueError("KNX bridge not found in DSL Things file")
     if len(declarations) != 1:
         raise ValueError("Multiple KNX bridge definitions found in DSL Things file")
 
     declaration = declarations[0]
-    opening = content.find("[", declaration.end())
-    thing_body = content.find("{", declaration.end())
+    opening = uncommented.find("[", declaration.end())
+    thing_body = uncommented.find("{", declaration.end())
     if opening < 0 or (thing_body >= 0 and thing_body < opening):
         raise ValueError("Invalid DSL KNX bridge configuration")
 
     quote = None
     escaped = False
     closing = -1
-    for index in range(opening + 1, len(content)):
-        character = content[index]
+    for index in range(opening + 1, len(uncommented)):
+        character = uncommented[index]
         if quote:
             if escaped:
                 escaped = False

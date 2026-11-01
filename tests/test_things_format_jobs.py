@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 from web_ui.backend import jobs as jobs_module
+from web_ui.backend import things_format
 from web_ui.backend.jobs import JobManager
 from web_ui.backend.things_format import (
     assert_no_unmanaged_bridge_definitions,
@@ -213,6 +214,27 @@ def test_unterminated_dsl_block_comment_fails_closed_with_path(tmp_path):
 
     with pytest.raises(ValueError, match="manual.things.*unterminated block comment"):
         find_unmanaged_bridge_definitions(str(tmp_path), set())
+
+
+def test_shared_dsl_comment_scanner_preserves_offsets_lines_and_quoted_markers():
+    content = (
+        'Bridge knx:ip:bridge [ label="/* literal */ // literal" ] // line comment\r\n'
+        "/* block comment\r\nBridge knx:ip:bridge [ ]\r\n*/\r\n"
+    )
+
+    stripped = things_format.strip_dsl_comments(content, "sample.things")
+
+    assert len(stripped) == len(content)
+    assert stripped.count("\r\n") == content.count("\r\n")
+    assert 'label="/* literal */ // literal"' in stripped
+    assert "line comment" not in stripped
+    assert "block comment" not in stripped
+    assert "Bridge knx:ip:bridge [ ]" not in stripped
+
+
+def test_shared_dsl_comment_scanner_reports_default_source_for_unterminated_block():
+    with pytest.raises(ValueError, match="DSL content.*unterminated block comment"):
+        things_format.strip_dsl_comments("/* unfinished")
 
 
 @pytest.mark.parametrize(

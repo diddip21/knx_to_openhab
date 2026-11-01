@@ -9,8 +9,8 @@ FORMAT_OUTPUT_KEYS = {"dsl": "things_path", "yaml": "yaml_path"}
 _DSL_BRIDGE = re.compile(r"^Bridge\s+knx:ip:bridge(?:\s|\[)", re.IGNORECASE)
 
 
-def _strip_dsl_comments(content: str, path: Path) -> str:
-    """Replace DSL comments with whitespace while preserving strings and lines."""
+def strip_dsl_comments(content: str, source: str | Path = "DSL content") -> str:
+    """Replace DSL comments with whitespace while preserving offsets and line endings."""
     cleaned: list[str] = []
     quote = None
     escaped = False
@@ -70,7 +70,7 @@ def _strip_dsl_comments(content: str, path: Path) -> str:
 
     if block_comment:
         raise ValueError(
-            f"Cannot inspect DSL configuration file {path}: unterminated block comment"
+            f"Cannot inspect DSL configuration file {source}: unterminated block comment"
         )
     return "".join(cleaned)
 
@@ -104,7 +104,7 @@ def find_unmanaged_bridge_definitions(openhab_root: str, managed_relpaths: set[s
                 content = path.read_text(encoding="utf-8", errors="replace")
             except OSError as error:
                 raise ValueError(f"Cannot inspect configuration file {path}: {error}") from error
-            lines = _strip_dsl_comments(content, path).splitlines()
+            lines = strip_dsl_comments(content, path).splitlines()
             if any(_DSL_BRIDGE.match(line.strip()) for line in lines):
                 definitions.append(relative)
             continue

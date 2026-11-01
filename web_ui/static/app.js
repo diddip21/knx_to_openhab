@@ -281,7 +281,7 @@ async function deleteJob(jobId) {
     })
     const data = await res.json()
     if (res.ok && data.ok) {
-      refreshJobs()
+      await Promise.all([refreshJobs(), loadGatewayState()])
       detailSectionEl.style.display = 'none'
       logSectionEl.style.display = 'none'
       statsSectionEl.style.display = 'none'
@@ -1759,6 +1759,7 @@ async function saveConfig(reprocess = false) {
     if (!res.ok) throw new Error('Failed to save config')
 
     currentConfig = newConfig
+    await loadGatewayState()
     configStatus.textContent = '✓ Configuration saved'
     configStatus.className = 'status-message success'
     // Reprocess if requested

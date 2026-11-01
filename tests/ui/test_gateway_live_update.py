@@ -38,6 +38,7 @@ def _stub_settings_routes(
     target_available=True,
     undo_available=True,
     apply_saved_override="192.0.2.42",
+    save_invalidates_undo=False,
 ):
     project_root = Path(__file__).resolve().parents[2]
     config_data = json.loads((project_root / "config.json").read_text(encoding="utf-8"))
@@ -47,12 +48,15 @@ def _stub_settings_routes(
     config_data["devices"]["gateway"]["ip_address"] = "192.0.2.42"
     config_data["devices"]["gateway"]["hardware_name"] = ["KNX IP Interface"]
     calls = []
+    undo_stale = {"value": False}
 
     def config_route(route):
         if route.request.method == "GET":
             route.fulfill(status=200, content_type="application/json", body=json.dumps(config_data))
         else:
             calls.append(("config", route.request.method, route.request.post_data_json))
+            if save_invalidates_undo:
+                undo_stale["value"] = True
             route.fulfill(
                 status=200,
                 content_type="application/json",
@@ -63,6 +67,7 @@ def _stub_settings_routes(
     undo_done = {"value": False}
 
     def gateway_state_route(route):
+        calls.append(("gateway-state", route.request.method, None))
         if not target_available:
             route.fulfill(
                 status=409,
@@ -83,7 +88,9 @@ def _stub_settings_routes(
                     "saved_override": "192.0.2.42",
                     "detected_gateway_ip": "198.51.100.10",
                     "reset_available": reset_available,
-                    "undo_available": undo_available and not undo_done["value"],
+                    "undo_available": (
+                        undo_available and not undo_done["value"] and not undo_stale["value"]
+                    ),
                     "runtime_status": "not_checked",
                 }
             ),
@@ -173,6 +180,11 @@ def _stub_job_transition_routes(page: Page, transition: str):
         fulfill(route, [dict(job)])
 
     def job_route(route):
+        if route.request.method == "DELETE":
+            job["deployed"] = False
+            state["available"] = False
+            fulfill(route, {"ok": True})
+            return
         fulfill(route, dict(job))
 
     def deploy_route(route):
@@ -458,4 +470,56 @@ def test_successful_rollback_refreshes_gateway_target_availability(page: Page, f
         screenshot_path.mkdir(parents=True, exist_ok=True)
         page.locator("#tab-devices").screenshot(
             path=str(screenshot_path / "gateway-state-after-rollback.png")
+        )
+
+
+@pytest.mark.ui
+def test_successful_active_job_deletion_refreshes_gateway_availability(page: Page, flask_server):
+    state_requests = _stub_job_transition_routes(page, "delete")
+    _open_settings(page, flask_server)
+    page.get_by_role("button", name="Devices").click()
+    gateway_state = page.locator("#gateway-file-state")
+    expect(gateway_state).to_contain_text("things/initial-knx.things")
+    expect(page.locator("#gateway-apply-ip")).to_be_enabled()
+    expect(page.locator("#gateway-reset-ip")).to_be_enabled()
+    expect(page.locator("#gateway-undo-ip")).to_be_enabled()
+
+    page.on("dialog", lambda dialog: dialog.accept())
+    page.locator(".job-item button:has-text('Delete')").click()
+
+    expect(gateway_state).to_contain_text("No usable deployed KNX Things target")
+    expect(page.locator("#gateway-apply-ip")).to_be_disabled()
+    expect(page.locator("#gateway-reset-ip")).to_be_disabled()
+    expect(page.locator("#gateway-undo-ip")).to_be_disabled()
+    assert len(state_requests) >= 2
+    assert state_requests[-1]["available"] is False
+    if os.getenv("SAVE_UI_SCREENSHOTS") == "1":
+        screenshot_path = Path(__file__).resolve().parents[2] / "docs" / "screenshots"
+        screenshot_path.mkdir(parents=True, exist_ok=True)
+        page.locator("#tab-devices").screenshot(
+            path=str(screenshot_path / "gateway-state-after-job-delete.png")
+        )
+
+
+@pytest.mark.ui
+def test_config_save_refreshes_gateway_undo_availability(page: Page, flask_server):
+    calls = _stub_settings_routes(page, save_invalidates_undo=True)
+    _open_settings(page, flask_server)
+    page.get_by_role("button", name="Devices").click()
+    expect(page.locator("#gateway-undo-ip")).to_be_enabled()
+    initial_state_requests = len([call for call in calls if call[0] == "gateway-state"])
+
+    page.locator("#conf-gateway-ip").fill("192.0.2.99")
+    page.get_by_role("button", name="Save Config").click()
+
+    expect(page.locator("#configStatus")).to_contain_text("Configuration saved")
+    expect(page.locator("#gateway-undo-ip")).to_be_disabled()
+    assert len([call for call in calls if call[0] == "gateway-state"]) == initial_state_requests + 1
+    saved_configs = [call[2] for call in calls if call[0] == "config" and call[1] == "POST"]
+    assert saved_configs[-1]["devices"]["gateway"]["ip_address"] == "192.0.2.99"
+    if os.getenv("SAVE_UI_SCREENSHOTS") == "1":
+        screenshot_path = Path(__file__).resolve().parents[2] / "docs" / "screenshots"
+        screenshot_path.mkdir(parents=True, exist_ok=True)
+        page.locator("#tab-devices").screenshot(
+            path=str(screenshot_path / "gateway-undo-disabled-after-config-save.png")
         )

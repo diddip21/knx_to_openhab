@@ -1581,6 +1581,10 @@ class JobManager:
             field: (field in job, job.get(field))
             for field in ("deployed", "deployed_at", "deployment_id")
         }
+        previous_deployed_flags = {
+            other_job_id: ("deployed" in other_job, other_job.get("deployed"))
+            for other_job_id, other_job in self._jobs.items()
+        }
         selected_things_format = "yaml" if job.get("output_format") == "yaml" else "dsl"
         if selected_things_format != previous_things_format:
             managed_things_relpaths = {
@@ -1601,6 +1605,9 @@ class JobManager:
                 managed_paths,
             )
 
+            for deployed_job in self._jobs.values():
+                if deployed_job.get("deployed"):
+                    deployed_job["deployed"] = False
             job["deployed"] = True
             job["deployed_at"] = __import__("time").time()
             job["deployment_id"] = uuid.uuid4().hex
@@ -1612,6 +1619,12 @@ class JobManager:
 
         except Exception as e:
             logger.error(f"Deploy failed: {e}")
+            for other_job_id, (was_present, previous_value) in previous_deployed_flags.items():
+                other_job = self._jobs[other_job_id]
+                if was_present:
+                    other_job["deployed"] = previous_value
+                else:
+                    other_job.pop("deployed", None)
             for field, (was_present, previous_value) in previous_deployment_fields.items():
                 if was_present:
                     job[field] = previous_value

@@ -5,6 +5,7 @@ import io
 import json
 import tarfile
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -493,6 +494,18 @@ def test_failed_same_job_redeploy_restores_previous_deployment_identity(tmp_path
             "detected_gateway_ip": "192.0.2.42",
         }
     }
+    manager._jobs["older"] = {
+        "id": "older",
+        "status": "completed",
+        "deployed": True,
+        "deployed_at": 0,
+        "deployment_id": "older-deployment",
+        "output_format": "legacy",
+        "openhab_root": str(tmp_path / "older-openhab"),
+        "active_things_path": "things/old.things",
+        "managed_targets": ["things/old.things"],
+        "detected_gateway_ip": "192.0.2.1",
+    }
     snapshot_path = manager._gateway_undo_path()
     gateway_undo.save_snapshot(
         snapshot_path,
@@ -526,6 +539,8 @@ def test_failed_same_job_redeploy_restores_previous_deployment_identity(tmp_path
         save_calls += 1
         if save_calls == 1:
             return save_jobs(jobs_dir, jobs)
+        assert jobs["job"]["deployed"] is True
+        assert jobs["older"]["deployed"] is False
         raise OSError("simulated deploy metadata persistence failure")
 
     monkeypatch.setattr(jobs_module, "save_jobs", fail_only_after_writing_staged_files)
@@ -538,10 +553,13 @@ def test_failed_same_job_redeploy_restores_previous_deployment_identity(tmp_path
     assert manager._jobs["job"]["deployed"] is True
     assert manager._jobs["job"]["deployed_at"] == 1
     assert manager._jobs["job"]["deployment_id"] == "deployment-before"
+    assert manager._jobs["older"]["deployed"] is True
     persisted_job = json.loads((tmp_path / "jobs" / "jobs.json").read_text(encoding="utf-8"))["job"]
+    persisted_jobs = json.loads((tmp_path / "jobs" / "jobs.json").read_text(encoding="utf-8"))
     assert persisted_job["deployed"] is True
     assert persisted_job["deployed_at"] == 1
     assert persisted_job["deployment_id"] == "deployment-before"
+    assert persisted_jobs["older"]["deployed"] is True
 
     target = manager.get_last_deployed_things_target()
     assert target["deployment_id"] == "deployment-before"
@@ -554,6 +572,74 @@ def test_failed_same_job_redeploy_restores_previous_deployment_identity(tmp_path
         lambda *_args: live_file.read_bytes(),
     )
     assert manager._gateway_undo_available(target, str(openhab_path), managed_paths, "192.0.2.42")
+
+
+def test_successful_deploy_selects_new_job_when_clock_moves_backward(tmp_path, monkeypatch):
+    openhab_path = tmp_path / "openhab"
+    live_file = openhab_path / "things" / "knx.things"
+    staged_file = tmp_path / "staging" / "knx.things"
+    live_file.parent.mkdir(parents=True)
+    staged_file.parent.mkdir(parents=True)
+    live_file.write_bytes(b"old live content\n")
+    staged_file.write_bytes(b"new deployed content\n")
+
+    manager = JobManager.__new__(JobManager)
+    _prepare_deploy_manager(monkeypatch, manager, openhab_path)
+    managed_paths = {"things_path": "things/knx.things"}
+    monkeypatch.setattr(
+        jobs_module,
+        "configured_managed_paths",
+        lambda *_args: (str(openhab_path), managed_paths),
+    )
+    manager._jobs = {
+        "older": {
+            "id": "older",
+            "status": "completed",
+            "deployed": True,
+            "deployed_at": 200,
+            "deployment_id": "older-deployment",
+            "output_format": "legacy",
+            "openhab_root": str(openhab_path),
+            "active_things_path": "things/knx.things",
+            "managed_targets": ["things/knx.things"],
+            "detected_gateway_ip": "192.0.2.1",
+        },
+        "new": {
+            "id": "new",
+            "status": "completed",
+            "staged": True,
+            "staging_dir": str(staged_file.parent),
+            "stage_mapping": {str(staged_file): str(live_file)},
+            "retired_paths": [],
+            "backups": [],
+            "deployed": False,
+            "output_format": "legacy",
+            "openhab_root": str(openhab_path),
+            "active_things_path": "things/knx.things",
+            "managed_targets": ["things/knx.things"],
+            "detected_gateway_ip": "198.51.100.10",
+        },
+    }
+    monkeypatch.setattr(time, "time", lambda: 100)
+
+    def deploy_staged_file(*_args):
+        live_file.write_bytes(staged_file.read_bytes())
+        return 1
+
+    monkeypatch.setattr(jobs_module, "deploy_staged_files", deploy_staged_file)
+
+    assert manager.deploy("new")[0] is True
+
+    assert live_file.read_bytes() == b"new deployed content\n"
+    assert manager._jobs["older"]["deployed"] is False
+    assert manager._jobs["new"]["deployed"] is True
+    assert manager._jobs["new"]["deployed_at"] == 100
+    assert manager.get_last_deployed_things_target()["job_id"] == "new"
+    assert manager.get_last_deployed_gateway_source() == {
+        "job_id": "new",
+        "detected_gateway_ip": "198.51.100.10",
+        "things_format": "dsl",
+    }
 
 
 def test_deploy_rejects_retirement_outside_openhab_before_writing(tmp_path, monkeypatch):

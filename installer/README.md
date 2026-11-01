@@ -165,35 +165,37 @@ sudo systemctl status knxohui-backup-cleanup.timer
 
 ## Uninstall
 
-Use the repository's `uninstall.sh` when the safe uninstall/purge workflow from
-Issue #28 is available. Until that work lands, the manual commands below are
-destructive: remove the configuration and backups only if you intend to erase
-them permanently.
+Run the repository's uninstaller as a regular user with `sudo` available. It
+lists the affected services and paths before asking for confirmation:
 
 ```bash
-# Stop and disable services
-sudo systemctl stop knxohui.service
-sudo systemctl disable knxohui.service
-sudo systemctl stop knxohui-backup-cleanup.timer
-sudo systemctl disable knxohui-backup-cleanup.timer
-
-# Remove service files
-sudo rm /etc/systemd/system/knxohui.service
-sudo rm /etc/systemd/system/knxohui-backup-cleanup.service
-sudo rm /etc/systemd/system/knxohui-backup-cleanup.timer
-sudo systemctl daemon-reload
-
-# Remove installation
-sudo rm -rf /opt/knx_to_openhab
-sudo rm -rf /var/lib/knx_to_openhab
-sudo rm -rf /var/backups/knx_to_openhab
-
-# Remove sudoers entry
-sudo rm /etc/sudoers.d/knxohui
-
-# Remove system user
-sudo userdel knxohui
+bash /opt/knx_to_openhab/uninstall.sh
 ```
+
+The normal uninstall stops and disables the KNX to openHAB services and removes
+the application, systemd units, sudoers entry, and root-owned launch/update
+helpers. It preserves the configured directories for configuration, runtime
+data and backups, along with the `knxohui` service account and group. The
+configured paths are read from `/etc/knx_to_openhab/paths.env` as data, never
+executed as shell code. The uninstaller rejects unsafe, overlapping, broad, or
+symlinked paths. If legacy jobs or backups still sit inside the application
+tree, it stops before changing anything so the current setup migration can
+move them safely first.
+
+For a full removal, run the explicit purge mode. Type `PURGE` at its prompt:
+
+```bash
+bash /opt/knx_to_openhab/uninstall.sh --purge
+```
+
+For non-interactive automation, use `--purge --yes`. A regular non-interactive
+uninstall likewise requires `--yes`. The purge also removes the configured
+configuration, runtime and backup directories, plus the service account and
+group. It previews those extra targets separately before proceeding.
+
+The script is safe to run again after an uninstall; when the application,
+service integration and path registry are already absent, it exits without
+touching the fallback paths.
 
 ## OpenHAB output permissions
 

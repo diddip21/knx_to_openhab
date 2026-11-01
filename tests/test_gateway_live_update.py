@@ -17,6 +17,7 @@ import yaml
 from web_ui.backend import gateway_undo
 from web_ui.backend import jobs as jobs_module
 from web_ui.backend.gateway_config import (
+    read_gateway_config,
     read_gateway_state,
     restore_ets_gateway_file,
     update_gateway_file,
@@ -280,6 +281,19 @@ def test_update_dsl_router_adds_tunnel_fields_and_preserves_other_configuration(
     assert "autoReconnectPeriod=60" in updated
     assert 'localIp="10.0.0.4"' in updated
     assert 'Type switch : light "Light" [ ga="1/1/1" ]' in updated
+
+
+def test_dsl_bridge_header_skips_brackets_inside_quoted_label():
+    content = 'Bridge knx:ip:bridge "KNX [Main] {Primary}" [ type="ROUTER" ] {}\n'
+
+    assert read_gateway_config(content, "dsl") == (None, "ROUTER")
+
+    updated = update_gateway_file(content, "dsl", "192.0.2.99")
+
+    assert updated == (
+        'Bridge knx:ip:bridge "KNX [Main] {Primary}" '
+        '[ type="TUNNEL", ipAddress="192.0.2.99", portNumber=3671 ] {}\n'
+    )
 
 
 def test_update_dsl_ignores_block_commented_bridge_duplicate():

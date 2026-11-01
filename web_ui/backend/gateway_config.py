@@ -78,9 +78,26 @@ def _dsl_bridge_config(content: str) -> tuple[int, int, str]:
         raise ValueError("Multiple KNX bridge definitions found in DSL Things file")
 
     declaration = declarations[0]
-    opening = uncommented.find("[", declaration.end())
-    thing_body = uncommented.find("{", declaration.end())
-    if opening < 0 or (thing_body >= 0 and thing_body < opening):
+    opening = -1
+    quote = None
+    escaped = False
+    for index in range(declaration.end(), len(uncommented)):
+        character = uncommented[index]
+        if quote:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == quote:
+                quote = None
+        elif character in ('"', "'"):
+            quote = character
+        elif character == "[":
+            opening = index
+            break
+        elif character == "{":
+            break
+    if opening < 0:
         raise ValueError("Invalid DSL KNX bridge configuration")
 
     quote = None

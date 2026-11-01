@@ -319,10 +319,10 @@ git commit -m "fix: report restored gateway file IP after undo"
 
 **Interfaces:**
 - Expose the existing scanner as `strip_dsl_comments(content: str, source: str | Path = "DSL content") -> str`, preserving string length and line endings; retain source-specific fail-closed errors for unmanaged-file scanning.
-- `_dsl_bridge_config(content)` uses the stripped view for declaration and bracket discovery but returns offsets/slices into the original content. Property and segment discovery also uses the stripped view; edits are applied at matching source offsets and preserve comments.
+- `_dsl_bridge_config(content)` uses the stripped view for declaration and quote-aware header/config-boundary discovery but returns offsets/slices into the original content. Property and segment discovery also uses the stripped view; edits are applied at matching source offsets and preserve comments.
 
-- [x] Add regressions for Apply and Reset with one live bridge plus a block-commented duplicate (only live content changes), commented-only bridges, comment-like property examples inside the live configuration, and markers inside quoted strings.
-- [x] Reuse the existing quote-aware scanner for live DSL declaration, boundary, property, and segment discovery without changing YAML handling or stripping comments from output.
+- [x] Add regressions for Apply and Reset with one live bridge plus a block-commented duplicate (only live content changes), commented-only bridges, comment-like property examples inside the live configuration, markers inside quoted strings, and bracket/brace characters inside a quoted bridge label.
+- [x] Reuse the existing quote-aware scanner for live DSL declaration, header/config-boundary, property, and segment discovery without changing YAML handling or stripping comments from output.
 - [x] Run the focused gateway parser/live-edit tests and `tests/test_things_format_jobs.py`; run Black/isort/flake8 and commit with a conventional `fix:` message.
 
 #### Task 13: Verify, publish, and reapply the review gate

@@ -100,7 +100,11 @@ def test_exact_prerelease_can_be_selected_explicitly(tmp_path):
         _release("v1.4.0-rc.2", prerelease=True),
     )
 
-    result = _run_sourced_installer(environment, 'resolve_release_version "$1"', "1.4.0-rc.2")
+    result = _run_sourced_installer(
+        environment,
+        'resolve_release_version "$1"',
+        "1.4.0-rc.2",
+    )
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "1.4.0-rc.2"
@@ -111,7 +115,10 @@ def test_stable_build_metadata_is_not_misclassified_as_prerelease(tmp_path):
     fake_bin, environment = _source_environment(tmp_path)
     _fake_curl(fake_bin, environment, _release("v1.4.0+build-7"))
 
-    result = _run_sourced_installer(environment, 'resolve_release_version "1.4.0+build-7"')
+    result = _run_sourced_installer(
+        environment,
+        'resolve_release_version "1.4.0+build-7"',
+    )
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "1.4.0+build-7"
@@ -140,7 +147,11 @@ def test_rejects_release_metadata_that_does_not_match_the_request(tmp_path, rele
     fake_bin, environment = _source_environment(tmp_path)
     _fake_curl(fake_bin, environment, release)
 
-    result = _run_sourced_installer(environment, 'resolve_release_version "$1"', "1.4.0")
+    result = _run_sourced_installer(
+        environment,
+        'resolve_release_version "$1"',
+        "1.4.0",
+    )
 
     assert result.returncode != 0
 

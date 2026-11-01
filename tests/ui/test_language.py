@@ -426,6 +426,38 @@ def test_empty_diff_dialog_copy_refreshes_after_language_change(page: Page, flas
 
 
 @pytest.mark.ui
+def test_empty_file_preview_diff_refreshes_after_language_change(page: Page, flask_server):
+    _stub_background_apis(page)
+    page.route(
+        "**/api/file/preview**",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {"path": "openhab/things/empty.things", "content": "Thing example {}", "size": 16}
+            ),
+        ),
+    )
+    page.route(
+        "**/api/job/preview-empty-diff/file/diff**",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body="[]",
+        ),
+    )
+    page.goto(flask_server, wait_until="domcontentloaded")
+    page.evaluate("currentJobId = 'preview-empty-diff'")
+    page.evaluate("previewFile('openhab/things/empty.things')")
+    expect(page.locator("#filePreviewDialog[open]")).to_be_visible()
+    page.locator("#viewModeDiff").click()
+    expect(page.locator("#diffContent")).to_contain_text("(leerer Diff)")
+
+    page.evaluate("window.I18N.setLanguage('en')")
+    expect(page.locator("#diffContent")).to_contain_text("(empty diff)")
+
+
+@pytest.mark.ui
 def test_open_update_dialog_dates_follow_selected_language(page: Page, flask_server):
     timestamp = "2024-01-02T12:00:00Z"
     update_data = {
@@ -621,6 +653,89 @@ def test_package_operation_errors_follow_selected_language(
 
 
 @pytest.mark.ui
+def test_package_action_error_overrides_non_idle_task_after_locale_change(page: Page, flask_server):
+    _stub_background_apis(
+        page,
+        package_operation_error="No APT update is available for this package.",
+        package_task={"action": "refresh", "state": "running", "message": "Starting APT…"},
+    )
+    page.goto(flask_server, wait_until="domcontentloaded")
+    page.wait_for_function("currentPackageTask && currentPackageTask.state === 'running'")
+    page.evaluate("startPackageOperation('openhab')")
+    status = page.locator("#packageOperationStatus")
+    expect(status).to_have_text("Für dieses Paket ist kein APT-Update verfügbar.")
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(status).to_have_text("No APT update is available for this package.")
+    with page.expect_response(
+        lambda response: response.url.endswith("/api/service/updates/status")
+    ):
+        page.evaluate("startPackageOperationPolling()")
+    expect(status).to_have_text("No APT update is available for this package.")
+
+
+@pytest.mark.ui
+def test_package_action_error_survives_failed_status_poll(page: Page, flask_server):
+    error = "No APT update is available for this package."
+    _stub_background_apis(page, package_operation_error=error)
+    page.route(
+        "**/api/service/updates/status",
+        lambda route: route.fulfill(
+            status=503,
+            content_type="application/json",
+            body=json.dumps({"error": "temporary status failure"}),
+        ),
+    )
+    page.goto(flask_server, wait_until="domcontentloaded")
+    page.evaluate("startPackageOperation('openhab')")
+
+    status = page.locator("#packageOperationStatus")
+    expect(status).to_have_text("Für dieses Paket ist kein APT-Update verfügbar.")
+    with page.expect_response(
+        lambda response: response.url.endswith("/api/service/updates/status")
+    ):
+        page.evaluate("startPackageOperationPolling()")
+    expect(status).to_have_text("Für dieses Paket ist kein APT-Update verfügbar.")
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(status).to_have_text(error)
+
+
+@pytest.mark.ui
+def test_live_log_timestamps_follow_selected_language(page: Page, flask_server):
+    timestamp = 1704196800000
+    event = {
+        "type": "info",
+        "level": "info",
+        "message": "live log locale marker",
+        "timestamp": timestamp,
+    }
+    _stub_background_apis(page)
+    page.route(
+        "**/api/job/log-locale/events",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="text/event-stream",
+            body=f"data: {json.dumps(event)}\n\n",
+        ),
+    )
+    page.goto(flask_server, wait_until="domcontentloaded")
+    page.evaluate("startEvents('log-locale')")
+
+    expected = page.evaluate(
+        "timestamp => ({de: new Date(timestamp).toLocaleTimeString('de-DE'), "
+        "en: new Date(timestamp).toLocaleTimeString('en-US')})",
+        timestamp,
+    )
+    assert expected["de"] != expected["en"]
+    log = page.locator("#log")
+    expect(log).to_contain_text(f"[{expected['de']}] [INFO] live log locale marker")
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(log).to_contain_text(f"[{expected['en']}] [INFO] live log locale marker")
+
+
+@pytest.mark.ui
 def test_locally_generated_structure_errors_follow_selected_language(page: Page, flask_server):
     _stub_background_apis(page)
     page.route(
@@ -705,6 +820,25 @@ def test_settings_feedback_localizes_without_resetting_edited_values_or_file(
     expect(page.locator("#configStatus")).to_have_text("✓ Konfiguration gespeichert")
     expect(page.locator("#conf-yaml-path")).to_have_value("openhab/yaml/edited.yaml")
     expect(page.locator("#fileInput")).to_have_value(re.compile("mein-projekt.knxproj"))
+
+
+@pytest.mark.ui
+def test_failed_config_save_follows_selected_language(page: Page, flask_server):
+    _stub_background_apis(page, config_save_error="temporary save failure")
+    page.goto(flask_server, wait_until="domcontentloaded")
+    expect(page.locator("#configStatus")).to_have_text("✓ Konfiguration geladen")
+    page.locator("#settings-section .card-header").click()
+
+    with page.expect_response(
+        lambda response: response.url.endswith("/api/config") and response.request.method == "POST"
+    ) as save_response:
+        page.locator("#settings-content .settings-actions .btn-primary").click()
+    assert save_response.value.status == 500
+    status = page.locator("#configStatus")
+    expect(status).to_have_text("Konfiguration konnte nicht gespeichert werden")
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(status).to_have_text("Failed to save configuration")
 
 
 @pytest.mark.ui

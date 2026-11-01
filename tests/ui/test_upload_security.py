@@ -124,16 +124,16 @@ class TestUploadSecurityUI:
         # Upload valid file
         file_input.set_input_files(test_file)
 
-        # Submit
-        page.locator("button[type='submit']").click()
+        # The upload endpoint accepts the project before asynchronous job processing starts.
+        with page.expect_response(
+            lambda response: response.url.endswith("/api/upload")
+            and response.request.method == "POST"
+        ) as upload_response:
+            page.locator("button[type='submit']").click()
 
-        # Wait for job creation
-        status_div = page.locator("#status")
-        expect(status_div).to_be_visible()
-        expect(status_div).to_contain_text(
-            re.compile(r"Processing started|File uploaded, job started"),
-            timeout=20000,
-        )
+        response = upload_response.value
+        assert response.status == 201
+        assert response.json().get("id")
 
         # Take screenshot of successful upload
         page.screenshot(

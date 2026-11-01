@@ -87,9 +87,16 @@ function localizedJobStatus(status) {
   return window.I18N.catalogs[window.I18N.getLanguage()][key] ? window.I18N.t(key) : status
 }
 
+function selectedDateLocale() {
+  return window.I18N.getLanguage() === 'de' ? 'de-DE' : 'en-US'
+}
+
 function localizedDateTime(value) {
-  const locale = window.I18N.getLanguage() === 'de' ? 'de-DE' : 'en-US'
-  return new Date(value).toLocaleString(locale)
+  return new Date(value).toLocaleString(selectedDateLocale())
+}
+
+function localizedTime(value) {
+  return new Date(value).toLocaleTimeString(selectedDateLocale())
 }
 
 function setLocalizedMessage(element, key, params = {}, className = null) {
@@ -285,7 +292,7 @@ function showJobDetail(jobId) {
             return { level: 'info', text: entry }
           } else if (typeof entry === 'object' && entry.text) {
             // New format: {level, text}
-            return { level: entry.level || 'info', text: entry.text }
+            return { level: entry.level || 'info', text: entry.text, timestamp: entry.timestamp }
           }
           return { level: 'info', text: String(entry) }
         })
@@ -841,13 +848,11 @@ function renderPackageOperationError(statusEl) {
 
 function renderPackageOperationStatus(task) {
   const statusEl = document.getElementById('packageOperationStatus')
-  if (!statusEl || !task || task.state === 'idle') {
-    if (statusEl) {
-      if (!renderPackageOperationError(statusEl)) {
-        clearLocalizedMessage(statusEl)
-        statusEl.textContent = ''
-      }
-    }
+  if (!statusEl) return
+  if (renderPackageOperationError(statusEl)) return
+  if (!task || task.state === 'idle') {
+    clearLocalizedMessage(statusEl)
+    statusEl.textContent = ''
     return
   }
   setLocalizedMessage(statusEl, 'service.packageStatus', {
@@ -880,8 +885,6 @@ function startPackageOperationPolling() {
       if (!response.ok) throw new Error('Status unavailable')
       const task = await response.json()
       currentPackageTask = task
-      currentPackageOperationError = null
-      currentPackageOperationErrorHasPrefix = false
       renderPackageOperationStatus(task)
       if (task.state === 'running') {
         if (packagePollCompletionStage > 0) {
@@ -899,7 +902,9 @@ function startPackageOperationPolling() {
         document.getElementById('refreshPackagesBtn').disabled = false
       }
     } catch (e) {
-      setLocalizedMessage(statusEl, 'service.statusUnavailable', { error: e.message })
+      if (!renderPackageOperationError(statusEl)) {
+        setLocalizedMessage(statusEl, 'service.statusUnavailable', { error: e.message })
+      }
     } finally {
       packagePollInFlight = false
       if (continuePolling || packagePollRequested) packagePollTimeout = setTimeout(poll, 2000)
@@ -995,6 +1000,9 @@ async function refreshServices() {
 
 async function startPackageOperation(action, version = null) {
   const statusEl = document.getElementById('packageOperationStatus')
+  currentPackageOperationError = null
+  currentPackageOperationErrorHasPrefix = false
+  renderPackageOperationStatus(currentPackageTask)
   try {
     const response = await apiFetch(`/api/service/updates/${action}`, {
       method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/json' },
@@ -1213,7 +1221,8 @@ function renderLog() {
   // Render with color coding based on log level
   const html = filtered.map(entry => {
     const levelClass = `log-level-${entry.level}`
-    return `<div class="log-entry ${levelClass}">${escapeHtml(window.I18N.translateMessage(entry.text))}</div>`
+    const timestamp = entry.timestamp != null ? `[${localizedTime(entry.timestamp)}] ` : ''
+    return `<div class="log-entry ${levelClass}">${escapeHtml(timestamp + window.I18N.translateMessage(entry.text))}</div>`
   }).join('')
 
   clearLocalizedMessage(logEl)
@@ -1237,9 +1246,12 @@ document.addEventListener('knx-language-change', () => {
   updateGatewayFormatControls()
   updateGatewayLiveActionControls()
   const filePreviewDialog = document.getElementById('filePreviewDialog')
-  if (filePreviewDialog?.open && currentJobDiff
-      && document.getElementById('diffContent').style.display !== 'none') {
-    renderJobDiff(currentJobDiff.jobId, currentJobDiff.diffs)
+  if (filePreviewDialog?.open && document.getElementById('diffContent').style.display !== 'none') {
+    if (currentJobDiff) {
+      renderJobDiff(currentJobDiff.jobId, currentJobDiff.diffs)
+    } else if (currentPreviewData) {
+      switchViewMode('diff')
+    }
   }
   const updateDialog = document.getElementById('updateDialog')
   if (updateDialog?.open && latestVersionData) renderUpdateDialog(latestVersionData)
@@ -1999,7 +2011,10 @@ async function saveConfig(reprocess = false) {
       body: JSON.stringify(newConfig)
     })
 
-    if (!res.ok) throw new Error('Failed to save config')
+    if (!res.ok) {
+      setLocalizedMessage(configStatus, 'config.saveFailed', {}, 'status-message error')
+      return
+    }
 
     currentConfig = newConfig
     await loadGatewayState()
@@ -2364,15 +2379,15 @@ function startEvents(jobId) {
               try {
                 const data = JSON.parse(line.substring(6)); // Remove 'data: ' prefix
                 const level = data.level || 'info';
-                const timestamp = new Date().toLocaleTimeString();
+                const timestamp = data.timestamp ?? Date.now()
                 let text = '';
 
                 if (data.type === 'stats') {
-                  text = `[${timestamp}] [STATS] ${data.message}`;
+                  text = `[STATS] ${data.message}`;
                 } else if (data.type === 'backup') {
-                  text = `[${timestamp}] [BACKUP] ${data.message}`;
+                  text = `[BACKUP] ${data.message}`;
                 } else if (data.type === 'status') {
-                  text = `[${timestamp}] [STATUS] ${data.message}`;
+                  text = `[STATUS] ${data.message}`;
                   // If status is completed or failed, we can update the UI immediately
                   if (data.message.includes('completed') || data.message.includes('failed')) {
                     refreshJobs();
@@ -2403,13 +2418,13 @@ function startEvents(jobId) {
                       }).catch(err => console.error('Error fetching final job data:', err));
                   }
                 } else if (data.type === 'error') {
-                  text = `[${timestamp}] [ERROR] ${data.message}`;
+                  text = `[ERROR] ${data.message}`;
                 } else {
                   const levelStr = level.toUpperCase();
-                  text = `[${timestamp}] [${levelStr}] ${data.message}`;
+                  text = `[${levelStr}] ${data.message}`;
                 }
 
-                allLogEntries.push({ level, text });
+                allLogEntries.push({ level, text, timestamp });
                 renderLog();
               } catch (e) {
                 console.error('Error parsing event data:', e);

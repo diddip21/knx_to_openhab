@@ -302,6 +302,7 @@ def test_purge_refuses_a_regular_file_as_a_managed_directory(tmp_path):
     assert invalid_target.read_text(encoding="utf-8") == "keep this file"
     assert not sudo_log.exists()
 
+
 def test_failed_service_stop_prevents_file_removal(tmp_path):
     environment, app, _, _, _, _, sudo_log = create_fixture(tmp_path)
     environment["FAKE_ACTIVE"] = "1"

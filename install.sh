@@ -576,7 +576,7 @@ main() {
 }
 
 # Parse options before checks that can access the system.
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+if [[ "${BASH_SOURCE[0]}" == "$0" || -z "${BASH_SOURCE[0]}" ]]; then
     parse_install_mode "$@"
     main
 fi

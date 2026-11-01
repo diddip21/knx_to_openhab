@@ -130,7 +130,7 @@ select_install_mode() {
         if [[ -z "$INSTALL_MODE" ]]; then
             local choice
             local tty_fd
-            if ! exec {tty_fd}<>/dev/tty 2>/dev/null; then
+            if ! { exec {tty_fd}<>/dev/tty; } 2>/dev/null; then
                 log_error "An installation already exists at $INSTALL_DIR."
                 log_error "Choose --update, --repair or --cancel. No changes were made."
                 exit 2
@@ -314,6 +314,7 @@ clone_repository() {
 
     log_success "Repository cloned successfully"
 }
+
 run_setup_script() {
     log_info "Running setup script..."
     

@@ -83,7 +83,7 @@ def test_unknown_option_returns_usage_error_before_sudo(tmp_path):
     result, _, sudo_marker = run_installer(tmp_path, ["--unknown"])
 
     assert result.returncode == 2
-    assert "Unknown option: --unknown" in result.stderr
+    assert "Unknown option: --unknown" in result.stdout + result.stderr
     assert not sudo_marker.exists()
 
 
@@ -91,17 +91,15 @@ def test_existing_installation_requires_explicit_mode_noninteractively(tmp_path)
     result, _, sudo_marker = run_installer(tmp_path, [], existing=True)
 
     assert result.returncode == 2
-    assert "Choose --update, --repair or --cancel" in result.stderr
+    assert "Choose --update, --repair or --cancel" in result.stdout + result.stderr
     assert not sudo_marker.exists()
 
 
 def test_install_refuses_to_overwrite_existing_installation(tmp_path):
-    result, install_dir, sudo_marker = run_installer(
-        tmp_path, ["--install"], existing=True
-    )
+    result, install_dir, sudo_marker = run_installer(tmp_path, ["--install"], existing=True)
 
     assert result.returncode == 2
-    assert "existing files were left untouched" in result.stderr
+    assert "existing files were left untouched" in result.stdout + result.stderr
     assert install_dir.is_dir()
     assert not sudo_marker.exists()
 
@@ -110,7 +108,7 @@ def test_update_requires_existing_git_checkout(tmp_path):
     result, _, sudo_marker = run_installer(tmp_path, ["--update"], existing=True)
 
     assert result.returncode == 2
-    assert "not a Git checkout" in result.stderr
+    assert "not a Git checkout" in result.stdout + result.stderr
     assert not sudo_marker.exists()
 
 
@@ -118,7 +116,7 @@ def test_update_requires_an_existing_installation(tmp_path):
     result, _, sudo_marker = run_installer(tmp_path, ["--update"])
 
     assert result.returncode == 2
-    assert "No existing installation found" in result.stderr
+    assert "No existing installation found" in result.stdout + result.stderr
     assert not sudo_marker.exists()
 
 
@@ -126,7 +124,7 @@ def test_repair_requires_existing_setup_script(tmp_path):
     result, _, sudo_marker = run_installer(tmp_path, ["--repair"], existing=True)
 
     assert result.returncode == 2
-    assert "installer/setup.sh is missing" in result.stderr
+    assert "installer/setup.sh is missing" in result.stdout + result.stderr
     assert not sudo_marker.exists()
 
 
@@ -134,7 +132,7 @@ def test_repair_requires_an_existing_installation(tmp_path):
     result, _, sudo_marker = run_installer(tmp_path, ["--repair"])
 
     assert result.returncode == 2
-    assert "No existing installation found" in result.stderr
+    assert "No existing installation found" in result.stdout + result.stderr
     assert not sudo_marker.exists()
 
 

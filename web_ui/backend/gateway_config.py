@@ -174,14 +174,17 @@ def _remove_dsl_property(configuration: str, key: str) -> str:
     segment_index = next(
         index for index, (start, end) in enumerate(segments) if start <= match.start() < end
     )
-    start, end = segments[segment_index]
-    if len(segments) == 1:
-        return configuration[:start] + configuration[end:]
-    if segment_index < len(segments) - 1:
-        end = segments[segment_index + 1][0]
-    else:
-        start = max(0, start - 1)
-    return configuration[:start] + configuration[end:]
+    removed_ranges = [match.span()]
+    if len(segments) > 1:
+        comma = (
+            segments[segment_index][1]
+            if segment_index < len(segments) - 1
+            else segments[segment_index - 1][1]
+        )
+        removed_ranges.append((comma, comma + 1))
+    for start, end in sorted(removed_ranges, reverse=True):
+        configuration = configuration[:start] + configuration[end:]
+    return configuration
 
 
 def _quoted(value: str) -> str:

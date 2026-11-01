@@ -350,6 +350,23 @@ def test_reset_dsl_removes_active_properties_but_preserves_comment_examples():
     assert "portNumber=" not in active_config
 
 
+def test_reset_dsl_preserves_inline_comments_when_removing_properties():
+    comment = "/* Gateway address documented during commissioning */"
+    content = (
+        'Bridge knx:ip:bridge [ type="TUNNEL", ipAddress="192.0.2.45" '
+        f"{comment}, portNumber=3672 ] {{}}\n"
+    )
+
+    restored = restore_ets_gateway_file(content, "dsl", None)
+    active_config = strip_dsl_comments(restored).split("[", 1)[1].split("]", 1)[0]
+
+    assert comment in restored
+    assert 'type="ROUTER"' in active_config
+    assert "autoReconnectPeriod=60" in active_config
+    assert "ipAddress=" not in active_config
+    assert "portNumber=" not in active_config
+
+
 @pytest.mark.parametrize("mutation", ["apply", "reset"])
 def test_live_dsl_mutation_rejects_a_comment_only_bridge(mutation):
     commented_bridge = "/* Example only:\n" 'Bridge knx:ip:bridge [ type="ROUTER" ] {}\n' "*/\n"

@@ -93,3 +93,60 @@ preflight rejection. Capture the canonicalized gateway settings view at
 Run focused tests and project checks, push without force, reply to the new
 review threads, then merge only if the new GitHub review has no unresolved
 findings and required CI checks pass.
+
+## Follow-up findings on `023ad49`
+
+### Intent and goals
+
+Close the four new Codex findings without changing API shapes or adding
+dependencies. Keep the displayed gateway target and enabled controls aligned
+with persisted backend state after job deletion and config saves, and prevent
+wall-clock changes from selecting a retired deployment.
+
+### Active deployment approach
+
+Two approaches were considered:
+
+1. **Keep one `deployed` flag active (selected):** On a successful deploy,
+   persist `deployed=false` for other jobs and `deployed=true` for the new
+   active job. This matches rollback/deletion, which already invalidate these
+   flags, and avoids adding a second identity system. Older staged jobs become
+   deployable again after they cease to be active.
+2. **Persist a separate active deployment ID or monotonic sequence:** Preserve
+   the current historical `deployed` markers and UI eligibility behavior, but
+   introduce additional persisted identity/ordering state and compatibility
+   handling.
+
+The user selected approach 1. `deployed_at` remains informational/legacy
+metadata; newly successful deployments must not depend on its wall-clock order
+to identify the active job. Existing persisted records may have multiple
+`deployed=true` flags; their current fallback selection remains compatible
+until the next successful deploy normalizes the flags.
+
+For deployment persistence failure, restore every job's prior `deployed` flag
+and the redeployed job's prior `deployed_at` and `deployment_id`, then retain
+the existing managed-file backup restoration behavior.
+
+### Other selected behavior
+
+- After a successful active-job deletion, await a gateway-state refresh so an
+  invalidated target clears the Devices pane and disables live actions.
+- After a successful config save, await a gateway-state refresh so stale Undo
+  availability is removed when the saved gateway override makes its snapshot
+  stale. A failed save must not be presented as a successful refresh.
+- Reuse the existing quote-aware, length-preserving DSL comment scanner when
+  locating managed-file bridge declarations, brackets, active properties, and
+  comma-separated property segments. Apply edits at the matching offsets in the
+  original content so commented examples and unrelated comments remain intact.
+  Ignore commented declarations without treating a commented-only bridge as
+  live configuration.
+
+### Scope and verification
+
+Add focused regression tests for each finding: a backward-clock redeploy and
+failed metadata persistence, delete/save UI state refresh, and commented DSL
+bridge handling for live gateway edits. Keep current lock ordering and
+deployment file safety; do not change generated formats, query OpenHAB runtime,
+or add dependencies. Re-run focused backend/UI tests, lint and full required CI;
+request another Codex review and merge only with no unresolved findings and
+green required checks.

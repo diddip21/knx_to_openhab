@@ -4,7 +4,7 @@
 
 **Goal:** Resolve every valid finding on PR #55's current Codex review and merge only after a clean review and passing required CI.
 
-**Architecture:** Keep the existing Flask/Python backend and vanilla-JS UI. Make rollback fail closed when backup metadata cannot identify the restored deployment, share the existing pure gateway-file parser for Undo responses, and add a small quote-aware DSL comment scanner without dependencies.
+**Architecture:** Keep the existing Flask/Python backend and vanilla-JS UI. Make rollback fail closed when backup metadata cannot identify the restored deployment, maintain exactly one active deployed-job flag, share the existing pure gateway-file parser for Undo responses, and reuse a quote-aware DSL comment scanner without dependencies.
 
 **Tech Stack:** Python 3.12+, Flask, vanilla JavaScript, pytest, Playwright.
 
@@ -15,6 +15,7 @@
 - Do not add dependencies.
 - Do not query OpenHAB runtime or network state.
 - Preserve managed-file write safety and use lock order `operation_lock` then `gateway_state_lock` for deployment-state changes.
+- After a successful deploy, persist only the newly deployed job with `deployed=true`; if metadata persistence fails, restore all prior deployment flags and the current job's identity fields.
 - Do not infer a deployment or ETS identity from arbitrary backup file contents.
 - Do not force-push; merge only after the current PR head has no unresolved review findings and required CI checks pass.
 
@@ -25,6 +26,11 @@
 - **Unmanaged DSL with a bridge inside `/* ... */` comments:** do not block migration for commented examples, but still find active declarations — Task 4 covers both.
 - **Undo with an empty prior saved override and an IP in the prior file:** return the restored file IP while keeping the override empty — Task 5 asserts both response fields.
 - **A live managed-file edit after backup followed by a rejected format preflight:** the rejection must not restore stale backup contents — Task 2 simulates this ordering.
+- **System clock moves backwards before a second deploy:** the newly written target remains active even if its `deployed_at` is smaller — Task 10 pins the active flag behavior.
+- **Metadata persistence fails after a replacement deploy:** restore every prior active flag and the redeployed job's previous timestamp/identity — Task 10 extends failure coverage.
+- **Delete or save invalidates gateway Undo/target state:** refresh the Devices view and action controls after the successful mutation — Task 11 covers both transitions.
+- **A DSL bridge exists only inside a block comment, or beside a live bridge:** edits reject the commented-only case and modify only the live bridge — Task 12 covers both.
+- **Comment delimiters occur inside quoted DSL strings:** preserve and recognize active declarations — Task 12 exercises the shared scanner's quote handling.
 
 ---
 
@@ -272,3 +278,57 @@ git commit -m "fix: report restored gateway file IP after undo"
 - [x] Await `loadGatewayState()` after each successful transition so stale controls/paths are not shown. Do not treat failed operations as successful transitions.
 - [x] Capture and inspect `gateway-state-after-rollback.png` with safe sample addresses and no credentials/personal data.
 - [x] Run focused UI tests and relevant UI suite; commit with a conventional `fix:` message.
+
+### Follow-up findings on `023ad49`
+
+#### Task 10: Keep exactly one deployed job active
+
+**Files:**
+- Modify: `web_ui/backend/jobs.py:1493-1626`
+- Test: `tests/test_web_ui_job_stats.py`
+
+**Interfaces:**
+- Keep the existing `JobManager.deploy(job_id)` and target/source getter APIs.
+- `deployed` identifies the current active deployment. A successful deploy clears that flag from every other job before persisting the new active job.
+
+- [x] Add `test_successful_deploy_selects_new_job_when_clock_moves_backward`: start with an older deployed job, mock `time.time()` to a smaller timestamp, deploy a staged new job, and assert only the new job is deployed and both gateway target/source getters resolve to it.
+- [x] Extend the failed same-job redeploy regression to include another previously deployed job; fail only the final metadata save and assert all prior `deployed` flags, timestamp/ID fields, persisted target/source and Undo identity are restored while file bytes roll back.
+- [x] Implement a snapshot/restore of every job's prior `deployed` flag. On successful file write, clear other flags and mark the current job active in the same metadata save; on exception, restore all flags and the current job's prior `deployed_at` and `deployment_id` before restoring live files.
+- [x] Run the focused success and persistence-failure tests, then the affected backend test modules; run Black/isort/flake8 and commit with a conventional `fix:` message.
+
+#### Task 11: Refresh gateway UI after delete and config save
+
+**Files:**
+- Modify: `web_ui/static/app.js:275-294,1648-1764`
+- Test: `tests/ui/test_gateway_live_update.py`
+- Create: `docs/screenshots/gateway-state-after-job-delete.png`
+- Create: `docs/screenshots/gateway-undo-disabled-after-config-save.png`
+
+- [x] Add browser regressions proving successful deletion refreshes an invalidated target and disables Apply/Reset/Undo, and successful config save refreshes `undo_available` after changing the saved override.
+- [x] After successful deletion, await both the jobs refresh and `loadGatewayState()`; after successful config persistence and assigning `currentConfig`, await `loadGatewayState()`. Do not refresh as if a failed save/delete succeeded.
+- [x] Capture and inspect safe sample-state screenshots for both transitions with no credentials or personal data.
+- [x] Run both focused browser tests and the gateway UI module; run `node --check web_ui/static/app.js` and commit with a conventional `fix:` message.
+
+#### Task 12: Ignore commented bridge examples in live DSL edits
+
+**Files:**
+- Modify: `web_ui/backend/things_format.py:12-75`
+- Modify: `web_ui/backend/gateway_config.py:14-104`
+- Test: `tests/test_gateway_live_update.py`
+- Test: `tests/test_things_format_jobs.py`
+
+**Interfaces:**
+- Expose the existing scanner as `strip_dsl_comments(content: str, source: str | Path = "DSL content") -> str`, preserving string length and line endings; retain source-specific fail-closed errors for unmanaged-file scanning.
+- `_dsl_bridge_config(content)` uses the stripped view for declaration and bracket discovery but returns offsets/slices into the original content. Property and segment discovery also uses the stripped view; edits are applied at matching source offsets and preserve comments.
+
+- [x] Add regressions for Apply and Reset with one live bridge plus a block-commented duplicate (only live content changes), commented-only bridges, comment-like property examples inside the live configuration, and markers inside quoted strings.
+- [x] Reuse the existing quote-aware scanner for live DSL declaration, boundary, property, and segment discovery without changing YAML handling or stripping comments from output.
+- [x] Run the focused gateway parser/live-edit tests and `tests/test_things_format_jobs.py`; run Black/isort/flake8 and commit with a conventional `fix:` message.
+
+#### Task 13: Verify, publish, and reapply the review gate
+
+- [x] Run focused regressions for Tasks 10–12, the relevant backend/UI modules, the full local pytest suite, formatter/lint checks, `node --check`, and `git diff --check`; document known Windows-only failures against the recorded baseline.
+- [x] Run a fresh read-only whole-range review and address any Critical or Important finding.
+- [ ] Commit the approved design/plan documentation, fetch the remote branch, verify it is an ancestor, and push normally without force.
+- [ ] Reply to and resolve only the four Codex threads fixed by Tasks 10–12; link both screenshots in the PR with descriptions.
+- [ ] Request a fresh `@codex review` on the pushed head. Merge only after that review has no unresolved findings and all required CI checks pass.

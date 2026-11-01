@@ -71,6 +71,141 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+usage() {
+    cat <<'USAGE'
+Usage: bash install.sh [--install | --update | --repair | --cancel]
+
+Modes:
+  --install  Install into a new directory (the default on first install)
+  --update   Pull the latest source into an existing Git checkout, then run setup
+  --repair   Run setup for an existing installation without pulling source
+  --cancel   Exit without changing the installation
+  --help     Show this help
+USAGE
+}
+
+INSTALL_MODE=""
+
+parse_install_mode() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --install|--update|--repair|--cancel)
+                if [[ -n "$INSTALL_MODE" ]]; then
+                    log_error "Choose exactly one installer mode."
+                    usage >&2
+                    exit 2
+                fi
+                INSTALL_MODE="${1#--}"
+                ;;
+            --help|-h)
+                usage
+                exit 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                usage >&2
+                exit 2
+                ;;
+        esac
+        shift
+    done
+}
+
+select_install_mode() {
+    if [[ "$INSTALL_MODE" == "cancel" ]]; then
+        log_info "Installation cancelled; no system or installation changes were made."
+        exit 0
+    fi
+
+    if [[ -L "$INSTALL_DIR" ]]; then
+        log_error "Installation path is a symbolic link: $INSTALL_DIR"
+        exit 2
+    fi
+    if [[ -e "$INSTALL_DIR" && ! -d "$INSTALL_DIR" ]]; then
+        log_error "Installation path exists but is not a directory: $INSTALL_DIR"
+        exit 2
+    fi
+
+    if [[ -d "$INSTALL_DIR" ]]; then
+        if [[ -z "$INSTALL_MODE" ]]; then
+            local choice
+            local tty_fd
+            if ! { exec {tty_fd}<>/dev/tty; } 2>/dev/null; then
+                log_error "An installation already exists at $INSTALL_DIR."
+                log_error "Choose --update, --repair or --cancel. No changes were made."
+                exit 2
+            fi
+
+            echo "" >&2
+            echo "An installation already exists at $INSTALL_DIR." >&2
+            echo "  [u] Update source and run setup" >&2
+            echo "  [r] Repair by running setup without updating source" >&2
+            echo "  [c] Cancel (default)" >&2
+            if ! read -r -n 1 -u "$tty_fd" -p "Select u/r/c: " choice; then
+                exec {tty_fd}>&-
+                echo "" >&2
+                log_error "Could not read installer choice. No changes were made."
+                exit 2
+            fi
+            exec {tty_fd}>&-
+            echo "" >&2
+            case "$choice" in
+                u|U) INSTALL_MODE="update" ;;
+                r|R) INSTALL_MODE="repair" ;;
+                ""|c|C) INSTALL_MODE="cancel" ;;
+                *)
+                    log_error "Invalid installer choice. No changes were made."
+                    exit 2
+                    ;;
+            esac
+            if [[ "$INSTALL_MODE" == "cancel" ]]; then
+                log_info "Installation cancelled; no system or installation changes were made."
+                exit 0
+            fi
+        fi
+
+        case "$INSTALL_MODE" in
+            install)
+                log_error "An installation already exists at $INSTALL_DIR."
+                log_error "Use --update, --repair or --cancel; existing files were left untouched."
+                exit 2
+                ;;
+            update)
+                if [[ ! -e "$INSTALL_DIR/.git" ]]; then
+                    log_error "Cannot update $INSTALL_DIR: it is not a Git checkout."
+                    exit 2
+                fi
+                ;;
+            repair)
+                if [[ ! -f "$INSTALL_DIR/installer/setup.sh" ]]; then
+                    log_error "Cannot repair $INSTALL_DIR: installer/setup.sh is missing."
+                    exit 2
+                fi
+                ;;
+            *)
+                log_error "Invalid installer mode: $INSTALL_MODE"
+                exit 2
+                ;;
+        esac
+    else
+        case "$INSTALL_MODE" in
+            "")
+                INSTALL_MODE="install"
+                ;;
+            install)
+                ;;
+            update|repair)
+                log_error "No existing installation found at $INSTALL_DIR."
+                exit 2
+                ;;
+            *)
+                log_error "Invalid installer mode: $INSTALL_MODE"
+                exit 2
+                ;;
+        esac
+    fi
+}
+
 check_root() {
     if [[ $EUID -eq 0 ]]; then
         if [[ "${ALLOW_ROOT:-0}" != "1" ]]; then
@@ -144,21 +279,7 @@ install_dependencies() {
 }
 
 clone_repository() {
-    log_info "Cloning repository from $REPO_URL..."
-    
-    if [[ -d "$INSTALL_DIR" ]]; then
-        log_warning "Installation directory $INSTALL_DIR already exists"
-        echo -ne "Update or repair it in place? (Y/n) " >&2
-        read -n 1 -r < /dev/tty
-        echo
-        if [[ $REPLY =~ ^[Nn]$ ]]; then
-            log_info "Leaving the existing installation unchanged"
-            exit 0
-        fi
-        if [[ ! -d "$INSTALL_DIR/.git" ]]; then
-            log_error "Existing installation is not a Git checkout; it was left untouched"
-            exit 1
-        fi
+    if [[ "$INSTALL_MODE" == "update" ]]; then
         log_info "Updating existing installation as the service user..."
         if id -u knxohui >/dev/null 2>&1; then
             sudo -u knxohui git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH" || {
@@ -174,7 +295,13 @@ clone_repository() {
         log_success "Repository updated"
         return 0
     fi
-    
+
+    if [[ "$INSTALL_MODE" == "repair" ]]; then
+        log_info "Repairing the existing installation without pulling source..."
+        return 0
+    fi
+
+    log_info "Cloning repository from $REPO_URL..."
     TEMP_DIR=$(mktemp -d)
     if ! git clone --branch "$BRANCH" "$REPO_URL" "$TEMP_DIR/repository"; then
         rm -rf "$TEMP_DIR"
@@ -184,7 +311,7 @@ clone_repository() {
     sudo install -d -m 0755 "$INSTALL_DIR"
     sudo rsync -a "$TEMP_DIR/repository/" "$INSTALL_DIR/"
     rm -rf "$TEMP_DIR"
-    
+
     log_success "Repository cloned successfully"
 }
 
@@ -254,6 +381,8 @@ display_completion() {
 
 # Main installation flow
 main() {
+    select_install_mode
+
     echo ""
     echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║                                                            ║${NC}"
@@ -261,7 +390,8 @@ main() {
     echo -e "${BLUE}║                                                            ║${NC}"
     echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    
+
+    log_info "Selected installer mode: $INSTALL_MODE"
     check_root
     check_os
     check_sudo
@@ -271,5 +401,8 @@ main() {
     display_completion
 }
 
+# Parse options before checks that can access the system.
+parse_install_mode "$@"
+
 # Run main function
-main "$@"
+main

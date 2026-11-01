@@ -102,6 +102,26 @@ it does not import or execute code from the application tree. The installer pres
 an existing `web_ui/backend/config.json` when copying new code and records the
 resolved OpenHAB root in protected configuration for that helper.
 
+### Top-level installer modes
+
+The root `install.sh` now distinguishes first installation from actions on an
+existing installation:
+
+| Command | Behavior |
+|---------|----------|
+| `bash install.sh --install` | Install only when the target directory does not exist |
+| `bash install.sh --update` | Pull the latest source into an existing Git checkout, then run setup |
+| `bash install.sh --repair` | Run setup for an existing installation without pulling source |
+| `bash install.sh --cancel` | Exit before requesting sudo or installing packages |
+
+On a first install, running without a mode keeps `--install` as the default.
+For an existing installation, an interactive run asks for update, repair, or
+cancel; a non-interactive run stops with an explicit instruction instead of
+changing the system. An existing directory is never overwritten by
+`--install`. These choices make the entry point safer; they do not yet make
+every operation in `setup.sh` idempotent or add a reinstall flow (Issue #25
+remains open for those items).
+
 ### Existing installations
 
 The old policy allowed the service user to run arbitrary Git commands as root.

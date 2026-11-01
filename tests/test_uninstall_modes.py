@@ -288,7 +288,6 @@ def test_overlapping_or_symlinked_paths_are_rejected_before_sudo(tmp_path):
     assert not sudo_log.exists()
 
 
-
 def test_purge_refuses_a_regular_file_as_a_managed_directory(tmp_path):
     environment, _, _, data, _, paths_file, sudo_log = create_fixture(tmp_path)
     invalid_target = tmp_path / "test-root" / "runtime-file"

@@ -246,7 +246,10 @@ def test_paths_file_is_data_and_not_shell_executed(tmp_path):
 @pytest.mark.parametrize("unsafe_path", ["/", "/var/lib", "/opt/../etc"])
 def test_broad_or_traversal_path_is_rejected_before_sudo(tmp_path, unsafe_path):
     environment, _, _, _, _, paths_file, sudo_log = create_fixture(tmp_path)
-    contents = paths_file.read_text(encoding="utf-8").replace(str(app), str(link), 1)
+    contents = paths_file.read_text(encoding="utf-8").replace(
+        'KNXOH_DATA_DIR="' + str(tmp_path / "test-root" / "runtime") + '"',
+        f'KNXOH_DATA_DIR="{unsafe_path}"',
+    )
     paths_file.write_text(contents, encoding="utf-8")
 
     result = run_uninstaller(environment, ["--yes"])
@@ -254,7 +257,6 @@ def test_broad_or_traversal_path_is_rejected_before_sudo(tmp_path, unsafe_path):
     assert result.returncode == 2
     assert "path" in result.stderr.lower() or "refusing" in result.stderr.lower()
     assert not sudo_log.exists()
-
 
 def test_overlapping_or_symlinked_paths_are_rejected_before_sudo(tmp_path):
     environment, app, _, _, _, paths_file, sudo_log = create_fixture(tmp_path)
@@ -269,9 +271,7 @@ def test_overlapping_or_symlinked_paths_are_rejected_before_sudo(tmp_path):
 
     link = tmp_path / "linked-install"
     link.symlink_to(app, target_is_directory=True)
-    contents = paths_file.read_text(encoding="utf-8").replace(
-        str(app), str(link), 1
-    )
+    contents = paths_file.read_text(encoding="utf-8").replace(str(app), str(link), 1)
     paths_file.write_text(contents, encoding="utf-8")
     symlink = run_uninstaller(environment, ["--yes"])
     assert symlink.returncode == 2

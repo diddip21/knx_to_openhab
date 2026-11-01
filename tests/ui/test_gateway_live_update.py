@@ -20,6 +20,7 @@ def _open_settings(page: Page, base_url: str) -> None:
         page.click("button[type='submit']")
         expect(page.locator("#upload-section")).to_be_visible(timeout=10000)
 
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
     settings = page.locator("#settings-section")
     expect(settings).to_be_visible()
     content = page.locator("#settings-content")
@@ -268,14 +269,14 @@ def test_live_apply_and_reset_use_dedicated_file_only_routes(page: Page, flask_s
     page.once("dialog", lambda dialog: dialog.accept())
     page.get_by_role("button", name="Apply IP to live OpenHAB file").click()
     expect(page.locator("#gateway-action-status")).to_contain_text(
-        "Datei aktualisiert; OpenHAB-Laufzeitstatus nicht geprüft"
+        "File updated; OpenHAB runtime status not checked"
     )
     assert "online" not in page.locator("#gateway-action-status").inner_text().lower()
 
     page.once("dialog", lambda dialog: dialog.accept())
     page.get_by_role("button", name="Restore ETS address").click()
     expect(page.locator("#gateway-action-status")).to_contain_text(
-        "Datei aktualisiert; OpenHAB-Laufzeitstatus nicht geprüft"
+        "File updated; OpenHAB runtime status not checked"
     )
 
     gateway_urls = [
@@ -299,7 +300,7 @@ def test_live_apply_saves_backend_canonical_ipv6_override(page: Page, flask_serv
 
     expect(page.locator("#conf-gateway-ip")).to_have_value("2001:db8::1")
     expect(page.locator("#gateway-action-status")).to_contain_text(
-        "Datei aktualisiert; OpenHAB-Laufzeitstatus nicht geprüft"
+        "File updated; OpenHAB runtime status not checked"
     )
     if os.getenv("SAVE_UI_SCREENSHOTS") == "1":
         screenshot_path = Path(__file__).resolve().parents[2] / "docs" / "screenshots"
@@ -408,7 +409,7 @@ def test_undo_uses_only_undo_route_and_disables_after_success(page: Page, flask_
     undo_button.click()
 
     expect(page.locator("#gateway-action-status")).to_contain_text(
-        "Datei wiederhergestellt; OpenHAB-Laufzeitstatus nicht geprüft"
+        "File restored; OpenHAB runtime status not checked"
     )
     expect(undo_button).to_be_disabled()
     assert "online" not in page.locator("#gateway-action-status").inner_text().lower()

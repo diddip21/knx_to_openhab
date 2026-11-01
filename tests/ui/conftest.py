@@ -11,6 +11,7 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 import requests
@@ -79,12 +80,13 @@ def ui_server_environment(tmp_path_factory):
     generator_config_file = data_dir / "generator.json"
     original_generator_config = (project_root / "config.json").read_bytes()
     generator_config_file.write_bytes(original_generator_config)
+    configured_url = urlsplit(os.getenv("UI_BASE_URL", "http://127.0.0.1:8085"))
     (config_dir / "config.json").write_text(
         json.dumps(
             {
                 "openhab_path": str(project_root / "openhab"),
                 "bind_host": "127.0.0.1",
-                "port": 8085,
+                "port": configured_url.port or 8085,
                 "auth": {"enabled": False, "user": "admin"},
                 "retention": {
                     "days": 14,

@@ -131,10 +131,10 @@
             </div>
             <div id="gateway-format-warning" class="info-box" role="status" style="display:none;"></div>
             <div id="gateway-migration-preview" class="info-box" style="display:none;">
-              <strong>Output format migration preview</strong>
-              <p>Old generator output: <code id="gateway-migration-from"></code></p>
-              <p>New generator output: <code id="gateway-migration-to"></code></p>
-              <p>Only generator-owned targets are migrated; manual files remain untouched.</p>
+              <strong data-i18n="settings.gatewayMigrationTitle">Output format migration preview</strong>
+              <p><span data-i18n="settings.gatewayMigrationOld">Old generator output: </span><code id="gateway-migration-from"></code></p>
+              <p><span data-i18n="settings.gatewayMigrationNew">New generator output: </span><code id="gateway-migration-to"></code></p>
+              <p data-i18n="settings.gatewayMigrationOwn">Only generator-owned targets are migrated; manual files remain untouched.</p>
             </div>
             <div class="form-group" id="yaml-path-group">
               <label data-i18n="settings.yamlPath">YAML Path</label>
@@ -230,13 +230,13 @@
               <input type="text" id="conf-gateway-ip" class="form-control" inputmode="text" autocomplete="off" spellcheck="false" placeholder="Auto-detect from ETS project" data-i18n-placeholder="settings.gatewayIpPlaceholder" aria-describedby="conf-gateway-ip-help">
               <small id="conf-gateway-ip-help" data-i18n="settings.gatewayIpHelp">Enter an IPv4 or IPv6 address to override the ETS value. Leave blank for automatic detection. Save &amp; Reprocess applies changes to the selected job.</small>
             </div>
-            <div id="gateway-file-state" class="info-box" role="status">Loading managed gateway file state…</div>
-            <p class="muted">Live actions change only the managed model file from the last successful deployment and the saved gateway override. Pending format or path changes take effect after deployment. OpenHAB is not restarted, and runtime status is not checked.</p>
+            <div id="gateway-file-state" class="info-box" role="status" data-i18n="gateway.loadingState">Loading managed gateway file state…</div>
+            <p class="muted" data-i18n="settings.gatewayLiveHelp">Live actions change only the managed model file from the last successful deployment and the saved gateway override. Pending format or path changes take effect after deployment. OpenHAB is not restarted, and runtime status is not checked.</p>
             <div id="gateway-live-warning" class="info-box" role="status" style="display:none;"></div>
             <div class="form-actions">
-              <button type="button" id="gateway-apply-ip" class="btn-primary" disabled>Apply IP to live OpenHAB file</button>
-              <button type="button" id="gateway-reset-ip" class="btn-secondary" disabled>Restore ETS address</button>
-              <button type="button" id="gateway-undo-ip" class="btn-secondary" disabled>Undo last live change</button>
+              <button type="button" id="gateway-apply-ip" class="btn-primary" disabled data-i18n="settings.gatewayApplyLive">Apply IP to live OpenHAB file</button>
+              <button type="button" id="gateway-reset-ip" class="btn-secondary" disabled data-i18n="settings.gatewayRestoreEts">Restore ETS address</button>
+              <button type="button" id="gateway-undo-ip" class="btn-secondary" disabled data-i18n="settings.gatewayUndo">Undo last live change</button>
             </div>
             <div id="gateway-action-status" class="status-message" role="status" aria-live="polite"></div>
           </div>

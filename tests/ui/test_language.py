@@ -18,6 +18,8 @@ def _stub_background_apis(
     config_payload=None,
     config_save_error=None,
     package_task=None,
+    gateway_state=None,
+    gateway_action_error=None,
     project_preview=None,
     project_preview_error=None,
 ):
@@ -47,6 +49,13 @@ def _stub_background_apis(
                     body=json.dumps(project_preview or {"metadata": {}, "buildings": []}),
                 )
             return
+        if url.endswith("/api/gateway/ip") and method == "POST" and gateway_action_error:
+            route.fulfill(
+                status=400,
+                content_type="application/json",
+                body=json.dumps({"error": gateway_action_error}),
+            )
+            return
         if url.endswith("/api/config") and method == "POST":
             route.fulfill(
                 status=500 if config_save_error else 200,
@@ -66,6 +75,8 @@ def _stub_background_apis(
             data = {"update_available": False}
         elif url.endswith("/api/service/updates/status"):
             data = package_task or {"action": None, "state": "idle", "message": ""}
+        elif url.endswith("/api/gateway/state"):
+            data = gateway_state or {}
         elif url.endswith("/version"):
             data = {
                 "installed": None,
@@ -155,6 +166,77 @@ def test_translation_catalogs_match_and_unknown_locale_falls_back(page: Page, fl
     assert page.evaluate("window.I18N.t('settings.floorAsIsHelp')") == (
         "Den Etagennamen genau wie in ETS definiert verwenden."
     )
+
+
+@pytest.mark.ui
+def test_gateway_controls_and_live_state_follow_selected_language(page: Page, flask_server):
+    _stub_background_apis(
+        page,
+        gateway_state={
+            "things_format": "dsl",
+            "managed_path": "openhab/things/knx.things",
+            "gateway_ip": "192.0.2.42",
+            "gateway_mode": "TUNNEL",
+            "detected_gateway_ip": "198.51.100.10",
+            "reset_available": True,
+            "undo_available": True,
+        },
+    )
+    page.goto(flask_server, wait_until="domcontentloaded")
+    expect(page.locator("#configStatus")).to_contain_text("Konfiguration geladen")
+    page.locator("#settings-section .card-header").click()
+    page.get_by_role("button", name="Geräte").click()
+
+    expect(
+        page.get_by_role("button", name="IP in die aktive OpenHAB-Datei übernehmen")
+    ).to_be_enabled()
+    german_state = page.locator("#gateway-file-state")
+    expect(german_state).to_contain_text("Verwaltete DSL-Datei openhab/things/knx.things")
+    expect(german_state).to_contain_text("192.0.2.42")
+    expect(german_state).to_contain_text("198.51.100.10")
+    page.get_by_role("button", name="Allgemein").click()
+    page.locator("#conf-output-format").select_option("yaml")
+    german_warning = page.locator("#gateway-format-warning")
+    expect(german_warning).to_contain_text("OpenHAB-Version konnte nicht ermittelt werden")
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+
+    expect(page.locator("#gateway-format-warning")).to_contain_text(
+        "OpenHAB version could not be determined"
+    )
+    page.get_by_role("button", name="Devices").click()
+    expect(page.get_by_role("button", name="Apply IP to live OpenHAB file")).to_be_enabled()
+    english_state = page.locator("#gateway-file-state")
+    expect(english_state).to_contain_text("Managed DSL file openhab/things/knx.things")
+    expect(english_state).to_contain_text("192.0.2.42")
+    expect(english_state).to_contain_text("198.51.100.10")
+
+
+@pytest.mark.ui
+def test_gateway_action_error_follows_selected_language(page: Page, flask_server):
+    _stub_background_apis(
+        page,
+        gateway_action_error="Invalid IP address: invalid",
+        gateway_state={
+            "things_format": "dsl",
+            "managed_path": "openhab/things/knx.things",
+            "reset_available": True,
+            "undo_available": True,
+        },
+    )
+    page.goto(flask_server, wait_until="domcontentloaded")
+    expect(page.locator("#configStatus")).to_contain_text("Konfiguration geladen")
+    page.locator("#settings-section .card-header").click()
+    page.get_by_role("button", name="Geräte").click()
+    page.locator("#conf-gateway-ip").fill("192.0.2.55")
+    page.once("dialog", lambda dialog: dialog.accept())
+    page.get_by_role("button", name="IP in die aktive OpenHAB-Datei übernehmen").click()
+
+    status = page.locator("#gateway-action-status")
+    expect(status).to_contain_text("Ungültige IP-Adresse: invalid")
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(status).to_contain_text("Invalid IP address: invalid")
 
 
 @pytest.mark.ui

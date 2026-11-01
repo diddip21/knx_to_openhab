@@ -235,7 +235,7 @@ show_target /usr/local/libexec/knx_to_openhab
 for path in "${UNIT_FILES[@]}" "${FIXED_FILES[@]}"; do show_target "$path"; done
 printf '  systemd-Dienste: %s\n' "${UNITS[*]}"
 if ((PURGE)); then
-    printf '\nPurge löscht zusÃ¤tzlich die folgenden Nutzerdaten und das Dienstkonto:\n'
+    printf '\nPurge löscht zusätzlich die folgenden Nutzerdaten und das Dienstkonto:\n'
     show_target "$CONFIG_DIR"
     show_target "$DATA_DIR"
     show_target "$BACKUP_DIR"
@@ -246,7 +246,7 @@ else
 fi
 
 if ((PURGE)) && [[ -t 0 ]]; then
-    printf '\nZum vollständigen LÃ¶schen exakt PURGE eingeben: '
+    printf '\nZum vollständigen Löschen exakt PURGE eingeben: '
     expected="PURGE"
     IFS= read -r answer || answer=""
     [[ "$answer" == "$expected" ]] || fail "Bestätigung stimmt nicht überein. Keine Systemänderungen wurden vorgenommen."

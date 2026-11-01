@@ -58,6 +58,7 @@ class TestAuthentication:
     def test_settings_section_accessible(self, page: Page, base_url, flask_server):
         _setup_auth_routes(page)
         page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
         settings = page.locator(".card-header:has-text('Configuration Settings')")
         expect(settings).to_be_visible()

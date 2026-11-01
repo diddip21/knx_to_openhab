@@ -26,6 +26,7 @@ class TestUploadSecurityUI:
     def test_reject_invalid_file_type_shows_error(self, page: Page, base_url):
         """Uploading an invalid file type should show clear error message."""
         page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
         # Create a dummy exe file for testing
         dummy_file = os.path.join(FIXTURES_DIR, "test_malware.exe")
@@ -107,9 +108,10 @@ class TestUploadSecurityUI:
             if os.path.exists(dummy_file):
                 os.remove(dummy_file)
 
-    def test_upload_form_accepts_knxproj(self, page: Page, base_url):
+    def test_upload_form_accepts_knxproj(self, page: Page, base_url, flask_server):
         """Upload form should accept valid .knxproj files."""
         page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
         # Use real test file if available
         test_file = os.path.join(FIXTURES_DIR, "Charne.knxproj")

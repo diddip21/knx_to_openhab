@@ -7,6 +7,7 @@ from playwright.sync_api import Page, expect
 @pytest.mark.ui
 def test_output_format_shows_only_its_model_paths(page: Page, base_url, flask_server):
     page.goto(base_url)
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
     config_status = page.locator("#configStatus")
     expect(config_status).to_contain_text("Configuration loaded")
 

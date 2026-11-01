@@ -19,6 +19,24 @@ from playwright.sync_api import expect
 _AUTH_PREVIEW_SESSION_FILE: Path | None = None
 
 
+def _capture_process_output(process):
+    """Drain a subprocess pipe continuously while retaining recent diagnostics."""
+    output_lines = deque(maxlen=100)
+
+    def drain():
+        if process.stdout is not None:
+            output_lines.extend(process.stdout)
+
+    reader = threading.Thread(target=drain, name="pytest-server-output", daemon=True)
+    reader.start()
+    return output_lines, reader
+
+
+def _recent_process_output(output_lines, reader):
+    reader.join(timeout=1)
+    return "".join(output_lines)
+
+
 def pytest_collection_modifyitems(config, items):
     """Ensure all UI tests in this package are marked with @pytest.mark.ui."""
     for item in items:
@@ -129,18 +147,7 @@ def flask_server(base_url, ui_server_environment):
         text=True,
         bufsize=1,  # Line buffered
     )
-    # Keep draining the pipe while retaining recent startup/runtime diagnostics.
-    # Leaving a subprocess pipe unread can fill its OS buffer and stall Flask's
-    # request threads while Werkzeug writes access logs.
-    server_output = deque(maxlen=200)
-
-    def drain_server_output():
-        if server_process.stdout:
-            for line in server_process.stdout:
-                server_output.append(line)
-
-    output_reader = threading.Thread(target=drain_server_output, daemon=True)
-    output_reader.start()
+    server_output, output_reader = _capture_process_output(server_process)
 
     # Wait for server to be ready
     max_retries = 30
@@ -151,8 +158,7 @@ def flask_server(base_url, ui_server_environment):
         # Check if process crashed
         if server_process.poll() is not None:
             # Server crashed, get error output
-            output_reader.join(timeout=1)
-            output = "".join(server_output) or "No output"
+            output = _recent_process_output(server_output, output_reader) or "No output"
             raise RuntimeError(
                 "Flask server crashed during startup "
                 f"(exit code: {server_process.returncode}).\n"
@@ -176,8 +182,7 @@ def flask_server(base_url, ui_server_environment):
         except subprocess.TimeoutExpired:
             server_process.kill()
             server_process.wait()
-        output_reader.join(timeout=2)
-        output = "".join(server_output) or "No output"
+        output = _recent_process_output(server_output, output_reader) or "No output"
         raise RuntimeError(
             f"Flask server did not start within {max_retries} seconds.\n"
             f"Last error: {last_error}\n"
@@ -194,7 +199,7 @@ def flask_server(base_url, ui_server_environment):
     except subprocess.TimeoutExpired:
         server_process.kill()
         server_process.wait()
-    output_reader.join(timeout=2)
+    output_reader.join(timeout=1)
 
 
 @pytest.fixture(scope="session")
@@ -260,10 +265,11 @@ def auth_preview_server(tmp_path_factory):
         stderr=subprocess.STDOUT,
         text=True,
     )
+    server_output, output_reader = _capture_process_output(process)
     url = f"http://127.0.0.1:{port}"
     for _ in range(30):
         if process.poll() is not None:
-            output = process.stdout.read() if process.stdout else "No output"
+            output = _recent_process_output(server_output, output_reader) or "No output"
             raise RuntimeError(f"Authenticated preview server failed to start:\n{output}")
         try:
             response = requests.get(f"{url}/login", timeout=1)
@@ -273,7 +279,12 @@ def auth_preview_server(tmp_path_factory):
             time.sleep(1)
     else:
         process.terminate()
-        output = process.stdout.read() if process.stdout else "No output"
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        output = _recent_process_output(server_output, output_reader) or "No output"
         raise RuntimeError(f"Authenticated preview server did not start:\n{output}")
 
     yield url
@@ -284,6 +295,7 @@ def auth_preview_server(tmp_path_factory):
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait()
+    output_reader.join(timeout=1)
 
 
 @pytest.fixture

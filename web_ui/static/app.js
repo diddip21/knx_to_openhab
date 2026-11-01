@@ -64,6 +64,13 @@ function updateExpertToggleVisibility(stats) {
 }
 
 let currentJobId = null
+let currentJobData = null
+let currentPackageTask = null
+let currentReportData = null
+let currentReportError = null
+const deployingJobIds = new Set()
+const restartingServices = new Set()
+let jobsRefreshGeneration = 0
 let lastRunningCount = -1
 let logLevelFilter = 'all'  // all, debug, info, warning, error
 let allLogEntries = []  // store all entries for filtering
@@ -72,6 +79,37 @@ let currentStatsData = null  // store current statistics for consistent display
 let statsUpdateInProgress = false  // prevent race conditions
 let autoStructureJobId = null  // track auto-loaded structure
 const EXPERT_TOGGLE_KEY = 'showExpertCompleteness'
+
+function localizedJobStatus(status) {
+  const key = `job.status.${String(status || '').toLowerCase()}`
+  return window.I18N.catalogs[window.I18N.getLanguage()][key] ? window.I18N.t(key) : status
+}
+
+function setLocalizedMessage(element, key, params = {}, className = null) {
+  if (!element) return
+  element.dataset.messageKey = key
+  element.dataset.messageParams = JSON.stringify(params)
+  element.textContent = window.I18N.t(key, params)
+  if (className) element.className = className
+}
+
+function clearLocalizedMessage(element) {
+  if (!element) return
+  delete element.dataset.messageKey
+  delete element.dataset.messageParams
+}
+
+function refreshLocalizedMessages() {
+  document.querySelectorAll('[data-message-key]').forEach(element => {
+    let params = {}
+    try {
+      params = JSON.parse(element.dataset.messageParams || '{}')
+    } catch (_error) {
+      params = {}
+    }
+    element.textContent = window.I18N.t(element.dataset.messageKey, params)
+  })
+}
 
 function applyExpertToggle() {
   const enabled = !!(expertToggleEl && expertToggleEl.checked)
@@ -97,19 +135,19 @@ function renderExpertPanel(stats) {
         return `<div class="expert-report-row">
               <span class="expert-report-name">${escapeHtml(fname)}</span>
               <div class="expert-report-actions">
-                <button onclick="showReportDialog('${escaped}')">View</button>
-                <button onclick="downloadReport('${escaped}')">Download</button>
-                <button onclick="copyReport('${escaped}')">Copy</button>
+              <button onclick="showReportDialog('${escaped}')">${window.I18N.t('common.view')}</button>
+              <button onclick="downloadReport('${escaped}')">${window.I18N.t('common.download')}</button>
+              <button onclick="copyReport('${escaped}')">${window.I18N.t('common.copy')}</button>
               </div>
             </div>`
       })
       .join('')
     expertPanelEl.innerHTML = `
-            <div class="expert-panel-header">Expert Reports</div>
+            <div class="expert-panel-header">${window.I18N.t('reports.expertTitle')}</div>
             ${reportButtons}
           `
   } else {
-    expertPanelEl.innerHTML = '<div class="muted">No reports available.</div>'
+    expertPanelEl.innerHTML = `<div class="muted">${window.I18N.t('reports.none')}</div>`
   }
 }
 
@@ -132,23 +170,25 @@ window.renderExpertPanel = renderExpertPanel
 applyExpertToggle()
 
 async function refreshJobs() {
+  const refreshGeneration = ++jobsRefreshGeneration
   const res = await apiFetch('/api/jobs', { credentials: 'include' })
   const jobs = await res.json()
+  if (refreshGeneration !== jobsRefreshGeneration) return
   jobsList.innerHTML = ''
   jobs.forEach(j => {
     const li = document.createElement('div')
     li.className = 'job-item'
     const statusClass = j.status === 'completed' ? 'success' : j.status === 'failed' ? 'error' : 'running'
     li.innerHTML = `
-      <span class="job-status ${statusClass}">${j.status}</span>
+      <span class="job-status ${statusClass}">${escapeHtml(localizedJobStatus(j.status))}</span>
       <span class="job-name">${j.name}</span>
       <span class="job-date">${new Date(j.created * 1000).toLocaleString()}</span>
-      <button onclick="showJobDetail('${j.id}')">Details</button>
-      <button onclick="loadStructureFromJob('${j.id}')">Structure</button>
-      ${j.status === 'completed' && j.staged ? `<button onclick="showDiff('${j.id}')">Diff</button>` : ''}
-      ${j.status === 'completed' && j.staged && !j.deployed ? `<button style="background-color: #28a745; color: white;" onclick="deployJob('${j.id}')">Deploy</button>` : ''}
-      ${j.backups && j.backups.length > 0 ? `<button onclick="showRollbackDialog('${j.id}')">Rollback</button>` : ''}
-      <button onclick="deleteJob('${j.id}')">Delete</button>
+      <button onclick="showJobDetail('${j.id}')">${window.I18N.t('job.action.details')}</button>
+      <button onclick="loadStructureFromJob('${j.id}')">${window.I18N.t('job.action.structure')}</button>
+      ${j.status === 'completed' && j.staged ? `<button onclick="showDiff('${j.id}')">${window.I18N.t('job.action.diff')}</button>` : ''}
+      ${j.status === 'completed' && j.staged && !j.deployed ? `<button style="background-color: #28a745; color: white;" ${deployingJobIds.has(j.id) ? 'disabled' : ''} onclick="deployJob('${j.id}')">${window.I18N.t(deployingJobIds.has(j.id) ? 'job.processing' : 'job.action.deploy')}</button>` : ''}
+      ${j.backups && j.backups.length > 0 ? `<button onclick="showRollbackDialog('${j.id}')">${window.I18N.t('job.action.rollback')}</button>` : ''}
+      <button onclick="deleteJob('${j.id}')">${window.I18N.t('job.action.delete')}</button>
     `
     jobsList.appendChild(li)
 
@@ -157,10 +197,24 @@ async function refreshJobs() {
       const statusBadge = document.querySelector('#jobDetail .badge');
       if (statusBadge) {
         statusBadge.className = `badge ${j.status}`;
-        statusBadge.textContent = j.status;
+        statusBadge.textContent = localizedJobStatus(j.status);
       }
     }
   })
+}
+
+function renderJobDetails(job) {
+  clearLocalizedMessage(jobDetailEl)
+  jobDetailEl.innerHTML = `
+    <table class="detail-table">
+      <tr><td>${window.I18N.t('job.detail.id')}</td><td><code>${escapeHtml(job.id)}</code></td></tr>
+      <tr><td>${window.I18N.t('job.detail.name')}</td><td>${escapeHtml(job.name)}</td></tr>
+      <tr><td>${window.I18N.t('job.detail.status')}</td><td><span class="badge ${escapeHtml(job.status)}">${escapeHtml(localizedJobStatus(job.status))}</span></td></tr>
+      <tr><td>${window.I18N.t('job.detail.created')}</td><td>${new Date(job.created * 1000).toLocaleString()}</td></tr>
+      <tr><td>${window.I18N.t('job.detail.backups')}</td><td>${job.backups.length}</td></tr>
+      ${job.backups.length > 0 ? `<tr><td>${window.I18N.t('job.detail.latestBackup')}</td><td>${escapeHtml(job.backups[job.backups.length - 1].name)}</td></tr>` : ''}
+    </table>
+  `
 }
 
 function showJobDetail(jobId) {
@@ -172,9 +226,9 @@ function showJobDetail(jobId) {
   if (logLevelFilterEl) logLevelFilterEl.value = 'all'
 
   // Show loading state initially
-  jobDetailEl.innerHTML = '<div class="loading">Loading job details...</div>'
+  setLocalizedMessage(jobDetailEl, 'job.loadingDetails', {}, 'loading')
   allLogEntries = []
-  logEl.textContent = 'Loading logs...'
+  setLocalizedMessage(logEl, 'job.loadingLogs')
 
   apiFetch(`/api/job/${jobId}`, {
     credentials: 'include'
@@ -186,16 +240,8 @@ function showJobDetail(jobId) {
       return r.json()
     })
     .then(j => {
-      jobDetailEl.innerHTML = `
-        <table class="detail-table">
-          <tr><td>ID:</td><td><code>${j.id}</code></td></tr>
-          <tr><td>Name:</td><td>${j.name}</td></tr>
-          <tr><td>Status:</td><td><span class="badge ${j.status}">${j.status}</span></td></tr>
-          <tr><td>Created:</td><td>${new Date(j.created * 1000).toLocaleString()}</td></tr>
-          <tr><td>Backups:</td><td>${j.backups.length}</td></tr>
-          ${j.backups.length > 0 ? `<tr><td>Latest Backup:</td><td>${j.backups[j.backups.length - 1].name}</td></tr>` : ''}
-        </table>
-      `
+      currentJobData = j
+      renderJobDetails(j)
 
       // Display file statistics if available
       updateStatisticsDisplay(j.stats)
@@ -228,7 +274,7 @@ function showJobDetail(jobId) {
       } else {
         allLogEntries = []
         if (j.status !== 'running') {
-          logEl.textContent = 'No logs available'
+          setLocalizedMessage(logEl, 'job.noLogs')
         }
       }
 
@@ -236,11 +282,14 @@ function showJobDetail(jobId) {
       const banner = document.getElementById('status')
       if (banner && currentJobId === j.id && j.status !== 'running') {
         if (j.status === 'completed') {
-          banner.textContent = 'Job completed successfully.'
-          banner.className = 'status-message success'
+          setLocalizedMessage(banner, 'job.completed', {}, 'status-message success')
         } else if (j.status === 'failed') {
-          banner.textContent = `Job failed${j.error ? `: ${j.error}` : ''}. Check logs below.`
-          banner.className = 'status-message error'
+          setLocalizedMessage(
+            banner,
+            'job.failed',
+            { error: j.error ? `: ${j.error}` : '' },
+            'status-message error'
+          )
         }
       }
 
@@ -251,8 +300,13 @@ function showJobDetail(jobId) {
     })
     .catch(error => {
       console.error('Error loading job details:', error)
-      jobDetailEl.innerHTML = `<div class="error">Error loading job details: ${error.message}</div>`
-      logEl.textContent = 'Failed to load logs'
+      setLocalizedMessage(
+        jobDetailEl,
+        'job.errorLoadingDetails',
+        { error: error.message },
+        'error'
+      )
+      setLocalizedMessage(logEl, 'job.failedLogs')
     })
 }
 
@@ -273,7 +327,7 @@ function showRollbackDialog(jobId) {
 }
 
 async function deleteJob(jobId) {
-  if (!confirm('Delete this job from history?')) return
+  if (!confirm(window.I18N.t('job.deleteConfirm'))) return
   try {
     const res = await apiFetch(`/api/job/${jobId}`, {
       method: 'DELETE',
@@ -286,21 +340,21 @@ async function deleteJob(jobId) {
       logSectionEl.style.display = 'none'
       statsSectionEl.style.display = 'none'
     } else {
-      alert('Delete failed: ' + (data.error || 'Unknown error'))
+      alert(window.I18N.t('job.deleteFailed', { error: data.error || 'Unknown error' }))
     }
   } catch (e) {
-    alert('Error: ' + e.message)
+    alert(window.I18N.t('job.error', { error: e.message }))
   }
 }
 
 async function deployJob(jobId) {
-  if (!confirm('Really deploy? The existing configuration will be overwritten!')) return
+  if (!confirm(window.I18N.t('job.deployConfirm'))) return
 
   const btn = event.target || document.querySelector(`button[onclick="deployJob('${jobId}')"]`)
-  const originalText = btn ? btn.textContent : 'Deploy'
+  deployingJobIds.add(jobId)
   if (btn) {
     btn.disabled = true
-    btn.textContent = 'Processing...'
+    btn.textContent = window.I18N.t('job.processing')
   }
 
   try {
@@ -310,28 +364,22 @@ async function deployJob(jobId) {
     })
     const data = await res.json()
     if (res.ok && data.success) {
-      alert('Successfully deployed: ' + data.message)
-      refreshJobs()
+      alert(window.I18N.t('job.deployed', { message: data.message }))
       await loadGatewayState()
     } else {
-      alert('Deploy error: ' + (data.error || 'Unknown error'))
-      if (btn) {
-        btn.textContent = originalText
-        btn.disabled = false
-      }
+      alert(window.I18N.t('job.deployError', { error: data.error || 'Unknown error' }))
     }
   } catch (e) {
-    alert('Error: ' + e.message)
-    if (btn) {
-      btn.textContent = originalText
-      btn.disabled = false
-    }
+    alert(window.I18N.t('job.error', { error: e.message }))
+  } finally {
+    deployingJobIds.delete(jobId)
+    refreshJobs().catch(error => console.error('Failed to refresh jobs after deploy:', error))
   }
 }
 
 async function doRollback() {
   const backup = backupSelect.value
-  rollbackStatusEl.textContent = 'Rolling back...'
+  setLocalizedMessage(rollbackStatusEl, 'rollback.running')
   try {
     const res = await apiFetch(`/api/job/${currentJobId}/rollback`, {
       method: 'POST',
@@ -340,21 +388,22 @@ async function doRollback() {
     })
     const data = await res.json()
     if (data.ok) {
-      rollbackStatusEl.textContent = '✓ Rollback successful: ' + data.output
+      setLocalizedMessage(rollbackStatusEl, 'rollback.success', { output: data.output })
       await loadGatewayState()
       setTimeout(() => rollbackDialog.close(), 2000)
     } else {
-      rollbackStatusEl.textContent = '✗ Error: ' + data.error
+      setLocalizedMessage(rollbackStatusEl, 'rollback.error', { error: data.error })
     }
   } catch (e) {
-    rollbackStatusEl.textContent = '✗ Error: ' + e.message
+    setLocalizedMessage(rollbackStatusEl, 'rollback.error', { error: e.message })
   }
 }
 
 async function restartService(service, btn) {
+  restartingServices.add(service)
   if (btn) {
     btn.disabled = true
-    btn.textContent = 'Restarting...'
+    btn.textContent = window.I18N.t('service.restarting')
   }
   try {
     const res = await apiFetch('/api/service/restart', {
@@ -363,20 +412,14 @@ async function restartService(service, btn) {
       body: JSON.stringify({ service })
     })
     const data = await res.json()
-    if (data.ok) {
-      btn.textContent = 'Restart'
-      // Refresh service status after restart
-      refreshServices()
-    } else {
-      btn.textContent = 'Restart'
-      alert('Error: ' + data.output)
+    if (!data.ok) {
+      alert(window.I18N.t('service.restartError', { error: data.output }))
     }
   } catch (e) {
-    btn.textContent = 'Restart'
-    alert('Error: ' + e.message)
-  }
-  if (btn) {
-    btn.disabled = false
+    alert(window.I18N.t('service.restartError', { error: e.message }))
+  } finally {
+    restartingServices.delete(service)
+    refreshServices()
   }
 }
 
@@ -404,12 +447,12 @@ async function showDiff(jobId) {
     legend.style.display = 'flex'
     content.style.display = 'none'
     diffContent.style.display = 'block'
-    title.textContent = `Diff für Job ${jobId}`
+    title.textContent = window.I18N.t('job.diffTitle', { id: jobId })
 
     let html = ''
     const fileNames = Object.keys(diffs)
     if (!fileNames.length) {
-      html = '<div class="muted">Keine Diffs vorhanden.</div>'
+      html = `<div class="muted">${window.I18N.t('filePreview.noDiffs')}</div>`
     } else {
       // Wenn es einen Unknown-Report gibt, anzeigen
       if (diffs["unknown_report.json"]) {
@@ -425,7 +468,7 @@ async function showDiff(jobId) {
     diffContent.innerHTML = html
     dialog.showModal()
   } catch (e) {
-    alert('Diff laden fehlgeschlagen: ' + e.message)
+    alert(window.I18N.t('filePreview.diffLoadFailed', { error: e.message }))
   }
 }
 
@@ -459,7 +502,7 @@ async function previewFile(filename) {
 
     // Reset to final view state
     title.textContent = filename
-    content.textContent = 'Loading...'
+    setLocalizedMessage(content, 'filePreview.loading')
     content.style.display = 'block'
     diffContent.innerHTML = ''
     diffContent.style.display = 'none'
@@ -526,13 +569,10 @@ async function previewFile(filename) {
       title.textContent = `${filename} (${sizeKB} KB)`
     }
   } catch (e) {
-    const msg = e.message || ''
-    const hint = msg.includes('access denied')
-      ? '\n\nHinweis: Diese Datei ist nicht im erlaubten Pfad.'
-      : msg.includes('file not found')
-        ? '\n\nHinweis: Datei existiert (noch) nicht.'
-        : ''
-    alert('Error loading file: ' + msg + hint)
+    alert(window.I18N.t('filePreview.errorLoading', {
+      error: e.message || '',
+      hint: getFilePreviewHint(e.message || '')
+    }))
     document.getElementById('filePreviewDialog').close()
   }
 }
@@ -564,7 +604,10 @@ async function downloadReport(filename) {
       : msg.includes('file not found')
         ? '\n\nHinweis: Datei existiert (noch) nicht.'
         : ''
-    alert('Report-Download fehlgeschlagen: ' + msg + hint)
+    alert(window.I18N.t('filePreview.reportDownloadFailed', {
+      error: msg,
+      hint: getFilePreviewHint(msg)
+    }))
   }
 }
 
@@ -581,7 +624,7 @@ async function copyReport(filename) {
     }
     const data = await res.json()
     await navigator.clipboard.writeText(data.content || '')
-    alert('Report in die Zwischenablage kopiert')
+    alert(window.I18N.t('filePreview.reportCopied'))
   } catch (e) {
     const msg = e.message || ''
     const hint = msg.includes('access denied')
@@ -589,8 +632,17 @@ async function copyReport(filename) {
       : msg.includes('file not found')
         ? '\n\nHinweis: Datei existiert (noch) nicht.'
         : ''
-    alert('Kopieren fehlgeschlagen: ' + msg + hint)
+    alert(window.I18N.t('filePreview.copyFailed', {
+      error: msg,
+      hint: getFilePreviewHint(msg)
+    }))
   }
+}
+
+function getFilePreviewHint(message) {
+  if (message.includes('access denied')) return window.I18N.t('filePreview.accessDenied')
+  if (message.includes('file not found')) return window.I18N.t('filePreview.notFound')
+  return ''
 }
 
 function switchViewMode(mode) {
@@ -610,6 +662,7 @@ function switchViewMode(mode) {
     finalBtn.classList.add('active')
     diffBtn.classList.remove('active')
 
+    clearLocalizedMessage(content)
     content.textContent = currentPreviewData.current.content
   } else if (mode === 'diff') {
     // Show diff view
@@ -649,7 +702,7 @@ function renderBackendDiff(diffEntries) {
       `<span class="diff-line-content">${escapedLine}</span>` +
       `</div>`
   }
-  return html || '<div class="diff-line unchanged"><span class="diff-line-number"> </span><span class="diff-line-content">(empty diff)</span></div>'
+  return html || `<div class="diff-line unchanged"><span class="diff-line-number"> </span><span class="diff-line-content">${window.I18N.t('filePreview.emptyDiff')}</span></div>`
 }
 
 function generateDiff(originalText, currentText) {
@@ -688,7 +741,7 @@ function generateDiff(originalText, currentText) {
     }
   }
 
-  return html || '<div class="diff-line unchanged"><span class="diff-line-number"> </span><span class="diff-line-content">(empty file)</span></div>'
+  return html || `<div class="diff-line unchanged"><span class="diff-line-number"> </span><span class="diff-line-content">${window.I18N.t('filePreview.emptyFile')}</span></div>`
 }
 
 function computeLineDiff(original, current) {
@@ -749,6 +802,27 @@ let packagePollRequested = false
 let packagePollCompletionStage = 0
 let servicesRefreshGeneration = 0
 let cloudInfoGeneration = 0
+let cloudSecretVisible = false
+
+function renderPackageOperationStatus(task) {
+  const statusEl = document.getElementById('packageOperationStatus')
+  if (!statusEl || !task || task.state === 'idle') {
+    if (statusEl) statusEl.textContent = ''
+    return
+  }
+  setLocalizedMessage(statusEl, 'service.packageStatus', {
+    action: localizedPackageAction(task.action),
+    message: window.I18N.translateMessage(task.message || '')
+  })
+}
+
+function localizedPackageAction(action) {
+  const value = String(action || '')
+  const key = `service.action.${value.toLowerCase()}`
+  return window.I18N.catalogs[window.I18N.getLanguage()][key]
+    ? window.I18N.t(key)
+    : value
+}
 
 function startPackageOperationPolling() {
   packagePollCompletionStage = 0
@@ -763,9 +837,10 @@ function startPackageOperationPolling() {
     const statusEl = document.getElementById('packageOperationStatus')
     try {
       const response = await apiFetch('/api/service/updates/status')
-      if (!response.ok) throw new Error('Status nicht erreichbar')
+      if (!response.ok) throw new Error('Status unavailable')
       const task = await response.json()
-      statusEl.textContent = task.state === 'idle' ? '' : `${task.action}: ${task.message}`
+      currentPackageTask = task
+      renderPackageOperationStatus(task)
       if (task.state === 'running') {
         if (packagePollCompletionStage > 0) {
           packagePollCompletionStage = 0
@@ -782,7 +857,7 @@ function startPackageOperationPolling() {
         document.getElementById('refreshPackagesBtn').disabled = false
       }
     } catch (e) {
-      statusEl.textContent = `Status nicht erreichbar: ${e.message}`
+      setLocalizedMessage(statusEl, 'service.statusUnavailable', { error: e.message })
     } finally {
       packagePollInFlight = false
       if (continuePolling || packagePollRequested) packagePollTimeout = setTimeout(poll, 2000)
@@ -802,11 +877,11 @@ async function refreshServices() {
     if (taskResponse.ok) task = await taskResponse.json()
   } catch (e) { console.error('Package status unavailable:', e) }
   if (refreshGeneration !== servicesRefreshGeneration) return
+  currentPackageTask = task
   const busy = task.state === 'running'
   if (busy) startPackageOperationPolling()
   document.getElementById('refreshPackagesBtn').disabled = busy
-  document.getElementById('packageOperationStatus').textContent =
-    task.state === 'idle' ? '' : `${task.action}: ${task.message}`
+  renderPackageOperationStatus(task)
 
   for (const service of services) {
     try {
@@ -821,18 +896,21 @@ async function refreshServices() {
 
       const div = document.createElement('div')
       div.className = 'service-item'
+      const restarting = restartingServices.has(service)
 
       const statusClass = status.active ? 'active' : 'inactive'
-      const statusText = status.status.charAt(0).toUpperCase() + status.status.slice(1)
+      const statusText = status.active
+        ? window.I18N.t('service.active')
+        : window.I18N.t('service.inactive')
 
       let extraInfo = ''
       if (status.active && status.uptime_str) {
         // Simplify timestamp display if it's very long
         let ts = status.uptime_str.split('=', 1)[1] || status.uptime_str
-        extraInfo = `<div class="service-uptime" title="${escapeHtml(status.uptime_str)}">Since: ${escapeHtml(ts)}</div>`
+        extraInfo = `<div class="service-uptime" title="${escapeHtml(status.uptime_str)}">${window.I18N.t('service.since')} ${escapeHtml(ts)}</div>`
       } else if (!status.active && status.last_run_str) {
         let ts = status.last_run_str.split('=', 1)[1] || status.last_run_str
-        extraInfo = `<div class="service-uptime" title="${escapeHtml(status.last_run_str)}">Last active: ${escapeHtml(ts)}</div>`
+        extraInfo = `<div class="service-uptime" title="${escapeHtml(status.last_run_str)}">${window.I18N.t('service.lastActive')} ${escapeHtml(ts)}</div>`
       }
 
       div.innerHTML = `
@@ -843,19 +921,23 @@ async function refreshServices() {
              ${extraInfo}
           </div>
         </div>
-        <div class="service-version">Installiert: ${escapeHtml(version.installed || '—')}<br>
-          APT-Kandidat: ${escapeHtml(version.candidate || '—')}<br>
-          ${escapeHtml(version.message)}</div>
+        <div class="service-version">${window.I18N.t('service.installed')} ${escapeHtml(version.installed || '—')}<br>
+          ${window.I18N.t('service.aptCandidate')} ${escapeHtml(version.candidate || '—')}<br>
+          ${escapeHtml(window.I18N.translateMessage(version.message || ''))}</div>
         <div class="service-actions">
-          <button type="button" class="service-restart-btn restart-btn">Restart</button>
+          <button type="button" class="service-restart-btn restart-btn" ${restarting ? 'disabled' : ''}>${window.I18N.t(restarting ? 'service.restarting' : 'service.restart')}</button>
           <button type="button" class="service-restart-btn upgrade-btn"
             ${!version.supported || !version.update_available || busy ? 'disabled' : ''}>
-            ${version.update_available ? 'Update' : 'Kein Update'}</button>
+            ${window.I18N.t(version.update_available ? 'service.update' : 'service.noUpdate')}</button>
         </div>
       `
       div.querySelector('.restart-btn').addEventListener('click', e => restartService(service, e.currentTarget))
       div.querySelector('.upgrade-btn').addEventListener('click', () => {
-        if (confirm(`${service} von ${version.installed} auf den APT-Kandidaten ${version.candidate} aktualisieren?`)) {
+        if (confirm(window.I18N.t('service.confirmUpdate', {
+          service,
+          installed: version.installed,
+          candidate: version.candidate
+        }))) {
           startPackageOperation(pkg, version.candidate)
         }
       })
@@ -877,10 +959,15 @@ async function startPackageOperation(action, version = null) {
       body: JSON.stringify({ version })
     })
     const result = await response.json()
-    if (!response.ok) { statusEl.textContent = result.error || result.message; return }
+    if (!response.ok) {
+      statusEl.textContent = window.I18N.translateMessage(result.error || result.message || '')
+      return
+    }
     await refreshServices()
     startPackageOperationPolling()
-  } catch (e) { statusEl.textContent = `Paketoperation fehlgeschlagen: ${e.message}` }
+  } catch (e) {
+    setLocalizedMessage(statusEl, 'service.operationFailed', { error: e.message })
+  }
 }
 
 async function loadCloudInfo() {
@@ -893,6 +980,11 @@ async function loadCloudInfo() {
     const card = document.createElement('div')
     card.id = 'cloud-info-card'
     card.className = 'cloud-info-card'
+    const previousCard = document.getElementById('cloud-info-card')
+    const wasSecretVisible = cloudSecretVisible || !!(
+      previousCard && previousCard.querySelector('#cloud-secret-val') &&
+      !previousCard.querySelector('#cloud-secret-val').classList.contains('cloud-secret-masked')
+    )
 
     const uuidVal = data.uuid || null
     const secretVal = data.secret || null
@@ -900,11 +992,11 @@ async function loadCloudInfo() {
     if (!uuidVal && !secretVal) {
       card.innerHTML = `
         <div class="cloud-info-header">
-          <span class="cloud-info-title">☁️ openHAB Cloud Credentials</span>
+          <span class="cloud-info-title">☁️ ${window.I18N.t('service.cloudTitle')}</span>
         </div>
         <div class="cloud-info-not-found">
-          UUID / Secret nicht gefunden.<br>
-          <small>Erwartet unter <code>/var/lib/openhab/uuid</code> und <code>/var/lib/openhab/openhabcloud/secret</code></small>
+          ${window.I18N.t('service.cloudNotFound')}<br>
+          <small>${window.I18N.t('service.cloudExpected')} <code>/var/lib/openhab/uuid</code> ${window.I18N.t('service.and')} <code>/var/lib/openhab/openhabcloud/secret</code></small>
         </div>`
     } else {
       const masked = secretVal
@@ -912,20 +1004,20 @@ async function loadCloudInfo() {
         : '—'
       card.innerHTML = `
         <div class="cloud-info-header">
-          <span class="cloud-info-title">☁️ openHAB Cloud Credentials</span>
-          <small class="cloud-info-hint">Für myopenhab.org Einrichtung</small>
+          <span class="cloud-info-title">☁️ ${window.I18N.t('service.cloudTitle')}</span>
+          <small class="cloud-info-hint">${window.I18N.t('service.cloudSetupHint')}</small>
         </div>
         <div class="cloud-info-row">
           <span class="cloud-info-label">UUID</span>
           <span class="cloud-info-value" id="cloud-uuid-val">${uuidVal || '—'}</span>
-          <button class="cloud-copy-btn" onclick="copyCloudValue('cloud-uuid-val', this, false)" title="UUID kopieren">📋</button>
+          <button class="cloud-copy-btn" onclick="copyCloudValue('cloud-uuid-val', this, false)" title="${window.I18N.t('service.copyUuid')}">📋</button>
         </div>
         <div class="cloud-info-row">
           <span class="cloud-info-label">Secret</span>
-          <span class="cloud-info-value cloud-secret-masked" id="cloud-secret-val"
-            data-full="${secretVal || ''}" data-masked="${masked}">${masked}</span>
-          <button class="cloud-toggle-btn" onclick="toggleSecret()" title="Secret anzeigen/verbergen">👁</button>
-          <button class="cloud-copy-btn" onclick="copyCloudValue('cloud-secret-val', this, true)" title="Secret kopieren">📋</button>
+          <span class="cloud-info-value ${wasSecretVisible ? '' : 'cloud-secret-masked'}" id="cloud-secret-val"
+            data-full="${secretVal || ''}" data-masked="${masked}">${wasSecretVisible ? (secretVal || '—') : masked}</span>
+          <button class="cloud-toggle-btn" onclick="toggleSecret()" title="${window.I18N.t('service.showSecret')}">👁</button>
+          <button class="cloud-copy-btn" onclick="copyCloudValue('cloud-secret-val', this, true)" title="${window.I18N.t('service.copySecret')}">📋</button>
         </div>
         ${data.uuid_path ? `<div class="cloud-info-paths"><small>📁 ${data.uuid_path}</small></div>` : ''}
       `
@@ -944,9 +1036,11 @@ function toggleSecret() {
   if (el.classList.contains('cloud-secret-masked')) {
     el.textContent = el.dataset.full || '—'
     el.classList.remove('cloud-secret-masked')
+    cloudSecretVisible = true
   } else {
     el.textContent = el.dataset.masked || '—'
     el.classList.add('cloud-secret-masked')
+    cloudSecretVisible = false
   }
 }
 
@@ -974,14 +1068,19 @@ async function loadStructureFromJob(jobId) {
   const previewSection = document.getElementById('preview-section')
 
   // Show loading status
-  statusEl.textContent = 'Loading structure from job...'
-  statusEl.className = 'status-message'
+  setLocalizedMessage(statusEl, 'structure.loading', {}, 'status-message')
 
   try {
     // First check if the job is completed before attempting to load structure
     const jobRes = await apiFetch(`/api/job/${jobId}`)
     if (!jobRes.ok) {
-      throw new Error(`Failed to get job status: ${jobRes.status}`)
+      setLocalizedMessage(
+        statusEl,
+        'structure.statusFailed',
+        { status: jobRes.status },
+        'status-message error'
+      )
+      return
     }
     const job = await jobRes.json();
 
@@ -999,25 +1098,45 @@ async function loadStructureFromJob(jobId) {
           job.status = updatedJob.status;
 
           if (updatedJob.status === 'completed') {
-            statusEl.textContent = `Job completed, loading structure...`;
+            setLocalizedMessage(statusEl, 'structure.jobCompleted', {}, 'status-message')
             break;
           } else if (updatedJob.status === 'failed') {
-            throw new Error(`Job failed: ${updatedJob.error || 'Unknown error'}`);
+            if (updatedJob.error) {
+              setLocalizedMessage(
+                statusEl,
+                'structure.jobFailed',
+                { error: updatedJob.error },
+                'status-message error'
+              )
+            } else {
+              setLocalizedMessage(statusEl, 'structure.jobFailedUnknown', {}, 'status-message error')
+            }
+            return
           }
         }
       }
 
       if (job.status !== 'completed') {
-        throw new Error(`Job did not complete within ${timeout / 1000} seconds. Current status: ${job.status}`);
+        setLocalizedMessage(
+          statusEl,
+          'structure.timeout',
+          { seconds: timeout / 1000 },
+          'status-message error'
+        )
+        return
       }
     }
 
-    statusEl.textContent = 'Retrieving structure data...';
+    setLocalizedMessage(statusEl, 'structure.retrieving', {}, 'status-message')
 
     const res = await apiFetch(`/api/job/${jobId}/preview`)
     if (!res.ok) {
       const error = await res.json()
-      throw new Error(error.error || 'Failed to load structure from job')
+      if (error.error) {
+        throw new Error(error.error)
+      }
+      setLocalizedMessage(statusEl, 'structure.previewFailed', {}, 'status-message error')
+      return
     }
     const preview = await res.json()
 
@@ -1027,14 +1146,12 @@ async function loadStructureFromJob(jobId) {
     // Show preview section
     previewSection.style.display = 'block'
 
-    statusEl.textContent = '✓ Structure loaded from job history'
-    statusEl.className = 'status-message success'
+    setLocalizedMessage(statusEl, 'structure.loaded', {}, 'status-message success')
 
     // Scroll to preview
     previewSection.scrollIntoView({ behavior: 'smooth' })
   } catch (e) {
-    statusEl.textContent = '✗ Error: ' + e.message
-    statusEl.className = 'status-message error'
+    setLocalizedMessage(statusEl, 'structure.error', { error: e.message }, 'status-message error')
     console.error('Error loading structure from job:', e);
   }
 }
@@ -1048,12 +1165,28 @@ function renderLog() {
   // Render with color coding based on log level
   const html = filtered.map(entry => {
     const levelClass = `log-level-${entry.level}`
-    return `<div class="log-entry ${levelClass}">${escapeHtml(entry.text)}</div>`
+    return `<div class="log-entry ${levelClass}">${escapeHtml(window.I18N.translateMessage(entry.text))}</div>`
   }).join('')
 
+  clearLocalizedMessage(logEl)
   logEl.innerHTML = html
   logEl.scrollTop = logEl.scrollHeight
 }
+
+document.addEventListener('knx-language-change', () => {
+  refreshLocalizedMessages()
+  renderLog()
+  if (currentJobData) renderJobDetails(currentJobData)
+  if (currentStatsData) updateStatisticsDisplay(currentStatsData)
+  if (expertToggleEl && expertToggleEl.checked && currentStatsData) {
+    renderExpertPanel(currentStatsData)
+  }
+  if (currentReportData || currentReportError) renderReportContent()
+  if (currentBuildingPreview) displayBuildingPreview(currentBuildingPreview)
+  renderPackageOperationStatus(currentPackageTask)
+  refreshServices()
+  refreshJobs()
+})
 
 function escapeHtml(text) {
   const map = {
@@ -1085,8 +1218,11 @@ function updateStatisticsDisplay(stats) {
       return
     }
 
+    currentStatsData = stats && typeof stats === 'object'
+      ? JSON.parse(JSON.stringify(stats))
+      : null
     if (stats && typeof stats === 'object' && Object.keys(stats).length > 0) {
-      let statsHtml = '<h3>Generated Files</h3><table class="stats-table"><tr><th>File</th><th>Before</th><th>After</th><th>Change</th><th>Diff</th><th>Action</th></tr>'
+      let statsHtml = `<h3>${window.I18N.t('stats.generatedFiles')}</h3><table class="stats-table"><tr><th>${window.I18N.t('stats.file')}</th><th>${window.I18N.t('stats.before')}</th><th>${window.I18N.t('stats.after')}</th><th>${window.I18N.t('stats.change')}</th><th>${window.I18N.t('stats.diff')}</th><th>${window.I18N.t('stats.action')}</th></tr>`
 
       // Sort files for consistent display order
       const sortedStats = Object.entries(stats)
@@ -1114,11 +1250,11 @@ function updateStatisticsDisplay(stats) {
         const escapedFname = fname.replace(/\\/g, '\\\\')
         const isReport = fname.endsWith('unknown_report.json') || fname.endsWith('partial_report.json') || fname.endsWith('completeness_report.json')
         const actions = [
-          `<button onclick="previewFile('${escapedFname}')">Preview</button>`
+          `<button onclick="previewFile('${escapedFname}')">${window.I18N.t('common.preview')}</button>`
         ]
         if (isReport) {
-          actions.push(`<button onclick="downloadReport('${escapedFname}')">Download</button>`)
-          actions.push(`<button onclick="copyReport('${escapedFname}')">Copy</button>`)
+          actions.push(`<button onclick="downloadReport('${escapedFname}')">${window.I18N.t('common.download')}</button>`)
+          actions.push(`<button onclick="copyReport('${escapedFname}')">${window.I18N.t('common.copy')}</button>`)
         }
 
         statsHtml += `<tr>
@@ -1135,17 +1271,15 @@ function updateStatisticsDisplay(stats) {
       statsEl.innerHTML = statsHtml
 
       // Store for consistency checks
-      currentStatsData = JSON.parse(JSON.stringify(stats))
-
       // Render expert panel (reports) when enabled
       renderExpertPanel(stats)
 
 
     } else {
       if (!stats || (typeof stats === 'object' && Object.keys(stats).length === 0)) {
-        statsEl.innerHTML = '<p>No statistics available (stats object is empty or null)</p>'
+        statsEl.innerHTML = `<p>${window.I18N.t('stats.noData')}</p>`
       } else {
-        statsEl.innerHTML = '<p>No statistics available</p>'
+        statsEl.innerHTML = `<p>${window.I18N.t('stats.noData')}</p>`
       }
       currentStatsData = null
     }
@@ -1153,7 +1287,7 @@ function updateStatisticsDisplay(stats) {
     console.error('Error updating statistics display:', error)
     const statsEl = document.getElementById('stats')
     if (statsEl) {
-      statsEl.innerHTML = '<p class="error">Error displaying statistics: ' + error.message + '</p>'
+      statsEl.innerHTML = `<p class="error">${window.I18N.t('stats.displayError', { error: escapeHtml(error.message) })}</p>`
     }
   } finally {
     // Use setTimeout to ensure the flag is reset after rendering completes
@@ -1168,13 +1302,17 @@ function showReportDialog(reportKey) {
   const content = document.getElementById('summaryDialogContent')
   if (!dialog || !content) return
   if (!currentStatsData) {
-    content.innerHTML = '<div class="muted">No report data available.</div>'
+    setLocalizedMessage(content, 'reports.noData', {}, 'muted')
+    currentReportData = null
+    currentReportError = null
     dialog.showModal()
     return
   }
   const reportStat = currentStatsData[reportKey]
   const reportPath = (reportStat && (reportStat.staged_path || reportStat.real_path)) || resolvePreviewPath(reportKey)
-  content.innerHTML = '<div class="muted">Loading report...</div>'
+  currentReportData = null
+  currentReportError = null
+  setLocalizedMessage(content, 'reports.loading', {}, 'muted')
   dialog.showModal()
 
   apiFetch(`/api/file/preview?path=${encodeURIComponent(reportPath)}&job_id=${currentJobId}`, { credentials: 'include' })
@@ -1187,37 +1325,54 @@ function showReportDialog(reportKey) {
       try {
         report = JSON.parse(data.content || '{}')
       } catch (e) {
-        content.innerHTML = '<div class="error">Report is not valid JSON.</div>'
+        currentReportError = 'reports.invalidJson'
+        renderReportContent()
         return
       }
-
-      const req = report.missing_required || []
-      const rec = report.recommended_missing || []
-      if (req.length || rec.length) {
-        const renderList = (items, title) => {
-          if (!items.length) return ''
-          const rows = items.map(entry => {
-            const line = escapeHtml(entry.line || '')
-            return `<li><code>${escapeHtml(entry.kind || '')}</code> ${escapeHtml(entry.reason || '')} — ${line}</li>`
-          }).join('')
-          return `<div class="summary-block"><strong>${title}</strong><ul>${rows}</ul></div>`
-        }
-        content.innerHTML = `
-          <div class="summary-counts">
-            <span class="badge ${req.length ? 'error' : 'success'}">Required missing: ${req.length}</span>
-            <span class="badge ${rec.length ? 'warning' : 'success'}">Recommended missing: ${rec.length}</span>
-          </div>
-          ${renderList(req, 'Missing required')}
-          ${renderList(rec, 'Recommended')}
-        `
-        return
-      }
-
-      content.innerHTML = `<pre class="preview-content">${escapeHtml(JSON.stringify(report, null, 2))}</pre>`
+      currentReportData = report
+      clearLocalizedMessage(content)
+      renderReportContent()
     })
     .catch((e) => {
-      content.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`
+      currentReportError = e.message
+      clearLocalizedMessage(content)
+      renderReportContent()
     })
+}
+
+function renderReportContent() {
+  const content = document.getElementById('summaryDialogContent')
+  if (!content) return
+  if (currentReportError) {
+    const errorText = currentReportError.startsWith('reports.')
+      ? window.I18N.t(currentReportError)
+      : currentReportError
+    content.innerHTML = `<div class="error">${escapeHtml(errorText)}</div>`
+    return
+  }
+  if (!currentReportData) return
+  const req = currentReportData.missing_required || []
+  const rec = currentReportData.recommended_missing || []
+  if (req.length || rec.length) {
+    const renderList = (items, title) => {
+      if (!items.length) return ''
+      const rows = items.map(entry => {
+        const line = escapeHtml(entry.line || '')
+        return `<li><code>${escapeHtml(entry.kind || '')}</code> ${escapeHtml(entry.reason || '')} — ${line}</li>`
+      }).join('')
+      return `<div class="summary-block"><strong>${title}</strong><ul>${rows}</ul></div>`
+    }
+    content.innerHTML = `
+      <div class="summary-counts">
+        <span class="badge ${req.length ? 'error' : 'success'}">${window.I18N.t('reports.requiredMissing', { count: req.length })}</span>
+        <span class="badge ${rec.length ? 'warning' : 'success'}">${window.I18N.t('reports.recommendedMissing', { count: rec.length })}</span>
+      </div>
+      ${renderList(req, window.I18N.t('reports.missingRequired'))}
+      ${renderList(rec, window.I18N.t('reports.recommended'))}
+    `
+    return
+  }
+  content.innerHTML = `<pre class="preview-content">${escapeHtml(JSON.stringify(currentReportData, null, 2))}</pre>`
 }
 window.updateStatisticsDisplay = updateStatisticsDisplay
 
@@ -1479,7 +1634,7 @@ async function loadConfig() {
   const configStatus = document.getElementById('configStatus')
 
   try {
-    configStatus.textContent = 'Loading configuration...'
+    setLocalizedMessage(configStatus, 'config.loading')
 
     const res = await apiFetch('/api/config')
     if (!res.ok) {
@@ -1540,12 +1695,12 @@ async function loadConfig() {
     renderRegexSettings(currentConfig.regexpattern || {})
 
     // Keep settings collapsed by default
-    configStatus.textContent = '✓ Configuration loaded'
-    configStatus.className = 'status-message success'
+    setLocalizedMessage(configStatus, 'config.loaded', {}, 'status-message success')
   } catch (e) {
     console.error('Error loading configuration:', e)
-    configStatus.textContent = '✗ Error: ' + (e.message || 'Failed to load configuration')
-    configStatus.className = 'status-message error'
+    setLocalizedMessage(configStatus, 'config.loadError', {
+      error: e.message || window.I18N.t('config.loadFailed')
+    }, 'status-message error')
   }
 
 }
@@ -1568,7 +1723,7 @@ function renderMappingsTable(mappings) {
       <td><input type="text" class="map-input" data-field="item_type" value="${m.item_type || ''}"></td>
       <td><input type="text" class="map-input" data-field="semantic_info" value="${escapeHtml(m.semantic_info || '')}"></td>
       <td>
-        <button onclick="deleteMapping('${key}')" class="btn-icon" title="Delete">🗑️</button>
+        <button onclick="deleteMapping('${key}')" class="btn-icon" title="${window.I18N.t('common.delete')}" data-i18n-title="common.delete">🗑️</button>
       </td>
     `
     tbody.appendChild(tr)
@@ -1679,7 +1834,7 @@ async function saveConfig(reprocess = false) {
       if (!confirmed) return
     }
 
-    configStatus.textContent = 'Saving configuration...'
+    setLocalizedMessage(configStatus, 'config.saving')
 
     // Gather data from UI
     const newConfig = { ...currentConfig }
@@ -1760,16 +1915,15 @@ async function saveConfig(reprocess = false) {
 
     currentConfig = newConfig
     await loadGatewayState()
-    configStatus.textContent = '✓ Configuration saved'
-    configStatus.className = 'status-message success'
+    setLocalizedMessage(configStatus, 'config.saved', {}, 'status-message success')
     // Reprocess if requested
     if (reprocess) {
       if (!currentJobId) {
-        alert('No job selected to reprocess. Please select a job first.')
+        alert(window.I18N.t('config.noJob'))
         return
       }
 
-      configStatus.textContent = 'Triggering reprocessing...'
+      setLocalizedMessage(configStatus, 'config.reprocessing')
       try {
         const rerunRes = await apiFetch(`/api/job/${currentJobId}/rerun`, { method: 'POST' })
 
@@ -1779,7 +1933,9 @@ async function saveConfig(reprocess = false) {
         }
 
         const newJob = await rerunRes.json()
-        configStatus.textContent = `✓ Reprocessing started (Job ${newJob.id.substring(0, 8)})`
+        setLocalizedMessage(configStatus, 'config.reprocessStarted', {
+          id: newJob.id.substring(0, 8)
+        }, 'status-message success')
 
         // Refresh jobs list and show details of new job
         await refreshJobs()
@@ -1789,21 +1945,24 @@ async function saveConfig(reprocess = false) {
         document.getElementById('detail-section').scrollIntoView({ behavior: 'smooth' })
       } catch (reprocessError) {
         console.error('Reprocessing error:', reprocessError);
-        configStatus.textContent = `✗ Reprocessing failed: ${reprocessError.message}`
-        configStatus.className = 'status-message error'
+        setLocalizedMessage(configStatus, 'config.reprocessFailed', {
+          error: reprocessError.message
+        }, 'status-message error')
       }
     }
 
   } catch (e) {
     console.error('Error saving configuration:', e);
-    configStatus.textContent = '✗ Error: ' + (e.message || 'Failed to save configuration')
-    configStatus.className = 'status-message error'
+    setLocalizedMessage(configStatus, 'config.saveError', {
+      error: e.message || window.I18N.t('config.saveFailed')
+    }, 'status-message error')
   }
 
 }
 
 // Project Preview
 let currentPreviewMetadata = null
+let currentBuildingPreview = null
 
 async function previewProject() {
   const fileInput = document.getElementById('fileInput')
@@ -1813,7 +1972,7 @@ async function previewProject() {
 
   const f = fileInput.files[0]
   if (!f) {
-    alert('Please select a file first')
+    alert(window.I18N.t('upload.selectFile'))
     return
   }
 
@@ -1824,8 +1983,7 @@ async function previewProject() {
     fd.append('password', pwd)
   }
 
-  statusEl.textContent = 'Parsing project structure...'
-  statusEl.className = 'status-message'
+  setLocalizedMessage(statusEl, 'preview.parseProject', {}, 'status-message')
 
   try {
     const res = await apiFetch('/api/project/preview', { method: 'POST', body: fd })
@@ -1841,51 +1999,52 @@ async function previewProject() {
     // Show preview section
     previewSection.style.display = 'block'
 
-    statusEl.textContent = '✓ Project structure loaded'
-    statusEl.className = 'status-message success'
+    setLocalizedMessage(statusEl, 'preview.projectLoaded', {}, 'status-message success')
 
     // Scroll to preview
     previewSection.scrollIntoView({ behavior: 'smooth' })
   } catch (e) {
-    statusEl.textContent = '✗ Error: ' + e.message
-    statusEl.className = 'status-message error'
+    setLocalizedMessage(statusEl, 'preview.error', { error: e.message }, 'status-message error')
   }
 }
 
 function displayBuildingPreview(preview) {
+  currentBuildingPreview = preview
   const metadataEl = document.getElementById('previewMetadata')
   const treeEl = document.getElementById('buildingTree')
 
   // Display metadata
   let metadataHtml = '<div class="metadata-cards">'
   if (preview.metadata.project_name) {
-    metadataHtml += `<div class="metadata-card"><strong>Project:</strong> ${escapeHtml(preview.metadata.project_name)}</div>`
+    metadataHtml += `<div class="metadata-card"><strong>${window.I18N.t('preview.project')}</strong> ${escapeHtml(preview.metadata.project_name)}</div>`
   }
   if (preview.metadata.gateway_ip) {
-    metadataHtml += `<div class="metadata-card"><strong>Gateway IP:</strong> ${escapeHtml(preview.metadata.gateway_ip)}</div>`
+    metadataHtml += `<div class="metadata-card"><strong>${window.I18N.t('preview.gatewayIp')}</strong> ${escapeHtml(preview.metadata.gateway_ip)}</div>`
   } else {
-    metadataHtml += `<div class="metadata-card gateway-missing"><strong>Gateway IP:</strong> <span class="missing">Not found in project</span></div>`
+    metadataHtml += `<div class="metadata-card gateway-missing"><strong>${window.I18N.t('preview.gatewayIp')}</strong> <span class="missing">${window.I18N.t('preview.gatewayMissing')}</span></div>`
   }
-  metadataHtml += `<div class="metadata-card"><strong>Total Addresses:</strong> ${preview.metadata.total_addresses}</div>`
-  metadataHtml += `<div class="metadata-card"><strong>HomeKit:</strong> ${preview.metadata.homekit_enabled ? '✓ Enabled' : '✗ Disabled'}</div>`
-  metadataHtml += `<div class="metadata-card"><strong>Alexa:</strong> ${preview.metadata.alexa_enabled ? '✓ Enabled' : '✗ Disabled'}</div>`
+  metadataHtml += `<div class="metadata-card"><strong>${window.I18N.t('preview.totalAddresses')}</strong> ${preview.metadata.total_addresses}</div>`
+  metadataHtml += `<div class="metadata-card"><strong>HomeKit:</strong> ${preview.metadata.homekit_enabled ? '✓ ' + window.I18N.t('preview.enabled') : '✗ ' + window.I18N.t('preview.disabled')}</div>`
+  metadataHtml += `<div class="metadata-card"><strong>Alexa:</strong> ${preview.metadata.alexa_enabled ? '✓ ' + window.I18N.t('preview.enabled') : '✗ ' + window.I18N.t('preview.disabled')}</div>`
 
   // Check for unknown items in metadata
   if (preview.metadata.unknown_items && preview.metadata.unknown_items.length > 0) {
-    metadataHtml += `<div class="metadata-card unknown-items"><strong>Unknown Items:</strong> <span class="highlight">${preview.metadata.unknown_items.length} found</span></div>`
+    metadataHtml += `<div class="metadata-card unknown-items"><strong>${window.I18N.t('preview.unknownItems')}</strong> <span class="highlight">${preview.metadata.unknown_items.length} ${window.I18N.t('preview.found')}</span></div>`
   }
 
   metadataHtml += '</div>'
   metadataEl.innerHTML = metadataHtml
 
   // Display building tree
-  let treeHtml = ''
+  let treeHtml = preview.buildings.length
+    ? ''
+    : `<p class="muted">${window.I18N.t('preview.empty')}</p>`
   for (const building of preview.buildings) {
     treeHtml += `<div class="tree-node building-node">
       <div class="tree-node-header" onclick="toggleTreeNode(this)">
         <span class="tree-icon">▶</span>
         <span class="tree-label">🏢 ${escapeHtml(building.name)}${building.description ? ` (${escapeHtml(building.description)})` : ''}</span>
-        <span class="tree-count">${building.floors.length} floor(s)</span>
+        <span class="tree-count">${window.I18N.t('preview.floors', { count: building.floors.length })}</span>
       </div>
       <div class="tree-children" style="display:none;">`
 
@@ -1894,7 +2053,7 @@ function displayBuildingPreview(preview) {
       <div class="tree-node-header" onclick="toggleTreeNode(this)">
         <span class="tree-icon">▶</span>
         <span class="tree-label">🏠 ${escapeHtml(floor.name)}${floor.description ? ` (${escapeHtml(floor.description)})` : ''}</span>
-        <span class="tree-count">${floor.rooms.length} room(s)</span>
+        <span class="tree-count">${window.I18N.t('preview.rooms', { count: floor.rooms.length })}</span>
       </div>
       <div class="tree-children" style="display:none;">`
 
@@ -1904,7 +2063,7 @@ function displayBuildingPreview(preview) {
         <div class="tree-node-header" onclick="toggleTreeNode(this)">
           <span class="tree-icon">${hasAddresses ? '▶' : '•'}</span>
           <span class="tree-label">🚪 ${escapeHtml(room.name)}${room.description ? ` (${escapeHtml(room.description)})` : ''}</span>
-          <span class="tree-count">${room.address_count} address(es), ${room.device_count} device(s)}</span>
+          <span class="tree-count">${window.I18N.t('preview.addresses', { count: room.address_count })}, ${window.I18N.t('preview.devices', { count: room.device_count })}</span>
         </div>
         ${hasAddresses ? `
         <div class="tree-children" style="display:none;">
@@ -1959,8 +2118,7 @@ uploadForm.addEventListener('submit', async (e) => {
   e.preventDefault()
   const f = fileInput.files[0]
   if (!f) {
-    statusEl.textContent = 'Please select a file first';
-    statusEl.className = 'status-message error';
+    setLocalizedMessage(statusEl, 'upload.selectFile', {}, 'status-message error')
     return;
   }
   const fd = new FormData()
@@ -1971,8 +2129,7 @@ uploadForm.addEventListener('submit', async (e) => {
   }
 
   // Show initial status
-  statusEl.textContent = 'Uploading file...'
-  statusEl.className = 'status-message'
+  setLocalizedMessage(statusEl, 'upload.uploading', {}, 'status-message')
 
   try {
     const res = await apiFetch('/api/upload', { method: 'POST', body: fd })
@@ -1982,12 +2139,10 @@ uploadForm.addEventListener('submit', async (e) => {
     }
     const job = await res.json()
 
-    statusEl.textContent = `File uploaded, job started: ${job.id.substring(0, 8)}...`
-    statusEl.className = 'status-message'
+    setLocalizedMessage(statusEl, 'upload.started', { id: job.id.substring(0, 8) }, 'status-message')
 
     // Update status to indicate processing has started
-    statusEl.textContent = `Processing started: ${job.id.substring(0, 8)}... Check job details below.`
-    statusEl.className = 'status-message'
+    setLocalizedMessage(statusEl, 'upload.processing', { id: job.id.substring(0, 8) }, 'status-message')
 
     // Refresh jobs list to show the new job
     await refreshJobs()
@@ -2002,8 +2157,7 @@ uploadForm.addEventListener('submit', async (e) => {
     startEvents(job.id)
 
   } catch (e) {
-    statusEl.textContent = `Upload Error: ${e.message}`
-    statusEl.className = 'status-message error'
+    setLocalizedMessage(statusEl, 'upload.error', { error: e.message }, 'status-message error')
     console.error('Upload error:', e)
   }
 })
@@ -2017,7 +2171,7 @@ function startEvents(jobId) {
 
   // Only clear text if no logs loaded yet
   if (allLogEntries.length === 0) {
-    logEl.textContent = 'Waiting for events...\n'
+    setLocalizedMessage(logEl, 'job.waitingEvents')
   }
 
   // For authenticated servers, use fetch with streaming since EventSource
@@ -2070,18 +2224,22 @@ function startEvents(jobId) {
                 const statusBadge = document.querySelector('#jobDetail .badge');
                 if (statusBadge) {
                   statusBadge.className = `badge ${j.status}`;
-                  statusBadge.textContent = j.status;
+                  statusBadge.textContent = localizedJobStatus(j.status);
                 }
+                currentJobData = j
 
                 // Update top status banner for final state
                 const banner = document.getElementById('status');
                 if (banner && currentJobId === j.id && j.status !== 'running') {
                   if (j.status === 'completed') {
-                    banner.textContent = 'Job completed successfully.';
-                    banner.className = 'status-message success';
+                    setLocalizedMessage(banner, 'job.completed', {}, 'status-message success')
                   } else if (j.status === 'failed') {
-                    banner.textContent = `Job failed${j.error ? `: ${j.error}` : ''}. Check logs below.`;
-                    banner.className = 'status-message error';
+                    setLocalizedMessage(
+                      banner,
+                      'job.failed',
+                      { error: j.error ? `: ${j.error}` : '' },
+                      'status-message error'
+                    )
                   }
                 }
 
@@ -2132,8 +2290,11 @@ function startEvents(jobId) {
                     refreshJobs();
                     const banner = document.getElementById('status');
                     if (banner) {
-                      banner.textContent = `Job ${data.message}`;
-                      banner.className = `status-message ${data.message.includes('completed') ? 'success' : 'error'}`;
+                      if (data.message.includes('completed')) {
+                        setLocalizedMessage(banner, 'job.completed', {}, 'status-message success')
+                      } else {
+                        setLocalizedMessage(banner, 'job.failed', {}, 'status-message error')
+                      }
                     }
 
                     // Proactively fetch final job data to update stats and status badges immediately
@@ -2145,8 +2306,9 @@ function startEvents(jobId) {
                           const statusBadge = document.querySelector('#jobDetail .badge');
                           if (statusBadge) {
                             statusBadge.className = `badge ${j.status}`;
-                            statusBadge.textContent = j.status;
+                            statusBadge.textContent = localizedJobStatus(j.status);
                           }
+                          currentJobData = j
                           // Update statistics table
                           updateStatisticsDisplay(j.stats);
                         }
@@ -2252,13 +2414,20 @@ async function loadVersion() {
     const response = await apiFetch('/api/version')
     const data = await response.json()
     currentVersionData = data
-    document.getElementById('headerCommit').textContent = data.commit_short || 'unknown'
+    const headerCommit = document.getElementById('headerCommit')
+    if (data.commit_short) {
+      clearLocalizedMessage(headerCommit)
+      headerCommit.removeAttribute('data-i18n')
+      headerCommit.textContent = data.commit_short
+    } else {
+      setLocalizedMessage(headerCommit, 'header.unknown')
+    }
 
     // Check for updates in background after loading version
     setTimeout(checkForUpdatesBackground, 2000)
   } catch (error) {
     console.error('Failed to load version:', error)
-    document.getElementById('headerCommit').textContent = 'Unknown'
+    setLocalizedMessage(document.getElementById('headerCommit'), 'header.unknown')
   }
 }
 async function checkForUpdatesBackground() {
@@ -2285,7 +2454,7 @@ async function checkForUpdates() {
     const data = await response.json()
 
     if (data.error) {
-      alert('Error checking for updates: ' + data.error)
+      alert(window.I18N.t('updates.checkError', { error: data.error }))
       return
     }
     latestVersionData = data
@@ -2294,11 +2463,11 @@ async function checkForUpdates() {
       // Show update dialog
       showUpdateDialog(data)
     } else {
-      alert('✓ You are running the latest version!')
+      alert(window.I18N.t('updates.latest'))
     }
   } catch (error) {
     console.error('Update check error:', error);
-    alert('Failed to check for updates: ' + (error.message || 'Unknown error'))
+    alert(window.I18N.t('updates.checkFailed', { error: error.message || 'Unknown error' }))
   }
 
 }
@@ -2333,7 +2502,8 @@ async function performUpdate() {
   // Close the update info dialog and open log modal
   updateDialog.close()
   logModal.showModal()
-  logContent.textContent = 'Starting update process...\n'
+  logContent.removeAttribute('data-i18n')
+  setLocalizedMessage(logContent, 'updates.starting')
 
   try {
     const response = await apiFetch('/api/version/update', { method: 'POST' })
@@ -2343,12 +2513,16 @@ async function performUpdate() {
       // Start polling for logs
       startUpdateLogPolling()
     } else {
-      logContent.textContent += 'Error interacting with update API: ' + (data.error || 'Unknown error') + '\n'
+      clearLocalizedMessage(logContent)
+      logContent.textContent += window.I18N.t('updates.apiError', {
+        error: data.error || 'Unknown error'
+      })
       // Try polling anyway in case it partially started
       startUpdateLogPolling()
     }
   } catch (error) {
-    logContent.textContent += 'Request failed: ' + error.message + '\n'
+    clearLocalizedMessage(logContent)
+    logContent.textContent += window.I18N.t('updates.requestFailed', { error: error.message })
     // Try polling anyway
     startUpdateLogPolling()
   }
@@ -2369,6 +2543,7 @@ function startUpdateLogPolling() {
         if (data.log) {
           // Update log display
           if (logContent.textContent.length !== data.log.length || !logContent.textContent.startsWith(data.log.substring(0, 20))) {
+            clearLocalizedMessage(logContent)
             logContent.textContent = data.log
             logContent.scrollTop = logContent.scrollHeight
           }

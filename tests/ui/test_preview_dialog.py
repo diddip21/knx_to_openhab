@@ -7,7 +7,7 @@ from playwright.sync_api import Page, expect
 JOB_ID = "job-preview"
 
 
-def _setup_preview_routes(page: Page):
+def _setup_preview_routes(page: Page, backups=None):
     stats = {
         "items/knx.items": {
             "before": 1,
@@ -41,7 +41,7 @@ def _setup_preview_routes(page: Page):
             "status": "completed",
             "staged": True,
             "deployed": False,
-            "backups": [],
+            "backups": backups or [],
             "created": 1700000000,
             "stats": stats,
         }
@@ -114,6 +114,7 @@ def _setup_preview_routes(page: Page):
 def test_preview_dialog_and_diff_mode(page: Page, flask_server):
     _setup_preview_routes(page)
     page.goto(flask_server)
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
     page.wait_for_function("window.refreshJobs !== undefined")
 
     expect(page.locator(".job-item")).to_have_count(1)
@@ -142,6 +143,7 @@ def test_preview_dialog_and_diff_mode(page: Page, flask_server):
 def test_expert_reports_panel(page: Page, flask_server):
     _setup_preview_routes(page)
     page.goto(flask_server)
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
     page.wait_for_function("window.refreshJobs !== undefined")
 
     expect(page.locator(".job-item")).to_have_count(1)
@@ -159,3 +161,55 @@ def test_expert_reports_panel(page: Page, flask_server):
     panel.locator("button:has-text('View')").first.click()
     expect(page.locator("#summaryDialog[open]")).to_be_visible()
     expect(page.locator("#summaryDialogContent")).to_contain_text("Missing required")
+
+
+@pytest.mark.ui
+def test_statistics_reports_and_file_preview_controls_follow_language(page: Page, flask_server):
+    _setup_preview_routes(page)
+    page.goto(flask_server)
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(page.locator(".job-item")).to_have_count(1)
+    page.locator(".job-item button").first.click()
+
+    headers = page.locator("#stats th")
+    expect(headers).to_have_text(["File", "Before", "After", "Change", "Diff", "Action"])
+    report_row = page.locator("#stats tr").filter(has_text="items/knx.items")
+    expect(report_row.get_by_role("button")).to_have_text(["Preview"])
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("de")
+    expect(page.locator("#stats h3")).to_have_text("Erzeugte Dateien")
+    expect(headers).to_have_text(["Datei", "Vorher", "Nachher", "Änderung", "Diff", "Aktion"])
+    expect(report_row.get_by_role("button")).to_have_text(["Vorschau"])
+
+    report_row.get_by_role("button", name="Vorschau").click()
+    expect(page.locator("#previewContent")).to_contain_text("New line")
+    expect(page.locator("#viewModeFinal")).to_have_text("Endansicht")
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(page.locator("#viewModeFinal")).to_have_text("Final View")
+    expect(page.locator("#previewContent")).to_contain_text("New line")
+
+    page.locator("#filePreviewDialog").evaluate("dialog => dialog.close()")
+    page.locator("#expertToggle").check()
+    page.locator("#expertPanel button", has_text="View").first.click()
+    expect(page.locator("#summaryDialogContent")).to_contain_text("Required missing: 1")
+    expect(page.locator("#summaryDialogContent")).to_contain_text("Missing required")
+    page.get_by_role("combobox", name="Sprache / Language").select_option("de")
+    expect(page.locator("#summaryDialogContent")).to_contain_text("Fehlende Pflichtangaben: 1")
+    expect(page.locator("#summaryDialogContent")).to_contain_text("Fehlende Pflichtangaben")
+    expect(page.locator("#summaryDialogContent")).to_contain_text("Switch testSwitch")
+
+
+@pytest.mark.ui
+def test_rollback_dialog_localizes_without_changing_backup_name(page: Page, flask_server):
+    backup_name = "backup-ets-20261101.tar.gz"
+    _setup_preview_routes(page, backups=[{"name": backup_name, "ts": "2026-11-01 12:00"}])
+    page.goto(flask_server)
+    expect(page.locator(".job-item")).to_have_count(1)
+    page.locator(".job-item button", has_text="Wiederherstellen").click()
+
+    expect(page.locator("#rollbackDialog")).to_be_visible()
+    expect(page.locator("#rollbackDialog h2")).to_have_text("Aus Backup wiederherstellen")
+    expect(page.locator("#backupSelect option")).to_have_text(f"{backup_name} (2026-11-01 12:00)")
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(page.locator("#rollbackDialog h2")).to_have_text("Rollback to Backup")
+    expect(page.locator("#backupSelect")).to_have_value(backup_name)

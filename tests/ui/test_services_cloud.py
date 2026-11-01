@@ -126,6 +126,30 @@ class TestServicesSection:
         expect(page.locator("#servicesList")).to_contain_text("openhab.service")
         expect(page.locator("#servicesList")).to_contain_text("evcc.service")
 
+    def test_service_labels_switch_language_without_translating_package_data(
+        self, page: Page, base_url, flask_server
+    ):
+        _setup_services_routes(page)
+        page.goto(base_url)
+        expect(page.locator("#servicesList .service-item")).to_have_count(2, timeout=10000)
+
+        openhab = page.locator("#servicesList .service-item").first
+        expect(openhab).to_contain_text("Aktiv")
+        expect(openhab).to_contain_text("Installiert:")
+        expect(openhab).to_contain_text("APT-Kandidat:")
+        expect(openhab.locator(".restart-btn")).to_have_text("Neu starten")
+        expect(openhab.locator(".upgrade-btn")).to_have_text("Kein Update")
+
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+        openhab = page.locator("#servicesList .service-item").first
+        expect(openhab).to_contain_text("Active")
+        expect(openhab).to_contain_text("Installed:")
+        expect(openhab).to_contain_text("APT candidate:")
+        expect(openhab).to_contain_text("5.0.0-1")
+        expect(openhab.locator(".restart-btn")).to_have_text("Restart")
+        expect(openhab.locator(".upgrade-btn")).to_have_text("No update")
+        expect(openhab).to_contain_text("openhab.service")
+
     def test_service_restart_button(self, page: Page, base_url, flask_server):
         _setup_services_routes(page)
         page.goto(base_url)
@@ -145,8 +169,33 @@ class TestServicesSection:
         assert json.loads(response_info.value.request.post_data or "{}") == {
             "service": "openhab.service"
         }
-        expect(restart_btn).to_have_text("Restart")
+        expect(restart_btn).to_have_text("Neu starten")
         assert restart_requests == [{"service": "openhab.service"}]
+
+    def test_restart_action_stays_disabled_during_language_change(
+        self, page: Page, base_url, flask_server
+    ):
+        pending_restart = []
+        _setup_services_routes(page)
+        page.route("**/api/service/restart", lambda route: pending_restart.append(route))
+        page.goto(base_url)
+
+        with page.expect_request("**/api/service/restart"):
+            page.locator("#servicesList .restart-btn").first.click()
+        expect(page.locator("#servicesList .restart-btn").first).to_be_disabled()
+
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+        restart_button = page.locator("#servicesList .restart-btn").first
+        expect(restart_button).to_have_text("Restarting…")
+        expect(restart_button).to_be_disabled()
+
+        pending_restart[0].fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"ok": True, "output": "Service restarted"}),
+        )
+        expect(page.locator("#servicesList .restart-btn").first).to_have_text("Restart")
+        expect(page.locator("#servicesList .restart-btn").first).to_be_enabled()
 
 
 @pytest.mark.ui

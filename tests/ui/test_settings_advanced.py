@@ -13,6 +13,7 @@ TEST_FILE_PATH = os.path.abspath(
 
 
 def _setup_settings_routes(page: Page):
+    page.add_init_script("window.localStorage.setItem('knx_to_openhab.locale', 'en')")
     config = {
         "items_path": "openhab/items/knx.items",
         "things_path": "openhab/things/knx.things",

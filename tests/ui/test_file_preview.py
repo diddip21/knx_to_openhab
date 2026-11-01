@@ -114,6 +114,7 @@ class TestFilePreview:
     def _open_stats_preview(self, page: Page, base_url, flask_server):
         _setup_preview_routes(page)
         page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
         page.wait_for_function("window.refreshJobs !== undefined")
         page.evaluate("refreshJobs()")

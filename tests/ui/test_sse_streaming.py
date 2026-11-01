@@ -122,14 +122,40 @@ class TestSSEStreaming:
             _upload_and_wait(page)
 
         assert event_request.value.method == "GET"
-        expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=10000)
+        expect(page.locator("#jobDetail .badge")).to_contain_text("Abgeschlossen", timeout=10000)
 
     def test_sse_backup_event_logged(self, page: Page, base_url, flask_server):
         _setup_sse_routes(page)
         page.goto(base_url)
 
         _upload_and_wait(page)
-        expect(page.locator("#log")).to_contain_text("backup created", timeout=10000)
+        expect(page.locator("#log")).to_contain_text("Sicherung erstellt", timeout=10000)
+
+    def test_sse_messages_translate_live_and_preserve_unknown_log_text(
+        self, page: Page, base_url, flask_server
+    ):
+        _setup_sse_routes(
+            page,
+            job_log=[
+                {"level": "info", "text": "[BACKUP] backup created: test.tar.gz"},
+                {"level": "info", "text": "[STATUS] completed (staged) - ready to deploy"},
+                {"level": "warning", "text": "[WARNING] ETS warning for Raum Küche / GA 1/2/3"},
+            ],
+        )
+        page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+
+        _upload_and_wait(page)
+        expect(page.locator("#log")).to_contain_text("Backup created: test.tar.gz")
+        expect(page.locator("#log")).to_contain_text("Completed (staged) - ready to deploy")
+        expect(page.locator("#log")).to_contain_text("ETS warning for Raum Küche / GA 1/2/3")
+
+        page.get_by_role("combobox", name="Sprache / Language").select_option("de")
+        expect(page.locator("#log")).to_contain_text("Sicherung erstellt: test.tar.gz")
+        expect(page.locator("#log")).to_contain_text(
+            "Abgeschlossen (zwischengespeichert) – bereit zur Bereitstellung"
+        )
+        expect(page.locator("#log")).to_contain_text("ETS warning for Raum Küche / GA 1/2/3")
 
     def test_sse_status_updates_render(self, page: Page, base_url, flask_server):
         _setup_sse_routes(page)
@@ -137,7 +163,7 @@ class TestSSEStreaming:
 
         _upload_and_wait(page)
         expect(page.locator("#jobDetail .badge")).to_contain_text(
-            re.compile(r"running|completed"), timeout=20000
+            re.compile(r"Läuft|Abgeschlossen"), timeout=20000
         )
 
     def test_sse_stats_event_logged(self, page: Page, base_url, flask_server):
@@ -145,7 +171,7 @@ class TestSSEStreaming:
         page.goto(base_url)
 
         _upload_and_wait(page)
-        expect(page.locator("#log")).to_contain_text("STATS", timeout=10000)
+        expect(page.locator("#log")).to_contain_text("Statistik", timeout=10000)
 
     def test_sse_error_event_shows_in_log(self, page: Page, base_url, flask_server):
         error_log = [
@@ -164,7 +190,7 @@ class TestSSEStreaming:
         page.goto(base_url)
 
         _upload_and_wait(page)
-        expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
+        expect(page.locator("#jobDetail .badge")).to_contain_text("Abgeschlossen", timeout=20000)
 
     def test_sse_log_level_filter(self, page: Page, base_url, flask_server):
         filtered_log = [

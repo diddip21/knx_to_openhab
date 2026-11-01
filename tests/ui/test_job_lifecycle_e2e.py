@@ -208,12 +208,13 @@ class TestJobLifecycleE2E:
 
         _setup_e2e_routes(page)
         page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
         page.locator("#fileInput").set_input_files(TEST_FILE_PATH)
         page.locator("button[type='submit']").click()
 
         expect(page.locator("#detail-section")).to_be_visible(timeout=20000)
-        expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
+        expect(page.locator("#jobDetail .badge")).to_contain_text("Completed", timeout=20000)
 
         page.once("dialog", lambda dialog: dialog.accept())
         with page.expect_response(
@@ -233,10 +234,11 @@ class TestJobLifecycleE2E:
 
         _setup_e2e_routes(page)
         page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
         page.locator("#fileInput").set_input_files(TEST_FILE_PATH)
         page.locator("button[type='submit']").click()
-        expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
+        expect(page.locator("#jobDetail .badge")).to_contain_text("Completed", timeout=20000)
 
         page.on("dialog", lambda d: d.accept())
 
@@ -256,6 +258,7 @@ class TestJobLifecycleE2E:
 
         _setup_e2e_routes(page)
         page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
         page.locator("#fileInput").set_input_files(TEST_FILE_PATH)
         page.locator("button[type='submit']").click()
@@ -272,10 +275,11 @@ class TestJobLifecycleE2E:
 
         _setup_e2e_routes(page)
         page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
         page.locator("#fileInput").set_input_files(TEST_FILE_PATH)
         page.locator("button[type='submit']").click()
-        expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
+        expect(page.locator("#jobDetail .badge")).to_contain_text("Completed", timeout=20000)
 
         expect(page.locator("#detail-section")).to_be_visible()
         expect(page.locator("#log-section")).to_be_visible()
@@ -290,7 +294,9 @@ class TestJobLifecycleE2E:
         _setup_multiple_upload_routes(page, jobs)
         _setup_multiple_upload_routes(second_page, jobs)
         page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
         second_page.goto(base_url)
+        second_page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
         for upload_page in (page, second_page):
             upload_page.locator("#fileInput").set_input_files(TEST_FILE_PATH)
@@ -302,8 +308,8 @@ class TestJobLifecycleE2E:
 
         expect(page.locator(".job-item")).to_have_count(2, timeout=20000)
         expect(second_page.locator(".job-item")).to_have_count(2, timeout=20000)
-        expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
-        expect(second_page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
+        expect(page.locator("#jobDetail .badge")).to_contain_text("Completed", timeout=20000)
+        expect(second_page.locator("#jobDetail .badge")).to_contain_text("Completed", timeout=20000)
 
         assert set(jobs) == {"job-e2e-1", "job-e2e-2"}
 
@@ -313,10 +319,11 @@ class TestJobLifecycleE2E:
 
         _setup_e2e_routes(page)
         page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
         page.locator("#fileInput").set_input_files(TEST_FILE_PATH)
         page.locator("button[type='submit']").click()
-        expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
+        expect(page.locator("#jobDetail .badge")).to_contain_text("Completed", timeout=20000)
 
         page.locator(".job-item button:has-text('Structure')").click()
         expect(page.locator("#preview-section")).to_be_visible(timeout=10000)

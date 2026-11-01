@@ -22,6 +22,7 @@ from web_ui.backend.gateway_config import (
     update_gateway_file,
 )
 from web_ui.backend.jobs import JobManager
+from web_ui.backend.things_format import strip_dsl_comments
 
 
 def _generate_gateway_job(tmp_path, monkeypatch, detected_ip, output_format="legacy"):
@@ -316,6 +317,37 @@ def test_reset_dsl_ignores_block_commented_bridge_duplicate():
     assert "autoReconnectPeriod=60" in live_result
     assert "ipAddress=" not in live_result
     assert "portNumber=" not in live_result
+
+
+def test_update_dsl_ignores_comment_properties_inside_live_bridge():
+    comment = '/* type="TUNNEL", ipAddress="192.0.2.1" */'
+    content = f'Bridge knx:ip:bridge [ type="ROUTER", {comment} ] {{}}\n'
+
+    updated = update_gateway_file(content, "dsl", "192.0.2.99")
+    active_config = strip_dsl_comments(updated).split("[", 1)[1].split("]", 1)[0]
+
+    assert comment in updated
+    assert active_config.count("type=") == 1
+    assert 'type="TUNNEL"' in active_config
+    assert active_config.count("ipAddress=") == 1
+    assert 'ipAddress="192.0.2.99"' in active_config
+
+
+def test_reset_dsl_removes_active_properties_but_preserves_comment_examples():
+    comment = '/* ipAddress="192.0.2.1", portNumber=3671 */'
+    content = (
+        'Bridge knx:ip:bridge [ type="TUNNEL", '
+        f'{comment}, ipAddress="192.0.2.45", portNumber=3672 ] {{}}\n'
+    )
+
+    restored = restore_ets_gateway_file(content, "dsl", None)
+    active_config = strip_dsl_comments(restored).split("[", 1)[1].split("]", 1)[0]
+
+    assert comment in restored
+    assert 'type="ROUTER"' in active_config
+    assert "autoReconnectPeriod=60" in active_config
+    assert "ipAddress=" not in active_config
+    assert "portNumber=" not in active_config
 
 
 @pytest.mark.parametrize("mutation", ["apply", "reset"])

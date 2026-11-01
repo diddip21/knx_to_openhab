@@ -106,7 +106,8 @@ def _dsl_bridge_config(content: str) -> tuple[int, int, str]:
 
 
 def _dsl_properties(configuration: str) -> list[re.Match[str]]:
-    return list(_DSL_PROPERTY.finditer(configuration))
+    uncommented = strip_dsl_comments(configuration)
+    return list(_DSL_PROPERTY.finditer(uncommented))
 
 
 def _get_dsl_property(configuration: str, key: str) -> str | None:
@@ -121,7 +122,8 @@ def _split_dsl_segments(configuration: str) -> list[tuple[int, int]]:
     start = 0
     quote = None
     escaped = False
-    for index, character in enumerate(configuration):
+    uncommented = strip_dsl_comments(configuration)
+    for index, character in enumerate(uncommented):
         if quote:
             if escaped:
                 escaped = False

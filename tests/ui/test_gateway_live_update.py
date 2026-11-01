@@ -146,7 +146,7 @@ def _stub_job_transition_routes(page: Page, transition: str):
         "name": "Gateway transition job",
         "status": "completed",
         "staged": True,
-        "deployed": transition == "rollback",
+        "deployed": transition in ("rollback", "delete"),
         "backups": [{"name": "backup-current", "ts": "2026-01-01"}],
         "created": 1700000000,
         "stats": {},
@@ -181,8 +181,10 @@ def _stub_job_transition_routes(page: Page, transition: str):
 
     def job_route(route):
         if route.request.method == "DELETE":
+            deleting_active_job = job["deployed"]
             job["deployed"] = False
-            state["available"] = False
+            if deleting_active_job:
+                state["available"] = False
             fulfill(route, {"ok": True})
             return
         fulfill(route, dict(job))

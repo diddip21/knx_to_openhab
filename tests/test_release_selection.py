@@ -160,7 +160,11 @@ def test_exact_release_response_must_match_requested_version(tmp_path):
     fake_bin, environment = _source_environment(tmp_path)
     _fake_curl(fake_bin, environment, _release("v1.4.1"))
 
-    result = _run_sourced_installer(environment, 'resolve_release_version "$1"', "1.4.0")
+    result = _run_sourced_installer(
+        environment,
+        'resolve_release_version "$1"',
+        "1.4.0",
+    )
 
     assert result.returncode != 0
     assert "exact request" in result.stderr

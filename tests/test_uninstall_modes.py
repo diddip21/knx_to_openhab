@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 UNINSTALLER = ROOT / "uninstall.sh"
 
 pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="Bash is required")

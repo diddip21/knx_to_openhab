@@ -230,6 +230,7 @@ def test_interactive_purge_requires_exact_confirmation(
             output.extend(os.read(master_fd, 4096))
         except OSError:
             pass
+    process.wait(timeout=10)
     os.close(master_fd)
 
     assert process.returncode == expected_status, output.decode(errors="replace")

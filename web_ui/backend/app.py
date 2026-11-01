@@ -1027,6 +1027,25 @@ if FLASK_AVAILABLE:
             with job_mgr.operation_lock, job_mgr.gateway_state_lock:
                 # Keep provisioning serialized with live gateway edits and deployments.
                 previous_config = load_generator_config(project_root)
+                previous_devices = previous_config.get("devices", {})
+                previous_gateway = (
+                    previous_devices.get("gateway", {})
+                    if isinstance(previous_devices, dict)
+                    else {}
+                )
+                previous_override = (
+                    previous_gateway.get("ip_address", "")
+                    if isinstance(previous_gateway, dict)
+                    else ""
+                ) or ""
+                new_devices = new_config.get("devices", {})
+                new_gateway = (
+                    new_devices.get("gateway", {}) if isinstance(new_devices, dict) else {}
+                )
+                new_override = (
+                    new_gateway.get("ip_address", "") if isinstance(new_gateway, dict) else ""
+                ) or ""
+                gateway_override_changed = previous_override != new_override
                 previous_yaml_path = previous_config.get("yaml_path", "openhab/yaml/knx.yaml")
                 new_yaml_path = new_config.get("yaml_path", "openhab/yaml/knx.yaml")
                 provision_yaml = (
@@ -1034,6 +1053,8 @@ if FLASK_AVAILABLE:
                     and get_paths(project_root).secrets_file is not None
                 )
                 save_generator_config(new_config, project_root)
+                if gateway_override_changed:
+                    job_mgr.clear_gateway_undo_snapshot()
 
                 if provision_yaml:
                     try:

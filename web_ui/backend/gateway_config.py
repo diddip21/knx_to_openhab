@@ -166,8 +166,10 @@ def _set_dsl_property(configuration: str, key: str, value: str) -> str:
         start, end = match.span("value")
         return configuration[:start] + value + configuration[end:]
 
-    trimmed = configuration.rstrip()
-    trailing_whitespace = configuration[len(trimmed) :]
+    uncommented = strip_dsl_comments(configuration)
+    active_end = len(uncommented.rstrip())
+    trimmed = configuration[:active_end]
+    trailing_whitespace = configuration[active_end:]
     if not trimmed.strip():
         return configuration + f"{key}={value}"
     separator = "" if trimmed.endswith(",") else ","

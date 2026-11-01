@@ -332,3 +332,11 @@ git commit -m "fix: report restored gateway file IP after undo"
 - [ ] Commit the approved design/plan documentation, fetch the remote branch, verify it is an ancestor, and push normally without force.
 - [ ] Reply to and resolve only the four Codex threads fixed by Tasks 10–12; link both screenshots in the PR with descriptions.
 - [ ] Request a fresh `@codex review` on the pushed head. Merge only after that review has no unresolved findings and all required CI checks pass.
+
+#### Additional Codex findings after `ed26408`
+
+- [x] Invalidate the Undo snapshot when a successful config save changes the gateway override, so an A→B→A sequence cannot revive stale Undo; preserve Undo for unrelated config saves.
+- [x] Insert newly added DSL properties using the comment-stripped active end, keeping separators outside trailing `//` comments.
+- [x] Treat invalid prior Undo snapshots as unavailable during Apply/Reset so a valid new snapshot can replace malformed JSON or unsupported versions.
+- [x] Add red/green regressions for each finding. Focused cases, the gateway UI suite, and API config endpoint tests pass; local full suite: 660 passed, 23 skipped, 46 Windows/POSIX-environment failures.
+- [ ] Commit and push these follow-ups, reply to/resolve the three new Codex threads, then request a fresh review and wait for green required CI before merge.

@@ -296,6 +296,19 @@ def test_dsl_bridge_header_skips_brackets_inside_quoted_label():
     )
 
 
+def test_update_dsl_adds_missing_properties_before_trailing_line_comment():
+    content = (
+        'Bridge knx:ip:bridge [ type="ROUTER", autoReconnectPeriod=60 ' "// routing default\n] {}\n"
+    )
+
+    updated = update_gateway_file(content, "dsl", "192.0.2.99")
+
+    assert "autoReconnectPeriod=60,\n" in updated
+    assert "// routing default" in updated
+    assert 'ipAddress="192.0.2.99"' in updated
+    assert read_gateway_config(updated, "dsl") == ("192.0.2.99", "TUNNEL")
+
+
 def test_update_dsl_ignores_block_commented_bridge_duplicate():
     commented_bridge = (
         "/* Example only; do not edit:\n"
@@ -947,6 +960,34 @@ def test_live_apply_does_not_change_file_when_undo_snapshot_cannot_be_saved(tmp_
     assert state["write_calls"] == []
 
 
+@pytest.mark.parametrize("operation", ["apply", "reset"])
+@pytest.mark.parametrize("invalid_content", ["{ truncated", '{"version":999}'])
+def test_live_gateway_update_replaces_invalid_undo_snapshot(
+    tmp_path, monkeypatch, operation, invalid_content
+):
+    source = {
+        "job_id": "deployed",
+        "detected_gateway_ip": "192.168.20.30",
+        "things_format": "dsl",
+    }
+    manager, _state, _read_state = _live_update_manager(
+        monkeypatch,
+        tmp_path,
+        gateway_source=source if operation == "reset" else None,
+    )
+    snapshot_path = Path(manager._gateway_undo_path())
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_path.write_text(invalid_content, encoding="utf-8")
+
+    if operation == "apply":
+        result = manager.apply_gateway_ip("192.168.20.99")
+    else:
+        result = manager.restore_gateway_ip()
+
+    assert result["success"] is True
+    assert gateway_undo.load_snapshot(str(snapshot_path)) is not None
+
+
 def test_undo_restores_only_the_previous_file_and_gateway_override(tmp_path, monkeypatch):
     manager, state, _read_state = _live_update_manager(monkeypatch, tmp_path)
     original_content = state["content"]
@@ -1011,6 +1052,41 @@ def test_undo_refuses_a_changed_saved_gateway_override_without_writing(tmp_path,
     assert state["content"] == live_content
     assert state["config"] == saved_config
     assert state["write_calls"] == writes_before_undo
+
+
+def test_config_override_round_trip_does_not_restore_stale_undo(tmp_path, monkeypatch):
+    manager, state, _read_state = _live_update_manager(monkeypatch, tmp_path)
+    manager.apply_gateway_ip("192.168.20.99")
+
+    from web_ui.backend import app as app_module
+
+    app_module.app.testing = True
+    monkeypatch.setitem(app_module.cfg.setdefault("auth", {}), "enabled", False)
+    monkeypatch.setattr(app_module, "job_mgr", manager)
+    monkeypatch.setattr(
+        app_module, "load_generator_config", lambda *_args: deepcopy(state["config"])
+    )
+    monkeypatch.setattr(
+        app_module,
+        "save_generator_config",
+        lambda config, *_args: state.update(config=deepcopy(config)),
+    )
+    client = app_module.app.test_client()
+
+    unrelated_config = deepcopy(state["config"])
+    unrelated_config["devices"]["other_device"]["enabled"] = False
+    response = client.post("/api/config", json=unrelated_config)
+    assert response.status_code == 200
+    assert manager.get_gateway_state()["undo_available"] is True
+
+    for address in ("192.168.20.77", "192.168.20.99"):
+        config = deepcopy(state["config"])
+        config["devices"]["gateway"]["ip_address"] = address
+        response = client.post("/api/config", json=config)
+        assert response.status_code == 200
+
+    assert state["config"]["devices"]["gateway"]["ip_address"] == "192.168.20.99"
+    assert manager.get_gateway_state()["undo_available"] is False
 
 
 def test_undo_refuses_a_changed_deployed_target_without_writing(tmp_path, monkeypatch):

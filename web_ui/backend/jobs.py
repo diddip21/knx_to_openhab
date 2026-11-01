@@ -370,6 +370,10 @@ class JobManager:
     def _gateway_undo_path(self):
         return os.path.join(self.backups_dir, "gateway-live-undo.json")
 
+    def clear_gateway_undo_snapshot(self):
+        """Invalidate Undo after a saved gateway override changes."""
+        gateway_undo.clear_snapshot(self._gateway_undo_path())
+
     def _gateway_undo_available(
         self, target, openhab_root, managed_paths, current_gateway_override
     ):
@@ -467,7 +471,13 @@ class JobManager:
         gateway["ip_address"] = override
 
         undo_path = self._gateway_undo_path()
-        previous_snapshot = gateway_undo.load_snapshot(undo_path)
+        try:
+            previous_snapshot = gateway_undo.load_snapshot(undo_path)
+        except ValueError as error:
+            logger.warning(
+                "Ignoring invalid KNX gateway undo snapshot before live update: %s", error
+            )
+            previous_snapshot = None
         new_snapshot = {
             "version": gateway_undo.SNAPSHOT_VERSION,
             "job_id": target["job_id"],

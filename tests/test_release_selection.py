@@ -64,6 +64,23 @@ def _release(tag, *, prerelease=False, draft=False):
     return {"tag_name": tag, "prerelease": prerelease, "draft": draft}
 
 
+
+def test_help_works_when_installer_is_piped_to_bash(tmp_path):
+    _, environment = _source_environment(tmp_path)
+    result = subprocess.run(
+        ["bash", "-s", "--", "--help"],
+        input=INSTALLER.read_text(encoding="utf-8"),
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "--version X.Y.Z" in result.stdout
+
+
 def test_default_version_uses_latest_stable_release_endpoint(tmp_path):
     fake_bin, environment = _source_environment(tmp_path)
     arguments_file = _fake_curl(fake_bin, environment, _release("v1.4.0"))

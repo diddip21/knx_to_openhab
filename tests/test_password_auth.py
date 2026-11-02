@@ -2,7 +2,9 @@ import base64
 import json
 from unittest.mock import Mock
 
+import itsdangerous.timed
 import pytest
+from itsdangerous import URLSafeTimedSerializer
 
 from web_ui.backend import app as app_module
 from web_ui.backend.auth import hash_password, is_password_hash, verify_password
@@ -69,6 +71,7 @@ def test_login_creates_protected_session_and_logout_revokes_it(monkeypatch, tmp_
 
     assert response.status_code == 302
     assert response.headers["Location"] == "/"
+    assert "no-store" in response.headers.get("Cache-Control", "")
     cookies = response.headers.getlist("Set-Cookie")
     session_cookie = next(cookie for cookie in cookies if cookie.startswith("knx_session="))
     assert "HttpOnly" in session_cookie
@@ -79,9 +82,33 @@ def test_login_creates_protected_session_and_logout_revokes_it(monkeypatch, tmp_
     blocked = client.post("/api/logout")
     assert blocked.status_code == 403
 
+    already_signed_in = client.get("/login")
+    assert already_signed_in.status_code == 302
+    assert "no-store" in already_signed_in.headers.get("Cache-Control", "")
+
     logout = client.post("/api/logout", headers={"X-CSRF-Token": csrf_header})
     assert logout.status_code == 200
     assert app_module.app.test_client().get("/").status_code == 302
+
+
+def test_login_origin_fallback_still_checks_password(monkeypatch, tmp_path):
+    _enable_test_auth(monkeypatch, tmp_path)
+    app_module.cfg["login_csrf_allowed_origins"] = ["https://mcrelay.greiner-wue.de"]
+    client = app_module.app.test_client()
+    csrf_token = _csrf_cookie(client)
+    client.delete_cookie("knx_login_csrf")
+
+    response = client.post(
+        "/login",
+        data={"csrf_token": csrf_token, "username": "operator", "password": "wrong"},
+        headers={"Origin": "https://mcrelay.greiner-wue.de"},
+    )
+
+    assert response.status_code == 401
+    assert b"username or password is incorrect" in response.data.lower()
+    assert not any(
+        cookie.startswith("knx_session=") for cookie in response.headers.getlist("Set-Cookie")
+    )
 
 
 def test_session_and_login_csrf_cookies_are_secure_over_https(monkeypatch, tmp_path):
@@ -128,6 +155,195 @@ def test_login_rejects_missing_or_invalid_csrf_token(monkeypatch, tmp_path):
 
     assert response.status_code == 400
     assert b"sign-in request expired" in response.data.lower()
+
+
+def test_login_allows_missing_csrf_cookie_for_configured_origin(monkeypatch, tmp_path):
+    _enable_test_auth(monkeypatch, tmp_path)
+    app_module.cfg["login_csrf_allowed_origins"] = ["https://mcrelay.greiner-wue.de"]
+    client = app_module.app.test_client()
+    csrf_token = _csrf_cookie(client)
+    client.delete_cookie("knx_login_csrf")
+
+    response = client.post(
+        "/login",
+        data={
+            "csrf_token": csrf_token,
+            "username": "operator",
+            "password": "a-long-unique-password",
+        },
+        headers={"Origin": "https://mcrelay.greiner-wue.de"},
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/"
+
+
+def test_login_uses_referer_origin_only_when_origin_is_absent(monkeypatch, tmp_path):
+    _enable_test_auth(monkeypatch, tmp_path)
+    app_module.cfg["login_csrf_allowed_origins"] = ["https://mcrelay.greiner-wue.de"]
+    client = app_module.app.test_client()
+    csrf_token = _csrf_cookie(client)
+    client.delete_cookie("knx_login_csrf")
+
+    response = client.post(
+        "/login",
+        data={
+            "csrf_token": csrf_token,
+            "username": "operator",
+            "password": "a-long-unique-password",
+        },
+        headers={"Referer": "https://mcrelay.greiner-wue.de/login?next=%2F"},
+    )
+
+    assert response.status_code == 302
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Origin": "https://evil.example"},
+        {"Origin": "https://mcrelay.greiner-wue.de.evil.example"},
+        {"Origin": "null"},
+        {"Origin": "not-an-origin"},
+        {},
+        {
+            "Origin": "https://evil.example",
+            "Referer": "https://mcrelay.greiner-wue.de/login",
+        },
+    ],
+    ids=["unlisted", "lookalike-host", "null", "malformed", "no-origin", "bad-origin-wins"],
+)
+def test_login_rejects_missing_cookie_for_untrusted_origin(monkeypatch, tmp_path, headers):
+    _enable_test_auth(monkeypatch, tmp_path)
+    app_module.cfg["login_csrf_allowed_origins"] = ["https://mcrelay.greiner-wue.de"]
+    password_verifier = Mock(return_value=True)
+    monkeypatch.setattr(app_module, "verify_password", password_verifier)
+    client = app_module.app.test_client()
+    csrf_token = _csrf_cookie(client)
+    client.delete_cookie("knx_login_csrf")
+
+    response = client.post(
+        "/login",
+        data={
+            "csrf_token": csrf_token,
+            "username": "operator",
+            "password": "a-long-unique-password",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert b"sign-in request expired" in response.data.lower()
+    password_verifier.assert_not_called()
+
+
+def test_login_rejects_mismatched_cookie_even_for_configured_origin(monkeypatch, tmp_path):
+    _enable_test_auth(monkeypatch, tmp_path)
+    app_module.cfg["login_csrf_allowed_origins"] = ["https://mcrelay.greiner-wue.de"]
+    client = app_module.app.test_client()
+    csrf_token = _csrf_cookie(client)
+    client.set_cookie("knx_login_csrf", "different-token")
+
+    response = client.post(
+        "/login",
+        data={"csrf_token": csrf_token, "username": "operator", "password": "wrong"},
+        headers={"Origin": "https://mcrelay.greiner-wue.de"},
+    )
+
+    assert response.status_code == 400
+    assert b"sign-in request expired" in response.data.lower()
+
+
+@pytest.mark.parametrize("token_kind", ["tampered", "expired"])
+def test_login_rejects_invalid_signed_token_without_cookie(monkeypatch, tmp_path, token_kind):
+    _enable_test_auth(monkeypatch, tmp_path)
+    app_module.cfg["login_csrf_allowed_origins"] = ["https://mcrelay.greiner-wue.de"]
+    if token_kind == "tampered":
+        csrf_token = "not-a-valid-signed-token"
+    else:
+        serializer = URLSafeTimedSerializer(b"k" * 32, salt="knx-login-csrf")
+        with monkeypatch.context() as context:
+            context.setattr(itsdangerous.timed.time, "time", lambda: 1)
+            csrf_token = serializer.dumps("expired-token")
+    client = app_module.app.test_client()
+
+    response = client.post(
+        "/login",
+        data={"csrf_token": csrf_token, "username": "operator", "password": "wrong"},
+        headers={"Origin": "https://mcrelay.greiner-wue.de"},
+    )
+
+    assert response.status_code == 400
+    assert b"sign-in request expired" in response.data.lower()
+
+
+def test_malformed_configured_login_origin_does_not_authorize_fallback(monkeypatch, tmp_path):
+    _enable_test_auth(monkeypatch, tmp_path)
+    app_module.cfg["login_csrf_allowed_origins"] = [
+        "https://mcrelay.greiner-wue.de/unexpected-path"
+    ]
+    client = app_module.app.test_client()
+    csrf_token = _csrf_cookie(client)
+    client.delete_cookie("knx_login_csrf")
+
+    response = client.post(
+        "/login",
+        data={"csrf_token": csrf_token, "username": "operator", "password": "wrong"},
+        headers={"Origin": "https://mcrelay.greiner-wue.de"},
+    )
+
+    assert response.status_code == 400
+    assert b"sign-in request expired" in response.data.lower()
+
+
+def test_login_csrf_allowed_origins_default_to_empty(tmp_path, monkeypatch):
+    monkeypatch.setenv("KNXOH_PATHS_FILE", str(tmp_path / "missing-paths.env"))
+    monkeypatch.delenv("KNXOH_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("KNXOH_DATA_DIR", raising=False)
+    monkeypatch.delenv("KNXOH_BACKUP_DIR", raising=False)
+
+    assert load_config(tmp_path)["login_csrf_allowed_origins"] == []
+
+
+@pytest.mark.parametrize("configured_origins", ["https://mcrelay.greiner-wue.de", [1]])
+def test_load_config_rejects_invalid_login_csrf_origin_shape(
+    tmp_path, monkeypatch, configured_origins
+):
+    monkeypatch.setenv("KNXOH_PATHS_FILE", str(tmp_path / "missing-paths.env"))
+    monkeypatch.delenv("KNXOH_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("KNXOH_DATA_DIR", raising=False)
+    monkeypatch.delenv("KNXOH_BACKUP_DIR", raising=False)
+    config_file = tmp_path / "web_ui" / "backend" / "config.json"
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text(
+        json.dumps({"login_csrf_allowed_origins": configured_origins}), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="login_csrf_allowed_origins"):
+        load_config(tmp_path)
+
+
+def test_login_responses_are_not_cacheable(monkeypatch, tmp_path):
+    _enable_test_auth(monkeypatch, tmp_path)
+    client = app_module.app.test_client()
+
+    login_page = client.get("/login")
+    error_response = client.post("/login")
+
+    assert "no-store" in login_page.headers.get("Cache-Control", "")
+    assert "no-store" in error_response.headers.get("Cache-Control", "")
+
+
+def test_login_redirect_when_auth_is_disabled_is_not_cacheable(monkeypatch, tmp_path):
+    _enable_test_auth(monkeypatch, tmp_path)
+    app_module.cfg["auth"]["enabled"] = False
+    client = app_module.app.test_client()
+
+    response = client.get("/login")
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/"
+    assert "no-store" in response.headers.get("Cache-Control", "")
 
 
 def test_login_rate_limits_repeated_failures(monkeypatch, tmp_path):

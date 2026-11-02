@@ -24,6 +24,7 @@ def load_config(project_root=None):
         "bind_host": "127.0.0.1",
         "port": 8085,
         "trusted_proxy_hops": 0,
+        "login_csrf_allowed_origins": [],
         "session_max_age_seconds": 43200,
         "auth": {"enabled": True, "user": "admin"},
         "retention": {"days": 14, "max_backups": 50, "max_backups_size_mb": 500},
@@ -39,6 +40,14 @@ def load_config(project_root=None):
     for key in ("auth", "retention", "general"):
         if not isinstance(config.get(key), dict):
             raise ValueError(f"Web UI configuration field '{key}' must be an object")
+
+    login_csrf_allowed_origins = config.get("login_csrf_allowed_origins")
+    if not isinstance(login_csrf_allowed_origins, list) or any(
+        not isinstance(origin, str) for origin in login_csrf_allowed_origins
+    ):
+        raise ValueError(
+            "Web UI configuration field 'login_csrf_allowed_origins' must be a list of strings"
+        )
 
     auth = config["auth"]
     legacy_password = auth.pop("password", None)

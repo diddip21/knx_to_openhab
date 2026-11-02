@@ -66,6 +66,30 @@ sudo cat /etc/knx_to_openhab/paths.env
 sudo ls -la /etc/knx_to_openhab /var/lib/knx_to_openhab /var/backups/knx_to_openhab
 ```
 
+### Login behind a relay that drops the CSRF cookie
+
+The relay should normally pass `Set-Cookie` and `Cookie` headers unchanged.
+If it drops only the login CSRF cookie, an administrator can add this setting to
+the existing Web UI settings object at `/etc/knx_to_openhab/config.json`,
+preserving its other settings:
+
+```json
+{
+  "login_csrf_allowed_origins": ["https://mcrelay.greiner-wue.de"]
+}
+```
+
+Use an exact origin (scheme, host, and optional port), with no path. This
+fallback keeps the signed, time-limited login token and requires an exact
+`Origin` match (or `Referer` when `Origin` is absent); it does not disable
+authentication or CSRF protection. The relay must still pass the
+post-login `knx_session` and `knx_csrf` cookies, or sign-in cannot persist.
+After changing the setting, restart the Web UI service so it reloads the config:
+
+```bash
+sudo systemctl restart knxohui.service
+```
+
 ### Change the Web UI password
 
 The installer keeps the Web UI password in the protected `secrets.env` file.

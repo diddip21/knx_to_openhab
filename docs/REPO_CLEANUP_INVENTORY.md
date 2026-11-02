@@ -4,7 +4,7 @@ Audit snapshot: `main` at `6242f1d` (`2026-11-02`). This inventory supports Issu
 
 ## Removed duplicate data
 
-The three `influxdb.persist` files under `tests/fixtures/expected_output/{Charne,Mini,UploadJson}/` had identical SHA-256 hashes (`FB543C2BFE0819F60BDBEF6DCD45B91E52447196ED5CABEDBA0582689A9301EC`) and identical contents (174 bytes each). They are now represented by `tests/fixtures/expected_output/common/influxdb.persist`. Golden comparison falls back to that shared reference, while regeneration and the manual golden generator preserve a project-local file if its persistence output differs. This consolidates 348 redundant bytes and keeps future project-specific output testable.
+The three `influxdb.persist` files under `tests/fixtures/expected_output/{Charne,Mini,UploadJson}/` had the same Git blob ID (`e3d8eb24af0209ba14b8cb41d0fc7dd0c33f69ef`), 165 bytes each, and content SHA-256 (`1a497fec562fd54c31af6a080f1978f3450f1a060521d6bf9f3dee65c1b0ec3a`) at the audited parent. They are now represented by `tests/fixtures/expected_output/common/influxdb.persist`. Golden comparison falls back to that shared reference, while regeneration and the manual golden generator preserve a project-local file if its persistence output differs. This consolidates 330 duplicate bytes in the current tree and keeps future project-specific output testable.
 
 ## Reviewed and retained
 

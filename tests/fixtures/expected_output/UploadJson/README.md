@@ -7,7 +7,7 @@ Date: 2026-02-04 14:41:24
 - knx.items
 - knx.things
 - knx.sitemap
-- influxdb.persist
+- shared `../common/influxdb.persist`
 
 ## Usage
 These files serve as reference outputs for regression testing.

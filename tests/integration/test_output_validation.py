@@ -31,6 +31,16 @@ GOLDEN_CASES = [
 ]
 
 
+def persistence_golden_path(case_name, expected_output_dir=None):
+    """Return the case-specific persistence golden, or its shared fallback."""
+    if expected_output_dir is None:
+        expected_output_dir = TESTS_DIR / "fixtures" / "expected_output"
+    case_golden = expected_output_dir / case_name / "influxdb.persist"
+    if case_golden.exists():
+        return case_golden
+    return expected_output_dir / "common" / "influxdb.persist"
+
+
 class TestOutputValidation:
 
     def setup_method(self):
@@ -163,9 +173,24 @@ class TestOutputValidation:
         output_dir = self._generate_openhab_files(tmp_path, project_path)
 
         generated = output_dir / "influxdb.persist"
-        golden = TESTS_DIR / "fixtures" / "expected_output" / case_name / "influxdb.persist"
-
+        golden = persistence_golden_path(case_name)
+        assert golden.is_file(), f"Persistence golden file not found: {golden}"
         self._compare_files(generated, golden)
+
+    def test_persistence_golden_prefers_case_override(self, tmp_path):
+        """A project-specific golden takes precedence over the shared default."""
+        expected_output_dir = tmp_path / "expected_output"
+        case_golden = expected_output_dir / "Charne" / "influxdb.persist"
+        shared_golden = expected_output_dir / "common" / "influxdb.persist"
+        case_golden.parent.mkdir(parents=True)
+        shared_golden.parent.mkdir(parents=True)
+        case_golden.write_text("case-specific\n", encoding="utf-8")
+        shared_golden.write_text("shared\n", encoding="utf-8")
+
+        assert persistence_golden_path("Charne", expected_output_dir) == case_golden
+
+        case_golden.unlink()
+        assert persistence_golden_path("Charne", expected_output_dir) == shared_golden
 
     @pytest.mark.parametrize("case_name, project_path", GOLDEN_CASES)
     def test_all_files_generated(self, tmp_path, case_name, project_path):

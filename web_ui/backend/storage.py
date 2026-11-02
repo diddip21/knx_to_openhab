@@ -26,7 +26,7 @@ def load_config(project_root=None):
         "trusted_proxy_hops": 0,
         "login_csrf_allowed_origins": [],
         "session_max_age_seconds": 43200,
-        "auth": {"enabled": True, "user": "admin"},
+        "auth": {"enabled": True, "user": "admin", "mode": "session", "allowed_origins": []},
         "retention": {"days": 14, "max_backups": 50, "max_backups_size_mb": 500},
         "general": {"auto_place_unknown": False},
     }
@@ -50,6 +50,16 @@ def load_config(project_root=None):
         )
 
     auth = config["auth"]
+    auth.setdefault("mode", "session")
+    auth.setdefault("allowed_origins", [])
+    if auth["mode"] not in ("session", "basic"):
+        raise ValueError("Web UI configuration field 'auth.mode' must be 'session' or 'basic'")
+    if not isinstance(auth["allowed_origins"], list) or any(
+        not isinstance(origin, str) for origin in auth["allowed_origins"]
+    ):
+        raise ValueError(
+            "Web UI configuration field 'auth.allowed_origins' must be a list of strings"
+        )
     legacy_password = auth.pop("password", None)
     if legacy_password is not None:
         auth["legacy_password"] = str(legacy_password)

@@ -36,6 +36,16 @@ def _csrf_cookie(client, path="/login"):
     return cookie.value
 
 
+def _basic_auth_header(username="operator", password="a-long-unique-password"):
+    encoded = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+    return {"Authorization": f"Basic {encoded}"}
+
+
+def _enable_basic_auth(monkeypatch, tmp_path, password="a-long-unique-password"):
+    _enable_test_auth(monkeypatch, tmp_path, password)
+    app_module.cfg["auth"].update(mode="basic", allowed_origins=["https://mcrelay.greiner-wue.de"])
+
+
 def test_password_hash_is_argon2id_and_verifies_only_matching_password():
     password_hash = hash_password("a-long-unique-password")
 
@@ -344,6 +354,234 @@ def test_login_redirect_when_auth_is_disabled_is_not_cacheable(monkeypatch, tmp_
     assert response.status_code == 302
     assert response.headers["Location"] == "/"
     assert "no-store" in response.headers.get("Cache-Control", "")
+
+
+def test_basic_auth_configuration_defaults_to_session(tmp_path, monkeypatch):
+    monkeypatch.setenv("KNXOH_PATHS_FILE", str(tmp_path / "missing-paths.env"))
+    monkeypatch.delenv("KNXOH_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("KNXOH_DATA_DIR", raising=False)
+    monkeypatch.delenv("KNXOH_BACKUP_DIR", raising=False)
+
+    config = load_config(tmp_path)
+
+    assert config["auth"]["mode"] == "session"
+    assert config["auth"]["allowed_origins"] == []
+
+
+@pytest.mark.parametrize(
+    "auth_config",
+    [
+        {"enabled": True, "mode": "digest"},
+        {"enabled": True, "mode": "basic", "allowed_origins": "https://site.example"},
+        {"enabled": True, "mode": "basic", "allowed_origins": [1]},
+    ],
+)
+def test_load_config_rejects_invalid_auth_mode_or_origin_shape(tmp_path, monkeypatch, auth_config):
+    monkeypatch.setenv("KNXOH_PATHS_FILE", str(tmp_path / "missing-paths.env"))
+    monkeypatch.delenv("KNXOH_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("KNXOH_DATA_DIR", raising=False)
+    monkeypatch.delenv("KNXOH_BACKUP_DIR", raising=False)
+    config_file = tmp_path / "web_ui" / "backend" / "config.json"
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text(json.dumps({"auth": auth_config}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="auth"):
+        load_config(tmp_path)
+
+
+def test_basic_auth_challenges_missing_or_invalid_credentials(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    client = app_module.app.test_client()
+
+    missing = client.get("/")
+    invalid = client.get("/", headers=_basic_auth_header(password="wrong"))
+
+    assert missing.status_code == invalid.status_code == 401
+    assert missing.headers["WWW-Authenticate"].startswith("Basic ")
+    assert invalid.headers["WWW-Authenticate"].startswith("Basic ")
+    assert b"incorrect" not in invalid.data.lower()
+
+
+def test_basic_auth_challenge_does_not_count_as_failed_login(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    client = app_module.app.test_client()
+
+    for _ in range(5):
+        assert client.get("/").status_code == 401
+
+    valid = client.get("/", headers=_basic_auth_header())
+
+    assert valid.status_code == 200
+
+
+def test_basic_auth_caches_successful_password_verification(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    verifier = Mock(return_value=True)
+    monkeypatch.setattr(app_module, "verify_password", verifier)
+    client = app_module.app.test_client()
+    headers = _basic_auth_header()
+
+    assert client.get("/", headers=headers).status_code == 200
+    assert client.get("/api/version", headers=headers).status_code == 200
+
+    assert verifier.call_count == 1
+
+
+def test_basic_auth_success_cache_invalidates_when_password_hash_changes(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    verifier = Mock(return_value=True)
+    monkeypatch.setattr(app_module, "verify_password", verifier)
+    client = app_module.app.test_client()
+    headers = _basic_auth_header()
+
+    assert client.get("/", headers=headers).status_code == 200
+    app_module.cfg["auth"]["password_hash"] = "changed-password-hash"
+    assert client.get("/api/version", headers=headers).status_code == 200
+
+    assert verifier.call_count == 2
+
+
+def test_basic_auth_checks_password_hash_for_unknown_username(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    verifier = Mock(return_value=False)
+    monkeypatch.setattr(app_module, "verify_password", verifier)
+
+    response = app_module.app.test_client().get("/", headers=_basic_auth_header("unknown"))
+
+    assert response.status_code == 401
+    assert verifier.call_count == 1
+
+
+def test_basic_auth_allows_protected_page_and_api_without_cookies(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    client = app_module.app.test_client()
+    headers = _basic_auth_header()
+
+    page = client.get("/", headers=headers)
+    api = client.get("/api/version", headers=headers)
+
+    assert page.status_code == 200
+    assert api.status_code == 200
+    assert client.get_cookie("knx_session") is None
+    assert client.get_cookie("knx_csrf") is None
+    assert not any(
+        cookie.startswith(("knx_session=", "knx_csrf=", "knx_login_csrf="))
+        for cookie in page.headers.getlist("Set-Cookie") + api.headers.getlist("Set-Cookie")
+    )
+
+
+def test_basic_auth_does_not_log_authorization_credentials(monkeypatch, tmp_path, caplog):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    client = app_module.app.test_client()
+    secret_value = "a-long-unique-password"
+
+    response = client.get("/", headers=_basic_auth_header(password=secret_value))
+
+    assert response.status_code == 200
+    assert secret_value not in caplog.text
+    assert _basic_auth_header()["Authorization"] not in caplog.text
+
+
+def test_basic_auth_rate_limit_blocks_verification_and_success_while_locked(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    verifier = Mock(side_effect=[False, False, False, False, False, True])
+    monkeypatch.setattr(app_module, "verify_password", verifier)
+    client = app_module.app.test_client()
+
+    for _ in range(5):
+        response = client.get("/", headers=_basic_auth_header(password="wrong"))
+        assert response.status_code == 401
+
+    locked_out = client.get("/", headers=_basic_auth_header())
+
+    assert locked_out.status_code == 429
+    assert verifier.call_count == 5
+
+
+def test_basic_auth_success_does_not_clear_shared_failure_counter(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    verifier = Mock(side_effect=[False, False, False, False, True, False])
+    monkeypatch.setattr(app_module, "verify_password", verifier)
+    client = app_module.app.test_client()
+
+    for _ in range(4):
+        assert client.get("/", headers=_basic_auth_header(password="wrong")).status_code == 401
+    assert client.get("/", headers=_basic_auth_header()).status_code == 200
+    assert client.get("/", headers=_basic_auth_header(password="wrong")).status_code == 401
+
+    locked_out = client.get("/", headers=_basic_auth_header())
+
+    assert locked_out.status_code == 429
+    assert verifier.call_count == 6
+
+
+def test_basic_auth_allows_write_with_exact_origin_or_referer(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    client = app_module.app.test_client()
+    auth = _basic_auth_header()
+
+    with_origin = client.post(
+        "/api/logout", headers={**auth, "Origin": "https://mcrelay.greiner-wue.de"}
+    )
+    with_referer = client.post(
+        "/api/logout",
+        headers={**auth, "Referer": "https://mcrelay.greiner-wue.de/settings"},
+    )
+
+    assert with_origin.status_code == 200
+    assert with_referer.status_code == 200
+    assert not any(
+        cookie.startswith(("knx_session=", "knx_csrf=", "knx_login_csrf="))
+        for cookie in with_origin.headers.getlist("Set-Cookie")
+        + with_referer.headers.getlist("Set-Cookie")
+    )
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {},
+        {"Origin": "https://evil.example"},
+        {"Origin": "null"},
+        {"Origin": "not-an-origin"},
+        {
+            "Origin": "https://evil.example",
+            "Referer": "https://mcrelay.greiner-wue.de/settings",
+        },
+    ],
+    ids=["absent", "unlisted", "null", "malformed", "bad-origin-wins"],
+)
+def test_basic_auth_rejects_unsafe_request_from_untrusted_origin(monkeypatch, tmp_path, headers):
+    _enable_basic_auth(monkeypatch, tmp_path)
+
+    response = app_module.app.test_client().post(
+        "/api/logout", headers={**_basic_auth_header(), **headers}
+    )
+
+    assert response.status_code == 403
+    assert response.json == {"error": "valid request origin required"}
+
+
+def test_basic_auth_rejects_http_allowlisted_origin(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    app_module.cfg["auth"]["allowed_origins"] = ["http://mcrelay.greiner-wue.de"]
+
+    response = app_module.app.test_client().post(
+        "/api/logout",
+        headers={**_basic_auth_header(), "Origin": "http://mcrelay.greiner-wue.de"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_basic_auth_missing_credentials_config_returns_cookie_free_503(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    app_module.cfg["auth"].pop("password_hash")
+
+    response = app_module.app.test_client().get("/")
+
+    assert response.status_code == 503
+    assert not response.headers.getlist("Set-Cookie")
 
 
 def test_login_rate_limits_repeated_failures(monkeypatch, tmp_path):

@@ -300,6 +300,104 @@ def auth_preview_server(tmp_path_factory):
     output_reader.join(timeout=1)
 
 
+@pytest.fixture(scope="session")
+def basic_auth_preview_server(tmp_path_factory):
+    """Run an isolated Basic-authenticated app for the cookie-less UI screenshot."""
+    from web_ui.backend.auth import hash_password
+
+    project_root = Path(__file__).resolve().parents[2]
+    temp_root = tmp_path_factory.mktemp("basic-auth-preview")
+    config_dir = temp_root / "config"
+    data_dir = temp_root / "data"
+    backup_dir = temp_root / "backups"
+    config_dir.mkdir()
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+
+    config = {
+        "openhab_path": str(project_root / "openhab"),
+        "jobs_dir": str(data_dir / "jobs"),
+        "staging_dir": str(data_dir / "staging"),
+        "generated_dir": str(data_dir / "generated"),
+        "backups_dir": str(backup_dir),
+        "sessions_file": str(data_dir / "sessions.sqlite3"),
+        "bind_host": "127.0.0.1",
+        "port": port,
+        "trusted_proxy_hops": 0,
+        "auth": {
+            "enabled": True,
+            "user": "operator",
+            "mode": "basic",
+            "allowed_origins": ["https://mcrelay.greiner-wue.de"],
+        },
+        "retention": {"days": 14, "max_backups": 50, "max_backups_size_mb": 500},
+        "general": {"auto_place_unknown": False},
+    }
+    (config_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    password_hash = hash_password("test-only-preview-password")
+    secret_lines = [
+        "KNXOH_UI_PASSWORD_HASH_B64="
+        + base64.b64encode(password_hash.encode("utf-8")).decode("ascii"),
+        "KNXOH_SESSION_SECRET_B64=" + base64.b64encode(b"s" * 32).decode("ascii"),
+    ]
+    (config_dir / "secrets.env").write_text("\n".join(secret_lines) + "\n", encoding="utf-8")
+    (config_dir / "generator.json").write_text(
+        (project_root / "config.json").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    env = os.environ.copy()
+    env.pop("FLASK_ENV", None)
+    env.update(
+        {
+            "KNXOH_INSTALL_DIR": str(project_root),
+            "KNXOH_CONFIG_DIR": str(config_dir),
+            "KNXOH_DATA_DIR": str(data_dir),
+            "KNXOH_BACKUP_DIR": str(backup_dir),
+            "KNXOH_PATHS_FILE": str(temp_root / "missing-paths.env"),
+        }
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-m", "web_ui.backend"],
+        cwd=project_root,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    server_output, output_reader = _capture_process_output(process)
+    url = f"http://127.0.0.1:{port}"
+    for _ in range(30):
+        if process.poll() is not None:
+            output = _recent_process_output(server_output, output_reader) or "No output"
+            raise RuntimeError(f"Basic-auth preview server failed to start:\n{output}")
+        try:
+            response = requests.get(url, auth=("operator", "test-only-preview-password"), timeout=1)
+            if response.status_code == 200:
+                break
+        except requests.exceptions.RequestException:
+            time.sleep(1)
+    else:
+        process.terminate()
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        output = _recent_process_output(server_output, output_reader) or "No output"
+        raise RuntimeError(f"Basic-auth preview server did not start:\n{output}")
+
+    yield url
+
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+    output_reader.join(timeout=1)
+
+
 @pytest.fixture
 def expire_auth_preview_session(auth_preview_server):
     """Expire the authenticated preview session while its dashboard stays open."""

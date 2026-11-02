@@ -5,7 +5,9 @@ import os
 import subprocess
 import sys
 import tarfile
+import time
 import uuid
+from threading import Lock
 from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
 
@@ -161,6 +163,9 @@ if FLASK_AVAILABLE:
     import secrets
 
     _session_store: SessionStore | None = None
+    _basic_auth_successes: dict[tuple[str, str], float] = {}
+    _basic_auth_successes_lock = Lock()
+    _basic_auth_cache_secret = secrets.token_bytes(32)
     session_max_age = max(
         300, min(int(cfg.get("session_max_age_seconds", SESSION_MAX_AGE)), 604800)
     )
@@ -209,6 +214,29 @@ if FLASK_AVAILABLE:
             referer = request.headers.get("Referer")
             request_origin = _parse_origin(referer, allow_url_path=True) if referer else None
         return request_origin is not None and request_origin in normalized_allowed_origins
+
+    def _basic_auth_origin_allowed() -> bool:
+        allowed_origins = cfg.get("auth", {}).get("allowed_origins", [])
+        normalized_allowed_origins = {
+            origin for value in allowed_origins if (origin := _parse_origin(value)) is not None
+        }
+        origin_header = request.headers.get("Origin")
+        if origin_header is not None:
+            request_origin = _parse_origin(origin_header)
+        else:
+            referer = request.headers.get("Referer")
+            request_origin = _parse_origin(referer, allow_url_path=True) if referer else None
+        return (
+            request_origin is not None
+            and request_origin[0] == "https"
+            and request_origin in normalized_allowed_origins
+        )
+
+    def _basic_auth_challenge(status: int = 401):
+        response = make_response("Authentication required", status)
+        response.headers["WWW-Authenticate"] = 'Basic realm="KNX to OpenHAB", charset="UTF-8"'
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     def _render_login(error: str | None = None, status: int = 200):
         token = _login_csrf_serializer().dumps(secrets.token_urlsafe(32))
@@ -275,6 +303,30 @@ if FLASK_AVAILABLE:
             password_matches = False
         return user_matches and password_matches
 
+    def _verify_basic_login(username: str, password: str) -> bool:
+        credential_version = _credential_version()
+        candidate = hmac.new(
+            _basic_auth_cache_secret,
+            (username + "\0" + password).encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        cache_key = (credential_version, candidate)
+        now = time.monotonic()
+        with _basic_auth_successes_lock:
+            expires_at = _basic_auth_successes.get(cache_key)
+            if expires_at is not None and expires_at > now:
+                return True
+            _basic_auth_successes.pop(cache_key, None)
+
+        if not _verify_login(username, password):
+            return False
+
+        with _basic_auth_successes_lock:
+            if len(_basic_auth_successes) >= 128:
+                _basic_auth_successes.pop(next(iter(_basic_auth_successes)))
+            _basic_auth_successes[cache_key] = now + 30
+        return True
+
     @app.before_request
     def require_auth():
         acfg = cfg.get("auth", {})
@@ -291,7 +343,30 @@ if FLASK_AVAILABLE:
             )
             if path.startswith("/api/"):
                 return message, 503
+            if acfg.get("mode", "session") == "basic":
+                response = make_response(message, 503)
+                response.headers["Cache-Control"] = "no-store"
+                return response
             return _render_login(message, 503)
+
+        if acfg.get("mode", "session") == "basic":
+            identity = request.remote_addr or "unknown"
+            session_store = _sessions()
+            if not session_store.is_login_allowed(identity):
+                return _basic_auth_challenge(429)
+            authorization = request.authorization
+            if authorization is None or authorization.type.lower() != "basic":
+                return _basic_auth_challenge()
+            if not _verify_basic_login(authorization.username or "", authorization.password or ""):
+                session_store.record_login_failure(identity)
+                return _basic_auth_challenge()
+            g.authenticated_user = authorization.username
+            if (
+                request.method not in ("GET", "HEAD", "OPTIONS")
+                and not _basic_auth_origin_allowed()
+            ):
+                return jsonify({"error": "valid request origin required"}), 403
+            return None
 
         session_token = request.cookies.get("knx_session", "")
         session = (
@@ -324,6 +399,10 @@ if FLASK_AVAILABLE:
     def login():
         acfg = cfg.get("auth", {})
         if not acfg.get("enabled"):
+            response = redirect("/")
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        if acfg.get("mode", "session") == "basic":
             response = redirect("/")
             response.headers["Cache-Control"] = "no-store"
             return response
@@ -386,6 +465,8 @@ if FLASK_AVAILABLE:
 
     @app.route("/api/logout", methods=["POST"])
     def logout():
+        if cfg.get("auth", {}).get("mode", "session") == "basic":
+            return jsonify({"ok": True})
         session_token = request.cookies.get("knx_session", "")
         if session_token:
             _sessions().revoke(session_token)
@@ -404,6 +485,7 @@ if FLASK_AVAILABLE:
             "index.html",
             csrf_token=request.cookies.get("knx_csrf", ""),
             auth_enabled=cfg.get("auth", {}).get("enabled", False),
+            auth_mode=cfg.get("auth", {}).get("mode", "session"),
         )
 
     @app.route("/api/upload", methods=["POST"])

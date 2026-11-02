@@ -182,7 +182,7 @@ class TestSSEStreaming:
         page.goto(base_url)
 
         _upload_and_wait(page)
-        expect(page.locator("#log")).to_contain_text("ERROR", timeout=10000)
+        expect(page.locator("#log")).to_contain_text("[Fehler] Something went wrong", timeout=10000)
         expect(page.locator("#log")).to_contain_text("Something went wrong", timeout=10000)
 
     def test_sse_done_completes_job(self, page: Page, base_url, flask_server):

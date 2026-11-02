@@ -148,6 +148,7 @@
     'updates.date': 'Datum:',
     'updates.author': 'Autor:',
     'common.cancel': 'Abbrechen',
+    'common.unknownError': 'Unbekannter Fehler',
     'updates.install': 'Update installieren',
     'updates.log': 'Update-Protokoll',
     'updates.waitingLogs': 'Warte auf Protokolle …',
@@ -306,6 +307,7 @@
     'updates.date': 'Date:',
     'updates.author': 'Author:',
     'common.cancel': 'Cancel',
+    'common.unknownError': 'Unknown error',
     'updates.install': 'Install Update',
     'updates.log': 'Update Log',
     'updates.waitingLogs': 'Waiting for logs...',
@@ -579,8 +581,8 @@
     'updates.latest': '✓ Sie verwenden bereits die neueste Version!',
     'updates.checkFailed': 'Update-Prüfung fehlgeschlagen: {error}',
     'updates.starting': 'Update-Vorgang wird gestartet …\n',
-    'updates.apiError': 'Fehler bei der Update-API: {error}\n',
-    'updates.requestFailed': 'Anfrage fehlgeschlagen: {error}\n',
+    'updates.apiError': 'Update-Vorgang wird gestartet …\nFehler bei der Update-API: {error}\n',
+    'updates.requestFailed': 'Update-Vorgang wird gestartet …\nAnfrage fehlgeschlagen: {error}\n',
     'login.error.expired': 'Die Anmeldeanfrage ist abgelaufen. Bitte versuchen Sie es erneut.',
     'login.error.limited': 'Zu viele Versuche. Bitte versuchen Sie es später erneut.',
     'login.error.invalid': 'Benutzername oder Passwort ist falsch.',
@@ -713,8 +715,8 @@
     'updates.latest': '✓ You are running the latest version!',
     'updates.checkFailed': 'Failed to check for updates: {error}',
     'updates.starting': 'Starting update process…\n',
-    'updates.apiError': 'Error interacting with update API: {error}\n',
-    'updates.requestFailed': 'Request failed: {error}\n',
+    'updates.apiError': 'Starting update process…\nError interacting with update API: {error}\n',
+    'updates.requestFailed': 'Starting update process…\nRequest failed: {error}\n',
     'login.error.expired': 'The sign-in request expired. Please try again.',
     'login.error.limited': 'Too many attempts. Please try again later.',
     'login.error.invalid': 'Username or password is incorrect.',
@@ -839,10 +841,10 @@
       }
     }
 
-    if (translated === null) return message
     const translatedCategory = originalCategory
       ? `[${t(`log.category.${originalCategory.toLowerCase()}`)}] `
       : ''
+    if (translated === null) return `${timestamp}${translatedCategory}${body}`
     return `${timestamp}${translatedCategory}${translated}`
   }
 

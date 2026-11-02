@@ -99,12 +99,21 @@ function localizedTime(value) {
   return new Date(value).toLocaleTimeString(selectedDateLocale())
 }
 
+function resolveLocalizedParams(params) {
+  return Object.fromEntries(Object.entries(params).map(([name, value]) => {
+    if (value && typeof value === 'object' && typeof value.i18nKey === 'string') {
+      return [name, window.I18N.t(value.i18nKey)]
+    }
+    return [name, value]
+  }))
+}
+
 function setLocalizedMessage(element, key, params = {}, className = null) {
   if (!element) return
   delete element.dataset.translatableMessage
   element.dataset.messageKey = key
   element.dataset.messageParams = JSON.stringify(params)
-  element.textContent = window.I18N.t(key, params)
+  element.textContent = window.I18N.t(key, resolveLocalizedParams(params))
   if (className) element.className = className
 }
 
@@ -130,7 +139,7 @@ function refreshLocalizedMessages() {
     } catch (_error) {
       params = {}
     }
-    element.textContent = window.I18N.t(element.dataset.messageKey, params)
+    element.textContent = window.I18N.t(element.dataset.messageKey, resolveLocalizedParams(params))
   })
   document.querySelectorAll('[data-translatable-message]').forEach(element => {
     element.textContent = window.I18N.translateMessage(element.dataset.translatableMessage)
@@ -220,6 +229,9 @@ async function refreshJobs() {
 
     // Update the status in the job details view if this job is currently being viewed
     if (currentJobId === j.id) {
+      if (currentJobData && currentJobData.id === j.id) {
+        currentJobData = { ...currentJobData, ...j }
+      }
       const statusBadge = document.querySelector('#jobDetail .badge');
       if (statusBadge) {
         statusBadge.className = `badge ${j.status}`;
@@ -366,7 +378,9 @@ async function deleteJob(jobId) {
       logSectionEl.style.display = 'none'
       statsSectionEl.style.display = 'none'
     } else {
-      alert(window.I18N.t('job.deleteFailed', { error: data.error || 'Unknown error' }))
+      alert(window.I18N.t('job.deleteFailed', {
+        error: data.error || window.I18N.t('common.unknownError')
+      }))
     }
   } catch (e) {
     alert(window.I18N.t('job.error', { error: e.message }))
@@ -393,7 +407,9 @@ async function deployJob(jobId) {
       alert(window.I18N.t('job.deployed', { message: data.message }))
       await loadGatewayState()
     } else {
-      alert(window.I18N.t('job.deployError', { error: data.error || 'Unknown error' }))
+      alert(window.I18N.t('job.deployError', {
+        error: data.error || window.I18N.t('common.unknownError')
+      }))
     }
   } catch (e) {
     alert(window.I18N.t('job.error', { error: e.message }))
@@ -833,6 +849,7 @@ let packagePollCompletionStage = 0
 let servicesRefreshGeneration = 0
 let cloudInfoGeneration = 0
 let cloudSecretVisible = false
+const serviceDataCache = new Map()
 
 function renderPackageOperationError(statusEl) {
   if (!currentPackageOperationError) return false
@@ -945,67 +962,79 @@ async function refreshServices() {
   renderPackageOperationStatus(task)
 
   for (const service of services) {
+    let serviceData = serviceDataCache.get(service)
     try {
       const pkg = service.split('.')[0]
       const [res, versionRes] = await Promise.all([
         apiFetch(`/api/service/${service}/status`),
         apiFetch(`/api/service/${pkg}/version`)
       ])
-      const status = await res.json()
-      const version = await versionRes.json()
-      if (refreshGeneration !== servicesRefreshGeneration) return
-
-      const div = document.createElement('div')
-      div.className = 'service-item'
-      const restarting = restartingServices.has(service)
-
-      const statusClass = status.active ? 'active' : 'inactive'
-      const statusText = status.active
-        ? window.I18N.t('service.active')
-        : window.I18N.t('service.inactive')
-
-      let extraInfo = ''
-      if (status.active && status.uptime_str) {
-        // Simplify timestamp display if it's very long
-        let ts = status.uptime_str.split('=', 1)[1] || status.uptime_str
-        extraInfo = `<div class="service-uptime" title="${escapeHtml(status.uptime_str)}">${window.I18N.t('service.since')} ${escapeHtml(ts)}</div>`
-      } else if (!status.active && status.last_run_str) {
-        let ts = status.last_run_str.split('=', 1)[1] || status.last_run_str
-        extraInfo = `<div class="service-uptime" title="${escapeHtml(status.last_run_str)}">${window.I18N.t('service.lastActive')} ${escapeHtml(ts)}</div>`
+      if (!res.ok || !versionRes.ok) {
+        throw new Error(`Service data unavailable (HTTP ${!res.ok ? res.status : versionRes.status})`)
       }
-
-      div.innerHTML = `
-        <div class="service-header">
-          <span class="service-name">${escapeHtml(service)}</span>
-          <div class="service-status-wrapper">
-             <span class="service-status ${statusClass}">${escapeHtml(statusText)}</span>
-             ${extraInfo}
-          </div>
-        </div>
-        <div class="service-version">${window.I18N.t('service.installed')} ${escapeHtml(version.installed || '—')}<br>
-          ${window.I18N.t('service.aptCandidate')} ${escapeHtml(version.candidate || '—')}<br>
-          ${escapeHtml(window.I18N.translateMessage(version.message || ''))}</div>
-        <div class="service-actions">
-          <button type="button" class="service-restart-btn restart-btn" ${restarting ? 'disabled' : ''}>${window.I18N.t(restarting ? 'service.restarting' : 'service.restart')}</button>
-          <button type="button" class="service-restart-btn upgrade-btn"
-            ${!version.supported || !version.update_available || busy ? 'disabled' : ''}>
-            ${window.I18N.t(version.update_available ? 'service.update' : 'service.noUpdate')}</button>
-        </div>
-      `
-      div.querySelector('.restart-btn').addEventListener('click', e => restartService(service, e.currentTarget))
-      div.querySelector('.upgrade-btn').addEventListener('click', () => {
-        if (confirm(window.I18N.t('service.confirmUpdate', {
-          service,
-          installed: version.installed,
-          candidate: version.candidate
-        }))) {
-          startPackageOperation(pkg, version.candidate)
-        }
-      })
-      serviceItems.appendChild(div)
+      serviceData = {
+        status: await res.json(),
+        version: await versionRes.json()
+      }
+      if (refreshGeneration !== servicesRefreshGeneration) return
+      serviceDataCache.set(service, serviceData)
     } catch (e) {
       console.error('Error fetching service status:', e)
+      serviceData = serviceDataCache.get(service)
     }
+    if (refreshGeneration !== servicesRefreshGeneration) return
+    if (!serviceData) continue
+
+    const { status, version } = serviceData
+    const pkg = service.split('.')[0]
+    const div = document.createElement('div')
+    div.className = 'service-item'
+    const restarting = restartingServices.has(service)
+
+    const statusClass = status.active ? 'active' : 'inactive'
+    const statusText = status.active
+      ? window.I18N.t('service.active')
+      : window.I18N.t('service.inactive')
+
+    let extraInfo = ''
+    if (status.active && status.uptime_str) {
+      // Simplify timestamp display if it's very long
+      let ts = status.uptime_str.split('=', 1)[1] || status.uptime_str
+      extraInfo = `<div class="service-uptime" title="${escapeHtml(status.uptime_str)}">${window.I18N.t('service.since')} ${escapeHtml(ts)}</div>`
+    } else if (!status.active && status.last_run_str) {
+      let ts = status.last_run_str.split('=', 1)[1] || status.last_run_str
+      extraInfo = `<div class="service-uptime" title="${escapeHtml(status.last_run_str)}">${window.I18N.t('service.lastActive')} ${escapeHtml(ts)}</div>`
+    }
+
+    div.innerHTML = `
+      <div class="service-header">
+        <span class="service-name">${escapeHtml(service)}</span>
+        <div class="service-status-wrapper">
+           <span class="service-status ${statusClass}">${escapeHtml(statusText)}</span>
+           ${extraInfo}
+        </div>
+      </div>
+      <div class="service-version">${window.I18N.t('service.installed')} ${escapeHtml(version.installed || '—')}<br>
+        ${window.I18N.t('service.aptCandidate')} ${escapeHtml(version.candidate || '—')}<br>
+        ${escapeHtml(window.I18N.translateMessage(version.message || ''))}</div>
+      <div class="service-actions">
+        <button type="button" class="service-restart-btn restart-btn" ${restarting ? 'disabled' : ''}>${window.I18N.t(restarting ? 'service.restarting' : 'service.restart')}</button>
+        <button type="button" class="service-restart-btn upgrade-btn"
+          ${!version.supported || !version.update_available || busy ? 'disabled' : ''}>
+          ${window.I18N.t(version.update_available ? 'service.update' : 'service.noUpdate')}</button>
+      </div>
+    `
+    div.querySelector('.restart-btn').addEventListener('click', e => restartService(service, e.currentTarget))
+    div.querySelector('.upgrade-btn').addEventListener('click', () => {
+      if (confirm(window.I18N.t('service.confirmUpdate', {
+        service,
+        installed: version.installed,
+        candidate: version.candidate
+      }))) {
+        startPackageOperation(pkg, version.candidate)
+      }
+    })
+    serviceItems.appendChild(div)
   }
   if (refreshGeneration !== servicesRefreshGeneration) return
   servicesListEl.replaceChildren(serviceItems)
@@ -1753,7 +1782,13 @@ async function loadConfig() {
 
     const res = await apiFetch('/api/config')
     if (!res.ok) {
-      const errorData = await res.json().catch(() => ({ error: 'Unknown error' }))
+      const errorData = await res.json().catch(() => null)
+      if (!errorData) {
+        setLocalizedMessage(configStatus, 'config.loadError', {
+          error: { i18nKey: 'common.unknownError' }
+        }, 'status-message error')
+        return
+      }
       throw new Error(errorData.error || `HTTP ${res.status}`)
     }
 
@@ -2045,7 +2080,13 @@ async function saveConfig(reprocess = false) {
         const rerunRes = await apiFetch(`/api/job/${currentJobId}/rerun`, { method: 'POST' })
 
         if (!rerunRes.ok) {
-          const errorData = await rerunRes.json().catch(() => ({ error: 'Unknown error' }));
+          const errorData = await rerunRes.json().catch(() => null)
+          if (!errorData) {
+            setLocalizedMessage(configStatus, 'config.reprocessFailed', {
+              error: { i18nKey: 'common.unknownError' }
+            }, 'status-message error')
+            return
+          }
           throw new Error(errorData.error || `HTTP ${rerunRes.status}`)
         }
 
@@ -2584,7 +2625,9 @@ async function checkForUpdates() {
     }
   } catch (error) {
     console.error('Update check error:', error);
-    alert(window.I18N.t('updates.checkFailed', { error: error.message || 'Unknown error' }))
+    alert(window.I18N.t('updates.checkFailed', {
+      error: error.message || window.I18N.t('common.unknownError')
+    }))
   }
 
 }
@@ -2634,16 +2677,14 @@ async function performUpdate() {
       // Start polling for logs
       startUpdateLogPolling()
     } else {
-      clearLocalizedMessage(logContent)
-      logContent.textContent += window.I18N.t('updates.apiError', {
-        error: data.error || 'Unknown error'
+      setLocalizedMessage(logContent, 'updates.apiError', {
+        error: data.error || { i18nKey: 'common.unknownError' }
       })
       // Try polling anyway in case it partially started
       startUpdateLogPolling()
     }
   } catch (error) {
-    clearLocalizedMessage(logContent)
-    logContent.textContent += window.I18N.t('updates.requestFailed', { error: error.message })
+    setLocalizedMessage(logContent, 'updates.requestFailed', { error: error.message })
     // Try polling anyway
     startUpdateLogPolling()
   }

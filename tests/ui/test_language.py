@@ -279,6 +279,21 @@ def test_dashboard_static_copy_switches_between_german_and_english(page: Page, f
 
 
 @pytest.mark.ui
+def test_config_load_unknown_error_fallback_follows_selected_language(page: Page, flask_server):
+    _stub_background_apis(page)
+
+    def invalid_config_response(route):
+        route.fulfill(status=500, content_type="application/json", body="invalid json")
+
+    page.route("**/api/config", invalid_config_response)
+    page.goto(flask_server, wait_until="domcontentloaded")
+    expect(page.locator("#configStatus")).to_have_text("✗ Fehler: Unbekannter Fehler")
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(page.locator("#configStatus")).to_have_text("✗ Error: Unknown error")
+
+
+@pytest.mark.ui
 def test_login_copy_switches_between_german_and_english(page: Page, auth_preview_server):
     page.goto(f"{auth_preview_server}/login", wait_until="domcontentloaded")
 
@@ -312,10 +327,12 @@ def test_known_job_messages_translate_and_keep_dynamic_values(page: Page, auth_p
       const backup = 'backup created: knx-job-42-20261101.tar.gz'
       const taggedBackup = '[12:34:56] [BACKUP] backup created: knx-job-42-20261101.tar.gz'
       const unknown = '[ERROR] ETS parser detail: Raum Küche / GA 1/2/3'
+      const unknownWarning = '[WARNING] ETS warning detail: Raum Küche / GA 1/2/3'
       window.I18N.setLanguage('en')
       const english = window.I18N.translateMessage(backup)
       const taggedEnglish = window.I18N.translateMessage(taggedBackup)
       const unknownEnglish = window.I18N.translateMessage(unknown)
+      const unknownWarningEnglish = window.I18N.translateMessage(unknownWarning)
       window.I18N.setLanguage('de')
       return {
         english,
@@ -325,7 +342,9 @@ def test_known_job_messages_translate_and_keep_dynamic_values(page: Page, auth_p
         staged: window.I18N.translateMessage('completed (staged) - ready to deploy'),
         failedStatus: window.I18N.translateMessage('[STATUS] failed'),
         unknownEnglish,
-        unknownGerman: window.I18N.translateMessage(unknown)
+        unknownGerman: window.I18N.translateMessage(unknown),
+        unknownWarningEnglish,
+        unknownWarningGerman: window.I18N.translateMessage(unknownWarning)
       }
     }""")
 
@@ -341,8 +360,16 @@ def test_known_job_messages_translate_and_keep_dynamic_values(page: Page, auth_p
         translations["staged"] == "Abgeschlossen (zwischengespeichert) – bereit zur Bereitstellung"
     )
     assert translations["failedStatus"] == "[Status] Fehlgeschlagen"
-    assert translations["unknownEnglish"] == "[ERROR] ETS parser detail: Raum Küche / GA 1/2/3"
-    assert translations["unknownGerman"] == "[ERROR] ETS parser detail: Raum Küche / GA 1/2/3"
+    assert translations["unknownEnglish"] == "[Error] ETS parser detail: Raum Küche / GA 1/2/3"
+    assert translations["unknownGerman"] == "[Fehler] ETS parser detail: Raum Küche / GA 1/2/3"
+    assert (
+        translations["unknownWarningEnglish"]
+        == "[Warning] ETS warning detail: Raum Küche / GA 1/2/3"
+    )
+    assert (
+        translations["unknownWarningGerman"]
+        == "[Warnung] ETS warning detail: Raum Küche / GA 1/2/3"
+    )
 
 
 @pytest.mark.ui
@@ -491,6 +518,111 @@ def test_open_update_dialog_dates_follow_selected_language(page: Page, flask_ser
 
 
 @pytest.mark.ui
+@pytest.mark.parametrize(
+    ("failure", "prefix_de", "prefix_en"),
+    [
+        (
+            "json",
+            "Fehler bei der Update-API: Update backend detail",
+            "Error interacting with update API: Update backend detail",
+        ),
+        (
+            "empty-json",
+            "Fehler bei der Update-API: Unbekannter Fehler",
+            "Error interacting with update API: Unknown error",
+        ),
+        ("request", "Anfrage fehlgeschlagen:", "Request failed:"),
+    ],
+)
+def test_update_failures_follow_selected_language(
+    page: Page, flask_server, failure, prefix_de, prefix_en
+):
+    _stub_background_apis(page)
+    page.add_init_script("window.setInterval = () => 0")
+    page.route(
+        "**/api/version/log",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"log": ""}),
+        ),
+    )
+    if failure in {"json", "empty-json"}:
+        error_payload = {"error": "Update backend detail"} if failure == "json" else {}
+        page.route(
+            "**/api/version/update",
+            lambda route: route.fulfill(
+                status=500,
+                content_type="application/json",
+                body=json.dumps(error_payload),
+            ),
+        )
+    else:
+        page.route("**/api/version/update", lambda route: route.abort())
+
+    page.goto(flask_server, wait_until="domcontentloaded")
+    page.evaluate("performUpdate()")
+    log = page.locator("#updateLogContent")
+    expect(log).to_contain_text(prefix_de)
+    error_detail = None if failure == "empty-json" else log.inner_text().split(": ", 1)[-1].strip()
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(log).to_contain_text(prefix_en)
+    if error_detail:
+        expect(log).to_contain_text(error_detail)
+
+
+@pytest.mark.ui
+@pytest.mark.parametrize(
+    ("action", "locale", "expected"),
+    [
+        ("delete", "de", "Löschen fehlgeschlagen: Unbekannter Fehler"),
+        ("delete", "en", "Delete failed: Unknown error"),
+        ("deploy", "de", "Fehler beim Bereitstellen: Unbekannter Fehler"),
+        ("deploy", "en", "Deploy error: Unknown error"),
+    ],
+)
+def test_job_action_missing_error_uses_localized_fallback(
+    page: Page, flask_server, action, locale, expected
+):
+    job = {
+        "id": "job-missing-error",
+        "name": "Fallback Project",
+        "status": "completed",
+        "created": 1700000000,
+        "staged": True,
+        "deployed": False,
+        "backups": [],
+    }
+    _stub_background_apis(page, jobs=[job])
+    page.add_init_script(
+        "window.confirm = () => true; window.alert = message => { window.lastAlert = message }; "
+        "window.setInterval = () => 0"
+    )
+
+    def missing_error(route):
+        route.fulfill(
+            status=500,
+            content_type="application/json",
+            body=json.dumps({}),
+        )
+
+    page.route("**/api/job/job-missing-error", missing_error)
+    page.route("**/api/job/job-missing-error/deploy", missing_error)
+    page.goto(flask_server, wait_until="domcontentloaded")
+    if locale == "en":
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+
+    if action == "delete":
+        page.evaluate("deleteJob('job-missing-error')")
+    else:
+        page.locator(".job-item button[onclick=\"deployJob('job-missing-error')\"]").click()
+
+    page.wait_for_function("window.lastAlert !== undefined")
+    assert page.evaluate("window.lastAlert") == expected
+
+
+@pytest.mark.ui
 def test_deploy_action_stays_disabled_during_language_change(page: Page, flask_server):
     pending_deploy = []
     jobs = [
@@ -600,6 +732,95 @@ def test_stale_job_refresh_cannot_restore_deploy_after_deployment(page: Page, fl
     page.wait_for_function("window.completedJobRefreshes === 2")
     expect(page.locator(".job-item .job-name")).to_have_text("Demo Project")
     expect(page.locator(".job-item").get_by_role("button", name="Deploy")).to_have_count(0)
+
+
+@pytest.mark.ui
+def test_open_job_detail_uses_latest_polled_status_after_language_change(page: Page, flask_server):
+    job = {
+        "id": "job-polled-status",
+        "name": "Status Transition Project",
+        "status": "running",
+        "created": 1700000000,
+        "backups": [],
+        "log": [],
+    }
+    jobs = [job.copy()]
+    _stub_background_apis(page, jobs=jobs)
+    page.add_init_script("window.setInterval = () => 0")
+    page.route(
+        "**/api/job/job-polled-status",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(job),
+        ),
+    )
+    page.route(
+        "**/api/job/job-polled-status/events",
+        lambda route: route.fulfill(status=200, content_type="text/event-stream", body=""),
+    )
+    page.goto(flask_server, wait_until="domcontentloaded")
+    page.evaluate("showJobDetail('job-polled-status')")
+    expect(page.locator("#jobDetail .badge")).to_have_text("Läuft")
+
+    jobs[0]["status"] = "completed"
+    page.evaluate("refreshJobs()")
+    expect(page.locator("#jobDetail .badge")).to_have_text("Abgeschlossen")
+    page.evaluate("window.refreshJobs = () => Promise.resolve()")
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(page.locator("#jobDetail .badge")).to_have_text("Completed")
+
+
+@pytest.mark.ui
+@pytest.mark.parametrize("failed_endpoint", ["status", "version"])
+def test_service_cards_survive_failed_refresh_during_language_change(
+    page: Page, flask_server, failed_endpoint
+):
+    _stub_background_apis(page)
+    page.add_init_script("window.setInterval = () => 0")
+    page.goto(flask_server, wait_until="domcontentloaded")
+    openhab_card = page.locator(".service-item").filter(has_text="openhab.service")
+    expect(openhab_card).to_be_visible()
+    expect(openhab_card).to_contain_text("Installiert")
+
+    page.evaluate("""() => {
+      const originalRefreshServices = window.refreshServices
+      window.serviceRefreshCount = 0
+      window.refreshServices = async (...args) => {
+        const result = await originalRefreshServices(...args)
+        window.serviceRefreshCount += 1
+        return result
+      }
+    }""")
+    failed_requests = []
+
+    def fail_openhab_request(route):
+        failed_requests.append(route.request.url)
+        if failed_endpoint == "status":
+            route.abort()
+        else:
+            route.fulfill(
+                status=503,
+                content_type="application/json",
+                body=json.dumps({"error": "Temporary version failure"}),
+            )
+
+    request_path = (
+        "**/api/service/openhab.service/status"
+        if failed_endpoint == "status"
+        else "**/api/service/openhab/version"
+    )
+    page.route(request_path, fail_openhab_request)
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    page.wait_for_function("window.serviceRefreshCount > 0")
+    assert failed_requests
+
+    expect(openhab_card).to_be_visible()
+    expect(openhab_card).to_contain_text("Installed:")
+    expect(openhab_card).to_contain_text("APT candidate:")
+    expect(openhab_card).to_contain_text("APT package is not installed on this host.")
+    expect(openhab_card.locator("button")).to_have_count(2)
 
 
 @pytest.mark.ui
@@ -807,10 +1028,10 @@ def test_live_log_timestamps_follow_selected_language(page: Page, flask_server):
     )
     assert expected["de"] != expected["en"]
     log = page.locator("#log")
-    expect(log).to_contain_text(f"[{expected['de']}] [INFO] live log locale marker")
+    expect(log).to_contain_text(f"[{expected['de']}] [Info] live log locale marker")
 
     page.get_by_role("combobox", name="Sprache / Language").select_option("en")
-    expect(log).to_contain_text(f"[{expected['en']}] [INFO] live log locale marker")
+    expect(log).to_contain_text(f"[{expected['en']}] [Info] live log locale marker")
 
 
 @pytest.mark.ui
@@ -944,6 +1165,29 @@ def test_reprocess_feedback_follows_selected_language_when_no_job_is_selected(
     page.locator("#settings-content .btn-outline").click()
     expect(page.locator("#configStatus")).to_have_text("✓ Configuration saved")
     assert dialogs[-1] == "No job selected to reprocess. Please select a job first."
+
+
+@pytest.mark.ui
+def test_reprocess_unknown_error_fallback_follows_selected_language(page: Page, flask_server):
+    _stub_background_apis(page)
+    page.route(
+        "**/api/job/job-rerun/rerun",
+        lambda route: route.fulfill(
+            status=500,
+            content_type="application/json",
+            body="invalid json",
+        ),
+    )
+    page.goto(flask_server, wait_until="domcontentloaded")
+    expect(page.locator("#configStatus")).to_have_text("✓ Konfiguration geladen")
+    page.evaluate("currentJobId = 'job-rerun'")
+    page.locator("#settings-section .card-header").click()
+    page.locator("#settings-content .btn-outline").click()
+    status = page.locator("#configStatus")
+    expect(status).to_have_text("✗ Erneute Verarbeitung fehlgeschlagen: Unbekannter Fehler")
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(status).to_have_text("✗ Reprocessing failed: Unknown error")
 
 
 @pytest.mark.ui

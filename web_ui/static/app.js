@@ -850,6 +850,8 @@ let packagePollCompletionStage = 0
 let servicesRefreshGeneration = 0
 let cloudInfoGeneration = 0
 let cloudSecretVisible = false
+let cloudInfoDataCache = null
+let cloudInfoDataCacheGeneration = 0
 const serviceDataCache = new Map()
 const serviceDataCacheGeneration = new Map()
 
@@ -1105,58 +1107,69 @@ async function loadCloudInfo() {
     const res = await apiFetch('/api/openhab/cloud-info')
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
-    if (refreshGeneration !== cloudInfoGeneration) return
-    const card = document.createElement('div')
-    card.id = 'cloud-info-card'
-    card.className = 'cloud-info-card'
-    const previousCard = document.getElementById('cloud-info-card')
-    const wasSecretVisible = cloudSecretVisible || !!(
-      previousCard && previousCard.querySelector('#cloud-secret-val') &&
-      !previousCard.querySelector('#cloud-secret-val').classList.contains('cloud-secret-masked')
-    )
-
-    const uuidVal = data.uuid || null
-    const secretVal = data.secret || null
-
-    if (!uuidVal && !secretVal) {
-      card.innerHTML = `
-        <div class="cloud-info-header">
-          <span class="cloud-info-title">☁️ ${window.I18N.t('service.cloudTitle')}</span>
-        </div>
-        <div class="cloud-info-not-found">
-          ${window.I18N.t('service.cloudNotFound')}<br>
-          <small>${window.I18N.t('service.cloudExpected')} <code>/var/lib/openhab/uuid</code> ${window.I18N.t('service.and')} <code>/var/lib/openhab/openhabcloud/secret</code></small>
-        </div>`
-    } else {
-      const masked = secretVal
-        ? secretVal.substring(0, 8) + '•'.repeat(Math.max(0, secretVal.length - 8))
-        : '—'
-      card.innerHTML = `
-        <div class="cloud-info-header">
-          <span class="cloud-info-title">☁️ ${window.I18N.t('service.cloudTitle')}</span>
-          <small class="cloud-info-hint">${window.I18N.t('service.cloudSetupHint')}</small>
-        </div>
-        <div class="cloud-info-row">
-          <span class="cloud-info-label">UUID</span>
-          <span class="cloud-info-value" id="cloud-uuid-val">${uuidVal || '—'}</span>
-          <button class="cloud-copy-btn" onclick="copyCloudValue('cloud-uuid-val', this, false)" title="${window.I18N.t('service.copyUuid')}">📋</button>
-        </div>
-        <div class="cloud-info-row">
-          <span class="cloud-info-label">Secret</span>
-          <span class="cloud-info-value ${wasSecretVisible ? '' : 'cloud-secret-masked'}" id="cloud-secret-val"
-            data-full="${secretVal || ''}" data-masked="${masked}">${wasSecretVisible ? (secretVal || '—') : masked}</span>
-          <button class="cloud-toggle-btn" onclick="toggleSecret()" title="${window.I18N.t('service.showSecret')}">👁</button>
-          <button class="cloud-copy-btn" onclick="copyCloudValue('cloud-secret-val', this, true)" title="${window.I18N.t('service.copySecret')}">📋</button>
-        </div>
-        ${data.uuid_path ? `<div class="cloud-info-paths"><small>📁 ${data.uuid_path}</small></div>` : ''}
-      `
+    if (refreshGeneration >= cloudInfoDataCacheGeneration) {
+      cloudInfoDataCache = data
+      cloudInfoDataCacheGeneration = refreshGeneration
     }
-    const existing = document.getElementById('cloud-info-card')
-    if (existing) existing.replaceWith(card)
-    else servicesListEl.appendChild(card)
+    if (refreshGeneration === cloudInfoDataCacheGeneration) {
+      renderCloudInfoCard(cloudInfoDataCache)
+    }
   } catch (e) {
     console.error('Failed to load cloud info:', e)
+    if (refreshGeneration === cloudInfoGeneration && cloudInfoDataCache) {
+      renderCloudInfoCard(cloudInfoDataCache)
+    }
   }
+}
+
+function renderCloudInfoCard(data) {
+  const card = document.createElement('div')
+  card.id = 'cloud-info-card'
+  card.className = 'cloud-info-card'
+  const previousCard = document.getElementById('cloud-info-card')
+  const wasSecretVisible = cloudSecretVisible || !!(
+    previousCard && previousCard.querySelector('#cloud-secret-val') &&
+    !previousCard.querySelector('#cloud-secret-val').classList.contains('cloud-secret-masked')
+  )
+
+  const uuidVal = data.uuid || null
+  const secretVal = data.secret || null
+
+  if (!uuidVal && !secretVal) {
+    card.innerHTML = `
+      <div class="cloud-info-header">
+        <span class="cloud-info-title">☁️ ${window.I18N.t('service.cloudTitle')}</span>
+      </div>
+      <div class="cloud-info-not-found">
+        ${window.I18N.t('service.cloudNotFound')}<br>
+        <small>${window.I18N.t('service.cloudExpected')} <code>/var/lib/openhab/uuid</code> ${window.I18N.t('service.and')} <code>/var/lib/openhab/openhabcloud/secret</code></small>
+      </div>`
+  } else {
+    const masked = secretVal
+      ? secretVal.substring(0, 8) + '•'.repeat(Math.max(0, secretVal.length - 8))
+      : '—'
+    card.innerHTML = `
+      <div class="cloud-info-header">
+        <span class="cloud-info-title">☁️ ${window.I18N.t('service.cloudTitle')}</span>
+        <small class="cloud-info-hint">${window.I18N.t('service.cloudSetupHint')}</small>
+      </div>
+      <div class="cloud-info-row">
+        <span class="cloud-info-label">UUID</span>
+        <span class="cloud-info-value" id="cloud-uuid-val">${uuidVal || '—'}</span>
+        <button class="cloud-copy-btn" onclick="copyCloudValue('cloud-uuid-val', this, false)" title="${window.I18N.t('service.copyUuid')}">📋</button>
+      </div>
+      <div class="cloud-info-row">
+        <span class="cloud-info-label">Secret</span>
+        <span class="cloud-info-value ${wasSecretVisible ? '' : 'cloud-secret-masked'}" id="cloud-secret-val"
+          data-full="${secretVal || ''}" data-masked="${masked}">${wasSecretVisible ? (secretVal || '—') : masked}</span>
+        <button class="cloud-toggle-btn" onclick="toggleSecret()" title="${window.I18N.t('service.showSecret')}">👁</button>
+        <button class="cloud-copy-btn" onclick="copyCloudValue('cloud-secret-val', this, true)" title="${window.I18N.t('service.copySecret')}">📋</button>
+      </div>
+      ${data.uuid_path ? `<div class="cloud-info-paths"><small>📁 ${data.uuid_path}</small></div>` : ''}
+    `
+  }
+  if (previousCard) previousCard.replaceWith(card)
+  else servicesListEl.appendChild(card)
 }
 
 function toggleSecret() {

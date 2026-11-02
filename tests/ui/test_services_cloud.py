@@ -195,6 +195,58 @@ class TestServicesSection:
         expect(cloud_card).to_contain_text("abc-123-def-456")
         expect(cloud_card.locator("#cloud-secret-val")).to_be_visible()
 
+    def test_superseded_cloud_info_response_recovers_card_after_refresh_failure(
+        self, page: Page, base_url, flask_server
+    ):
+        _setup_services_routes(page)
+        page.add_init_script("window.setInterval = () => 0")
+        page.add_init_script("""(() => {
+          window.pendingCloudInfoResponses = []
+          const originalFetch = window.fetch.bind(window)
+          window.fetch = (resource, options) => {
+            if (String(resource).endsWith('/api/openhab/cloud-info')) {
+              return new Promise(resolve => window.pendingCloudInfoResponses.push(resolve))
+            }
+            return originalFetch(resource, options)
+          }
+          document.addEventListener('DOMContentLoaded', () => {
+            const originalLoadCloudInfo = window.loadCloudInfo
+            window.cloudInfoLoadCompletions = 0
+            window.loadCloudInfo = async (...args) => {
+              const result = await originalLoadCloudInfo(...args)
+              window.cloudInfoLoadCompletions += 1
+              return result
+            }
+          }, { once: true })
+        })()""")
+        page.goto(base_url, wait_until="domcontentloaded")
+        page.wait_for_function("window.pendingCloudInfoResponses.length === 1")
+
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+        page.wait_for_function("window.pendingCloudInfoResponses.length === 2")
+
+        page.evaluate("""() => window.pendingCloudInfoResponses[1](new Response(
+          JSON.stringify({ error: 'Temporary cloud info failure' }),
+          { status: 503, headers: { 'Content-Type': 'application/json' } }
+        ))""")
+        page.wait_for_function("window.cloudInfoLoadCompletions === 1")
+
+        page.evaluate("""() => window.pendingCloudInfoResponses[0](new Response(
+          JSON.stringify({
+            uuid: 'abc-123-def-456',
+            secret: 'super-secret-value',
+            uuid_path: '/var/lib/openhab/uuid',
+            secret_path: '/var/lib/openhab/openhabcloud/secret'
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        ))""")
+        page.wait_for_function("window.cloudInfoLoadCompletions === 2")
+
+        cloud_card = page.locator("#servicesList #cloud-info-card")
+        expect(cloud_card).to_be_visible()
+        expect(cloud_card).to_contain_text("abc-123-def-456")
+        expect(cloud_card.locator("#cloud-secret-val")).to_be_visible()
+
     def test_service_restart_button(self, page: Page, base_url, flask_server):
         _setup_services_routes(page)
         page.goto(base_url)

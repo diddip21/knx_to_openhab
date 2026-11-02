@@ -867,6 +867,67 @@ def test_open_job_detail_uses_latest_polled_status_after_language_change(page: P
 
 
 @pytest.mark.ui
+def test_final_update_from_previous_job_does_not_replace_open_job_details(page: Page, flask_server):
+    pending_event_routes: list[Route] = []
+    job_a_requests = 0
+    job_a_running = {
+        "id": "job-a",
+        "name": "Job A",
+        "status": "running",
+        "created": 1700000000,
+        "backups": [],
+        "log": [],
+    }
+    job_a_completed = {**job_a_running, "status": "completed"}
+    job_b = {
+        "id": "job-b",
+        "name": "Job B",
+        "status": "completed",
+        "created": 1700000001,
+        "backups": [],
+        "log": [],
+    }
+    _stub_background_apis(page)
+
+    def respond_to_job_a(route: Route):
+        nonlocal job_a_requests
+        job_a_requests += 1
+        payload = job_a_running if job_a_requests == 1 else job_a_completed
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+
+    page.route("**/api/job/job-a", respond_to_job_a)
+    page.route(
+        "**/api/job/job-b",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(job_b),
+        ),
+    )
+    page.route("**/api/job/job-a/events", lambda route: pending_event_routes.append(route))
+    page.goto(flask_server, wait_until="domcontentloaded")
+
+    with page.expect_request("**/api/job/job-a/events"):
+        page.evaluate("showJobDetail('job-a')")
+    expect(page.locator("#jobDetail")).to_contain_text("Job A")
+
+    page.evaluate("showJobDetail('job-b')")
+    expect(page.locator("#jobDetail")).to_contain_text("Job B")
+
+    with page.expect_response(lambda response: response.url.endswith("/api/job/job-a")):
+        pending_event_routes[0].fulfill(
+            status=200,
+            content_type="text/event-stream",
+            body="",
+        )
+    page.wait_for_function("currentJobData?.id === 'job-b'")
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(page.locator("#jobDetail")).to_contain_text("Job B")
+    expect(page.locator("#jobDetail")).not_to_contain_text("Job A")
+
+
+@pytest.mark.ui
 def test_empty_job_log_message_survives_language_change(page: Page, flask_server):
     job = {
         "id": "job-no-logs",

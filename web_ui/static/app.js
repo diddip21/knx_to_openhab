@@ -2450,6 +2450,9 @@ function startEvents(jobId) {
             })
               .then(r => r.json())
               .then(j => {
+                // Ignore a stale stream if the user has opened a different job.
+                if (currentJobId !== j.id) return
+
                 // Update status badge in detail view
                 const statusBadge = document.querySelector('#jobDetail .badge');
                 if (statusBadge) {

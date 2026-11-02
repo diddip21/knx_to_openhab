@@ -291,6 +291,88 @@ def test_gateway_ip_help_keeps_reprocessing_guidance_in_both_languages(page: Pag
 
 
 @pytest.mark.ui
+def test_gateway_loading_state_survives_language_change_while_state_request_is_pending(
+    page: Page, flask_server
+):
+    _stub_background_apis(page)
+    page.add_init_script(f"window.localStorage.setItem('{LANGUAGE_KEY}', 'de')")
+    page.add_init_script("""() => {
+      const originalSetTimeout = window.setTimeout.bind(window)
+      window.setTimeout = (callback, delay, ...args) => {
+        if (delay === 1000) return 0
+        return originalSetTimeout(callback, delay, ...args)
+      }
+    }""")
+    page.goto(flask_server, wait_until="domcontentloaded")
+    request_started = page.evaluate("""() => {
+      const originalFetch = window.fetch.bind(window)
+      window.gatewayFetchPromise = new Promise(resolve => {
+        window.resolveGatewayFetch = resolve
+      })
+      window.fetch = (resource, options) => {
+        if (String(resource).endsWith('/api/gateway/state')) {
+          window.gatewayFetchStarted = true
+          return window.gatewayFetchPromise
+        }
+        return originalFetch(resource, options)
+      }
+      void loadGatewayState()
+      return window.gatewayFetchStarted === true
+    }""")
+    assert request_started
+
+    state = page.locator("#gateway-file-state")
+    expect(state).to_have_text("Verwalteter Gateway-Dateistatus wird geladen …")
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(state).to_have_text("Loading managed gateway file state…")
+
+    page.evaluate("""() => window.resolveGatewayFetch(new Response(
+      JSON.stringify({
+        things_format: 'dsl',
+        managed_path: 'openhab/things/knx.things',
+        gateway_mode: 'TUNNEL',
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    ))""")
+    expect(state).to_contain_text("Managed DSL file openhab/things/knx.things")
+
+
+@pytest.mark.ui
+def test_gateway_loading_state_survives_language_change_when_config_load_fails(
+    page: Page, flask_server
+):
+    _stub_background_apis(page)
+    page.add_init_script(f"window.localStorage.setItem('{LANGUAGE_KEY}', 'de')")
+    gateway_requests = []
+    page.route(
+        "**/api/config",
+        lambda route: route.fulfill(
+            status=503,
+            content_type="application/json",
+            body=json.dumps({"error": "temporary config error"}),
+        ),
+    )
+
+    def gateway_state_route(route):
+        gateway_requests.append(route.request.url)
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({}),
+        )
+
+    page.route("**/api/gateway/state", gateway_state_route)
+    page.goto(flask_server, wait_until="domcontentloaded")
+    expect(page.locator("#configStatus")).to_contain_text("temporary config error")
+    assert not gateway_requests
+
+    state = page.locator("#gateway-file-state")
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(state).to_have_text("Loading managed gateway file state…")
+    expect(state).not_to_contain_text("unknown deployed path")
+
+
+@pytest.mark.ui
 def test_config_load_unknown_error_fallback_follows_selected_language(page: Page, flask_server):
     _stub_background_apis(page)
 
@@ -812,6 +894,47 @@ def test_empty_job_log_message_survives_language_change(page: Page, flask_server
 
 
 @pytest.mark.ui
+def test_loading_job_details_survives_language_change_without_stale_job_data(
+    page: Page, flask_server
+):
+    previous_job = {
+        "id": "job-previous",
+        "name": "Previous Project",
+        "status": "completed",
+        "created": 1700000000,
+        "backups": [],
+        "log": [],
+    }
+    _stub_background_apis(page)
+    pending_requests = []
+    page.route(
+        "**/api/job/job-previous",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(previous_job),
+        ),
+    )
+    page.route("**/api/job/job-pending", lambda route: pending_requests.append(route))
+    page.goto(flask_server, wait_until="domcontentloaded")
+
+    page.evaluate("showJobDetail('job-previous')")
+    expect(page.locator("#jobDetail")).to_contain_text("Previous Project")
+    with page.expect_request(lambda request: request.url.endswith("/api/job/job-pending")):
+        page.evaluate("showJobDetail('job-pending')")
+    expect(page.locator("#jobDetail")).to_have_text("Auftragsdetails werden geladen …")
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(page.locator("#jobDetail")).to_have_text("Loading job details…")
+    expect(page.locator("#jobDetail")).not_to_contain_text("Previous Project")
+    pending_requests[0].fulfill(
+        status=500,
+        content_type="application/json",
+        body=json.dumps({"error": "job unavailable"}),
+    )
+
+
+@pytest.mark.ui
 @pytest.mark.parametrize("failed_endpoint", ["status", "version"])
 def test_service_cards_survive_failed_refresh_during_language_change(
     page: Page, flask_server, failed_endpoint
@@ -896,6 +1019,11 @@ def test_package_operation_action_follows_selected_language(page: Page, flask_se
             "No APT update is available for this package.",
             "Für dieses Paket ist kein APT-Update verfügbar.",
             "No APT update is available for this package.",
+        ),
+        (
+            "Set a personal Web UI password before using package updates.",
+            "Legen Sie ein persönliches Web-UI-Passwort fest, bevor Sie Paketaktualisierungen verwenden.",
+            "Set a personal Web UI password before using package updates.",
         ),
     ],
 )

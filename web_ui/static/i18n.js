@@ -542,6 +542,7 @@
     'service.message.noUpdate': 'Für dieses Paket ist kein APT-Update verfügbar.',
     'service.message.candidateChanged': 'APT-Kandidat wurde geändert. Aktualisieren Sie die Ansicht und bestätigen Sie erneut.',
     'service.message.helperMissing': 'Update-Hilfsprogramm ist nicht installiert. Führen Sie einmal sudo bash installer/setup.sh aus.',
+    'service.message.personalPasswordRequired': 'Legen Sie ein persönliches Web-UI-Passwort fest, bevor Sie Paketaktualisierungen verwenden.',
     'service.message.operationRunning': 'Ein anderer Paketvorgang wird bereits ausgeführt.',
     'service.message.operationStarted': 'Paketvorgang gestartet.',
     'service.message.unsupportedAction': 'Nicht unterstützte Aktion.',
@@ -676,6 +677,7 @@
     'service.message.noUpdate': 'No APT update is available for this package.',
     'service.message.candidateChanged': 'APT candidate changed. Refresh the view and confirm again.',
     'service.message.helperMissing': 'Update helper is not installed. Run sudo bash installer/setup.sh once.',
+    'service.message.personalPasswordRequired': 'Set a personal Web UI password before using package updates.',
     'service.message.operationRunning': 'Another package operation is already running.',
     'service.message.operationStarted': 'Package operation started.',
     'service.message.unsupportedAction': 'Unsupported action.',
@@ -819,6 +821,8 @@
       translated = t('service.message.candidateChanged')
     } else if (/^Update helper is not installed\. Run sudo bash installer\/setup\.sh once\.$/i.test(body)) {
       translated = t('service.message.helperMissing')
+    } else if (/^Set a personal Web UI password before using package updates\.$/i.test(body)) {
+      translated = t('service.message.personalPasswordRequired')
     } else if (/^Another package operation is already running\.$/i.test(body)) {
       translated = t('service.message.operationRunning')
     } else if (/^Package operation started\.$/i.test(body)) {

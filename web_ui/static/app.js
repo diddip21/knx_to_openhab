@@ -257,6 +257,7 @@ function renderJobDetails(job) {
 
 function showJobDetail(jobId) {
   currentJobId = jobId
+  currentJobData = null
   detailSectionEl.style.display = 'block'
   logSectionEl.style.display = 'block'
   statsSectionEl.style.display = 'block'
@@ -1496,6 +1497,7 @@ window.updateStatisticsDisplay = updateStatisticsDisplay
 let currentConfig = {}
 let gatewayState = null
 let gatewayStateError = null
+let gatewayStateLoaded = false
 let gatewayActionError = null
 let loadedOutputFormat = 'legacy'
 let installedOpenhabVersion = null
@@ -1537,6 +1539,11 @@ function showGatewayActionError(error, fallbackKey) {
 function renderGatewayState() {
   const stateElement = document.getElementById('gateway-file-state')
   if (!stateElement) return
+
+  if (!gatewayStateLoaded) {
+    setLocalizedMessage(stateElement, 'gateway.loadingState')
+    return
+  }
 
   if (gatewayStateError) {
     const error = window.I18N.translateMessage(gatewayStateError)
@@ -1683,6 +1690,7 @@ async function loadGatewayState() {
     gatewayState = null
     gatewayStateError = error.message || String(error)
   }
+  gatewayStateLoaded = true
   renderGatewayState()
   updateGatewayFormatControls()
   updateGatewayLiveActionControls()

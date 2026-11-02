@@ -498,6 +498,23 @@ def test_basic_auth_rate_limit_blocks_verification_and_success_while_locked(monk
     assert verifier.call_count == 5
 
 
+def test_basic_auth_success_does_not_clear_shared_failure_counter(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    verifier = Mock(side_effect=[False, False, False, False, True, False])
+    monkeypatch.setattr(app_module, "verify_password", verifier)
+    client = app_module.app.test_client()
+
+    for _ in range(4):
+        assert client.get("/", headers=_basic_auth_header(password="wrong")).status_code == 401
+    assert client.get("/", headers=_basic_auth_header()).status_code == 200
+    assert client.get("/", headers=_basic_auth_header(password="wrong")).status_code == 401
+
+    locked_out = client.get("/", headers=_basic_auth_header())
+
+    assert locked_out.status_code == 429
+    assert verifier.call_count == 6
+
+
 def test_basic_auth_allows_write_with_exact_origin_or_referer(monkeypatch, tmp_path):
     _enable_basic_auth(monkeypatch, tmp_path)
     client = app_module.app.test_client()

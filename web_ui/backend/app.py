@@ -360,7 +360,6 @@ if FLASK_AVAILABLE:
             if not _verify_basic_login(authorization.username or "", authorization.password or ""):
                 session_store.record_login_failure(identity)
                 return _basic_auth_challenge()
-            session_store.clear_login_failures(identity)
             g.authenticated_user = authorization.username
             if (
                 request.method not in ("GET", "HEAD", "OPTIONS")

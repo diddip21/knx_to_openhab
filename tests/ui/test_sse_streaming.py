@@ -14,7 +14,7 @@ TEST_FILE_PATH = os.path.abspath(
 )
 
 
-def _setup_sse_routes(page: Page, job_log=None):
+def _setup_sse_routes(page: Page, job_log=None, *, sse_status_message="completed via SSE"):
     if job_log is None:
         job_log = [
             {"level": "info", "text": "[BACKUP] backup created: test.tar.gz"},
@@ -75,7 +75,7 @@ def _setup_sse_routes(page: Page, job_log=None):
             return _fulfill(route, [job_payload()])
 
         if re.search(r"/api/job/[^/]+/events$", url):
-            body = 'data: {"type": "status", "message": "completed via SSE"}\n\n'
+            body = f"data: {json.dumps({'type': 'status', 'message': sse_status_message})}\n\n"
             route.fulfill(status=200, content_type="text/event-stream", body=body)
             return
 
@@ -184,6 +184,21 @@ class TestSSEStreaming:
         _upload_and_wait(page)
         expect(page.locator("#log")).to_contain_text("[Fehler] Something went wrong", timeout=10000)
         expect(page.locator("#log")).to_contain_text("Something went wrong", timeout=10000)
+
+    def test_failed_sse_status_banner_has_no_unfilled_error_placeholder(
+        self, page: Page, base_url, flask_server
+    ):
+        _setup_sse_routes(page, sse_status_message="failed")
+        page.goto(base_url)
+        page.evaluate("startEvents('failed-status-job')")
+
+        banner = page.locator("#status")
+        expect(banner).to_have_text("Auftrag fehlgeschlagen. Siehe Protokoll unten.")
+        expect(banner).not_to_contain_text("{error}")
+
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+        expect(banner).to_have_text("Job failed. Check logs below.")
+        expect(banner).not_to_contain_text("{error}")
 
     def test_sse_done_completes_job(self, page: Page, base_url, flask_server):
         _setup_sse_routes(page)

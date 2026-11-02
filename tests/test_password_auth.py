@@ -200,11 +200,27 @@ def test_first_run_without_credentials_fails_closed(monkeypatch, tmp_path):
         "cfg",
         {"auth": {"enabled": True, "user": "admin"}, "sessions_file": str(tmp_path / "s.db")},
     )
+    monkeypatch.setattr(app_module, "get_session_secret", lambda project_root=None: b"k" * 32)
 
-    response = app_module.app.test_client().get("/")
+    client = app_module.app.test_client()
+    response = client.get("/")
 
     assert response.status_code == 503
     assert b"credentials are not configured" in response.data.lower()
+    assert b'<html lang="de">' in response.data
+    assert b'id="languageSelect"' in response.data
+    assert b'class="login-error"' in response.data
+    assert b'data-i18n="login.error.unconfigured"' in response.data
+
+    login_response = client.get("/login")
+    assert login_response.status_code == 503
+    assert b'id="languageSelect"' in login_response.data
+    assert b'class="login-error"' in login_response.data
+    assert b'data-i18n="login.error.unconfigured"' in login_response.data
+
+    api_response = client.get("/api/jobs")
+    assert api_response.status_code == 503
+    assert b"<html" not in api_response.data
 
 
 def test_status_endpoint_remains_public_during_first_run(monkeypatch, tmp_path):

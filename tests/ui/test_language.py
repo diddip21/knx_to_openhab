@@ -279,6 +279,18 @@ def test_dashboard_static_copy_switches_between_german_and_english(page: Page, f
 
 
 @pytest.mark.ui
+def test_gateway_ip_help_keeps_reprocessing_guidance_in_both_languages(page: Page, flask_server):
+    _stub_background_apis(page)
+    page.goto(flask_server, wait_until="domcontentloaded")
+    help_text = page.locator("#conf-gateway-ip-help")
+    expect(help_text).to_contain_text("Speichern & erneut verarbeiten")
+    expect(help_text).to_contain_text("ausgewählten Auftrag")
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(help_text).to_contain_text("Save & Reprocess applies changes to the selected job.")
+
+
+@pytest.mark.ui
 def test_config_load_unknown_error_fallback_follows_selected_language(page: Page, flask_server):
     _stub_background_apis(page)
 
@@ -773,6 +785,33 @@ def test_open_job_detail_uses_latest_polled_status_after_language_change(page: P
 
 
 @pytest.mark.ui
+def test_empty_job_log_message_survives_language_change(page: Page, flask_server):
+    job = {
+        "id": "job-no-logs",
+        "name": "No Logs Project",
+        "status": "failed",
+        "created": 1700000000,
+        "backups": [],
+        "log": [],
+    }
+    _stub_background_apis(page)
+    page.route(
+        "**/api/job/job-no-logs",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(job),
+        ),
+    )
+    page.goto(flask_server, wait_until="domcontentloaded")
+    page.evaluate("showJobDetail('job-no-logs')")
+    expect(page.locator("#log")).to_have_text("Keine Protokolle verfügbar")
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(page.locator("#log")).to_have_text("No logs available")
+
+
+@pytest.mark.ui
 @pytest.mark.parametrize("failed_endpoint", ["status", "version"])
 def test_service_cards_survive_failed_refresh_during_language_change(
     page: Page, flask_server, failed_endpoint
@@ -1223,6 +1262,60 @@ def test_project_preview_localizes_labels_and_errors_but_keeps_project_data(
     expect(metadata).to_contain_text("Unknown items:")
     expect(page.locator("#status")).to_have_text("✓ Project structure loaded")
     expect(page.locator("#fileInput")).to_have_value(re.compile("haus.knxproj"))
+
+
+@pytest.mark.ui
+def test_expanded_project_preview_nodes_survive_language_change(page: Page, flask_server):
+    payload = {
+        "metadata": {
+            "project_name": "Haus",
+            "gateway_ip": "192.168.1.45",
+            "total_addresses": 1,
+            "homekit_enabled": False,
+            "alexa_enabled": False,
+            "unknown_items": [],
+        },
+        "buildings": [
+            {
+                "name": "Wohnhaus",
+                "description": "",
+                "floors": [
+                    {
+                        "name": "Erdgeschoss",
+                        "description": "",
+                        "rooms": [
+                            {
+                                "name": "Wohnzimmer",
+                                "description": "",
+                                "address_count": 1,
+                                "device_count": 1,
+                                "addresses": [{"Group name": "Licht", "Address": "1/2/3"}],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    _stub_background_apis(page, project_preview=payload)
+    page.goto(flask_server, wait_until="domcontentloaded")
+    page.locator("#fileInput").set_input_files(
+        {"name": "haus.knxproj", "mimeType": "application/octet-stream", "buffer": b"project"}
+    )
+    page.get_by_role("button", name="Strukturvorschau").click()
+
+    building = page.locator("#buildingTree .building-node > .tree-node-header")
+    floor = page.locator("#buildingTree .floor-node > .tree-node-header")
+    room = page.locator("#buildingTree .room-node > .tree-node-header")
+    building.click()
+    floor.click()
+    room.click()
+    address = page.locator("#buildingTree .address-item")
+    expect(address).to_be_visible()
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(address).to_be_visible()
+    expect(address).to_have_text("Licht (1/2/3)")
 
 
 @pytest.mark.ui

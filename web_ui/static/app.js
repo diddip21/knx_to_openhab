@@ -1275,7 +1275,7 @@ function renderLog() {
 
 document.addEventListener('knx-language-change', () => {
   refreshLocalizedMessages()
-  renderLog()
+  if (allLogEntries.length > 0) renderLog()
   if (currentJobData) renderJobDetails(currentJobData)
   if (currentStatsData) updateStatisticsDisplay(currentStatsData)
   if (expertToggleEl && expertToggleEl.checked && currentStatsData) {
@@ -2167,9 +2167,19 @@ async function previewProject() {
 }
 
 function displayBuildingPreview(preview) {
-  currentBuildingPreview = preview
   const metadataEl = document.getElementById('previewMetadata')
   const treeEl = document.getElementById('buildingTree')
+  const expandedNodeKeys = new Set()
+  if (preview === currentBuildingPreview) {
+    treeEl.querySelectorAll('.tree-node').forEach(node => {
+      const header = node.querySelector(':scope > .tree-node-header[data-tree-key]')
+      const children = node.querySelector(':scope > .tree-children')
+      if (header && children && children.style.display !== 'none') {
+        expandedNodeKeys.add(header.dataset.treeKey)
+      }
+    })
+  }
+  currentBuildingPreview = preview
 
   // Display metadata
   let metadataHtml = '<div class="metadata-cards">'
@@ -2197,28 +2207,31 @@ function displayBuildingPreview(preview) {
   let treeHtml = preview.buildings.length
     ? ''
     : `<p class="muted">${window.I18N.t('preview.empty')}</p>`
-  for (const building of preview.buildings) {
+  for (const [buildingIndex, building] of preview.buildings.entries()) {
+    const buildingKey = `building-${buildingIndex}`
     treeHtml += `<div class="tree-node building-node">
-      <div class="tree-node-header" onclick="toggleTreeNode(this)">
+      <div class="tree-node-header" data-tree-key="${buildingKey}" onclick="toggleTreeNode(this)">
         <span class="tree-icon">▶</span>
         <span class="tree-label">🏢 ${escapeHtml(building.name)}${building.description ? ` (${escapeHtml(building.description)})` : ''}</span>
         <span class="tree-count">${window.I18N.t('preview.floors', { count: building.floors.length })}</span>
       </div>
       <div class="tree-children" style="display:none;">`
 
-    for (const floor of building.floors) {
+    for (const [floorIndex, floor] of building.floors.entries()) {
+      const floorKey = `${buildingKey}/floor-${floorIndex}`
       treeHtml += `<div class="tree-node floor-node">
-      <div class="tree-node-header" onclick="toggleTreeNode(this)">
+      <div class="tree-node-header" data-tree-key="${floorKey}" onclick="toggleTreeNode(this)">
         <span class="tree-icon">▶</span>
         <span class="tree-label">🏠 ${escapeHtml(floor.name)}${floor.description ? ` (${escapeHtml(floor.description)})` : ''}</span>
         <span class="tree-count">${window.I18N.t('preview.rooms', { count: floor.rooms.length })}</span>
       </div>
       <div class="tree-children" style="display:none;">`
 
-      for (const room of floor.rooms) {
+      for (const [roomIndex, room] of floor.rooms.entries()) {
+        const roomKey = `${floorKey}/room-${roomIndex}`
         const hasAddresses = room.addresses && room.addresses.length > 0;
         treeHtml += `<div class="tree-node room-node">
-        <div class="tree-node-header" onclick="toggleTreeNode(this)">
+        <div class="tree-node-header" data-tree-key="${roomKey}" onclick="toggleTreeNode(this)">
           <span class="tree-icon">${hasAddresses ? '▶' : '•'}</span>
           <span class="tree-label">🚪 ${escapeHtml(room.name)}${room.description ? ` (${escapeHtml(room.description)})` : ''}</span>
           <span class="tree-count">${window.I18N.t('preview.addresses', { count: room.address_count })}, ${window.I18N.t('preview.devices', { count: room.device_count })}</span>
@@ -2241,6 +2254,18 @@ function displayBuildingPreview(preview) {
   }
 
   treeEl.innerHTML = treeHtml
+  const headersByTreeKey = new Map(
+    Array.from(treeEl.querySelectorAll('.tree-node-header[data-tree-key]'))
+      .map(header => [header.dataset.treeKey, header])
+  )
+  expandedNodeKeys.forEach(key => {
+    const header = headersByTreeKey.get(key)
+    const children = header?.parentElement.querySelector(':scope > .tree-children')
+    if (children) {
+      children.style.display = 'block'
+      header.querySelector('.tree-icon').textContent = '▼'
+    }
+  })
 }
 
 function toggleTreeNode(header) {
@@ -2451,7 +2476,12 @@ function startEvents(jobId) {
                       if (data.message.includes('completed')) {
                         setLocalizedMessage(banner, 'job.completed', {}, 'status-message success')
                       } else {
-                        setLocalizedMessage(banner, 'job.failed', {}, 'status-message error')
+                        setLocalizedMessage(
+                          banner,
+                          'job.failed',
+                          { error: '' },
+                          'status-message error'
+                        )
                       }
                     }
 

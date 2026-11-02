@@ -236,10 +236,12 @@ if FLASK_AVAILABLE:
         if path in ("/api/status", "/login"):
             return None
         if not acfg.get("password_hash") and not acfg.get("legacy_password"):
-            return (
-                "Web UI credentials are not configured. Run installer/setup.sh as an administrator.",
-                503,
+            message = (
+                "Web UI credentials are not configured. Run installer/setup.sh as an administrator."
             )
+            if path.startswith("/api/"):
+                return message, 503
+            return _render_login(message, 503)
 
         session_token = request.cookies.get("knx_session", "")
         session = (
@@ -274,7 +276,7 @@ if FLASK_AVAILABLE:
         if not acfg.get("enabled"):
             return redirect("/")
         if not acfg.get("password_hash") and not acfg.get("legacy_password"):
-            return (
+            return _render_login(
                 "Web UI credentials are not configured. Run installer/setup.sh as an administrator.",
                 503,
             )

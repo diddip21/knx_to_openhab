@@ -999,6 +999,80 @@ def test_service_cards_survive_failed_refresh_during_language_change(
 
 
 @pytest.mark.ui
+def test_service_responses_are_cached_when_language_change_supersedes_refresh(
+    page: Page, flask_server
+):
+    _stub_background_apis(page)
+    page.add_init_script("window.setInterval = () => 0")
+    page.add_init_script("""(() => {
+      window.pendingServiceResponses = []
+      const originalFetch = window.fetch.bind(window)
+      window.fetch = (resource, options) => {
+        const url = String(resource)
+        const kind = url.endsWith('/api/service/openhab.service/status')
+          ? 'status'
+          : url.endsWith('/api/service/openhab/version')
+            ? 'version'
+            : null
+        if (!kind) return originalFetch(resource, options)
+        return new Promise(resolve => window.pendingServiceResponses.push({ kind, resolve }))
+      }
+      document.addEventListener('DOMContentLoaded', () => {
+        const originalRefresh = window.refreshServices
+        window.serviceRefreshCompletions = 0
+        window.refreshServices = async (...args) => {
+          const result = await originalRefresh(...args)
+          window.serviceRefreshCompletions += 1
+          return result
+        }
+      }, { once: true })
+    })()""")
+
+    page.goto(flask_server, wait_until="domcontentloaded")
+    page.wait_for_function("window.pendingServiceResponses.length === 2")
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    page.wait_for_function("window.pendingServiceResponses.length === 4")
+
+    page.evaluate("""() => {
+      const response = (data, status = 200) => new Response(JSON.stringify(data), {
+        status,
+        headers: { 'Content-Type': 'application/json' }
+      })
+      const firstStatus = window.pendingServiceResponses.find(item => item.kind === 'status')
+      const firstVersion = window.pendingServiceResponses.find(item => item.kind === 'version')
+      firstStatus.resolve(response({
+        active: false,
+        status: 'inactive',
+        uptime_str: null,
+        last_run_str: null
+      }))
+      firstVersion.resolve(response({
+        installed: '5.0.0',
+        candidate: '5.0.1',
+        supported: true,
+        update_available: true,
+        message: ''
+      }))
+    }""")
+    page.wait_for_function("window.serviceRefreshCompletions === 1")
+
+    page.evaluate("""() => {
+      const response = new Response(JSON.stringify({ error: 'Temporary service failure' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' }
+      })
+      window.pendingServiceResponses.slice(2).forEach(item => item.resolve(response.clone()))
+    }""")
+    page.wait_for_function("window.serviceRefreshCompletions === 2")
+
+    openhab_card = page.locator(".service-item").filter(has_text="openhab.service")
+    expect(openhab_card).to_be_visible()
+    expect(openhab_card).to_contain_text("Installed: 5.0.0")
+    expect(openhab_card.locator("button")).to_have_count(2)
+
+
+@pytest.mark.ui
 @pytest.mark.parametrize(
     ("service_status", "expected_de", "expected_en"),
     [

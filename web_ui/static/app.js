@@ -851,6 +851,7 @@ let servicesRefreshGeneration = 0
 let cloudInfoGeneration = 0
 let cloudSecretVisible = false
 const serviceDataCache = new Map()
+const serviceDataCacheGeneration = new Map()
 
 function renderPackageOperationError(statusEl) {
   if (!currentPackageOperationError) return false
@@ -998,8 +999,12 @@ async function refreshServices() {
         status: await res.json(),
         version: await versionRes.json()
       }
+      const cachedGeneration = serviceDataCacheGeneration.get(service) ?? 0
+      if (refreshGeneration >= cachedGeneration) {
+        serviceDataCache.set(service, serviceData)
+        serviceDataCacheGeneration.set(service, refreshGeneration)
+      }
       if (refreshGeneration !== servicesRefreshGeneration) return
-      serviceDataCache.set(service, serviceData)
     } catch (e) {
       console.error('Error fetching service status:', e)
       serviceData = serviceDataCache.get(service)

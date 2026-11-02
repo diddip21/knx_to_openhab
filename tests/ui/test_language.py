@@ -739,6 +739,47 @@ def test_package_action_error_clears_when_task_status_changes(page: Page, flask_
 
 
 @pytest.mark.ui
+def test_failed_service_refresh_does_not_reset_package_task(page: Page, flask_server):
+    error = "No APT update is available for this package."
+    status_response = {
+        "status": 200,
+        "task": {"action": None, "state": "idle", "message": ""},
+    }
+    _stub_background_apis(page, package_operation_error=error)
+
+    def package_status(route):
+        route.fulfill(
+            status=status_response["status"],
+            content_type="application/json",
+            body=json.dumps(status_response["task"]),
+        )
+
+    page.route("**/api/service/updates/status", package_status)
+    page.goto(flask_server, wait_until="domcontentloaded")
+    page.wait_for_function("currentPackageTask && currentPackageTask.state === 'idle'")
+    page.evaluate("""() => {
+          currentPackageTask = { action: 'refresh', state: 'running', message: 'Starting APT…' }
+          renderPackageOperationStatus(currentPackageTask)
+        }""")
+    page.evaluate("startPackageOperation('openhab')")
+
+    status = page.locator("#packageOperationStatus")
+    expect(status).to_have_text("Für dieses Paket ist kein APT-Update verfügbar.")
+    status_response["status"] = 503
+    page.evaluate("refreshServices()")
+    expect(status).to_have_text("Für dieses Paket ist kein APT-Update verfügbar.")
+
+    status_response["status"] = 200
+    status_response["task"] = {
+        "action": "refresh",
+        "state": "running",
+        "message": "Starting APT…",
+    }
+    page.evaluate("refreshServices()")
+    expect(status).to_have_text("Für dieses Paket ist kein APT-Update verfügbar.")
+
+
+@pytest.mark.ui
 def test_live_log_timestamps_follow_selected_language(page: Page, flask_server):
     timestamp = 1704196800000
     event = {

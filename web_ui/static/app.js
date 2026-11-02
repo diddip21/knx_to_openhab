@@ -928,7 +928,7 @@ async function refreshServices() {
   const refreshGeneration = ++servicesRefreshGeneration
   const services = ['openhab.service', 'evcc.service']
   const serviceItems = document.createDocumentFragment()
-  let task = { state: 'idle' }
+  let task = currentPackageTask || { state: 'idle' }
   let packageStatusReceived = false
   try {
     const taskResponse = await apiFetch('/api/service/updates/status')
@@ -939,7 +939,6 @@ async function refreshServices() {
   } catch (e) { console.error('Package status unavailable:', e) }
   if (refreshGeneration !== servicesRefreshGeneration) return
   if (packageStatusReceived) updateCurrentPackageTask(task)
-  else currentPackageTask = task
   const busy = task.state === 'running'
   if (busy) startPackageOperationPolling()
   document.getElementById('refreshPackagesBtn').disabled = busy

@@ -1064,7 +1064,9 @@ async function refreshServices() {
     serviceItems.appendChild(div)
   }
   if (refreshGeneration !== servicesRefreshGeneration) return
+  const existingCloudCard = document.getElementById('cloud-info-card')
   servicesListEl.replaceChildren(serviceItems)
+  if (existingCloudCard) servicesListEl.appendChild(existingCloudCard)
   await loadCloudInfo()
 }
 
@@ -1101,6 +1103,7 @@ async function loadCloudInfo() {
 
   try {
     const res = await apiFetch('/api/openhab/cloud-info')
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     if (refreshGeneration !== cloudInfoGeneration) return
     const card = document.createElement('div')

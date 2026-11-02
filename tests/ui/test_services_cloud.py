@@ -150,6 +150,51 @@ class TestServicesSection:
         expect(openhab.locator(".upgrade-btn")).to_have_text("No update")
         expect(openhab).to_contain_text("openhab.service")
 
+    def test_cloud_info_card_survives_a_failed_locale_refresh(
+        self, page: Page, base_url, flask_server
+    ):
+        _setup_services_routes(page)
+        fail_cloud_info = False
+
+        def cloud_info_route(route):
+            if fail_cloud_info:
+                route.fulfill(
+                    status=503,
+                    content_type="application/json",
+                    body=json.dumps({"error": "Temporary cloud info failure"}),
+                )
+                return
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps(
+                    {
+                        "uuid": "abc-123-def-456",
+                        "secret": "super-secret-value",
+                        "uuid_path": "/var/lib/openhab/uuid",
+                        "secret_path": "/var/lib/openhab/openhabcloud/secret",
+                    }
+                ),
+            )
+
+        page.route("**/api/openhab/cloud-info", cloud_info_route)
+        page.goto(base_url)
+
+        cloud_card = page.locator("#servicesList #cloud-info-card")
+        expect(cloud_card).to_contain_text("abc-123-def-456", timeout=10000)
+        expect(cloud_card.locator("#cloud-secret-val")).to_be_visible()
+        fail_cloud_info = True
+
+        with page.expect_response(
+            lambda response: response.url.endswith("/api/openhab/cloud-info")
+            and response.status == 503
+        ):
+            page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+
+        expect(cloud_card).to_be_visible()
+        expect(cloud_card).to_contain_text("abc-123-def-456")
+        expect(cloud_card.locator("#cloud-secret-val")).to_be_visible()
+
     def test_service_restart_button(self, page: Page, base_url, flask_server):
         _setup_services_routes(page)
         page.goto(base_url)

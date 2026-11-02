@@ -76,7 +76,7 @@ def test_basic_auth_dashboard_screenshot(browser: Browser, basic_auth_preview_se
     expect(page.locator("#uploadForm")).to_be_visible()
     expect(page.get_by_role("button", name="Log out")).to_have_count(0)
 
-    screenshot_dir = Path(__file__).resolve().parents[2] / "docs" / "screenshots"
+    screenshot_dir = Path("test-results/screenshots")
     screenshot_dir.mkdir(parents=True, exist_ok=True)
     page.screenshot(path=str(screenshot_dir / "basic-auth-dashboard.png"), full_page=True)
     context.close()

@@ -26,7 +26,7 @@
           <option value="en" data-i18n="language.en">English</option>
         </select>
       </div>
-      {% if auth_enabled %}
+      {% if auth_enabled and auth_mode != 'basic' %}
       <button id="logoutButton" class="btn-secondary logout-button" type="button" data-i18n="header.logout">Log out</button>
       {% endif %}
     </div>

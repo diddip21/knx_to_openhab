@@ -90,6 +90,33 @@ After changing the setting, restart the Web UI service so it reloads the config:
 sudo systemctl restart knxohui.service
 ```
 
+#### When the relay strips all cookies
+
+If the relay cannot pass `Cookie`/`Set-Cookie`, opt in to HTTP Basic
+authentication in the same config file by adding these fields inside the
+existing `auth` object (preserve its other fields):
+
+```json
+"auth": {
+  "enabled": true,
+  "mode": "basic",
+  "allowed_origins": ["https://mcrelay.greiner-wue.de"]
+}
+```
+
+Basic mode checks the configured Web UI username/password on each request and
+does not use session cookies. The relay must pass the `Authorization` header;
+if it strips that too, this mode cannot work. The public connection must use
+HTTPS, and the relay-to-app hop carrying the Basic credentials must be loopback,
+TLS-protected, or on a network you trust. Do not expose the app directly over
+unencrypted HTTP. If the relay runs on the same host, keep `bind_host` at
+`127.0.0.1`; if it is remote, protect the upstream hop with TLS. For
+state-changing requests the app still requires an exact HTTPS allowed `Origin`
+(or `Referer` only when `Origin` is absent). The existing rate limit still
+applies. Browsers may cache Basic credentials until closed, so the
+in-app logout button is unavailable and closing the browser is the practical
+way to clear them. Restart `knxohui.service` after changing the configuration.
+
 ### Change the Web UI password
 
 The installer keeps the Web UI password in the protected `secrets.env` file.

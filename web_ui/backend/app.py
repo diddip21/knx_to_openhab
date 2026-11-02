@@ -210,6 +210,29 @@ if FLASK_AVAILABLE:
             request_origin = _parse_origin(referer, allow_url_path=True) if referer else None
         return request_origin is not None and request_origin in normalized_allowed_origins
 
+    def _basic_auth_origin_allowed() -> bool:
+        allowed_origins = cfg.get("auth", {}).get("allowed_origins", [])
+        normalized_allowed_origins = {
+            origin for value in allowed_origins if (origin := _parse_origin(value)) is not None
+        }
+        origin_header = request.headers.get("Origin")
+        if origin_header is not None:
+            request_origin = _parse_origin(origin_header)
+        else:
+            referer = request.headers.get("Referer")
+            request_origin = _parse_origin(referer, allow_url_path=True) if referer else None
+        return (
+            request_origin is not None
+            and request_origin[0] == "https"
+            and request_origin in normalized_allowed_origins
+        )
+
+    def _basic_auth_challenge(status: int = 401):
+        response = make_response("Authentication required", status)
+        response.headers["WWW-Authenticate"] = 'Basic realm="KNX to OpenHAB", charset="UTF-8"'
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     def _render_login(error: str | None = None, status: int = 200):
         token = _login_csrf_serializer().dumps(secrets.token_urlsafe(32))
         response = make_response(
@@ -291,7 +314,33 @@ if FLASK_AVAILABLE:
             )
             if path.startswith("/api/"):
                 return message, 503
+            if acfg.get("mode", "session") == "basic":
+                response = make_response(message, 503)
+                response.headers["Cache-Control"] = "no-store"
+                return response
             return _render_login(message, 503)
+
+        if acfg.get("mode", "session") == "basic":
+            identity = request.remote_addr or "unknown"
+            session_store = _sessions()
+            if not session_store.is_login_allowed(identity):
+                return _basic_auth_challenge(429)
+            authorization = request.authorization
+            if (
+                authorization is None
+                or authorization.type.lower() != "basic"
+                or not _verify_login(authorization.username or "", authorization.password or "")
+            ):
+                session_store.record_login_failure(identity)
+                return _basic_auth_challenge()
+            session_store.clear_login_failures(identity)
+            g.authenticated_user = authorization.username
+            if (
+                request.method not in ("GET", "HEAD", "OPTIONS")
+                and not _basic_auth_origin_allowed()
+            ):
+                return jsonify({"error": "valid request origin required"}), 403
+            return None
 
         session_token = request.cookies.get("knx_session", "")
         session = (
@@ -324,6 +373,10 @@ if FLASK_AVAILABLE:
     def login():
         acfg = cfg.get("auth", {})
         if not acfg.get("enabled"):
+            response = redirect("/")
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        if acfg.get("mode", "session") == "basic":
             response = redirect("/")
             response.headers["Cache-Control"] = "no-store"
             return response
@@ -386,6 +439,8 @@ if FLASK_AVAILABLE:
 
     @app.route("/api/logout", methods=["POST"])
     def logout():
+        if cfg.get("auth", {}).get("mode", "session") == "basic":
+            return jsonify({"ok": True})
         session_token = request.cookies.get("knx_session", "")
         if session_token:
             _sessions().revoke(session_token)
@@ -404,6 +459,7 @@ if FLASK_AVAILABLE:
             "index.html",
             csrf_token=request.cookies.get("knx_csrf", ""),
             auth_enabled=cfg.get("auth", {}).get("enabled", False),
+            auth_mode=cfg.get("auth", {}).get("mode", "session"),
         )
 
     @app.route("/api/upload", methods=["POST"])

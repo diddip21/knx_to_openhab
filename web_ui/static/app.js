@@ -846,6 +846,16 @@ function renderPackageOperationError(statusEl) {
   return true
 }
 
+function updateCurrentPackageTask(task) {
+  const previousTask = currentPackageTask
+  if (currentPackageOperationError && previousTask &&
+      (previousTask.state !== task.state || previousTask.action !== task.action)) {
+    currentPackageOperationError = null
+    currentPackageOperationErrorHasPrefix = false
+  }
+  currentPackageTask = task
+}
+
 function renderPackageOperationStatus(task) {
   const statusEl = document.getElementById('packageOperationStatus')
   if (!statusEl) return
@@ -884,7 +894,7 @@ function startPackageOperationPolling() {
       const response = await apiFetch('/api/service/updates/status')
       if (!response.ok) throw new Error('Status unavailable')
       const task = await response.json()
-      currentPackageTask = task
+      updateCurrentPackageTask(task)
       renderPackageOperationStatus(task)
       if (task.state === 'running') {
         if (packagePollCompletionStage > 0) {
@@ -919,12 +929,17 @@ async function refreshServices() {
   const services = ['openhab.service', 'evcc.service']
   const serviceItems = document.createDocumentFragment()
   let task = { state: 'idle' }
+  let packageStatusReceived = false
   try {
     const taskResponse = await apiFetch('/api/service/updates/status')
-    if (taskResponse.ok) task = await taskResponse.json()
+    if (taskResponse.ok) {
+      task = await taskResponse.json()
+      packageStatusReceived = true
+    }
   } catch (e) { console.error('Package status unavailable:', e) }
   if (refreshGeneration !== servicesRefreshGeneration) return
-  currentPackageTask = task
+  if (packageStatusReceived) updateCurrentPackageTask(task)
+  else currentPackageTask = task
   const busy = task.state === 'running'
   if (busy) startPackageOperationPolling()
   document.getElementById('refreshPackagesBtn').disabled = busy

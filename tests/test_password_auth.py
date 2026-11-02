@@ -441,6 +441,17 @@ def test_basic_auth_success_cache_invalidates_when_password_hash_changes(monkeyp
     assert verifier.call_count == 2
 
 
+def test_basic_auth_checks_password_hash_for_unknown_username(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    verifier = Mock(return_value=False)
+    monkeypatch.setattr(app_module, "verify_password", verifier)
+
+    response = app_module.app.test_client().get("/", headers=_basic_auth_header("unknown"))
+
+    assert response.status_code == 401
+    assert verifier.call_count == 1
+
+
 def test_basic_auth_allows_protected_page_and_api_without_cookies(monkeypatch, tmp_path):
     _enable_basic_auth(monkeypatch, tmp_path)
     client = app_module.app.test_client()

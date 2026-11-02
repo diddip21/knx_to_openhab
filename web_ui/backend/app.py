@@ -304,7 +304,6 @@ if FLASK_AVAILABLE:
         return user_matches and password_matches
 
     def _verify_basic_login(username: str, password: str) -> bool:
-        acfg = cfg.get("auth", {})
         credential_version = _credential_version()
         candidate = hmac.new(
             _basic_auth_cache_secret,
@@ -319,9 +318,7 @@ if FLASK_AVAILABLE:
                 return True
             _basic_auth_successes.pop(cache_key, None)
 
-        if not hmac.compare_digest(
-            str(acfg.get("user", "")).encode("utf-8"), username.encode("utf-8")
-        ) or not _verify_login(username, password):
+        if not _verify_login(username, password):
             return False
 
         with _basic_auth_successes_lock:

@@ -889,6 +889,27 @@ function renderPackageOperationStatus(task) {
   })
 }
 
+function localizedServiceStatus(status) {
+  const normalizedStatus = String(status || '').toLowerCase()
+  const statusKeys = {
+    active: 'service.active',
+    inactive: 'service.inactive',
+    failed: 'service.statusFailed',
+    activating: 'service.statusActivating',
+    deactivating: 'service.statusDeactivating',
+    reloading: 'service.statusReloading',
+    maintenance: 'service.statusMaintenance',
+    refreshing: 'service.statusRefreshing',
+    unknown: 'service.statusUnknown',
+    error: 'service.statusError',
+    unsupported: 'service.statusUnsupported'
+  }
+  const translationKey = statusKeys[normalizedStatus]
+  return translationKey
+    ? window.I18N.t(translationKey)
+    : (status || window.I18N.t('service.statusUnknown'))
+}
+
 function localizedPackageAction(action) {
   const value = String(action || '')
   const key = `service.action.${value.toLowerCase()}`
@@ -993,9 +1014,9 @@ async function refreshServices() {
     const restarting = restartingServices.has(service)
 
     const statusClass = status.active ? 'active' : 'inactive'
-    const statusText = status.active
-      ? window.I18N.t('service.active')
-      : window.I18N.t('service.inactive')
+    const statusText = status.status
+      ? localizedServiceStatus(status.status)
+      : window.I18N.t(status.active ? 'service.active' : 'service.inactive')
 
     let extraInfo = ''
     if (status.active && status.uptime_str) {
@@ -1332,6 +1353,7 @@ function updateStatisticsDisplay(stats) {
       console.error('Statistics element not found');
       return
     }
+    clearLocalizedMessage(statsEl)
 
     currentStatsData = stats && typeof stats === 'object'
       ? JSON.parse(JSON.stringify(stats))
@@ -1391,11 +1413,7 @@ function updateStatisticsDisplay(stats) {
 
 
     } else {
-      if (!stats || (typeof stats === 'object' && Object.keys(stats).length === 0)) {
-        statsEl.innerHTML = `<p>${window.I18N.t('stats.noData')}</p>`
-      } else {
-        statsEl.innerHTML = `<p>${window.I18N.t('stats.noData')}</p>`
-      }
+      setLocalizedMessage(statsEl, 'stats.noData')
       currentStatsData = null
     }
   } catch (error) {

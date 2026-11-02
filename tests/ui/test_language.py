@@ -894,6 +894,19 @@ def test_empty_job_log_message_survives_language_change(page: Page, flask_server
 
 
 @pytest.mark.ui
+def test_empty_statistics_message_survives_language_change(page: Page, flask_server):
+    _stub_background_apis(page)
+    page.goto(flask_server, wait_until="domcontentloaded")
+    page.evaluate("updateStatisticsDisplay(null)")
+
+    stats = page.locator("#stats")
+    expect(stats).to_have_text("Keine Statistikdaten verfügbar.")
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(stats).to_have_text("No statistics available.")
+
+
+@pytest.mark.ui
 def test_loading_job_details_survives_language_change_without_stale_job_data(
     page: Page, flask_server
 ):
@@ -983,6 +996,45 @@ def test_service_cards_survive_failed_refresh_during_language_change(
     expect(openhab_card).to_contain_text("APT candidate:")
     expect(openhab_card).to_contain_text("APT package is not installed on this host.")
     expect(openhab_card.locator("button")).to_have_count(2)
+
+
+@pytest.mark.ui
+@pytest.mark.parametrize(
+    ("service_status", "expected_de", "expected_en"),
+    [
+        ("failed", "Fehlgeschlagen", "Failed"),
+        ("activating", "Wird aktiviert", "Activating"),
+    ],
+)
+def test_non_active_service_states_remain_visible_and_localized(
+    page: Page, flask_server, service_status, expected_de, expected_en
+):
+    _stub_background_apis(page)
+    page.route(
+        "**/api/service/openhab.service/status",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "active": False,
+                    "status": service_status,
+                    "info": "",
+                    "uptime_str": None,
+                    "last_run_str": None,
+                }
+            ),
+        ),
+    )
+    page.goto(flask_server, wait_until="domcontentloaded")
+
+    openhab_status = (
+        page.locator(".service-item").filter(has_text="openhab.service").locator(".service-status")
+    )
+    expect(openhab_status).to_have_text(expected_de)
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(openhab_status).to_have_text(expected_en)
 
 
 @pytest.mark.ui

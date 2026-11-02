@@ -10,13 +10,14 @@ TEST_FILE_PATH = os.path.abspath(
 )
 
 
-def test_upload_knx_project(page: Page, base_url):
+def test_upload_knx_project(page: Page, base_url, flask_server):
     """Test the full flow of uploading a KNX project."""
     # Skip if test file doesn't exist
     if not os.path.exists(TEST_FILE_PATH):
         pytest.skip(f"Test file not found: {TEST_FILE_PATH}")
 
     page.goto(base_url)
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
     # 1. Locate file input
     file_input = page.locator("#fileInput")
@@ -49,7 +50,7 @@ def test_upload_knx_project(page: Page, base_url):
 
     # Status badge should indicate job state
     expect(page.locator("#jobDetail .badge")).to_contain_text(
-        re.compile(r"running|completed|failed"),
+        re.compile(r"running|completed|failed", re.IGNORECASE),
         timeout=20000,
     )
 

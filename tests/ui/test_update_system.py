@@ -102,6 +102,25 @@ class TestUpdateSystem:
         expect(page.locator("#dialogLatestCommit")).to_contain_text("def5678")
         expect(page.locator("#dialogLatestMessage")).to_contain_text("Latest improvement")
 
+    def test_update_dialog_language_switch_preserves_version_details(
+        self, page: Page, base_url, flask_server
+    ):
+        _setup_version_routes(page, update_available=True)
+        page.goto(base_url)
+        page.locator("#versionBadge").click()
+        expect(page.locator("#updateDialog[open]")).to_be_visible(timeout=10000)
+
+        expect(page.locator("#updateDialog h2 span")).to_have_text("Systemupdate verfügbar")
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+        expect(page.locator("#updateDialog h2 span")).to_have_text("System Update Available")
+        expect(page.locator("#dialogCurrentCommit")).to_have_text("abc1234")
+        expect(page.locator("#dialogLatestCommit")).to_have_text("def5678")
+        expect(page.locator("#dialogLatestMessage")).to_have_text("Latest improvement")
+
+        page.get_by_role("combobox", name="Sprache / Language").select_option("de")
+        expect(page.locator("#updateDialog h2 span")).to_have_text("Systemupdate verfügbar")
+        expect(page.locator("#dialogLatestAuthor")).to_have_text("developer")
+
     def test_update_dialog_install_button(self, page: Page, base_url, flask_server):
         _setup_version_routes(page, update_available=True)
         page.goto(base_url)

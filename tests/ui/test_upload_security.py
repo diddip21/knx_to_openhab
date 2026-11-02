@@ -26,6 +26,7 @@ class TestUploadSecurityUI:
     def test_reject_invalid_file_type_shows_error(self, page: Page, base_url):
         """Uploading an invalid file type should show clear error message."""
         page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
         # Create a dummy exe file for testing
         dummy_file = os.path.join(FIXTURES_DIR, "test_malware.exe")
@@ -107,9 +108,10 @@ class TestUploadSecurityUI:
             if os.path.exists(dummy_file):
                 os.remove(dummy_file)
 
-    def test_upload_form_accepts_knxproj(self, page: Page, base_url):
+    def test_upload_form_accepts_knxproj(self, page: Page, base_url, flask_server):
         """Upload form should accept valid .knxproj files."""
         page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
         # Use real test file if available
         test_file = os.path.join(FIXTURES_DIR, "Charne.knxproj")
@@ -122,16 +124,16 @@ class TestUploadSecurityUI:
         # Upload valid file
         file_input.set_input_files(test_file)
 
-        # Submit
-        page.locator("button[type='submit']").click()
+        # The upload endpoint accepts the project before asynchronous job processing starts.
+        with page.expect_response(
+            lambda response: response.url.endswith("/api/upload")
+            and response.request.method == "POST"
+        ) as upload_response:
+            page.locator("button[type='submit']").click()
 
-        # Wait for job creation
-        status_div = page.locator("#status")
-        expect(status_div).to_be_visible()
-        expect(status_div).to_contain_text(
-            re.compile(r"Processing started|File uploaded, job started"),
-            timeout=20000,
-        )
+        response = upload_response.value
+        assert response.status == 201
+        assert response.json().get("id")
 
         # Take screenshot of successful upload
         page.screenshot(

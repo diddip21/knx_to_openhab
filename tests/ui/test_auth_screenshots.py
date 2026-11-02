@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -10,12 +11,33 @@ def test_login_and_authenticated_dashboard_screenshots(page: Page, auth_preview_
     screenshot_dir.mkdir(parents=True, exist_ok=True)
 
     page.goto(f"{auth_preview_server}/login")
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
     expect(page).to_have_title("Sign in · KNX to OpenHAB")
     expect(page.get_by_role("heading", name="Sign in")).to_be_visible()
     page.screenshot(path=str(screenshot_dir / "issue-22-login.png"), full_page=True)
 
     page.get_by_label("Username").fill("operator")
     page.get_by_label("Password").fill("test-only-preview-password")
+    page.route(
+        "**/api/**",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                []
+                if route.request.url.endswith("/api/jobs")
+                else (
+                    {"commit_short": "demo"}
+                    if route.request.url.endswith("/api/version")
+                    else (
+                        {"update_available": False}
+                        if route.request.url.endswith("/api/version/check")
+                        else {}
+                    )
+                )
+            ),
+        ),
+    )
     page.get_by_role("button", name="Sign in").click()
     expect(page.get_by_role("button", name="Log out")).to_be_visible()
     expect(page).to_have_title("KNX → OpenHAB Generator")
@@ -27,6 +49,7 @@ def test_expired_api_session_redirects_to_sign_in(
     page: Page, auth_preview_server, expire_auth_preview_session
 ):
     page.goto(f"{auth_preview_server}/login")
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
     page.get_by_label("Username").fill("operator")
     page.get_by_label("Password").fill("test-only-preview-password")
     page.get_by_role("button", name="Sign in").click()

@@ -1290,6 +1290,29 @@ dialog:not([open]) {
   box-shadow: var(--card-shadow);
 }
 
+.language-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-medium);
+  font-size: 0.9rem;
+}
+
+.language-selector select {
+  min-height: 38px;
+  padding: 6px 30px 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-dark);
+  font: inherit;
+}
+
+.language-selector select:focus-visible {
+  outline: 3px solid var(--primary-light-blue);
+  outline-offset: 2px;
+}
+
 /* Version Badge */
 .version-badge {
   display: flex;
@@ -1926,6 +1949,11 @@ legend {
   color: var(--text-dark);
   font-size: 1.05rem;
   font-weight: 700;
+}
+
+.login-card > .language-selector {
+  justify-content: flex-end;
+  margin: -12px 0 24px;
 }
 
 .login-brand img {

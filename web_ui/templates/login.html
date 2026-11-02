@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="de">
 
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>Sign in · KNX to OpenHAB</title>
+  <title data-i18n="login.title">Sign in · KNX to OpenHAB</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="icon" type="image/png" href="/static/favicon.png">
 </head>
@@ -16,26 +16,38 @@
       <img src="/static/favicon.png" alt="">
       <span>LogiKNX2HAB</span>
     </div>
-    <h1>Sign in</h1>
-    <p class="login-intro">Enter your Web UI credentials to continue.</p>
+    <div class="language-selector">
+      <label for="languageSelect" data-i18n="language.label">Sprache / Language</label>
+      <select id="languageSelect" aria-label="Sprache / Language">
+        <option value="de" data-i18n="language.de">Deutsch</option>
+        <option value="en" data-i18n="language.en">English</option>
+      </select>
+    </div>
+    <h1 data-i18n="login.heading">Sign in</h1>
+    <p class="login-intro" data-i18n="login.intro">Enter your Web UI credentials to continue.</p>
 
     {% if error %}
-    <p class="login-error" role="alert">{{ error }}</p>
+    <p class="login-error" role="alert"
+      {% if error == 'The sign-in request expired. Please try again.' %}data-i18n="login.error.expired"
+      {% elif error == 'Too many attempts. Please try again later.' %}data-i18n="login.error.limited"
+      {% elif error == 'Username or password is incorrect.' %}data-i18n="login.error.invalid"
+      {% elif error == 'Web UI credentials are not configured. Run installer/setup.sh as an administrator.' %}data-i18n="login.error.unconfigured"{% endif %}>{{ error }}</p>
     {% endif %}
 
     <form method="post" action="{{ url_for('login', next=next_url) }}" autocomplete="on">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="form-group">
-        <label for="username">Username</label>
+        <label for="username" data-i18n="login.username">Username</label>
         <input id="username" name="username" type="text" autocomplete="username" required autofocus>
       </div>
       <div class="form-group">
-        <label for="password">Password</label>
+        <label for="password" data-i18n="login.password">Password</label>
         <input id="password" name="password" type="password" autocomplete="current-password" required>
       </div>
-      <button class="btn-primary login-submit" type="submit">Sign in</button>
+      <button class="btn-primary login-submit" type="submit" data-i18n="login.submit">Sign in</button>
     </form>
   </main>
+  <script src="/static/i18n.js"></script>
 </body>
 
 </html>

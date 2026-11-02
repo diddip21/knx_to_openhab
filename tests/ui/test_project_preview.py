@@ -146,6 +146,7 @@ class TestProjectPreview:
     def _click_preview(self, page: Page, base_url, routes_fn=_setup_preview_routes):
         routes_fn(page)
         page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
         if os.path.exists(TEST_FILE_PATH):
             page.locator("#fileInput").set_input_files(TEST_FILE_PATH)
         else:
@@ -208,6 +209,7 @@ class TestProjectPreview:
         expect(page.locator("#preview-section")).to_be_visible(timeout=20000)
 
         expect(page.locator(".building-node")).to_have_count(0)
+        expect(page.locator("#buildingTree")).to_contain_text("No building structure available.")
 
     def test_preview_homekit_alexa_indicators(self, page: Page, base_url, flask_server):
         self._click_preview(page, base_url)

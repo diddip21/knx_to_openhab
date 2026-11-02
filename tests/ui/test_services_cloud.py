@@ -126,6 +126,127 @@ class TestServicesSection:
         expect(page.locator("#servicesList")).to_contain_text("openhab.service")
         expect(page.locator("#servicesList")).to_contain_text("evcc.service")
 
+    def test_service_labels_switch_language_without_translating_package_data(
+        self, page: Page, base_url, flask_server
+    ):
+        _setup_services_routes(page)
+        page.goto(base_url)
+        expect(page.locator("#servicesList .service-item")).to_have_count(2, timeout=10000)
+
+        openhab = page.locator("#servicesList .service-item").first
+        expect(openhab).to_contain_text("Aktiv")
+        expect(openhab).to_contain_text("Installiert:")
+        expect(openhab).to_contain_text("APT-Kandidat:")
+        expect(openhab.locator(".restart-btn")).to_have_text("Neu starten")
+        expect(openhab.locator(".upgrade-btn")).to_have_text("Kein Update")
+
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+        openhab = page.locator("#servicesList .service-item").first
+        expect(openhab).to_contain_text("Active")
+        expect(openhab).to_contain_text("Installed:")
+        expect(openhab).to_contain_text("APT candidate:")
+        expect(openhab).to_contain_text("5.0.0-1")
+        expect(openhab.locator(".restart-btn")).to_have_text("Restart")
+        expect(openhab.locator(".upgrade-btn")).to_have_text("No update")
+        expect(openhab).to_contain_text("openhab.service")
+
+    def test_cloud_info_card_survives_a_failed_locale_refresh(
+        self, page: Page, base_url, flask_server
+    ):
+        _setup_services_routes(page)
+        fail_cloud_info = False
+
+        def cloud_info_route(route):
+            if fail_cloud_info:
+                route.fulfill(
+                    status=503,
+                    content_type="application/json",
+                    body=json.dumps({"error": "Temporary cloud info failure"}),
+                )
+                return
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps(
+                    {
+                        "uuid": "abc-123-def-456",
+                        "secret": "super-secret-value",
+                        "uuid_path": "/var/lib/openhab/uuid",
+                        "secret_path": "/var/lib/openhab/openhabcloud/secret",
+                    }
+                ),
+            )
+
+        page.route("**/api/openhab/cloud-info", cloud_info_route)
+        page.goto(base_url)
+
+        cloud_card = page.locator("#servicesList #cloud-info-card")
+        expect(cloud_card).to_contain_text("abc-123-def-456", timeout=10000)
+        expect(cloud_card.locator("#cloud-secret-val")).to_be_visible()
+        fail_cloud_info = True
+
+        with page.expect_response(
+            lambda response: response.url.endswith("/api/openhab/cloud-info")
+            and response.status == 503
+        ):
+            page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+
+        expect(cloud_card).to_be_visible()
+        expect(cloud_card).to_contain_text("abc-123-def-456")
+        expect(cloud_card.locator("#cloud-secret-val")).to_be_visible()
+
+    def test_superseded_cloud_info_response_recovers_card_after_refresh_failure(
+        self, page: Page, base_url, flask_server
+    ):
+        _setup_services_routes(page)
+        page.add_init_script("window.setInterval = () => 0")
+        page.add_init_script("""(() => {
+          window.pendingCloudInfoResponses = []
+          const originalFetch = window.fetch.bind(window)
+          window.fetch = (resource, options) => {
+            if (String(resource).endsWith('/api/openhab/cloud-info')) {
+              return new Promise(resolve => window.pendingCloudInfoResponses.push(resolve))
+            }
+            return originalFetch(resource, options)
+          }
+          document.addEventListener('DOMContentLoaded', () => {
+            const originalLoadCloudInfo = window.loadCloudInfo
+            window.cloudInfoLoadCompletions = 0
+            window.loadCloudInfo = async (...args) => {
+              const result = await originalLoadCloudInfo(...args)
+              window.cloudInfoLoadCompletions += 1
+              return result
+            }
+          }, { once: true })
+        })()""")
+        page.goto(base_url, wait_until="domcontentloaded")
+        page.wait_for_function("window.pendingCloudInfoResponses.length === 1")
+
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+        page.wait_for_function("window.pendingCloudInfoResponses.length === 2")
+
+        page.evaluate("""() => window.pendingCloudInfoResponses[1](new Response(
+          JSON.stringify({ error: 'Temporary cloud info failure' }),
+          { status: 503, headers: { 'Content-Type': 'application/json' } }
+        ))""")
+        page.wait_for_function("window.cloudInfoLoadCompletions === 1")
+
+        page.evaluate("""() => window.pendingCloudInfoResponses[0](new Response(
+          JSON.stringify({
+            uuid: 'abc-123-def-456',
+            secret: 'super-secret-value',
+            uuid_path: '/var/lib/openhab/uuid',
+            secret_path: '/var/lib/openhab/openhabcloud/secret'
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        ))""")
+        page.wait_for_function("window.cloudInfoLoadCompletions === 2")
+
+        cloud_card = page.locator("#servicesList #cloud-info-card")
+        expect(cloud_card).to_be_visible()
+        expect(cloud_card).to_contain_text("abc-123-def-456")
+        expect(cloud_card.locator("#cloud-secret-val")).to_be_visible()
+
     def test_service_restart_button(self, page: Page, base_url, flask_server):
         _setup_services_routes(page)
         page.goto(base_url)
@@ -145,8 +266,33 @@ class TestServicesSection:
         assert json.loads(response_info.value.request.post_data or "{}") == {
             "service": "openhab.service"
         }
-        expect(restart_btn).to_have_text("Restart")
+        expect(restart_btn).to_have_text("Neu starten")
         assert restart_requests == [{"service": "openhab.service"}]
+
+    def test_restart_action_stays_disabled_during_language_change(
+        self, page: Page, base_url, flask_server
+    ):
+        pending_restart = []
+        _setup_services_routes(page)
+        page.route("**/api/service/restart", lambda route: pending_restart.append(route))
+        page.goto(base_url)
+
+        with page.expect_request("**/api/service/restart"):
+            page.locator("#servicesList .restart-btn").first.click()
+        expect(page.locator("#servicesList .restart-btn").first).to_be_disabled()
+
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+        restart_button = page.locator("#servicesList .restart-btn").first
+        expect(restart_button).to_have_text("Restarting…")
+        expect(restart_button).to_be_disabled()
+
+        pending_restart[0].fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"ok": True, "output": "Service restarted"}),
+        )
+        expect(page.locator("#servicesList .restart-btn").first).to_have_text("Restart")
+        expect(page.locator("#servicesList .restart-btn").first).to_be_enabled()
 
 
 @pytest.mark.ui

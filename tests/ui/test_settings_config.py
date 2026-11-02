@@ -20,6 +20,7 @@ def ensure_authenticated(page: Page, base_url: str) -> None:
         page.fill("input[name='password']", password)
         page.click("button[type='submit']")
         expect(page.locator("#upload-section")).to_be_visible(timeout=10000)
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
 
 def open_settings(page: Page, base_url: str) -> None:

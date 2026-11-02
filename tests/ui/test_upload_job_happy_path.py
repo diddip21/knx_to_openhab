@@ -129,6 +129,7 @@ def test_upload_job_lifecycle_happy_path(page: Page, base_url):
     _setup_upload_routes(page)
 
     page.goto(base_url)
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
     file_input = page.locator("#fileInput")
     expect(file_input).to_be_visible()
@@ -138,22 +139,24 @@ def test_upload_job_lifecycle_happy_path(page: Page, base_url):
 
     status_div = page.locator("#status")
     expect(status_div).to_contain_text(
-        re.compile(r"Processing started|File uploaded, job started|Job completed"),
+        re.compile(
+            r"Processing started|File uploaded, job started|Job completed|Structure loaded from job history"
+        ),
         timeout=20000,
     )
 
     expect(page.locator("#detail-section")).to_be_visible(timeout=20000)
     expect(page.locator("#jobDetail .badge")).to_contain_text(
-        re.compile(r"running|completed"), timeout=20000
+        re.compile(r"running|completed", re.IGNORECASE), timeout=20000
     )
 
     expect(page.locator("#jobs .job-item")).to_have_count(1)
     expect(page.locator("#jobs .job-item .job-status")).to_contain_text(
-        re.compile(r"running|completed")
+        re.compile(r"running|completed", re.IGNORECASE)
     )
 
     expect(status_div).to_contain_text(
         re.compile(r"Job completed|Structure loaded from job history"), timeout=20000
     )
-    expect(page.locator("#jobDetail .badge")).to_contain_text("completed", timeout=20000)
+    expect(page.locator("#jobDetail .badge")).to_contain_text("Completed", timeout=20000)
     expect(page.locator("#stats")).to_contain_text("openhab/items.items", timeout=20000)

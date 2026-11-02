@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="de">
 
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <title>KNX → OpenHAB Generator</title>
+  <title data-i18n="app.title">KNX → OpenHAB Generator</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="icon" type="image/png" href="/static/favicon.png">
 </head>
@@ -13,32 +13,39 @@
 <body>
   <div class="container">
     <div class="header-container">
-      <h1><img src="/static/favicon.png" class="header-icon" alt="Logo">LogiKNX2HAB</h1>
-      <div class="version-badge" id="versionBadge" onclick="checkForUpdates()" title="Click to check for updates">
-        <span class="version-label">Version:</span>
-        <span id="headerCommit">Loading...</span>
+      <h1><img src="/static/favicon.png" class="header-icon" alt="Logo" data-i18n-alt="header.logoAlt">LogiKNX2HAB</h1>
+      <div class="version-badge" id="versionBadge" onclick="checkForUpdates()" title="Click to check for updates" data-i18n-title="header.checkUpdates">
+        <span class="version-label" data-i18n="header.version">Version:</span>
+        <span id="headerCommit" data-i18n="header.loading">Loading...</span>
         <span class="update-indicator" id="updateIndicator" style="display:none;">🔄</span>
       </div>
+      <div class="language-selector">
+        <label for="languageSelect" data-i18n="language.label">Sprache / Language</label>
+        <select id="languageSelect" aria-label="Sprache / Language">
+          <option value="de" data-i18n="language.de">Deutsch</option>
+          <option value="en" data-i18n="language.en">English</option>
+        </select>
+      </div>
       {% if auth_enabled %}
-      <button id="logoutButton" class="btn-secondary logout-button" type="button">Log out</button>
+      <button id="logoutButton" class="btn-secondary logout-button" type="button" data-i18n="header.logout">Log out</button>
       {% endif %}
     </div>
 
     <!-- Upload Section -->
     <section id="upload-section" class="card">
-      <h2>📤 Upload KNX Project</h2>
+      <h2>📤 <span data-i18n="upload.heading">Upload KNX Project</span></h2>
       <form id="uploadForm">
         <div class="form-group">
-          <label for="fileInput">KNX Project File:</label>
+          <label for="fileInput" data-i18n="upload.fileLabel">KNX Project File:</label>
           <input type="file" id="fileInput" name="file" accept=".knxproj,.knxprojarchive,.json" required />
         </div>
         <div class="form-group">
-          <label for="passwordInput">Password (if protected):</label>
-          <input type="password" id="passwordInput" name="password" placeholder="Optional" />
+          <label for="passwordInput" data-i18n="upload.passwordLabel">Password (if protected):</label>
+          <input type="password" id="passwordInput" name="password" placeholder="Optional" data-i18n-placeholder="upload.optional" />
         </div>
         <div class="form-actions">
-          <button type="button" onclick="previewProject()" class="btn-secondary">Preview Structure</button>
-          <button type="submit" class="btn-primary">Upload & Process</button>
+          <button type="button" onclick="previewProject()" class="btn-secondary" data-i18n="upload.preview">Preview Structure</button>
+          <button type="submit" class="btn-primary" data-i18n="upload.submit">Upload & Process</button>
         </div>
       </form>
       <div id="status" class="status-message"></div>
@@ -46,7 +53,7 @@
 
     <!-- Project Preview Section -->
     <section id="preview-section" class="card" style="display:none;">
-      <h2>🏢 Building Structure Preview</h2>
+      <h2>🏢 <span data-i18n="preview.buildingHeading">Building Structure Preview</span></h2>
       <div id="previewMetadata" class="metadata-grid"></div>
       <div id="buildingTree" class="building-tree"></div>
     </section>
@@ -54,27 +61,27 @@
 
     <!-- Jobs Section -->
     <section id="jobs-section" class="card">
-      <h2>📋 Jobs</h2>
+      <h2>📋 <span data-i18n="jobs.heading">Jobs</span></h2>
       <div id="jobs" class="jobs-list"></div>
     </section>
 
     <!-- Job Details Section -->
     <section id="detail-section" class="card" style="display:none;">
-      <h2>📊 Job Details</h2>
+      <h2>📊 <span data-i18n="jobDetails.heading">Job Details</span></h2>
       <div id="jobDetail"></div>
     </section>
 
     <!-- Live Log Section -->
     <section id="log-section" class="card" style="display:none;">
-      <h2>📝 Live Log</h2>
+      <h2>📝 <span data-i18n="logs.heading">Live Log</span></h2>
       <div style="margin-bottom: 1rem;">
-        <label for="logLevelFilter">Log Level Filter:</label>
+        <label for="logLevelFilter" data-i18n="logs.filter">Log Level Filter:</label>
         <select id="logLevelFilter">
-          <option value="all">All</option>
-          <option value="debug">Debug</option>
-          <option value="info">Info</option>
-          <option value="warning">Warning</option>
-          <option value="error">Error</option>
+          <option value="all" data-i18n="logs.all">All</option>
+          <option value="debug" data-i18n="logs.debug">Debug</option>
+          <option value="info" data-i18n="logs.info">Info</option>
+          <option value="warning" data-i18n="logs.warning">Warning</option>
+          <option value="error" data-i18n="logs.error">Error</option>
         </select>
       </div>
       <div id="log" class="log-viewer"></div>
@@ -83,14 +90,14 @@
     <!-- Stats Section -->
     <section id="stats-section" class="card" style="display:none;">
       <div class="section-header">
-        <h2>📈 Generated Files Statistics</h2>
-        <label class="expert-toggle" title="Show completeness summary">
+        <h2>📈 <span data-i18n="stats.heading">Generated Files Statistics</span></h2>
+        <label class="expert-toggle" title="Show completeness summary" data-i18n-title="stats.expertTitle">
           <input type="checkbox" id="expertToggle">
-          Expert
-          <span class="expert-help">Completeness summary</span>
+          <span data-i18n="stats.expert">Expert</span>
+          <span class="expert-help" data-i18n="stats.expertHelp">Completeness summary</span>
         </label>
       </div>
-      <p class="muted">Tip: Reports like <code>unknown_report.json</code> and <code>partial_report.json</code> can be previewed, downloaded, or copied from the table.</p>
+      <p class="muted"><span data-i18n="stats.tipBefore">Tip: Reports like </span><code>unknown_report.json</code><span data-i18n="stats.tipMiddle"> and </span><code>partial_report.json</code><span data-i18n="stats.tipAfter"> can be previewed, downloaded, or copied from the table.</span></p>
       <div id="expertPanel" class="expert-panel" style="display:none;"></div>
       <div id="stats"></div>
     </section>
@@ -98,16 +105,16 @@
     <!-- Settings Panel -->
     <section id="settings-section" class="card collapsible">
       <div class="card-header" onclick="toggleSection('settings-content')">
-        <h2>⚙️ Configuration Settings</h2>
+        <h2>⚙️ <span data-i18n="settings.heading">Configuration Settings</span></h2>
         <span class="toggle-icon">▼</span>
       </div>
       <div id="settings-content" class="collapsible-content" style="display: none;">
         <div class="tabs">
-          <button class="tab-btn active" onclick="switchTab('general')">General</button>
-          <button class="tab-btn" onclick="switchTab('devices')">Devices</button>
-          <button class="tab-btn" onclick="switchTab('mappings')">Mappings</button>
-          <button class="tab-btn" onclick="switchTab('definitions')">Definitions</button>
-          <button class="tab-btn" onclick="switchTab('advanced')">Advanced</button>
+          <button class="tab-btn active" onclick="switchTab('general')" data-i18n="settings.general">General</button>
+          <button class="tab-btn" onclick="switchTab('devices')" data-i18n="settings.devices">Devices</button>
+          <button class="tab-btn" onclick="switchTab('mappings')" data-i18n="settings.mappings">Mappings</button>
+          <button class="tab-btn" onclick="switchTab('definitions')" data-i18n="settings.definitions">Definitions</button>
+          <button class="tab-btn" onclick="switchTab('advanced')" data-i18n="settings.advanced">Advanced</button>
         </div>
 
         <div id="config-forms" class="config-forms">
@@ -115,121 +122,121 @@
           <div id="tab-general" class="tab-content active">
             <!-- ETS Export Path removed -->
             <div class="form-group">
-              <label>OpenHAB Model Format</label>
+              <label data-i18n="settings.modelFormat">OpenHAB Model Format</label>
               <select id="conf-output-format" class="form-control">
-                <option value="legacy">Legacy DSL (.things/.items/.sitemap)</option>
-                <option value="yaml">openHAB 5.2 YAML</option>
+                <option value="legacy" data-i18n="settings.legacyFormat">Legacy DSL (.things/.items/.sitemap)</option>
+                <option value="yaml" data-i18n="settings.yamlFormat">openHAB 5.2 YAML</option>
               </select>
-              <div class="checkbox-help">YAML combines Things, Items and the Sitemap in one versioned file. Persistence and the stateful window rule remain textual.</div>
+              <div class="checkbox-help" data-i18n="settings.yamlHelp">YAML combines Things, Items and the Sitemap in one versioned file. Persistence and the stateful window rule remain textual.</div>
             </div>
             <div id="gateway-format-warning" class="info-box" role="status" style="display:none;"></div>
             <div id="gateway-migration-preview" class="info-box" style="display:none;">
-              <strong>Output format migration preview</strong>
-              <p>Old generator output: <code id="gateway-migration-from"></code></p>
-              <p>New generator output: <code id="gateway-migration-to"></code></p>
-              <p>Only generator-owned targets are migrated; manual files remain untouched.</p>
+              <strong data-i18n="settings.gatewayMigrationTitle">Output format migration preview</strong>
+              <p><span data-i18n="settings.gatewayMigrationOld">Old generator output: </span><code id="gateway-migration-from"></code></p>
+              <p><span data-i18n="settings.gatewayMigrationNew">New generator output: </span><code id="gateway-migration-to"></code></p>
+              <p data-i18n="settings.gatewayMigrationOwn">Only generator-owned targets are migrated; manual files remain untouched.</p>
             </div>
             <div class="form-group" id="yaml-path-group">
-              <label>YAML Path</label>
+              <label data-i18n="settings.yamlPath">YAML Path</label>
               <input type="text" id="conf-yaml-path" class="form-control">
             </div>
             <div id="legacy-model-paths">
               <div class="form-group">
-                <label>Items Path</label>
+                <label data-i18n="settings.itemsPath">Items Path</label>
                 <input type="text" id="conf-items-path" class="form-control">
               </div>
               <div class="form-group">
-                <label>Things Path</label>
+                <label data-i18n="settings.thingsPath">Things Path</label>
                 <input type="text" id="conf-things-path" class="form-control">
               </div>
               <div class="form-group">
-                <label>Sitemaps Path</label>
+                <label data-i18n="settings.sitemapsPath">Sitemaps Path</label>
                 <input type="text" id="conf-sitemaps-path" class="form-control">
               </div>
             </div>
             <div class="form-group">
-              <label>InfluxDB Path</label>
+              <label data-i18n="settings.influxPath">InfluxDB Path</label>
               <input type="text" id="conf-influx-path" class="form-control">
             </div>
             <div class="form-group">
-              <label>Fenster Rules Path</label>
+              <label data-i18n="settings.windowRulesPath">Fenster Rules Path</label>
               <input type="text" id="conf-fenster-path" class="form-control">
             </div>
 
             <fieldset>
-              <legend>Naming & Heuristics</legend>
+              <legend data-i18n="settings.naming">Naming & Heuristics</legend>
               <div class="checkbox-group">
                 <div class="checkbox-item">
-                  <label><input type="checkbox" id="conf-floor-asis"> Floor Name As Is</label>
-                  <div class="checkbox-help">Use the floor name exactly as defined in ETS.</div>
+                  <label><input type="checkbox" id="conf-floor-asis"> <span data-i18n="settings.floorAsIs">Floor Name As Is</span></label>
+                  <div class="checkbox-help" data-i18n="settings.floorAsIsHelp">Use the floor name exactly as defined in ETS.</div>
                 </div>
                 <div class="checkbox-item">
-                  <label><input type="checkbox" id="conf-floor-desc"> Floor Name From Description</label>
-                  <div class="checkbox-help">Use the ETS description field as the floor name.</div>
+                  <label><input type="checkbox" id="conf-floor-desc"> <span data-i18n="settings.floorDescription">Floor Name From Description</span></label>
+                  <div class="checkbox-help" data-i18n="settings.floorDescriptionHelp">Use the ETS description field as the floor name.</div>
                 </div>
                 <div class="checkbox-item">
-                  <label><input type="checkbox" id="conf-room-asis"> Room Name As Is</label>
-                  <div class="checkbox-help">Use the room name exactly as defined in ETS.</div>
+                  <label><input type="checkbox" id="conf-room-asis"> <span data-i18n="settings.roomAsIs">Room Name As Is</span></label>
+                  <div class="checkbox-help" data-i18n="settings.roomAsIsHelp">Use the room name exactly as defined in ETS.</div>
                 </div>
                 <div class="checkbox-item">
-                  <label><input type="checkbox" id="conf-room-desc"> Room Name From Description</label>
-                  <div class="checkbox-help">Use the ETS description field as the room name.</div>
+                  <label><input type="checkbox" id="conf-room-desc"> <span data-i18n="settings.roomDescription">Room Name From Description</span></label>
+                  <div class="checkbox-help" data-i18n="settings.roomDescriptionHelp">Use the ETS description field as the room name.</div>
                 </div>
                 <div class="checkbox-item">
-                  <label><input type="checkbox" id="conf-add-missing"> Add Missing Items</label>
-                  <div class="checkbox-help">Create OpenHAB items for GAs that have no explicit mapping.</div>
+                  <label><input type="checkbox" id="conf-add-missing"> <span data-i18n="settings.addMissingItems">Add Missing Items</span></label>
+                  <div class="checkbox-help" data-i18n="settings.addMissingItemsHelp">Create OpenHAB items for GAs that have no explicit mapping.</div>
                 </div>
                 <div class="checkbox-item">
-                  <label><input type="checkbox" id="conf-auto-place"> Auto-place unknown addresses</label>
-                  <div class="checkbox-help">Create missing floors/rooms for unknown addresses to reduce “Unknown” reports.</div>
+                  <label><input type="checkbox" id="conf-auto-place"> <span data-i18n="settings.autoPlace">Auto-place unknown addresses</span></label>
+                  <div class="checkbox-help" data-i18n="settings.autoPlaceHelp">Create missing floors/rooms for unknown addresses to reduce “Unknown” reports.</div>
                 </div>
               </div>
               <div class="info-box">
-                Naming heuristics control how floors/rooms are inferred from ETS. Combine options as needed for your project structure.
+                <span data-i18n="settings.namingInfo">Naming heuristics control how floors/rooms are inferred from ETS. Combine options as needed for your project structure.</span>
               </div>
             </fieldset>
             <div class="form-group">
-              <label>Unknown Floor Name</label>
+              <label data-i18n="settings.unknownFloor">Unknown Floor Name</label>
               <input type="text" id="conf-unknown-floor" class="form-control">
             </div>
             <div class="form-group">
-              <label>Unknown Room Name</label>
+              <label data-i18n="settings.unknownRoom">Unknown Room Name</label>
               <input type="text" id="conf-unknown-room" class="form-control">
             </div>
             <div class="form-group">
-              <label>Central Function Keyword</label>
+              <label data-i18n="settings.centralFunctionKeyword">Central Function Keyword</label>
               <input type="text" id="conf-central-keyword" class="form-control">
             </div>
             <div class="form-group">
-              <label>Central Function Group</label>
+              <label data-i18n="settings.centralFunctionGroup">Central Function Group</label>
               <input type="text" id="conf-central-group" class="form-control">
             </div>
             <div class="form-group">
-              <label>Central Notification/Sensor Keyword</label>
+              <label data-i18n="settings.centralSensorKeyword">Central Notification/Sensor Keyword</label>
               <input type="text" id="conf-notification-sensor-keyword" class="form-control">
             </div>
           </div>
 
           <!-- Devices Tab -->
           <div id="tab-devices" class="tab-content">
-            <h3>Gateway</h3>
+            <h3 data-i18n="settings.gateway">Gateway</h3>
             <div class="form-group">
-              <label>Hardware Names (comma separated)</label>
+              <label data-i18n="settings.gatewayHardwareNames">Hardware Names (comma separated)</label>
               <input type="text" id="conf-gateway-names" class="form-control">
-              <small>Names to identify the KNX IP Interface/Router</small>
+              <small data-i18n="settings.gatewayNamesHelp">Names to identify the KNX IP Interface/Router</small>
             </div>
             <div class="form-group">
-              <label for="conf-gateway-ip">KNX Gateway IP Override</label>
-              <input type="text" id="conf-gateway-ip" class="form-control" inputmode="text" autocomplete="off" spellcheck="false" placeholder="Auto-detect from ETS project" aria-describedby="conf-gateway-ip-help">
-              <small id="conf-gateway-ip-help">Enter an IPv4 or IPv6 address to override the ETS value. Leave blank for automatic detection during a future generation.</small>
+              <label for="conf-gateway-ip" data-i18n="settings.gatewayIp">KNX Gateway IP Override</label>
+              <input type="text" id="conf-gateway-ip" class="form-control" inputmode="text" autocomplete="off" spellcheck="false" placeholder="Auto-detect from ETS project" data-i18n-placeholder="settings.gatewayIpPlaceholder" aria-describedby="conf-gateway-ip-help">
+              <small id="conf-gateway-ip-help" data-i18n="settings.gatewayIpHelp">Enter an IPv4 or IPv6 address to override the ETS value. Leave blank for automatic detection. Save &amp; Reprocess applies changes to the selected job.</small>
             </div>
-            <div id="gateway-file-state" class="info-box" role="status">Loading managed gateway file state…</div>
-            <p class="muted">Live actions change only the managed model file from the last successful deployment and the saved gateway override. Pending format or path changes take effect after deployment. OpenHAB is not restarted, and runtime status is not checked.</p>
+            <div id="gateway-file-state" class="info-box" role="status" data-i18n="gateway.loadingState">Loading managed gateway file state…</div>
+            <p class="muted" data-i18n="settings.gatewayLiveHelp">Live actions change only the managed model file from the last successful deployment and the saved gateway override. Pending format or path changes take effect after deployment. OpenHAB is not restarted, and runtime status is not checked.</p>
             <div id="gateway-live-warning" class="info-box" role="status" style="display:none;"></div>
             <div class="form-actions">
-              <button type="button" id="gateway-apply-ip" class="btn-primary" disabled>Apply IP to live OpenHAB file</button>
-              <button type="button" id="gateway-reset-ip" class="btn-secondary" disabled>Restore ETS address</button>
-              <button type="button" id="gateway-undo-ip" class="btn-secondary" disabled>Undo last live change</button>
+              <button type="button" id="gateway-apply-ip" class="btn-primary" disabled data-i18n="settings.gatewayApplyLive">Apply IP to live OpenHAB file</button>
+              <button type="button" id="gateway-reset-ip" class="btn-secondary" disabled data-i18n="settings.gatewayRestoreEts">Restore ETS address</button>
+              <button type="button" id="gateway-undo-ip" class="btn-secondary" disabled data-i18n="settings.gatewayUndo">Undo last live change</button>
             </div>
             <div id="gateway-action-status" class="status-message" role="status" aria-live="polite"></div>
           </div>
@@ -237,17 +244,17 @@
           <!-- Mappings Tab -->
           <div id="tab-mappings" class="tab-content">
             <div class="mappings-toolbar">
-              <input type="text" id="mappingSearch" placeholder="Search mappings..." onkeyup="filterMappings()">
+              <input type="text" id="mappingSearch" placeholder="Search mappings..." data-i18n-placeholder="settings.searchMappings" onkeyup="filterMappings()">
             </div>
             <div class="table-container">
               <table id="mappingsTable" class="data-table">
                 <thead>
                   <tr>
-                    <th>DPST</th>
-                    <th>GA Prefix</th>
-                    <th>Item Type</th>
-                    <th>Semantic Info</th>
-                    <th>Actions</th>
+                    <th data-i18n="settings.dpst">DPST</th>
+                    <th data-i18n="settings.gaPrefix">GA Prefix</th>
+                    <th data-i18n="settings.itemType">Item Type</th>
+                    <th data-i18n="settings.semanticInfo">Semantic Info</th>
+                    <th data-i18n="settings.actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody></tbody>
@@ -264,16 +271,16 @@
 
           <!-- Advanced Tab -->
           <div id="tab-advanced" class="tab-content">
-            <h3>Regex Patterns</h3>
+            <h3 data-i18n="settings.regexPatterns">Regex Patterns</h3>
             <div id="regex-container"></div>
           </div>
         </div>
 
         <div class="settings-actions">
-          <button onclick="loadConfig()" class="btn-secondary">Reload Config</button>
+          <button onclick="loadConfig()" class="btn-secondary" data-i18n="settings.reload">Reload Config</button>
           <div class="spacer"></div>
-          <button id="save-reprocess-config" onclick="saveConfig(true)" class="btn-secondary btn-outline">Save & Reprocess Last Job</button>
-          <button onclick="saveConfig(false)" class="btn-primary">Save Config</button>
+          <button id="save-reprocess-config" onclick="saveConfig(true)" class="btn-secondary btn-outline" data-i18n="settings.saveAndReprocess">Save & Reprocess Last Job</button>
+          <button onclick="saveConfig(false)" class="btn-primary" data-i18n="settings.save">Save Config</button>
         </div>
         <div id="configStatus" class="status-message"></div>
       </div>
@@ -281,65 +288,65 @@
 
     <!-- Services Section -->
     <section id="service-section" class="card">
-      <h2>🔌 Services</h2>
-      <p class="service-note">APT-Pakete auf diesem Gerät. Die verfügbare Version stammt aus den Paketlisten.</p>
-      <button type="button" id="refreshPackagesBtn" class="service-restart-btn">Paketlisten prüfen</button>
+      <h2>🔌 <span data-i18n="services.heading">Services</span></h2>
+      <p class="service-note" data-i18n="services.note">APT-Pakete auf diesem Gerät. Die verfügbare Version stammt aus den Paketlisten.</p>
+      <button type="button" id="refreshPackagesBtn" class="service-restart-btn" data-i18n="services.refresh">Paketlisten prüfen</button>
       <span id="packageOperationStatus" role="status" aria-live="polite"></span>
       <div id="servicesList"></div>
     </section>
 
     <div style="text-align: center; margin-top: 20px; margin-bottom: 20px; font-size: 12px; color: var(--text-light);">
       <a href="https://github.com/diddip21/knx_to_openhab/blob/main/README.md" target="_blank"
-        style="color: inherit; text-decoration: none; border-bottom: 1px dotted var(--text-light);">README</a>
+        style="color: inherit; text-decoration: none; border-bottom: 1px dotted var(--text-light);" data-i18n="footer.readme">README</a>
     </div>
   </div>
 
   <!-- Update Dialog -->
   <dialog id="updateDialog" class="update-dialog">
     <div class="dialog-header">
-      <h2>🔄 System Update Available</h2>
-      <button class="close-btn" onclick="document.getElementById('updateDialog').close()">✕</button>
+      <h2>🔄 <span data-i18n="updates.available">System Update Available</span></h2>
+      <button class="close-btn" aria-label="Close dialog" data-i18n-aria-label="common.closeDialog" onclick="document.getElementById('updateDialog').close()">✕</button>
     </div>
     <div class="dialog-content">
       <div class="update-info-section">
-        <h3>Current Version</h3>
+          <h3 data-i18n="updates.currentVersion">Current Version</h3>
         <div class="version-details">
-          <div><strong>Commit:</strong> <span id="dialogCurrentCommit"></span></div>
-          <div><strong>Message:</strong> <span id="dialogCurrentMessage"></span></div>
-          <div><strong>Date:</strong> <span id="dialogCurrentDate"></span></div>
+          <div><strong data-i18n="updates.commit">Commit:</strong> <span id="dialogCurrentCommit"></span></div>
+          <div><strong data-i18n="updates.message">Message:</strong> <span id="dialogCurrentMessage"></span></div>
+          <div><strong data-i18n="updates.date">Date:</strong> <span id="dialogCurrentDate"></span></div>
         </div>
       </div>
       <div class="update-arrow">⬇️</div>
       <div class="update-info-section highlight">
-        <h3>New Version</h3>
+          <h3 data-i18n="updates.newVersion">New Version</h3>
         <div class="version-details">
-          <div><strong>Commit:</strong> <span id="dialogLatestCommit"></span></div>
-          <div><strong>Message:</strong> <span id="dialogLatestMessage"></span></div>
-          <div><strong>Author:</strong> <span id="dialogLatestAuthor"></span></div>
-          <div><strong>Date:</strong> <span id="dialogLatestDate"></span></div>
+          <div><strong data-i18n="updates.commit">Commit:</strong> <span id="dialogLatestCommit"></span></div>
+          <div><strong data-i18n="updates.message">Message:</strong> <span id="dialogLatestMessage"></span></div>
+          <div><strong data-i18n="updates.author">Author:</strong> <span id="dialogLatestAuthor"></span></div>
+          <div><strong data-i18n="updates.date">Date:</strong> <span id="dialogLatestDate"></span></div>
         </div>
       </div>
       <div id="dialogUpdateStatus" class="dialog-status" style="display:none;"></div>
     </div>
     <div class="dialog-footer">
-      <button onclick="document.getElementById('updateDialog').close()" class="btn-secondary">Cancel</button>
-      <button onclick="performUpdate()" class="btn-primary" id="dialogUpdateBtn">Install Update</button>
+      <button onclick="document.getElementById('updateDialog').close()" class="btn-secondary" data-i18n="common.cancel">Cancel</button>
+      <button onclick="performUpdate()" class="btn-primary" id="dialogUpdateBtn" data-i18n="updates.install">Install Update</button>
     </div>
   </dialog>
 
   <!-- Update Log Modal -->
   <dialog id="updateLogModal" class="log-dialog">
     <div class="dialog-header">
-      <h2>📜 Update Log</h2>
-      <button class="close-btn" onclick="document.getElementById('updateLogModal').close()">✕</button>
+      <h2>📜 <span data-i18n="updates.log">Update Log</span></h2>
+      <button class="close-btn" aria-label="Close dialog" data-i18n-aria-label="common.closeDialog" onclick="document.getElementById('updateLogModal').close()">✕</button>
     </div>
     <div class="dialog-content">
       <div class="log-container">
-        <pre id="updateLogContent" class="log-content">Waiting for logs...</pre>
+        <pre id="updateLogContent" class="log-content" data-i18n="updates.waitingLogs">Waiting for logs...</pre>
       </div>
     </div>
     <div class="dialog-footer">
-      <button onclick="document.getElementById('updateLogModal').close()" class="btn-primary">Close</button>
+      <button onclick="document.getElementById('updateLogModal').close()" class="btn-primary" data-i18n="common.close">Close</button>
     </div>
   </dialog>
 
@@ -347,34 +354,34 @@
   <dialog id="updateSuccessDialog" class="success-dialog">
     <div class="dialog-content text-center">
       <div class="success-icon">✅</div>
-      <h2>Update Initiated!</h2>
-      <p>The system is restarting to apply changes.</p>
+      <h2 data-i18n="updates.initiated">Update Initiated!</h2>
+      <p data-i18n="updates.restarting">The system is restarting to apply changes.</p>
       <div class="countdown-container">
         <span id="reloadCountdown">15</span>
-        <span class="countdown-label">seconds until reload</span>
+        <span class="countdown-label" data-i18n="updates.secondsUntilReload">seconds until reload</span>
       </div>
     </div>
   </dialog>
 
   <!-- Rollback Dialog -->
   <dialog id="rollbackDialog">
-    <h2>Rollback to Backup</h2>
-    <p>Select a backup to restore:</p>
+    <h2 data-i18n="rollback.title">Rollback to Backup</h2>
+    <p data-i18n="rollback.select">Select a backup to restore:</p>
     <select id="backupSelect"></select>
-    <button onclick="doRollback()">Rollback</button>
-    <button onclick="document.getElementById('rollbackDialog').close()">Cancel</button>
+    <button onclick="doRollback()" data-i18n="rollback.action">Rollback</button>
+    <button onclick="document.getElementById('rollbackDialog').close()" data-i18n="common.cancel">Cancel</button>
     <div id="rollbackStatus"></div>
   </dialog>
 
   <!-- Completeness Summary Dialog -->
   <dialog id="summaryDialog" class="preview-dialog">
     <div class="preview-header">
-      <h2>Completeness Summary</h2>
-      <button class="close-btn" onclick="document.getElementById('summaryDialog').close()">✕</button>
+      <h2 data-i18n="summary.title">Completeness Summary</h2>
+      <button class="close-btn" aria-label="Close dialog" data-i18n-aria-label="common.closeDialog" onclick="document.getElementById('summaryDialog').close()">✕</button>
     </div>
     <div id="summaryDialogContent" class="preview-content"></div>
     <div class="preview-footer">
-      <button onclick="document.getElementById('summaryDialog').close()">Close</button>
+      <button onclick="document.getElementById('summaryDialog').close()" data-i18n="common.close">Close</button>
     </div>
   </dialog>
 
@@ -382,17 +389,17 @@
   <dialog id="filePreviewDialog" class="preview-dialog">
     <div class="preview-header">
       <h2 id="previewFileName"></h2>
-      <button class="close-btn" onclick="document.getElementById('filePreviewDialog').close()">✕</button>
+      <button class="close-btn" aria-label="Close dialog" data-i18n-aria-label="common.closeDialog" onclick="document.getElementById('filePreviewDialog').close()">✕</button>
     </div>
     <div class="preview-controls">
       <div class="view-mode-toggle">
-        <button id="viewModeFinal" class="toggle-btn active" onclick="switchViewMode('final')">Final View</button>
-        <button id="viewModeDiff" class="toggle-btn" onclick="switchViewMode('diff')">Diff View</button>
+        <button id="viewModeFinal" class="toggle-btn active" onclick="switchViewMode('final')" data-i18n="filePreview.finalView">Final View</button>
+        <button id="viewModeDiff" class="toggle-btn" onclick="switchViewMode('diff')" data-i18n="filePreview.diffView">Diff View</button>
       </div>
       <div id="diffLegend" class="diff-legend" style="display: none;">
-        <span class="legend-item"><span class="legend-add">+</span> Added</span>
-        <span class="legend-item"><span class="legend-del">-</span> Deleted</span>
-        <span class="legend-item"><span class="legend-mod">~</span> Modified</span>
+        <span class="legend-item"><span class="legend-add">+</span> <span data-i18n="filePreview.added">Added</span></span>
+        <span class="legend-item"><span class="legend-del">-</span> <span data-i18n="filePreview.deleted">Deleted</span></span>
+        <span class="legend-item"><span class="legend-mod">~</span> <span data-i18n="filePreview.modified">Modified</span></span>
       </div>
     </div>
     <div id="previewContentWrapper" class="preview-content-wrapper">
@@ -400,10 +407,11 @@
       <div id="diffContent" class="diff-content" style="display: none;"></div>
     </div>
     <div class="preview-footer">
-      <button onclick="document.getElementById('filePreviewDialog').close()">Close</button>
+      <button onclick="document.getElementById('filePreviewDialog').close()" data-i18n="common.close">Close</button>
     </div>
   </dialog>
 
+  <script src="/static/i18n.js"></script>
   <script src="/static/app.js"></script>
 </body>
 

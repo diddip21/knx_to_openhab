@@ -25,7 +25,7 @@ def browser_context_args(browser_context_args):
 
 
 @pytest.fixture
-def authenticated_page(page: Page, base_url):
+def authenticated_page(page: Page, base_url, flask_server):
     """Provide an authenticated page session."""
     page.goto(base_url)
 
@@ -110,6 +110,7 @@ class TestProjectUpload:
         """Test that all upload interface elements are present."""
         # Check for common upload elements
         page = authenticated_page
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
         # File input should be present
         file_inputs = page.locator("input[type='file']")
@@ -169,6 +170,7 @@ class TestGeneration:
         """Test that generation status is visible on main page."""
         page = authenticated_page
         page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
         # Look for status indicators or generation buttons
         status_indicators = page.locator("text=/status|generate|processing/i")
@@ -221,6 +223,7 @@ class TestVersionCheck:
         """Test that version information is displayed."""
         page = authenticated_page
         page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
         # Look for version badge mentioned in README
         version_elements = page.locator("#versionBadge, [class*='version'], [id*='version']")
@@ -237,6 +240,7 @@ class TestReports:
         """Expert panel renders report actions and view dialog."""
         page = authenticated_page
         page.goto(base_url)
+        page.get_by_role("combobox", name="Sprache / Language").select_option("en")
         expect(page.locator("#expertPanel")).to_have_count(1)
 
         report_payload = {

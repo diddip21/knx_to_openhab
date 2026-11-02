@@ -55,6 +55,56 @@ def test_running_package_operation_finishes_after_page_load(page: Page, base_url
     assert state["status_calls"] >= 2
 
 
+def test_package_operation_status_is_localized_without_changing_action_or_message_data(
+    page: Page, base_url, flask_server
+):
+    state = {"status_calls": 0}
+
+    def fulfill(route, payload):
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+
+    def service_route(route, request):
+        url = request.url
+        if url.endswith("/api/service/updates/status"):
+            state["status_calls"] += 1
+            running = state["status_calls"] == 1
+            return fulfill(
+                route,
+                {
+                    "action": "refresh",
+                    "state": "running" if running else "completed",
+                    "message": "Starting APT…" if running else "Package lists refreshed.",
+                },
+            )
+        if re.search(r"/api/service/[^/]+\.service/status$", url):
+            return fulfill(route, {"active": True, "status": "active"})
+        if re.search(r"/api/service/(openhab|evcc)/version$", url):
+            return fulfill(
+                route,
+                {
+                    "installed": "5.0.0-1",
+                    "candidate": "5.0.0-1",
+                    "supported": True,
+                    "update_available": False,
+                    "message": "APT candidate from local package lists.",
+                },
+            )
+        return route.continue_()
+
+    page.route("**/api/service/**", service_route)
+    page.goto(base_url)
+    expect(page.locator("#packageOperationStatus")).to_contain_text(
+        "Paketlisten aktualisieren: Paketlisten aktualisiert.", timeout=10000
+    )
+
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    expect(page.locator("#packageOperationStatus")).to_contain_text(
+        "Refresh package lists: Package lists refreshed.", timeout=10000
+    )
+    assert page.evaluate("currentPackageTask.action") == "refresh"
+    assert state["status_calls"] >= 2
+
+
 def test_polling_resumes_when_another_operation_starts_during_completion_refresh(
     page: Page, base_url, flask_server
 ):

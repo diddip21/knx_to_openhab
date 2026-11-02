@@ -19,6 +19,7 @@ def ensure_authenticated(page: Page, base_url: str) -> None:
         page.fill("input[name='password']", password)
         page.click("button[type='submit']")
         expect(page.locator("#upload-section")).to_be_visible(timeout=10000)
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
 
 def _setup_job_routes(page: Page):
@@ -145,7 +146,7 @@ class TestJobActions:
 
         diff_dialog = page.locator("#filePreviewDialog[open]")
         expect(diff_dialog).to_be_visible()
-        expect(page.locator("#previewFileName")).to_have_text(f"Diff für Job {JOB_ID}")
+        expect(page.locator("#previewFileName")).to_have_text(f"Diff for job {JOB_ID}")
         expect(page.locator("#diffContent")).to_contain_text("Switch test")
 
         page.locator("#filePreviewDialog button:has-text('Close')").click()

@@ -402,6 +402,45 @@ def test_basic_auth_challenges_missing_or_invalid_credentials(monkeypatch, tmp_p
     assert b"incorrect" not in invalid.data.lower()
 
 
+def test_basic_auth_challenge_does_not_count_as_failed_login(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    client = app_module.app.test_client()
+
+    for _ in range(5):
+        assert client.get("/").status_code == 401
+
+    valid = client.get("/", headers=_basic_auth_header())
+
+    assert valid.status_code == 200
+
+
+def test_basic_auth_caches_successful_password_verification(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    verifier = Mock(return_value=True)
+    monkeypatch.setattr(app_module, "verify_password", verifier)
+    client = app_module.app.test_client()
+    headers = _basic_auth_header()
+
+    assert client.get("/", headers=headers).status_code == 200
+    assert client.get("/api/version", headers=headers).status_code == 200
+
+    assert verifier.call_count == 1
+
+
+def test_basic_auth_success_cache_invalidates_when_password_hash_changes(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    verifier = Mock(return_value=True)
+    monkeypatch.setattr(app_module, "verify_password", verifier)
+    client = app_module.app.test_client()
+    headers = _basic_auth_header()
+
+    assert client.get("/", headers=headers).status_code == 200
+    app_module.cfg["auth"]["password_hash"] = "changed-password-hash"
+    assert client.get("/api/version", headers=headers).status_code == 200
+
+    assert verifier.call_count == 2
+
+
 def test_basic_auth_allows_protected_page_and_api_without_cookies(monkeypatch, tmp_path):
     _enable_basic_auth(monkeypatch, tmp_path)
     client = app_module.app.test_client()

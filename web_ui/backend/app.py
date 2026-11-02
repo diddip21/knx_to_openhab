@@ -5,7 +5,9 @@ import os
 import subprocess
 import sys
 import tarfile
+import time
 import uuid
+from threading import Lock
 from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
 
@@ -161,6 +163,9 @@ if FLASK_AVAILABLE:
     import secrets
 
     _session_store: SessionStore | None = None
+    _basic_auth_successes: dict[tuple[str, str], float] = {}
+    _basic_auth_successes_lock = Lock()
+    _basic_auth_cache_secret = secrets.token_bytes(32)
     session_max_age = max(
         300, min(int(cfg.get("session_max_age_seconds", SESSION_MAX_AGE)), 604800)
     )
@@ -298,6 +303,33 @@ if FLASK_AVAILABLE:
             password_matches = False
         return user_matches and password_matches
 
+    def _verify_basic_login(username: str, password: str) -> bool:
+        acfg = cfg.get("auth", {})
+        credential_version = _credential_version()
+        candidate = hmac.new(
+            _basic_auth_cache_secret,
+            (username + "\0" + password).encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        cache_key = (credential_version, candidate)
+        now = time.monotonic()
+        with _basic_auth_successes_lock:
+            expires_at = _basic_auth_successes.get(cache_key)
+            if expires_at is not None and expires_at > now:
+                return True
+            _basic_auth_successes.pop(cache_key, None)
+
+        if not hmac.compare_digest(
+            str(acfg.get("user", "")).encode("utf-8"), username.encode("utf-8")
+        ) or not _verify_login(username, password):
+            return False
+
+        with _basic_auth_successes_lock:
+            if len(_basic_auth_successes) >= 128:
+                _basic_auth_successes.pop(next(iter(_basic_auth_successes)))
+            _basic_auth_successes[cache_key] = now + 30
+        return True
+
     @app.before_request
     def require_auth():
         acfg = cfg.get("auth", {})
@@ -326,11 +358,9 @@ if FLASK_AVAILABLE:
             if not session_store.is_login_allowed(identity):
                 return _basic_auth_challenge(429)
             authorization = request.authorization
-            if (
-                authorization is None
-                or authorization.type.lower() != "basic"
-                or not _verify_login(authorization.username or "", authorization.password or "")
-            ):
+            if authorization is None or authorization.type.lower() != "basic":
+                return _basic_auth_challenge()
+            if not _verify_basic_login(authorization.username or "", authorization.password or ""):
                 session_store.record_login_failure(identity)
                 return _basic_auth_challenge()
             session_store.clear_login_failures(identity)

@@ -66,6 +66,36 @@ logger = logging.getLogger(__name__)
 cfg = load_config()
 
 
+def _parse_origin(value: str, *, allow_url_path: bool = False):
+    """Return a normalized HTTP(S) origin, rejecting malformed URLs."""
+    if not isinstance(value, str) or not value or value != value.strip():
+        return None
+    if any(character in value for character in "\r\n\t ,"):
+        return None
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        return None
+    scheme = parsed.scheme.lower()
+    if (
+        scheme not in ("http", "https")
+        or not parsed.netloc
+        or not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.netloc.endswith(":")
+    ):
+        return None
+    if not allow_url_path and (parsed.path or parsed.query or parsed.fragment):
+        return None
+    if any(character in hostname for character in "/\\%"):
+        return None
+    effective_port = port if port is not None else (443 if scheme == "https" else 80)
+    return scheme, hostname.lower(), effective_port
+
+
 def _password_error_message(error):
     msg = str(error).lower()
     password_markers = [
@@ -164,6 +194,22 @@ if FLASK_AVAILABLE:
     def _login_csrf_serializer() -> URLSafeTimedSerializer:
         return URLSafeTimedSerializer(get_session_secret(project_root), salt="knx-login-csrf")
 
+    def _login_csrf_origin_allowed() -> bool:
+        allowed_origins = cfg.get("login_csrf_allowed_origins", [])
+        if not isinstance(allowed_origins, list):
+            return False
+        normalized_allowed_origins = {
+            origin for value in allowed_origins if (origin := _parse_origin(value)) is not None
+        }
+
+        origin_header = request.headers.get("Origin")
+        if origin_header is not None:
+            request_origin = _parse_origin(origin_header)
+        else:
+            referer = request.headers.get("Referer")
+            request_origin = _parse_origin(referer, allow_url_path=True) if referer else None
+        return request_origin is not None and request_origin in normalized_allowed_origins
+
     def _render_login(error: str | None = None, status: int = 200):
         token = _login_csrf_serializer().dumps(secrets.token_urlsafe(32))
         response = make_response(
@@ -175,6 +221,7 @@ if FLASK_AVAILABLE:
             ),
             status,
         )
+        response.headers["Cache-Control"] = "no-store"
         response.set_cookie(
             "knx_login_csrf",
             token,
@@ -187,15 +234,18 @@ if FLASK_AVAILABLE:
         return response
 
     def _valid_login_csrf() -> bool:
+        cookie_present = "knx_login_csrf" in request.cookies
         cookie_token = request.cookies.get("knx_login_csrf", "")
         form_token = request.form.get("csrf_token", "")
-        if not cookie_token or not form_token or not hmac.compare_digest(cookie_token, form_token):
+        if not form_token:
             return False
         try:
             _login_csrf_serializer().loads(form_token, max_age=600)
         except BadData:
             return False
-        return True
+        if cookie_present:
+            return bool(cookie_token) and hmac.compare_digest(cookie_token, form_token)
+        return _login_csrf_origin_allowed()
 
     def _safe_redirect_target(value: str | None) -> str:
         if not value or not value.startswith("/") or "\\" in value:
@@ -274,7 +324,9 @@ if FLASK_AVAILABLE:
     def login():
         acfg = cfg.get("auth", {})
         if not acfg.get("enabled"):
-            return redirect("/")
+            response = redirect("/")
+            response.headers["Cache-Control"] = "no-store"
+            return response
         if not acfg.get("password_hash") and not acfg.get("legacy_password"):
             return _render_login(
                 "Web UI credentials are not configured. Run installer/setup.sh as an administrator.",
@@ -285,7 +337,9 @@ if FLASK_AVAILABLE:
             if session_token and _sessions().get(
                 session_token, credential_version=_credential_version()
             ):
-                return redirect("/")
+                response = redirect("/")
+                response.headers["Cache-Control"] = "no-store"
+                return response
             return _render_login()
 
         if not _valid_login_csrf():
@@ -308,6 +362,7 @@ if FLASK_AVAILABLE:
             credential_version=_credential_version(),
         )
         response = make_response(redirect(_safe_redirect_target(request.args.get("next"))))
+        response.headers["Cache-Control"] = "no-store"
         response.set_cookie(
             "knx_session",
             token,

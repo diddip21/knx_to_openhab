@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 import requests  # type: ignore[import]
+
 from knxoh_paths import get_paths
 
 _RELEASE_CACHE_TTL_SECONDS = 300

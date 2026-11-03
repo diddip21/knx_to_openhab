@@ -171,6 +171,23 @@ prereleases such as `1.3.0-rc.1` can be selected this way; they are never
 chosen by the default stable channel. If GitHub has no matching release, the
 installer stops instead of falling back to `main`.
 
+### Installer preflight checks
+
+Before installing system packages, the top-level installer checks that Python
+3.11 or newer is available, that the filesystem containing the installation
+directory has at least 1 GiB free, and (for `--install` or `--update`) that
+GitHub is reachable over HTTPS. These checks run after the mode has been
+selected and before `apt-get` can install packages. `--repair` skips the
+GitHub release-host probe because it does not fetch application source.
+
+After the dependency packages are installed, the installer creates a temporary
+virtual environment and verifies its Python interpreter before cloning a
+release or invoking `installer/setup.sh`; the temporary environment is removed
+on success and failure. If this check fails, system packages may already have
+been installed, but application source and setup have not yet been changed.
+Repair is not fully offline: the existing dependency step still runs
+`apt-get update`.
+
 On a first install, running without a mode keeps `--install` as the default.
 For an existing installation, an interactive run asks for update, repair, or
 cancel; a non-interactive run stops with an explicit instruction instead of

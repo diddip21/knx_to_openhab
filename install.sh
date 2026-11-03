@@ -409,7 +409,7 @@ check_root() {
 }
 
 check_os() {
-    local os_release_file="${KNXOH_OS_RELEASE_FILE:-/etc/os-release}"
+    local os_release_file="${1:-/etc/os-release}"
     if [[ ! -f "$os_release_file" ]]; then
         log_error "Cannot detect OS. /etc/os-release not found."
         exit 1

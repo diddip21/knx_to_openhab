@@ -233,10 +233,16 @@ def test_os_preflight_handles_missing_id_like_without_unbound_variable(tmp_path)
     environment, root = make_preflight_environment(tmp_path)
     os_release = root / "unsupported-os-release"
     os_release.write_text('ID=example\nPRETTY_NAME="Example Linux"\n', encoding="utf-8")
-    environment["KNXOH_OS_RELEASE_FILE"] = str(os_release)
 
     result = subprocess.run(
-        ["/bin/bash", "-c", 'source "$1"; check_os', "os-check-test", str(INSTALLER)],
+        [
+            "/bin/bash",
+            "-c",
+            'source "$1"; check_os "$2"',
+            "os-check-test",
+            str(INSTALLER),
+            str(os_release),
+        ],
         env=environment,
         capture_output=True,
         text=True,

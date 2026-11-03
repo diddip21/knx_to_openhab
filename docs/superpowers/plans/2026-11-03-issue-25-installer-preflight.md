@@ -109,8 +109,9 @@ git commit -m "test: verify installer venv before checkout"
 ### Task 3: Documentation and complete verification
 
 **Files:**
+- Modify: `install.sh`
 - Modify: `installer/README.md`
-- Modify: `tests/test_installer_preflight.py` only if review exposes a missing regression case.
+- Modify: `tests/test_installer_preflight.py` for the test-only OS-release path parameter and any review-exposed regression case.
 
 - [ ] **Step 1: Document checks and limits**
 

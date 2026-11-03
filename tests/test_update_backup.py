@@ -155,7 +155,8 @@ def _make_update_fixture(tmp_path, *, backup_path=None, git_status="", hold_fetc
     sudo_script = [
         "#!/bin/sh",
         'if [ "$1" = "-n" ] && [ "$2" = "-l" ]; then',
-        "  printf '%s\n' 'User knxohui may run the following commands:' '    (root) NOPASSWD: /bin/systemctl restart knxohui.service'",
+        "  printf '%s\n' 'User knxohui may run the following commands:'",
+        "  printf '%s\n' '    (root) NOPASSWD: /bin/systemctl restart knxohui.service'",
         "  exit 0",
         "fi",
         "exit 0",

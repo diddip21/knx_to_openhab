@@ -98,10 +98,12 @@ def test_yaml_provisioning_uses_one_fixed_root_owned_action():
 def test_updater_retries_yaml_provisioning_when_git_is_already_current(tmp_path):
     install_dir = tmp_path / "install"
     backup_dir = tmp_path / "backups"
+    data_dir = tmp_path / "data"
     bin_dir = tmp_path / "bin"
     (install_dir / ".git").mkdir(parents=True)
     (install_dir / "venv" / "bin").mkdir(parents=True)
     backup_dir.mkdir()
+    data_dir.mkdir()
     bin_dir.mkdir()
 
     updater = install_dir / "update.sh"
@@ -116,6 +118,7 @@ def test_updater_retries_yaml_provisioning_when_git_is_already_current(tmp_path)
         'case " $* " in\n'
         '  *" rev-parse --git-dir "*) printf ".git\\n" ;;\n'
         '  *" rev-parse HEAD "*|*" rev-parse "$RELEASE_TAG^{commit}" "*) printf "same-commit\\n" ;;\n'
+        '  *" status --porcelain "*) exit 0 ;;\n'
         '  *" stash "*|*" fetch --depth 1 origin refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG "*) exit 0 ;;\n'
         '  *) printf "unexpected git command: %s\\n" "$*" >&2; exit 90 ;;\n'
         "esac\n",
@@ -139,6 +142,7 @@ def test_updater_retries_yaml_provisioning_when_git_is_already_current(tmp_path)
         {
             "PATH": f"{bin_dir}:{environment['PATH']}",
             "KNXOH_INSTALL_DIR": str(install_dir),
+            "KNXOH_DATA_DIR": str(data_dir),
             "KNXOH_BACKUP_DIR": str(backup_dir),
             "LOG_FILE": str(tmp_path / "update.log"),
             "RELEASE_TAG": "v1.4.0",
@@ -181,8 +185,10 @@ def test_web_updater_checks_external_credentials_before_backup_or_git_changes():
     assert "valid external Argon2id password hash is required" in update
     assert "sudo bash $INSTALL_DIR/installer/setup.sh" in update
     assert "interactive SSH terminal" in update
-    assert preflight < update.index("Creating backup of current installation")
-    assert preflight < update.index('git -c "safe.directory=$INSTALL_DIR" stash')
+    backup = update.index("Creating and validating pre-update backup")
+    assert preflight < backup
+    assert backup < update.index('git -c "safe.directory=$INSTALL_DIR" fetch')
+    assert 'git -c "safe.directory=$INSTALL_DIR" stash' not in update
     assert preflight < update.index('git -c "safe.directory=$INSTALL_DIR" fetch --depth 1 origin')
 
 
@@ -352,8 +358,9 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
     state = tmp_path / "state"
     backup_dir = tmp_path / "backups"
     config_dir = tmp_path / "config"
+    data_dir = tmp_path / "data"
     paths_file = tmp_path / "paths.env"
-    for directory in (seed, fake_bin, state, backup_dir, config_dir):
+    for directory in (seed, fake_bin, state, backup_dir, config_dir, data_dir):
         directory.mkdir(parents=True, exist_ok=True)
 
     def git(*args, cwd=None):
@@ -373,6 +380,7 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
     git("init", "--initial-branch=main", str(seed))
     git("config", "user.name", "Update recovery test", cwd=seed)
     git("config", "user.email", "update-test@example.invalid", cwd=seed)
+    (seed / ".gitignore").write_text("venv/\n", encoding="utf-8")
     (seed / "requirements.txt").write_text("old-dependency\n", encoding="utf-8")
     git("add", ".", cwd=seed)
     git("commit", "-m", "old release", cwd=seed)
@@ -424,6 +432,7 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
             "PATH": str(fake_bin) + os.pathsep + env["PATH"],
             "UPDATE_TEST_STATE": str(state),
             "INSTALL_DIR": str(install),
+            "KNXOH_DATA_DIR": str(data_dir),
             "KNXOH_BACKUP_DIR": str(backup_dir),
             "KNXOH_CONFIG_DIR": str(config_dir),
             "KNXOH_PATHS_FILE": str(paths_file),

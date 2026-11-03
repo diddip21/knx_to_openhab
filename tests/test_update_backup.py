@@ -125,14 +125,12 @@ def _make_update_fixture(tmp_path, *, backup_path=None, git_status="", hold_fetc
         install_dir / "installer/create_update_backup.py",
     )
     shutil.copy2(root / "web_ui/backend/auth.py", install_dir / "web_ui/backend/auth.py")
-    (config_dir / "config.json").write_text(
-        '{"auth": {"enabled": false}}', encoding="utf-8"
-    )
+    (config_dir / "config.json").write_text('{"auth": {"enabled": false}}', encoding="utf-8")
     (config_dir / "secrets.env").write_text("", encoding="utf-8")
     (config_dir / "paths.env").write_text("KNXOH_CONFIG_DIR=test\n", encoding="utf-8")
     real_python = sys.executable
     (install_dir / "venv/bin/python").write_text(
-        f"#!/bin/sh\nexec {shlex.quote(real_python)} \"$@\"\n",
+        f'#!/bin/sh\nexec {shlex.quote(real_python)} "$@"\n',
         encoding="utf-8",
     )
     (install_dir / "venv/bin/python").chmod(0o755)
@@ -186,9 +184,7 @@ def _make_update_fixture(tmp_path, *, backup_path=None, git_status="", hold_fetc
 def test_update_stops_before_fetch_when_snapshot_creation_fails(tmp_path):
     blocker = tmp_path / "backup-is-a-file"
     blocker.write_text("not a directory", encoding="utf-8")
-    install_dir, environment, git_log, _, _, _ = _make_update_fixture(
-        tmp_path, backup_path=blocker
-    )
+    install_dir, environment, git_log, _, _, _ = _make_update_fixture(tmp_path, backup_path=blocker)
 
     result = subprocess.run(
         ["bash", str(install_dir / "update.sh")],

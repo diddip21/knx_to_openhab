@@ -115,8 +115,8 @@ def test_updater_retries_yaml_provisioning_when_git_is_already_current(tmp_path)
         "#!/usr/bin/env bash\n"
         'case " $* " in\n'
         '  *" rev-parse --git-dir "*) printf ".git\\n" ;;\n'
-        '  *" rev-parse HEAD "*|*" rev-parse origin/main "*) printf "same-commit\\n" ;;\n'
-        '  *" stash "*|*" fetch origin "*) exit 0 ;;\n'
+        '  *" rev-parse HEAD "*|*" rev-parse "$RELEASE_TAG^{commit}" "*) printf "same-commit\\n" ;;\n'
+        '  *" stash "*|*" fetch --depth 1 origin refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG "*) exit 0 ;;\n'
         '  *) printf "unexpected git command: %s\\n" "$*" >&2; exit 90 ;;\n'
         "esac\n",
         encoding="utf-8",
@@ -141,6 +141,7 @@ def test_updater_retries_yaml_provisioning_when_git_is_already_current(tmp_path)
             "KNXOH_INSTALL_DIR": str(install_dir),
             "KNXOH_BACKUP_DIR": str(backup_dir),
             "LOG_FILE": str(tmp_path / "update.log"),
+            "RELEASE_TAG": "v1.4.0",
             "PROVISION_MARKER": str(provision_marker),
         }
     )
@@ -182,7 +183,7 @@ def test_web_updater_checks_external_credentials_before_backup_or_git_changes():
     assert "interactive SSH terminal" in update
     assert preflight < update.index("Creating backup of current installation")
     assert preflight < update.index('git -c "safe.directory=$INSTALL_DIR" stash')
-    assert preflight < update.index('git -c "safe.directory=$INSTALL_DIR" fetch origin')
+    assert preflight < update.index('git -c "safe.directory=$INSTALL_DIR" fetch --depth 1 origin')
 
 
 def test_update_script_never_elevates_git_or_uses_a_global_safe_directory():
@@ -195,6 +196,18 @@ def test_update_script_never_elevates_git_or_uses_a_global_safe_directory():
     assert 'git -c "safe.directory=$INSTALL_DIR"' in update
     assert 'sudo systemctl is-active "$SERVICE_NAME" > /dev/null' in update
     assert "systemctl is-active --quiet" not in update
+
+
+def test_web_updater_checks_out_only_the_selected_release_tag():
+    update = (ROOT / "update.sh").read_text(encoding="utf-8")
+
+    assert 'RELEASE_TAG="${RELEASE_TAG:-}"' in update
+    assert "fetch --depth 1 origin \\" in update
+    assert '"refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"' in update
+    assert 'rev-parse "$RELEASE_TAG^{commit}"' in update
+    assert 'checkout --detach "$RELEASE_TAG"' in update
+    assert "origin/main" not in update
+    assert "pull origin main" not in update
 
 
 def test_setup_preflights_credentials_before_stopping_services():
@@ -370,7 +383,8 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
     (seed / "requirements.txt").write_text("new-dependency\n", encoding="utf-8")
     git("add", "requirements.txt", cwd=seed)
     git("commit", "-m", "candidate release", cwd=seed)
-    git("push", "origin", "main", cwd=seed)
+    git("tag", "v1.2.0", cwd=seed)
+    git("push", "origin", "main", "refs/tags/v1.2.0", cwd=seed)
 
     venv_bin = install / "venv" / "bin"
     venv_bin.mkdir(parents=True)
@@ -414,6 +428,7 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
             "KNXOH_CONFIG_DIR": str(config_dir),
             "KNXOH_PATHS_FILE": str(paths_file),
             "LOG_FILE": str(log_file),
+            "RELEASE_TAG": "v1.2.0",
         }
     )
 
@@ -427,6 +442,7 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
         timeout=60,
     )
     current_commit = git("rev-parse", "HEAD", cwd=install).stdout.strip()
+    assert log_file.exists(), result.stdout + result.stderr
     log = log_file.read_text(encoding="utf-8")
 
     assert result.returncode == 1

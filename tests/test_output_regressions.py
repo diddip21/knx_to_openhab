@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -99,3 +100,45 @@ def test_persistence_contains_strategy_block(tmp_path):
     content = persist_path.read_text(encoding="utf-8")
     assert "Strategies" in content
     assert "Items" in content
+
+
+@pytest.mark.parametrize(
+    ("exclude_override", "expected_in_file"),
+    [(False, True), (True, False)],
+)
+def test_export_output_controls_local_persistence_override(
+    tmp_path, monkeypatch, exclude_override, expected_in_file
+):
+    working_dir = tmp_path / "working"
+    working_dir.mkdir()
+    template_dir = Path(ets_to_openhab.__file__).parent
+    for name in ("things.template", "items.template", "sitemap.template"):
+        shutil.copyfile(template_dir / name, working_dir / name)
+
+    override_content = "local-only persistence entry"
+    (working_dir / "private_persistence").write_text(override_content, encoding="utf-8")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    monkeypatch.chdir(working_dir)
+    monkeypatch.setattr(ets_to_openhab, "export_to_influx", [])
+    monkeypatch.setattr(ets_to_openhab, "FENSTERKONTAKTE", [])
+    monkeypatch.setattr(ets_to_openhab, "partial_dimmers", [])
+    monkeypatch.setattr(ets_to_openhab, "partial_unknowns", [])
+    monkeypatch.setattr(ets_to_openhab, "GWIP", "")
+    monkeypatch.setattr(ets_to_openhab, "PRJ_NAME", "Test Project")
+
+    output_config = {
+        "output_format": "legacy",
+        "openhab_path": str(output_dir),
+        "items_path": str(output_dir / "knx.items"),
+        "things_path": str(output_dir / "knx.things"),
+        "sitemaps_path": str(output_dir / "knx.sitemap"),
+        "influx_path": str(output_dir / "influxdb.persist"),
+        "fenster_path": str(output_dir / "fenster.rules"),
+        "yaml_path": str(output_dir / "knx.yaml"),
+    }
+    export_options = {"include_private_persistence": False} if exclude_override else {}
+    ets_to_openhab.export_output("", "", "", configuration=output_config, **export_options)
+
+    generated_persistence = (output_dir / "influxdb.persist").read_text(encoding="utf-8")
+    assert (override_content in generated_persistence) is expected_in_file

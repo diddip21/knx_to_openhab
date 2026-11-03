@@ -21,6 +21,10 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
+EXPECTED_OUTPUT_DIR = PROJECT_ROOT / "tests" / "fixtures" / "expected_output"
+SHARED_PERSIST_PATH = EXPECTED_OUTPUT_DIR / "common" / "influxdb.persist"
+SHARED_PERSIST_CASES = {"Charne", "Mini", "UploadJson"}
+
 import ets_to_openhab
 import knxproject_to_openhab
 from config import config
@@ -107,7 +111,12 @@ def generate_golden_files(project_path: Path, golden_name: str, force: bool = Fa
     config["influx_path"] = str(temp_dir / "influxdb.persist")
 
     # Export files
-    ets_to_openhab.export_output(items, sitemap, things)
+    ets_to_openhab.export_output(
+        items,
+        sitemap,
+        things,
+        include_private_persistence=False,
+    )
 
     # Restore original paths
     for key, value in original_paths.items():
@@ -120,6 +129,17 @@ def generate_golden_files(project_path: Path, golden_name: str, force: bool = Fa
         src = temp_dir / filename
         dst = golden_dir / filename
         if src.exists():
+            if (
+                filename == "influxdb.persist"
+                and golden_name in SHARED_PERSIST_CASES
+                and SHARED_PERSIST_PATH.exists()
+                and src.read_text(encoding="utf-8")
+                == SHARED_PERSIST_PATH.read_text(encoding="utf-8")
+            ):
+                dst.unlink(missing_ok=True)
+                files_copied.append("shared `../common/influxdb.persist`")
+                print("   [OK] influxdb.persist (shared reference)")
+                continue
             shutil.copy2(src, dst)
             files_copied.append(filename)
             print(f"   [OK] {filename}")

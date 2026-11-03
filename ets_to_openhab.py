@@ -1031,8 +1031,15 @@ def _retire_existing_model_files(paths, active_paths=()):
             pass
 
 
-def export_output(items, sitemap, things, configuration=None, yaml_model=None):
-    """Export the generated openHAB model plus legacy persistence/rules files."""
+def export_output(
+    items,
+    sitemap,
+    things,
+    configuration=None,
+    yaml_model=None,
+    include_private_persistence=True,
+):
+    """Export model and persistence/rules files, optionally excluding the local override."""
     cfg = configuration if configuration is not None else config
     output_format = str(cfg.get("output_format", "legacy")).casefold()
     if output_format not in {"legacy", "yaml"}:
@@ -1059,7 +1066,7 @@ def export_output(items, sitemap, things, configuration=None, yaml_model=None):
 
     # export persistent
     private_persistence = ""
-    if os.path.isfile("private_persistence"):
+    if include_private_persistence and os.path.isfile("private_persistence"):
         private_persistence = open("private_persistence", "r", encoding="utf8").read()
     persist = """Strategies {
     everyMinute : "0 * * * * ?"

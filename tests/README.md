@@ -20,7 +20,11 @@ tests/
 ├── fixtures/                # Test data
 │   ├── Charne.knxproj       # KNX binary project file
 │   ├── mini_project.json    # Minimal test project
-│   └── expected_output/     # Golden files (Charne, Mini, UploadJson)
+│   └── expected_output/     # Golden files
+│       ├── common/          # Shared outputs
+│       ├── Charne/
+│       ├── Mini/
+│       └── UploadJson/
 ├── test_address_selection.py
 ├── test_auto_place_unknowns.py
 ├── test_core_functionality.py
@@ -100,7 +104,7 @@ Status: [![CI Tests](https://github.com/diddip21/knx_to_openhab/workflows/CI%20T
 
 ## Golden File Testing
 
-Golden files are reference outputs for regression testing. Located in `tests/fixtures/expected_output/` with three projects: Charne, Mini, UploadJson.
+Golden files are reference outputs for regression testing. Located in `tests/fixtures/expected_output/` with three projects: Charne, Mini, UploadJson. Identical persistence output is stored once in `common/influxdb.persist`; a project keeps its own file only when its output differs from that shared reference.
 
 ### Regenerate Golden Files
 ```bash

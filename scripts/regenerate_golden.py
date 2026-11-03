@@ -3,7 +3,9 @@
 
 import json
 import os
+import shutil
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -12,6 +14,8 @@ import knxproject_to_openhab
 from config import config
 
 TESTS_DIR = os.path.join(os.path.dirname(__file__), "..", "tests")
+EXPECTED_OUTPUT_DIR = os.path.join(TESTS_DIR, "fixtures", "expected_output")
+SHARED_PERSIST_PATH = os.path.join(EXPECTED_OUTPUT_DIR, "common", "influxdb.persist")
 CASES = [
     ("Charne", os.path.join(TESTS_DIR, "Charne.knxproj.json")),
     ("UploadJson", os.path.join(TESTS_DIR, "upload.knxprojarchive.json")),
@@ -56,34 +60,76 @@ def generate(case_name, project_path):
     golden_dir = os.path.join(TESTS_DIR, "fixtures", "expected_output", case_name)
     os.makedirs(golden_dir, exist_ok=True)
 
-    with open(os.path.join(golden_dir, "knx.items"), "w", encoding="utf-8") as f:
-        f.write(items)
-    with open(os.path.join(golden_dir, "knx.things"), "w", encoding="utf-8") as f:
-        f.write(things)
-    with open(os.path.join(golden_dir, "knx.sitemap"), "w", encoding="utf-8") as f:
-        f.write(sitemap)
+    original_config = {
+        key: config.get(key)
+        for key in (
+            "output_format",
+            "openhab_path",
+            "items_path",
+            "things_path",
+            "sitemaps_path",
+            "influx_path",
+            "fenster_path",
+            "yaml_path",
+        )
+    }
+    with tempfile.TemporaryDirectory(prefix="knx-golden-") as output_dir:
+        config["output_format"] = "legacy"
+        config["openhab_path"] = output_dir
+        config["items_path"] = os.path.join(output_dir, "knx.items")
+        config["things_path"] = os.path.join(output_dir, "knx.things")
+        config["sitemaps_path"] = os.path.join(output_dir, "knx.sitemap")
+        config["influx_path"] = os.path.join(output_dir, "influxdb.persist")
+        config["fenster_path"] = os.path.join(output_dir, "fenster.rules")
+        config["yaml_path"] = os.path.join(output_dir, "knx.yaml")
+        try:
+            ets_to_openhab.export_output(
+                items,
+                sitemap,
+                things,
+                include_private_persistence=False,
+            )
+        finally:
+            for key, value in original_config.items():
+                if value is None:
+                    config.pop(key, None)
+                else:
+                    config[key] = value
 
-    # InfluxDB persistence
-    if ets_to_openhab.export_to_influx:
-        lines = [
-            "Strategies {",
-            '  everyMinute : "0 * * * * ?"',
-            "}",
-            "",
-            "Items {",
-        ]
-        for item in ets_to_openhab.export_to_influx:
-            lines.append(f"    {item} : strategy = everyMinute")
-        lines.append("}")
-        persist_content = "\n".join(lines) + "\n"
+        for filename in ("knx.items", "knx.things", "knx.sitemap"):
+            shutil.copyfile(os.path.join(output_dir, filename), os.path.join(golden_dir, filename))
+
+        persist_source = os.path.join(output_dir, "influxdb.persist")
+        with open(persist_source, encoding="utf-8") as f:
+            persist_content = f.read()
+
+    case_persist_path = os.path.join(golden_dir, "influxdb.persist")
+    if case_name == "Charne":
+        os.makedirs(os.path.dirname(SHARED_PERSIST_PATH), exist_ok=True)
+        with open(SHARED_PERSIST_PATH, "w", encoding="utf-8") as f:
+            f.write(persist_content)
+        if os.path.exists(case_persist_path):
+            os.remove(case_persist_path)
+    elif os.path.exists(SHARED_PERSIST_PATH):
+        with open(SHARED_PERSIST_PATH, encoding="utf-8") as f:
+            shared_persist_content = f.read()
+        if persist_content == shared_persist_content:
+            if os.path.exists(case_persist_path):
+                os.remove(case_persist_path)
+        else:
+            with open(case_persist_path, "w", encoding="utf-8") as f:
+                f.write(persist_content)
     else:
-        persist_content = ""
+        with open(case_persist_path, "w", encoding="utf-8") as f:
+            f.write(persist_content)
 
-    with open(os.path.join(golden_dir, "influxdb.persist"), "w", encoding="utf-8") as f:
-        f.write(persist_content)
-
+    sizes = {
+        name: os.path.getsize(os.path.join(golden_dir, name))
+        for name in ("knx.items", "knx.things", "knx.sitemap")
+    }
     print(
-        f"{case_name}: items={len(items)}b things={len(things)}b sitemap={len(sitemap)}b persist={len(persist_content)}b"
+        f"{case_name}: items={sizes['knx.items']}b things={sizes['knx.things']}b "
+        f"sitemap={sizes['knx.sitemap']}b persist={len(persist_content.encode('utf-8'))}b"
     )
 
 

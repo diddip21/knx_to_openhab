@@ -371,6 +371,13 @@ TEMP_CURRENT_LINK="$INSTALL_DIR/.current-${RELEASE_DIR_NAME}-$$"
 if ! ln -s "releases/$RELEASE_DIR_NAME" "$TEMP_CURRENT_LINK" \
     || ! mv -Tf -- "$TEMP_CURRENT_LINK" "$CURRENT_LINK"; then
     rm -f -- "$TEMP_CURRENT_LINK"
+    if [[ -d "$NEW_RELEASE_DIR" && ! -L "$NEW_RELEASE_DIR" ]]; then
+        if rm -rf -- "$NEW_RELEASE_DIR"; then
+            log "Unactivated release candidate removed: $RELEASE_TAG."
+        else
+            log "WARNING: Could not remove unactivated release candidate: $NEW_RELEASE_DIR"
+        fi
+    fi
     log "ERROR: Could not atomically activate release $RELEASE_TAG."
     exit 1
 fi

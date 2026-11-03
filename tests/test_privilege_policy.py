@@ -371,9 +371,11 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
     reason="the release updater integration test requires Linux utilities",
 )
 @pytest.mark.parametrize("use_default_port", [False, True])
-@pytest.mark.parametrize("health_check_fails", [True, False])
+@pytest.mark.parametrize(
+    ("health_check_fails", "activation_fails"), [(True, False), (False, False), (False, True)]
+)
 def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
-    tmp_path, use_default_port, health_check_fails
+    tmp_path, use_default_port, health_check_fails, activation_fails
 ):
     install = tmp_path / "install"
     fake_bin = tmp_path / "bin"
@@ -426,7 +428,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     if not use_default_port:
         web_config["port"] = port
     (config_dir / "config.json").write_text(json.dumps(web_config), encoding="utf-8")
-    if not health_check_fails:
+    if not health_check_fails and not activation_fails:
         stale_release = install / "releases" / "old-release"
         stale_release.mkdir(parents=True)
         (stale_release / "version.json").write_text(
@@ -490,6 +492,13 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         encoding="utf-8",
     )
 
+    if activation_fails:
+        (install / "version.json").write_text(
+            json.dumps({"release_tag": "v1.1.0", "commit_hash": "b" * 40}),
+            encoding="utf-8",
+        )
+        (install / "current").symlink_to(".")
+
     subprocess.run(["git", "init", "--initial-branch=main", str(install)], check=True)
     subprocess.run(
         ["git", "-C", str(install), "config", "user.name", "Update recovery test"],
@@ -500,6 +509,10 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         check=True,
     )
     subprocess.run(["git", "-C", str(install), "add", "."], check=True)
+    if activation_fails:
+        subprocess.run(
+            ["git", "-C", str(install), "add", "-f", "current", "version.json"], check=True
+        )
     subprocess.run(
         ["git", "-C", str(install), "commit", "-m", "legacy release"],
         check=True,
@@ -535,6 +548,16 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         encoding="utf-8",
     )
     python3.chmod(0o755)
+
+    if activation_fails:
+        mv = fake_bin / "mv"
+        mv.write_text(
+            "#!/bin/bash\n"
+            'if [[ "$1" == "-Tf" ]]; then exit 1; fi\n'
+            'exec /bin/mv "$@"\n',
+            encoding="utf-8",
+        )
+        mv.chmod(0o755)
 
     sudo = fake_bin / "sudo"
     sudo.write_text(
@@ -594,12 +617,21 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
 
     assert log_file.exists(), result.stdout + result.stderr
     log = log_file.read_text(encoding="utf-8")
-    assert result.returncode == (1 if health_check_fails else 0), result.stdout + result.stderr
+    assert result.returncode == (
+        1 if health_check_fails or activation_fails else 0
+    ), result.stdout + result.stderr
     assert (install / "config.json").read_text(encoding="utf-8") == (
         '{"general":{"legacy":"custom"}}'
     )
     assert (data_dir / "jobs/user.json").read_text(encoding="utf-8") == "preserved"
-    if health_check_fails:
+    if activation_fails:
+        assert (install / "current").is_symlink()
+        assert (install / "current").resolve() == install
+        assert "Could not atomically activate release v1.2.0." in log
+        assert "Unactivated release candidate removed: v1.2.0." in log
+        assert not (state / "restarts").exists()
+        assert list((install / "releases").iterdir()) == []
+    elif health_check_fails:
         assert not (install / "current").exists()
         assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
         assert "The updated service did not pass its health check." in log

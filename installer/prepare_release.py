@@ -209,11 +209,11 @@ def _safe_extract(archive_path: Path, app_dir: Path, root_name: str) -> None:
             "web_ui/backend/app.py",
             "installer/launch_web.sh",
         )
-        for relative in required_files:
-            required = app_dir / relative
+        for required_path in required_files:
+            required = app_dir / required_path
             if not required.is_file() or required.is_symlink():
                 raise ReleasePreparationError(
-                    f"Release archive is missing required file: {relative}"
+                    f"Release archive is missing required file: {required_path}"
                 )
     except (OSError, tarfile.TarError) as error:
         raise ReleasePreparationError(f"Could not extract release archive: {error}") from error

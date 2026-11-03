@@ -111,7 +111,12 @@ def generate_golden_files(project_path: Path, golden_name: str, force: bool = Fa
     config["influx_path"] = str(temp_dir / "influxdb.persist")
 
     # Export files
-    ets_to_openhab.export_output(items, sitemap, things)
+    ets_to_openhab.export_output(
+        items,
+        sitemap,
+        things,
+        include_private_persistence=False,
+    )
 
     # Restore original paths
     for key, value in original_paths.items():

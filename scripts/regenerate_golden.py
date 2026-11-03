@@ -83,7 +83,12 @@ def generate(case_name, project_path):
         config["fenster_path"] = os.path.join(output_dir, "fenster.rules")
         config["yaml_path"] = os.path.join(output_dir, "knx.yaml")
         try:
-            ets_to_openhab.export_output(items, sitemap, things)
+            ets_to_openhab.export_output(
+                items,
+                sitemap,
+                things,
+                include_private_persistence=False,
+            )
         finally:
             for key, value in original_config.items():
                 if value is None:

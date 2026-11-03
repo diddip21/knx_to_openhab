@@ -55,14 +55,13 @@ def _fake_curl(fake_bin, environment, release, *, exit_code=0):
         fake_bin / "curl",
         '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$CURL_ARGUMENTS_FILE"\n'
         'if [ "$FAKE_CURL_EXIT" -ne 0 ]; then exit "$FAKE_CURL_EXIT"; fi\n'
-        'printf \'%s\' "$FAKE_RELEASE_JSON"\n',
+        "printf '%s' \"$FAKE_RELEASE_JSON\"\n",
     )
     return arguments_file
 
 
 def _release(tag, *, prerelease=False, draft=False):
     return {"tag_name": tag, "prerelease": prerelease, "draft": draft}
-
 
 
 def test_help_works_when_installer_is_piped_to_bash(tmp_path):
@@ -226,7 +225,7 @@ def test_fresh_install_clones_the_selected_tag(tmp_path):
     _write_executable(
         fake_bin / "git",
         '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$GIT_ARGUMENTS_FILE"\n'
-        'for target do :; done\n'
+        "for target do :; done\n"
         'mkdir -p "$target"\n',
     )
     _write_executable(fake_bin / "sudo", "#!/bin/sh\nexit 0\n")
@@ -262,8 +261,8 @@ def _fake_update_commands(fake_bin, environment, *, worktree_dirty=0, index_dirt
         '  *"rev-parse HEAD") printf \'%s\\n\' "${FAKE_CURRENT_COMMIT:-current}" ;;\n'
         '  *"rev-parse v1.2.3^{commit}") printf \'%s\\n\' "${FAKE_TARGET_COMMIT:-target}" ;;\n'
         '  *"checkout --detach v1.2.3") exit 0 ;;\n'
-        '  *) exit 90 ;;\n'
-        'esac\n',
+        "  *) exit 90 ;;\n"
+        "esac\n",
     )
     return git_log
 
@@ -274,7 +273,7 @@ def test_update_fetches_and_checks_out_the_selected_tag(tmp_path):
 
     result = _run_sourced_installer(
         environment,
-        'INSTALL_MODE=update; RELEASE_TAG=v1.2.3; update_repository',
+        "INSTALL_MODE=update; RELEASE_TAG=v1.2.3; update_repository",
     )
 
     assert result.returncode == 0, result.stderr
@@ -291,7 +290,7 @@ def test_update_stops_before_fetch_when_tracked_files_are_dirty(tmp_path):
 
     result = _run_sourced_installer(
         environment,
-        'INSTALL_MODE=update; RELEASE_TAG=v1.2.3; update_repository',
+        "INSTALL_MODE=update; RELEASE_TAG=v1.2.3; update_repository",
     )
 
     assert result.returncode == 1
@@ -311,7 +310,7 @@ def test_update_without_a_new_release_does_not_checkout_again(tmp_path):
 
     result = _run_sourced_installer(
         environment,
-        'INSTALL_MODE=update; RELEASE_TAG=v1.2.3; update_repository',
+        "INSTALL_MODE=update; RELEASE_TAG=v1.2.3; update_repository",
     )
 
     assert result.returncode == 0, result.stderr

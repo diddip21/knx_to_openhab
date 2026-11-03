@@ -176,3 +176,43 @@ def test_trigger_update_refuses_to_downgrade_a_newer_prerelease(monkeypatch, tmp
     assert success is False
     assert "newer than the latest stable release" in message
     popen.assert_not_called()
+
+
+def test_build_metadata_release_update_is_not_suppressed(monkeypatch, tmp_path):
+    updater = Updater(base_path=str(tmp_path))
+    (tmp_path / "update.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    monkeypatch.setattr(
+        updater,
+        "get_current_version",
+        lambda: {
+            "commit_hash": "build-one-commit",
+            "commit_short": "build1",
+            "commit_date": "2026-11-01",
+            "commit_message": "Build one",
+            "release_tag": "v1.4.0+build.1",
+        },
+    )
+    monkeypatch.setattr(
+        updater,
+        "check_github_version",
+        lambda: (
+            True,
+            {
+                "commit_hash": "build-two-commit",
+                "commit_short": "build2",
+                "commit_date": "2026-11-03",
+                "commit_message": "Build two",
+                "author": "Release Bot",
+                "release_tag": "v1.4.0+build.2",
+            },
+        ),
+    )
+    popen = Mock()
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.Popen", popen)
+
+    status = updater.check_for_updates()
+    success, _ = updater.trigger_update()
+
+    assert status["update_available"] is True
+    assert success is True
+    assert popen.call_count == 1

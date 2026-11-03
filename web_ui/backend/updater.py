@@ -243,7 +243,7 @@ class Updater:
         current_release_tag = current.get("release_tag")
         if isinstance(current_release_tag, str):
             release_order = _compare_semver(remote.get("release_tag", ""), current_release_tag)
-            if release_order is not None and release_order <= 0:
+            if release_order is not None and release_order < 0:
                 update_available = False
 
         return {
@@ -280,7 +280,7 @@ class Updater:
             current_release_tag = current.get("release_tag")
             if isinstance(current_release_tag, str):
                 release_order = _compare_semver(release_tag, current_release_tag)
-                if release_order is not None and release_order <= 0:
+                if release_order is not None and release_order < 0:
                     return False, "The installed release is newer than the latest stable release"
 
             update_script = os.path.join(self.base_path, "update.sh")

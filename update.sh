@@ -353,9 +353,11 @@ fi
 IFS=' ' read -r WEB_UI_HEALTH_HOST WEB_UI_PORT <<< "$WEB_UI_ENDPOINT"
 
 PREVIOUS_LINK=""
+PREVIOUS_RELEASE_DIR=""
 HAD_PREVIOUS_LINK=0
 if [[ -L "$CURRENT_LINK" ]]; then
     PREVIOUS_LINK=$(readlink -- "$CURRENT_LINK")
+    PREVIOUS_RELEASE_DIR=$(readlink -f -- "$CURRENT_LINK")
     HAD_PREVIOUS_LINK=1
 fi
 if ! mv -- "$STAGED_APP_DIR" "$NEW_RELEASE_DIR"; then
@@ -453,6 +455,35 @@ restore_previous_release() {
     return 1
 }
 
+prune_obsolete_releases() {
+    local active_release release resolved_release
+    if ! active_release=$(readlink -f -- "$CURRENT_LINK"); then
+        log "WARNING: Could not resolve the active release; skipping release cleanup."
+        return 0
+    fi
+
+    for release in "$RELEASES_DIR"/*; do
+        [[ -d "$release" && ! -L "$release" ]] || continue
+        [[ -f "$release/version.json" && ! -L "$release/version.json" ]] || continue
+        if ! resolved_release=$(readlink -f -- "$release"); then
+            log "WARNING: Could not resolve release path; keeping it: $release"
+            continue
+        fi
+        if [[ "$resolved_release" == "$active_release" ]]; then
+            continue
+        fi
+        if [[ -n "$PREVIOUS_RELEASE_DIR" && "$resolved_release" == "$PREVIOUS_RELEASE_DIR" ]]; then
+            continue
+        fi
+
+        if rm -rf -- "$release"; then
+            log "Removed obsolete release environment: $(basename -- "$release")."
+        else
+            log "WARNING: Could not remove obsolete release environment: $release"
+        fi
+    done
+}
+
 log "Restarting $SERVICE_NAME on release $RELEASE_TAG..."
 if ! sudo systemctl restart "$SERVICE_NAME"; then
     log "ERROR: Failed to restart the updated service."
@@ -467,6 +498,7 @@ if ! wait_for_service_health; then
 fi
 
 log "Service health check passed for $RELEASE_TAG."
+prune_obsolete_releases
 log "========================================="
 log "Update completed successfully!"
 log "Active release: $RELEASE_TAG ($RELEASE_COMMIT_HASH)"

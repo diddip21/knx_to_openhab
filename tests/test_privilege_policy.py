@@ -371,8 +371,9 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
     reason="the release updater integration test requires Linux utilities",
 )
 @pytest.mark.parametrize("use_default_port", [False, True])
-def test_transactional_update_restores_legacy_release_when_health_check_fails(
-    tmp_path, use_default_port
+@pytest.mark.parametrize("health_check_fails", [True, False])
+def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
+    tmp_path, use_default_port, health_check_fails
 ):
     install = tmp_path / "install"
     fake_bin = tmp_path / "bin"
@@ -397,7 +398,7 @@ def test_transactional_update_restores_legacy_release_when_health_check_fails(
             if self.path != "/api/status":
                 self.send_error(404)
                 return
-            if (install / "current").is_symlink():
+            if health_check_fails and (install / "current").is_symlink():
                 status, payload = 503, b'{"status":"starting"}'
             else:
                 status, payload = 200, b'{"status":"ok"}'
@@ -425,6 +426,12 @@ def test_transactional_update_restores_legacy_release_when_health_check_fails(
     if not use_default_port:
         web_config["port"] = port
     (config_dir / "config.json").write_text(json.dumps(web_config), encoding="utf-8")
+    if not health_check_fails:
+        stale_release = install / "releases" / "old-release"
+        stale_release.mkdir(parents=True)
+        (stale_release / "version.json").write_text(
+            json.dumps({"release_tag": "v0.9.0"}), encoding="utf-8"
+        )
     (config_dir / "secrets.env").write_text("\n", encoding="utf-8")
     (data_dir / "generator.json").write_text('{"general":{}}', encoding="utf-8")
     (data_dir / "jobs").mkdir()
@@ -587,17 +594,26 @@ def test_transactional_update_restores_legacy_release_when_health_check_fails(
 
     assert log_file.exists(), result.stdout + result.stderr
     log = log_file.read_text(encoding="utf-8")
-    assert result.returncode == 1
-    assert not (install / "current").exists()
+    assert result.returncode == (1 if health_check_fails else 0), result.stdout + result.stderr
     assert (install / "config.json").read_text(encoding="utf-8") == (
         '{"general":{"legacy":"custom"}}'
     )
     assert (data_dir / "jobs/user.json").read_text(encoding="utf-8") == "preserved"
-    assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
-    assert "The updated service did not pass its health check." in log
-    assert "Previous release restored and health check passed." in log
-    assert "Rejected release candidate removed: v1.2.0." in log
-    assert list((install / "releases").iterdir()) == []
+    if health_check_fails:
+        assert not (install / "current").exists()
+        assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
+        assert "The updated service did not pass its health check." in log
+        assert "Previous release restored and health check passed." in log
+        assert "Rejected release candidate removed: v1.2.0." in log
+        assert list((install / "releases").iterdir()) == []
+    else:
+        assert (install / "current").is_symlink()
+        active_release = (install / "current").resolve()
+        assert (active_release / "version.json").is_file()
+        assert (state / "restarts").read_text(encoding="utf-8").strip() == "1"
+        assert "Service health check passed for v1.2.0." in log
+        assert "Removed obsolete release environment: old-release." in log
+        assert list((install / "releases").iterdir()) == [active_release]
     assert "No release data migration is declared" in log
     archives = list(backup_dir.glob("pre-update-*.tar.gz"))
     assert len(archives) == 1

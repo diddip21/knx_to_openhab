@@ -136,7 +136,9 @@ class Updater:
                     }
                 commit_hash = metadata.get("commit_hash") if isinstance(metadata, dict) else None
                 release_tag = metadata.get("release_tag") if isinstance(metadata, dict) else None
-                if not isinstance(commit_hash, str) or not re.fullmatch(r"[0-9a-f]{40}", commit_hash):
+                if not isinstance(commit_hash, str) or not re.fullmatch(
+                    r"[0-9a-f]{40}", commit_hash
+                ):
                     return {
                         "commit_hash": "unknown",
                         "commit_short": "unknown",

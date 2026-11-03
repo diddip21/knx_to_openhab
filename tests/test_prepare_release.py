@@ -135,9 +135,7 @@ def test_rejects_prerelease_and_nonempty_staging_directory(tmp_path):
     assert (destination / "keep.txt").read_text(encoding="utf-8") == "keep"
 
 
-def test_prepare_release_downloads_expected_https_assets_and_cleans_staging(
-    monkeypatch, tmp_path
-):
+def test_prepare_release_downloads_expected_https_assets_and_cleans_staging(monkeypatch, tmp_path):
     archive_path, checksum_path = _make_archive(tmp_path, version="1.2.3+build.1")
     requested_urls = []
 
@@ -161,6 +159,9 @@ def test_prepare_release_downloads_expected_https_assets_and_cleans_staging(
 
     assert release_dir.name == "knx_to_openhab-1.2.3+build.1"
     assert len(requested_urls) == 2
-    assert all(url.startswith("https://github.com/diddip21/knx_to_openhab/releases/download/") for url in requested_urls)
+    assert all(
+        url.startswith("https://github.com/diddip21/knx_to_openhab/releases/download/")
+        for url in requested_urls
+    )
     assert "%2B" in requested_urls[0]
     assert not list(tmp_path.glob(".assets-*"))

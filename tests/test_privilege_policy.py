@@ -129,7 +129,7 @@ def test_transactional_update_no_op_does_not_backup_or_provision(tmp_path):
     shutil.copy2(ROOT / "web_ui/backend/auth.py", release_dir / "web_ui/backend/auth.py")
     real_python = shlex.quote(sys.executable)
     fake_python = release_dir / "venv" / "bin" / "python"
-    fake_python.write_text(f"#!/bin/sh\nexec {real_python} \"$@\"\n", encoding="utf-8")
+    fake_python.write_text(f'#!/bin/sh\nexec {real_python} "$@"\n', encoding="utf-8")
     fake_python.chmod(0o755)
     (install_dir / "current").symlink_to("releases/1.4.0")
 
@@ -225,7 +225,7 @@ def test_web_updater_uses_only_verified_stable_release_assets():
     assert 'RELEASE_COMMIT_HASH="${RELEASE_COMMIT_HASH:-}"' in update
     assert '"$APP_DIR/installer/prepare_release.py"' in update
     assert 'mv -Tf -- "$TEMP_CURRENT_LINK" "$CURRENT_LINK"' in update
-    assert "git -c \"safe.directory=$INSTALL_DIR\" fetch" not in update
+    assert 'git -c "safe.directory=$INSTALL_DIR" fetch' not in update
     assert 'checkout --detach "$RELEASE_TAG"' not in update
     assert "origin/main" not in update
     assert "pull origin main" not in update
@@ -266,11 +266,11 @@ def test_setup_runs_password_prompt_without_nested_sudo_when_already_root():
 def test_web_updater_rolls_back_if_updated_service_fails_health_check():
     update = (ROOT / "update.sh").read_text(encoding="utf-8")
 
-    assert "wait_for_service_active()" in update
+    assert "wait_for_service_health()" in update
     assert "restore_previous_release()" in update
-    assert 'git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"' in update
-    assert "if ! wait_for_service_active; then" in update
-    assert update.index("if ! wait_for_service_active; then") < update.index(
+    assert 'mv -Tf -- "$TEMP_CURRENT_LINK" "$CURRENT_LINK"' in update
+    assert "if ! wait_for_service_health; then" in update
+    assert update.index("if ! wait_for_service_health; then") < update.index(
         'log "Update completed successfully!"'
     )
 
@@ -485,9 +485,7 @@ def test_transactional_update_restores_legacy_release_when_health_check_fails(tm
         ["git", "-C", str(install), "commit", "-m", "legacy release"],
         check=True,
     )
-    (install / "config.json").write_text(
-        '{"general":{"legacy":"custom"}}', encoding="utf-8"
-    )
+    (install / "config.json").write_text('{"general":{"legacy":"custom"}}', encoding="utf-8")
     (install / "web_ui/backend/config.json").write_text(
         '{"auth":{"enabled":false},"legacy":"custom"}', encoding="utf-8"
     )
@@ -594,6 +592,7 @@ def test_transactional_update_restores_legacy_release_when_health_check_fails(tm
             b'{"general":{"legacy":"custom"}}'
         )
         assert archive.extractfile("runtime data/jobs/user.json").read() == b"preserved"
+
 
 def test_privilege_scripts_have_valid_bash_syntax():
     if shutil.which("bash") is None:

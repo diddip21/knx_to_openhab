@@ -95,7 +95,9 @@ def _download(url: str, destination: Path, *, limit: int = _DOWNLOAD_LIMIT) -> N
                 while chunk := response.read(_CHUNK_SIZE):
                     total += len(chunk)
                     if total > limit:
-                        raise ReleasePreparationError("Release asset exceeds the download size limit")
+                        raise ReleasePreparationError(
+                            "Release asset exceeds the download size limit"
+                        )
                     output.write(chunk)
                 output.flush()
                 os.fsync(output.fileno())
@@ -167,11 +169,15 @@ def _safe_extract(archive_path: Path, app_dir: Path, root_name: str) -> None:
                 try:
                     target.relative_to(app_dir)
                 except ValueError as error:
-                    raise ReleasePreparationError(f"Release path escapes staging: {raw_name}") from error
+                    raise ReleasePreparationError(
+                        f"Release path escapes staging: {raw_name}"
+                    ) from error
 
                 if member.isdir():
                     if target.exists() and not target.is_dir():
-                        raise ReleasePreparationError(f"Release path collides with a file: {raw_name}")
+                        raise ReleasePreparationError(
+                            f"Release path collides with a file: {raw_name}"
+                        )
                     target.mkdir(mode=0o750, parents=True, exist_ok=True)
                     continue
                 if not member.isfile():
@@ -185,7 +191,9 @@ def _safe_extract(archive_path: Path, app_dir: Path, root_name: str) -> None:
                     raise ReleasePreparationError(f"Duplicate release file path: {raw_name}")
                 source = archive.extractfile(member)
                 if source is None:
-                    raise ReleasePreparationError(f"Could not read release archive file: {raw_name}")
+                    raise ReleasePreparationError(
+                        f"Could not read release archive file: {raw_name}"
+                    )
                 with source, target.open("xb") as output:
                     shutil.copyfileobj(source, output, _CHUNK_SIZE)
                 target.chmod(0o755 if member.mode & 0o111 else 0o644)
@@ -204,7 +212,9 @@ def _safe_extract(archive_path: Path, app_dir: Path, root_name: str) -> None:
         for relative in required_files:
             required = app_dir / relative
             if not required.is_file() or required.is_symlink():
-                raise ReleasePreparationError(f"Release archive is missing required file: {relative}")
+                raise ReleasePreparationError(
+                    f"Release archive is missing required file: {relative}"
+                )
     except (OSError, tarfile.TarError) as error:
         raise ReleasePreparationError(f"Could not extract release archive: {error}") from error
 
@@ -222,9 +232,7 @@ def verify_and_extract(
     author: str,
 ) -> Path:
     """Verify a local release asset pair and extract it under a fresh destination."""
-    metadata = _validate_metadata(
-        repository, tag, commit_hash, commit_date, commit_message, author
-    )
+    metadata = _validate_metadata(repository, tag, commit_hash, commit_date, commit_message, author)
     destination = Path(destination)
     if destination.is_symlink():
         raise ReleasePreparationError("Release staging directory must not be a symlink")

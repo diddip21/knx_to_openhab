@@ -3,6 +3,7 @@ Version management and update functionality for KNX to OpenHAB Generator.
 Uses Git commits for versioning instead of version.json.
 """
 
+import json
 import os
 import re
 import subprocess
@@ -117,6 +118,46 @@ class Updater:
             Dictionary with version info (commit_hash, commit_date, branch, repository)
         """
         try:
+            current_link = os.path.join(self.base_path, "current")
+            if os.path.lexists(current_link):
+                version_file = os.path.join(current_link, "version.json")
+                try:
+                    with open(version_file, encoding="utf-8") as source:
+                        metadata = json.load(source)
+                except (OSError, json.JSONDecodeError) as error:
+                    return {
+                        "commit_hash": "unknown",
+                        "commit_short": "unknown",
+                        "commit_date": "unknown",
+                        "commit_message": "Invalid active release metadata",
+                        "branch": self.branch,
+                        "repository": self.repo_url,
+                        "error": str(error),
+                    }
+                commit_hash = metadata.get("commit_hash") if isinstance(metadata, dict) else None
+                release_tag = metadata.get("release_tag") if isinstance(metadata, dict) else None
+                if not isinstance(commit_hash, str) or not re.fullmatch(r"[0-9a-f]{40}", commit_hash):
+                    return {
+                        "commit_hash": "unknown",
+                        "commit_short": "unknown",
+                        "commit_date": "unknown",
+                        "commit_message": "Invalid active release metadata",
+                        "branch": self.branch,
+                        "repository": self.repo_url,
+                        "error": "Active release commit hash is invalid",
+                    }
+                version = {
+                    "commit_hash": commit_hash,
+                    "commit_short": commit_hash[:7],
+                    "commit_date": metadata.get("commit_date", "unknown"),
+                    "commit_message": metadata.get("commit_message", "No message"),
+                    "branch": release_tag if isinstance(release_tag, str) else self.branch,
+                    "repository": self.repo_url,
+                }
+                if isinstance(release_tag, str):
+                    version["release_tag"] = release_tag
+                return version
+
             # Get current commit hash
             success, commit_hash = self._run_git_command(["rev-parse", "HEAD"])
             if not success:
@@ -303,7 +344,13 @@ class Updater:
                 if release_order is not None and release_order < 0:
                     return False, "The installed release is newer than the latest stable release"
 
-            update_script = os.path.join(self.base_path, "update.sh")
+            current_link = os.path.join(self.base_path, "current")
+            if os.path.lexists(current_link):
+                update_script = os.path.join(current_link, "update.sh")
+                if not os.path.isfile(update_script):
+                    return False, f"Active release updater not found at {update_script}"
+            else:
+                update_script = os.path.join(self.base_path, "update.sh")
 
             if not os.path.exists(update_script):
                 return False, f"Update script not found at {update_script}"
@@ -324,7 +371,16 @@ class Updater:
             env = os.environ.copy()
             env["LOG_FILE"] = os.devnull
             env["INSTALL_DIR"] = self.base_path
+            env["KNXOH_INSTALL_DIR"] = self.base_path
             env["RELEASE_TAG"] = release_tag
+            env["RELEASE_COMMIT_HASH"] = str(release.get("commit_hash", ""))
+            env["RELEASE_COMMIT_DATE"] = str(release.get("commit_date", ""))
+            env["RELEASE_COMMIT_MESSAGE"] = str(release.get("commit_message", ""))
+            env["RELEASE_AUTHOR"] = str(release.get("author", "unknown"))
+            repository_parts = self.repo_url.rstrip("/").split("/")
+            env["KNXOH_GITHUB_REPOSITORY"] = (
+                f"{repository_parts[-2]}/{repository_parts[-1].removesuffix('.git')}"
+            )
 
             # Write header to log
             try:

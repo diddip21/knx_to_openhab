@@ -104,7 +104,7 @@ def _write_executable(path: Path, content: str) -> None:
     path.chmod(0o755)
 
 
-def _make_update_fixture(tmp_path, *, backup_path=None, git_status="", hold_fetch=False):
+def _make_update_fixture(tmp_path, *, backup_path=None, git_status="", hold_prepare=False):
     root = Path(__file__).resolve().parents[1]
     install_dir = tmp_path / "install"
     config_dir = tmp_path / "config"
@@ -140,7 +140,7 @@ def _make_update_fixture(tmp_path, *, backup_path=None, git_status="", hold_fetc
     )
     (install_dir / "venv/bin/python").chmod(0o755)
     git_log = tmp_path / "git.log"
-    fetch_marker = tmp_path / "fetch.started"
+    prepare_marker = tmp_path / "prepare.started"
     git_script = [
         "#!/bin/sh",
         'printf "%s\n" "$*" >> "$GIT_LOG"',
@@ -153,14 +153,20 @@ def _make_update_fixture(tmp_path, *, backup_path=None, git_status="", hold_fetc
         "      esac",
         "    fi",
         '    printf "%s" "$FAKE_GIT_STATUS"; exit 0 ;;',
-        '  *"fetch --depth 1 origin"*)',
-        '    touch "$FETCH_MARKER"',
-        '    if [ "$HOLD_FETCH" = "1" ]; then sleep 3; fi',
-        "    exit 1 ;;",
         "  *) exit 90 ;;",
         "esac",
     ]
     _write_executable(fake_bin / "git", "\n".join(git_script) + "\n")
+    _write_executable(
+        install_dir / "installer/prepare_release.py",
+        "#!/usr/bin/env python3\n"
+        "import os, sys, time\n"
+        "from pathlib import Path\n"
+        'Path(os.environ["PREPARE_MARKER"]).touch()\n'
+        'if os.environ.get("HOLD_PREPARATION") == "1": time.sleep(3)\n'
+        'print("simulated release preparation failure", file=sys.stderr)\n'
+        "raise SystemExit(1)\n",
+    )
     sudo_script = [
         "#!/bin/sh",
         'if [ "$1" = "-n" ] && [ "$2" = "-l" ]; then',
@@ -181,21 +187,24 @@ def _make_update_fixture(tmp_path, *, backup_path=None, git_status="", hold_fetc
             "KNXOH_BACKUP_DIR": str(backup_dir),
             "KNXOH_PATHS_FILE": str(config_dir / "paths.env"),
             "RELEASE_TAG": "v1.2.3",
+            "RELEASE_COMMIT_HASH": "a" * 40,
             "LOG_FILE": str(tmp_path / "update.log"),
             "GIT_LOG": str(git_log),
-            "FETCH_MARKER": str(fetch_marker),
+            "PREPARE_MARKER": str(prepare_marker),
             "FAKE_GIT_STATUS": git_status,
-            "HOLD_FETCH": "1" if hold_fetch else "0",
+            "HOLD_PREPARATION": "1" if hold_prepare else "0",
             "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
         }
     )
-    return install_dir, environment, git_log, fetch_marker, data_dir, backup_dir
+    return install_dir, environment, git_log, prepare_marker, data_dir, backup_dir
 
 
-def test_update_stops_before_fetch_when_snapshot_creation_fails(tmp_path):
+def test_update_stops_before_release_preparation_when_snapshot_creation_fails(tmp_path):
     blocker = tmp_path / "backup-is-a-file"
     blocker.write_text("not a directory", encoding="utf-8")
-    install_dir, environment, git_log, _, _, _ = _make_update_fixture(tmp_path, backup_path=blocker)
+    install_dir, environment, git_log, prepare_marker, _, _ = _make_update_fixture(
+        tmp_path, backup_path=blocker
+    )
 
     result = subprocess.run(
         ["bash", str(install_dir / "update.sh")],
@@ -208,14 +217,12 @@ def test_update_stops_before_fetch_when_snapshot_creation_fails(tmp_path):
 
     assert result.returncode == 1
     assert "Could not create and validate the pre-update backup" in result.stdout
-    commands = git_log.read_text(encoding="utf-8")
-    assert "status --porcelain" in commands
-    assert "fetch --depth 1" not in commands
-    assert "stash" not in commands
+    assert "status --porcelain" in git_log.read_text(encoding="utf-8")
+    assert not prepare_marker.exists()
 
 
 def test_update_refuses_local_changes_before_creating_a_backup(tmp_path):
-    install_dir, environment, git_log, _, data_dir, backup_dir = _make_update_fixture(
+    install_dir, environment, _, prepare_marker, data_dir, backup_dir = _make_update_fixture(
         tmp_path, git_status=" M local.py\n"
     )
 
@@ -230,13 +237,13 @@ def test_update_refuses_local_changes_before_creating_a_backup(tmp_path):
 
     assert result.returncode == 1
     assert "Local application changes are present" in result.stdout
-    assert "fetch --depth 1" not in git_log.read_text(encoding="utf-8")
+    assert not prepare_marker.exists()
     assert not backup_dir.exists()
     assert (data_dir / "updater.lock").is_file()
 
 
 def test_update_allows_preserved_legacy_configs_after_external_config_validation(tmp_path):
-    install_dir, environment, git_log, _, _, _ = _make_update_fixture(
+    install_dir, environment, _, prepare_marker, _, _ = _make_update_fixture(
         tmp_path, git_status="legacy-config"
     )
 
@@ -251,13 +258,12 @@ def test_update_allows_preserved_legacy_configs_after_external_config_validation
 
     assert result.returncode == 1
     assert "Local application changes are present" not in result.stdout
-    assert "Fetching selected stable release" in result.stdout
-    assert "fetch --depth 1" in git_log.read_text(encoding="utf-8")
+    assert prepare_marker.exists()
 
 
 def test_only_one_update_can_hold_the_runtime_lock(tmp_path):
-    install_dir, environment, git_log, fetch_marker, _, _ = _make_update_fixture(
-        tmp_path, hold_fetch=True
+    install_dir, environment, git_log, prepare_marker, _, _ = _make_update_fixture(
+        tmp_path, hold_prepare=True
     )
     first = subprocess.Popen(
         ["bash", str(install_dir / "update.sh")],
@@ -268,11 +274,11 @@ def test_only_one_update_can_hold_the_runtime_lock(tmp_path):
     )
     try:
         deadline = time.monotonic() + 15
-        while time.monotonic() < deadline and not fetch_marker.exists():
+        while time.monotonic() < deadline and not prepare_marker.exists():
             if first.poll() is not None:
                 break
             time.sleep(0.05)
-        assert fetch_marker.exists(), "first update did not reach the fetch step"
+        assert prepare_marker.exists(), "first update did not reach release preparation"
 
         second = subprocess.run(
             ["bash", str(install_dir / "update.sh")],
@@ -288,4 +294,4 @@ def test_only_one_update_can_hold_the_runtime_lock(tmp_path):
         first_output, _ = first.communicate(timeout=10)
 
     assert first.returncode == 1, first_output
-    assert git_log.read_text(encoding="utf-8").count("fetch --depth 1") == 1
+    assert git_log.read_text(encoding="utf-8").count("status --porcelain") == 1

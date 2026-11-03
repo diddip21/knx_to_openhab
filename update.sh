@@ -11,6 +11,10 @@ INSTALL_DIR="${KNXOH_INSTALL_DIR:-${INSTALL_DIR:-$SCRIPT_DIR}}"
 LOG_FILE="${LOG_FILE:-/var/log/knx_to_openhab_update.log}"
 SERVICE_NAME="knxohui.service"
 RELEASE_TAG="${RELEASE_TAG:-}"
+RELEASE_COMMIT_HASH="${RELEASE_COMMIT_HASH:-}"
+RELEASE_COMMIT_DATE="${RELEASE_COMMIT_DATE:-}"
+RELEASE_COMMIT_MESSAGE="${RELEASE_COMMIT_MESSAGE:-}"
+RELEASE_AUTHOR="${RELEASE_AUTHOR:-unknown}"
 PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
 
 # Logging function
@@ -26,6 +30,34 @@ log "========================================="
 if ! cd "$INSTALL_DIR"; then
     log "ERROR: Failed to change to $INSTALL_DIR"
     exit 1
+fi
+INSTALL_DIR="$(pwd -P)"
+
+CURRENT_LINK="$INSTALL_DIR/current"
+RELEASES_DIR="$INSTALL_DIR/releases"
+LEGACY_INSTALL=0
+if [[ -L "$CURRENT_LINK" ]]; then
+    if ! APP_DIR=$(readlink -f -- "$CURRENT_LINK"); then
+        log "ERROR: Could not resolve the active release link."
+        exit 1
+    fi
+    case "$APP_DIR" in
+        "$RELEASES_DIR"/*) ;;
+        *)
+            log "ERROR: The active release link points outside $RELEASES_DIR."
+            exit 1
+            ;;
+    esac
+    if [[ ! -d "$APP_DIR" || ! -x "$APP_DIR/venv/bin/python" ]]; then
+        log "ERROR: The active release is incomplete: $APP_DIR"
+        exit 1
+    fi
+elif [[ -e "$CURRENT_LINK" ]]; then
+    log "ERROR: $CURRENT_LINK exists but is not a release symlink."
+    exit 1
+else
+    LEGACY_INSTALL=1
+    APP_DIR="$INSTALL_DIR"
 fi
 
 if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
@@ -87,13 +119,13 @@ fi
 # Refuse an in-place update until credentials live in the external config tree.
 # An older checkout may still keep its default or plaintext password in tracked
 # files, so fetching first could replace the code before credentials are migrated.
-if [[ ! -x "$INSTALL_DIR/venv/bin/python" ]]; then
+if [[ ! -x "$APP_DIR/venv/bin/python" ]]; then
     log "ERROR: The installed Python environment is missing; credential migration cannot be verified."
     log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' from an interactive SSH terminal (for example, ssh -t), then retry."
     exit 1
 fi
 if ! CREDENTIAL_CHECK=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" \
-    PYTHONPATH="$INSTALL_DIR" "$INSTALL_DIR/venv/bin/python" - "$PATHS_FILE" <<'PY' 2>&1
+    PYTHONPATH="$APP_DIR" "$APP_DIR/venv/bin/python" - "$PATHS_FILE" <<'PY' 2>&1
 import base64
 import binascii
 import json
@@ -151,137 +183,213 @@ fi
 log "External Web UI and generator configuration are ready."
 log "External Web UI password hash is ready."
 
-# The updater runs as the service user. It must not elevate to repair ownership.
-if [[ ! -w ".git" ]]; then
-    log "ERROR: The service user cannot write to $INSTALL_DIR/.git. Run fix_permissions.sh as an administrator."
+# Legacy installations still use a Git checkout as their fallback version, so
+# refuse unrelated local edits there. Transactional releases are immutable trees
+# under releases/ and need no Git access during an update.
+if (( LEGACY_INSTALL )); then
+    if [[ ! -w ".git" ]]; then
+        log "ERROR: The service user cannot write to $INSTALL_DIR/.git. Run fix_permissions.sh as an administrator."
+        exit 1
+    fi
+    log "Verifying legacy Git installation..."
+    if ! git -c "safe.directory=$INSTALL_DIR" rev-parse --git-dir > /dev/null 2>&1; then
+        log "ERROR: Not a valid Git installation or access denied."
+        exit 1
+    fi
+    if ! LOCAL_CHANGES=$(git -c "safe.directory=$INSTALL_DIR" status --porcelain --untracked-files=all -- . \
+        ':(exclude)update.log' ':(exclude)version.json' \
+        ':(exclude,top)config.json' ':(exclude)web_ui/backend/config.json'); then
+        log "ERROR: Could not inspect the legacy installation working tree."
+        exit 1
+    fi
+    if [[ -n "$LOCAL_CHANGES" ]]; then
+        log "ERROR: Local application changes are present; refusing to update or stash them."
+        log "$LOCAL_CHANGES"
+        log "Commit or move those files, then retry the update."
+        exit 1
+    fi
+fi
+
+# A selected release must include exact commit metadata from the GitHub API.
+if [[ ! "$RELEASE_COMMIT_HASH" =~ ^[0-9a-f]{40}$ ]]; then
+    log "ERROR: The selected release commit metadata is missing or invalid. Retry from the Web UI."
     exit 1
 fi
 
-# Verify git repository is properly configured
-log "Verifying git repository configuration..."
-if ! git -c "safe.directory=$INSTALL_DIR" rev-parse --git-dir > /dev/null 2>&1; then
-    log "ERROR: Not a valid git repository or access denied."
-    log "Please verify the installation directory and permissions."
-    exit 1
+# A transactional installation can retry the latest stable release without
+# downloading or replacing its active environment.
+if [[ -L "$CURRENT_LINK" && -f "$APP_DIR/version.json" ]]; then
+    if "$APP_DIR/venv/bin/python" - "$APP_DIR/version.json" "$RELEASE_TAG" \
+        "$RELEASE_COMMIT_HASH" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as version_file:
+    metadata = json.load(version_file)
+raise SystemExit(
+    0
+    if metadata.get("release_tag") == sys.argv[2]
+    and metadata.get("commit_hash") == sys.argv[3]
+    else 1
+)
+PY
+    then
+        log "Already running selected release $RELEASE_TAG."
+        exit 0
+    fi
 fi
 
-# Setup preserves these tracked legacy config files after their active settings
-# have been migrated externally and validated above. They are no longer runtime
-# inputs, so do not mistake them for application changes during this preflight.
-if ! LOCAL_CHANGES=$(git -c "safe.directory=$INSTALL_DIR" status --porcelain --untracked-files=all -- . \
-    ':(exclude)update.log' ':(exclude)version.json' \
-    ':(exclude,top)config.json' ':(exclude)web_ui/backend/config.json'); then
-    log "ERROR: Could not inspect the installation working tree."
-    exit 1
-fi
-if [[ -n "$LOCAL_CHANGES" ]]; then
-    log "ERROR: Local application changes are present; refusing to update or stash them."
-    log "$LOCAL_CHANGES"
-    log "Commit or move those files, then retry the update."
-    exit 1
-fi
-
-# Snapshot the application and external configuration. The helper publishes
-# only a readable archive, so a failed backup always stops before Git changes.
+# Snapshot the application and external configuration before any update work.
+# The helper publishes only a readable archive, so a failed backup always stops
+# before provisioning, downloading, or staging the selected release.
 log "Creating and validating pre-update backup..."
-if ! BACKUP_PATH=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" PYTHONPATH="$INSTALL_DIR" "$INSTALL_DIR/venv/bin/python" "$INSTALL_DIR/installer/create_update_backup.py" 2>&1); then
+if ! BACKUP_PATH=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" PYTHONPATH="$APP_DIR" "$APP_DIR/venv/bin/python" "$APP_DIR/installer/create_update_backup.py" 2>&1); then
     log "ERROR: Could not create and validate the pre-update backup: $BACKUP_PATH"
     exit 1
 fi
 log "Backup created and validated: $BACKUP_PATH"
-# Fetch only the stable release selected by the Web UI.
-log "Fetching selected stable release $RELEASE_TAG from GitHub..."
-if ! git -c "safe.directory=$INSTALL_DIR" fetch --depth 1 origin \
-    "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"; then
-    log "ERROR: Failed to fetch release $RELEASE_TAG. Check network access and repository permissions."
-    exit 1
-fi
 
-# Provision on every updater run, including no-op retries after a previous
-# provisioning failure. The fixed root helper reads its protected config and
-# does not depend on files from the incoming Git revision.
+# Provision on each real update before activation. The fixed root helper reads
+# its protected config and does not depend on the incoming Git revision.
 if ! sudo -n /usr/local/sbin/knxohui-service-update provision-yaml; then
     log "ERROR: Could not provision the configured OpenHAB YAML target."
     log "Run 'sudo bash $INSTALL_DIR/installer/setup.sh' as an administrator, then retry."
     exit 1
 fi
 
-# Get current and remote commit hashes
-CURRENT_COMMIT=$(git -c "safe.directory=$INSTALL_DIR" rev-parse HEAD)
-REMOTE_COMMIT=$(git -c "safe.directory=$INSTALL_DIR" rev-parse "$RELEASE_TAG^{commit}")
-
-log "Current commit: $CURRENT_COMMIT"
-log "Remote commit: $REMOTE_COMMIT"
-
-if [[ "$CURRENT_COMMIT" == "$REMOTE_COMMIT" ]]; then
-    log "Already up to date!"
-    exit 0
+if [[ -L "$RELEASES_DIR" ]]; then
+    log "ERROR: Refusing a symlinked release directory: $RELEASES_DIR"
+    exit 1
 fi
-
-# The installed setup migration has copied both active configurations to the
-# external config/data directories, which were validated above and included in
-# the backup. Reset only their obsolete tracked copies so checkout can replace
-# them without touching unrelated local files.
-log "Restoring migrated legacy configuration copies before checkout..."
-for LEGACY_CONFIG in config.json web_ui/backend/config.json; do
-    if git -c "safe.directory=$INSTALL_DIR" cat-file -e "HEAD:$LEGACY_CONFIG" 2>/dev/null; then
-        if ! git -c "safe.directory=$INSTALL_DIR" restore --source=HEAD --staged --worktree -- \
-            "$LEGACY_CONFIG"; then
-            log "ERROR: Could not restore migrated legacy configuration $LEGACY_CONFIG."
-            exit 1
-        fi
-    fi
-done
-
-# Check out the exact release selected by the Web UI.
-log "Checking out selected release $RELEASE_TAG..."
-if ! git -c "safe.directory=$INSTALL_DIR" checkout --detach "$RELEASE_TAG"; then
-    log "ERROR: Could not check out release $RELEASE_TAG"
-    log "Attempting to restore from backup..."
-    git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"
+if ! mkdir -p -- "$RELEASES_DIR"; then
+    log "ERROR: Could not create release directory: $RELEASES_DIR"
     exit 1
 fi
 
-# Update Python dependencies
-log "Updating Python dependencies..."
-if [[ -f "$INSTALL_DIR/venv/bin/pip" ]]; then
-    "$INSTALL_DIR/venv/bin/pip" install --upgrade pip -q || log "WARNING: pip upgrade failed"
-    if ! "$INSTALL_DIR/venv/bin/pip" install -r requirements.txt -q; then
-        log "ERROR: Failed to install dependencies"
-        log "Attempting to restore from backup..."
-        git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"
-        exit 1
+RELEASE_DIR_NAME="${RELEASE_TAG#v}-${RELEASE_COMMIT_HASH:0:12}-$(date +%s)-$$"
+NEW_RELEASE_DIR="$RELEASES_DIR/$RELEASE_DIR_NAME"
+if ! STAGING_DIR=$(mktemp -d "$RELEASES_DIR/.staging-${RELEASE_TAG#v}-XXXXXXXX"); then
+    log "ERROR: Could not create a release staging directory."
+    exit 1
+fi
+cleanup_release_staging() {
+    if [[ -n "${STAGING_DIR:-}" && -d "$STAGING_DIR" ]]; then
+        rm -rf -- "$STAGING_DIR"
     fi
-else
-    log "WARNING: Virtual environment not found, skipping dependency update"
-fi
+}
+trap cleanup_release_staging EXIT
 
-# Update version.json with new commit hash
-log "Updating version.json..."
-NEW_COMMIT=$(git -c "safe.directory=$INSTALL_DIR" rev-parse HEAD)
-if [[ -f "version.json" ]]; then
-    # Use Python to update the JSON file
-    python3 -c "
+REPOSITORY="${KNXOH_GITHUB_REPOSITORY:-diddip21/knx_to_openhab}"
+log "Downloading and verifying release archive $RELEASE_TAG..."
+if ! STAGED_APP_DIR=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" \
+    PYTHONPATH="$APP_DIR" "$APP_DIR/venv/bin/python" \
+    "$APP_DIR/installer/prepare_release.py" \
+    --repository "$REPOSITORY" --tag "$RELEASE_TAG" --destination "$STAGING_DIR" \
+    --commit-hash "$RELEASE_COMMIT_HASH" --commit-date "$RELEASE_COMMIT_DATE" \
+    --commit-message "$RELEASE_COMMIT_MESSAGE" --author "$RELEASE_AUTHOR" 2>&1); then
+    log "ERROR: Could not download, verify, or extract release $RELEASE_TAG: $STAGED_APP_DIR"
+    exit 1
+fi
+log "Verified release staged at $STAGED_APP_DIR."
+
+log "Creating isolated Python environment for $RELEASE_TAG..."
+if ! python3 -m venv "$STAGED_APP_DIR/venv"; then
+    log "ERROR: Could not create the release Python environment."
+    exit 1
+fi
+if ! "$STAGED_APP_DIR/venv/bin/pip" install --disable-pip-version-check \
+    -r "$STAGED_APP_DIR/requirements.txt" -q; then
+    log "ERROR: Could not install dependencies for $RELEASE_TAG. The active release was not changed."
+    exit 1
+fi
+if ! "$STAGED_APP_DIR/venv/bin/pip" check; then
+    log "ERROR: The staged release has inconsistent Python dependencies."
+    exit 1
+fi
+if ! "$STAGED_APP_DIR/venv/bin/python" -m compileall -q "$STAGED_APP_DIR"; then
+    log "ERROR: Python compilation smoke test failed for $RELEASE_TAG."
+    exit 1
+fi
+if ! PYTHONPATH="$STAGED_APP_DIR" "$STAGED_APP_DIR/venv/bin/python" -c \
+    'import flask, gunicorn, requests, xknxproject; import web_ui.backend.updater'; then
+    log "ERROR: Python dependency and updater import smoke test failed for $RELEASE_TAG."
+    exit 1
+fi
+log "No release data migration is declared; external configuration and runtime data remain in place."
+
+# Obtain the configured local health-check port from the validated external UI
+# configuration before switching the current release pointer.
+if ! WEB_UI_PORT=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" \
+    PYTHONPATH="$APP_DIR" "$APP_DIR/venv/bin/python" - <<'PY'
 import json
-with open('version.json', 'r') as f:
-    data = json.load(f)
-data['commit_hash'] = '$NEW_COMMIT'
-data['build_date'] = '$(date +%Y-%m-%d)'
-with open('version.json', 'w') as f:
-    json.dump(data, f, indent=2)
-" || log "WARNING: Failed to update version.json"
+from knxoh_paths import get_paths
+
+with get_paths().web_config_file.open(encoding="utf-8") as config_file:
+    config = json.load(config_file)
+port = config.get("port", 8080) if isinstance(config, dict) else None
+if type(port) is not int or not 1 <= port <= 65535:
+    raise SystemExit("external Web UI port must be an integer from 1 to 65535")
+print(port)
+PY
+); then
+    log "ERROR: Could not determine the Web UI health-check port."
+    exit 1
 fi
 
-wait_for_service_active() {
-    local attempt consecutive_active=0
-    for attempt in {1..15}; do
-        if sudo systemctl is-active "$SERVICE_NAME" > /dev/null; then
-            consecutive_active=$((consecutive_active + 1))
-            if (( consecutive_active >= 3 )); then
+PREVIOUS_LINK=""
+HAD_PREVIOUS_LINK=0
+if [[ -L "$CURRENT_LINK" ]]; then
+    PREVIOUS_LINK=$(readlink -- "$CURRENT_LINK")
+    HAD_PREVIOUS_LINK=1
+fi
+if ! mv -- "$STAGED_APP_DIR" "$NEW_RELEASE_DIR"; then
+    log "ERROR: Could not publish the complete staged release."
+    exit 1
+fi
+rmdir -- "$STAGING_DIR"
+STAGING_DIR=""
+
+TEMP_CURRENT_LINK="$INSTALL_DIR/.current-${RELEASE_DIR_NAME}-$$"
+if ! ln -s "releases/$RELEASE_DIR_NAME" "$TEMP_CURRENT_LINK" \
+    || ! mv -Tf -- "$TEMP_CURRENT_LINK" "$CURRENT_LINK"; then
+    rm -f -- "$TEMP_CURRENT_LINK"
+    log "ERROR: Could not atomically activate release $RELEASE_TAG."
+    exit 1
+fi
+
+active_app_dir() {
+    if [[ -L "$CURRENT_LINK" ]]; then
+        printf '%s\n' "$CURRENT_LINK"
+    else
+        printf '%s\n' "$INSTALL_DIR"
+    fi
+}
+
+wait_for_service_health() {
+    local attempt active_checks=0 app_dir
+    for attempt in {1..20}; do
+        app_dir=$(active_app_dir)
+        if sudo systemctl is-active "$SERVICE_NAME" > /dev/null && \
+            "$app_dir/venv/bin/python" - "$WEB_UI_PORT" <<'PY'
+import json
+import sys
+from urllib.request import urlopen
+
+try:
+    with urlopen(f"http://127.0.0.1:{sys.argv[1]}/api/status", timeout=3) as response:
+        payload = json.load(response)
+    if payload.get("status") != "ok":
+        raise SystemExit(1)
+except Exception:
+    raise SystemExit(1)
+PY
+        then
+            active_checks=$((active_checks + 1))
+            if (( active_checks >= 2 )); then
                 return 0
             fi
         else
-            consecutive_active=0
+            active_checks=0
         fi
         sleep 1
     done
@@ -289,15 +397,19 @@ wait_for_service_active() {
 }
 
 restore_previous_release() {
-    log "Restoring previous application commit $CURRENT_COMMIT..."
-    if ! git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"; then
-        log "ERROR: Could not restore the previous application files."
-        return 1
-    fi
-
-    if [[ -x "$INSTALL_DIR/venv/bin/pip" ]]; then
-        if ! "$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt" -q; then
-            log "WARNING: Could not fully restore the previous Python dependencies."
+    log "Restoring the previous release pointer..."
+    if (( HAD_PREVIOUS_LINK )); then
+        local restore_link="$INSTALL_DIR/.current-restore-$$"
+        if ! ln -s -- "$PREVIOUS_LINK" "$restore_link" \
+            || ! mv -Tf -- "$restore_link" "$CURRENT_LINK"; then
+            rm -f -- "$restore_link"
+            log "ERROR: Could not restore the previous current release link."
+            return 1
+        fi
+    elif [[ -L "$CURRENT_LINK" ]]; then
+        if ! rm -- "$CURRENT_LINK"; then
+            log "ERROR: Could not return to the legacy installation."
+            return 1
         fi
     fi
 
@@ -305,32 +417,31 @@ restore_previous_release() {
         log "ERROR: The previous version could not be restarted."
         return 1
     fi
-    if wait_for_service_active; then
-        log "Previous version restored and service is active."
+    if wait_for_service_health; then
+        log "Previous release restored and health check passed."
         return 0
     fi
-    log "ERROR: The previous version is restored, but the service is still inactive."
+    log "ERROR: Previous release is selected, but its service health check failed."
     return 1
 }
 
-log "Restarting $SERVICE_NAME..."
+log "Restarting $SERVICE_NAME on release $RELEASE_TAG..."
 if ! sudo systemctl restart "$SERVICE_NAME"; then
     log "ERROR: Failed to restart the updated service."
     restore_previous_release || log "ERROR: Automatic recovery failed. Check: sudo systemctl status $SERVICE_NAME"
     exit 1
 fi
 
-if ! wait_for_service_active; then
-    log "ERROR: The updated service did not become active."
+if ! wait_for_service_health; then
+    log "ERROR: The updated service did not pass its health check."
     restore_previous_release || log "ERROR: Automatic recovery failed. Check: sudo systemctl status $SERVICE_NAME"
     exit 1
 fi
 
-log "Service restarted successfully"
-
+log "Service health check passed for $RELEASE_TAG."
 log "========================================="
 log "Update completed successfully!"
-log "New commit: $NEW_COMMIT"
+log "Active release: $RELEASE_TAG ($RELEASE_COMMIT_HASH)"
 log "Backup saved to: $BACKUP_PATH"
 log "========================================="
 

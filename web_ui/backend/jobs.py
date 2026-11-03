@@ -16,7 +16,9 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from ipaddress import ip_address
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
+
+from knxoh_paths import get_paths
 
 from completeness import check_completeness, iter_thing_lines
 
@@ -152,6 +154,11 @@ def _reload_generator_modules(project_root):
     return global_config_module, etsmod, knxmod
 
 
+def _application_code_root():
+    """Return the active release directory that contains the imported modules."""
+    return str(Path(__file__).resolve().parents[2])
+
+
 def _password_error_message(error):
     msg = str(error).lower()
     password_markers = [
@@ -181,7 +188,7 @@ class JobManager:
         backups_dir_config = cfg.get("backups_dir", "var/backups/knx_to_openhab")
 
         # If paths are relative, make them relative to project root
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        project_root = str(get_paths().install_dir)
         if not os.path.isabs(jobs_dir_config):
             self.jobs_dir = os.path.join(project_root, jobs_dir_config)
         else:
@@ -400,7 +407,7 @@ class JobManager:
     def get_gateway_state(self):
         """Read active managed bridge settings under the narrow live-file lock."""
         with self.gateway_state_lock:
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            project_root = str(get_paths().install_dir)
             configuration = load_generator_config(project_root)
             target = self.get_last_deployed_things_target()
             if target is None:
@@ -428,7 +435,7 @@ class JobManager:
             return state
 
     def _update_live_gateway(self, transform, gateway_ip, gateway_mode, override):
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        project_root = str(get_paths().install_dir)
         original_config = load_generator_config(project_root)
         target = self.get_last_deployed_things_target()
         if target is None:
@@ -569,7 +576,7 @@ class JobManager:
     def undo_gateway_ip(self):
         """Restore the exact prior managed file and override from the last live action."""
         with self.operation_lock, self.gateway_state_lock:
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            project_root = str(get_paths().install_dir)
             original_config = load_generator_config(project_root)
             target = self.get_last_deployed_things_target()
             if target is None:
@@ -788,8 +795,10 @@ class JobManager:
 
             # Reload config before its consumers: both generator modules import the
             # config dict directly, and config.py replaces that dict on reload.
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            global_config_module, etsmod, knxmod = _reload_generator_modules(project_root)
+            project_root = str(get_paths().install_dir)
+            global_config_module, etsmod, knxmod = _reload_generator_modules(
+                _application_code_root()
+            )
 
             # Setup Staging
             if os.path.abspath(self.staging_dir) == os.path.abspath(self.jobs_dir):
@@ -1453,9 +1462,10 @@ class JobManager:
             raise ValueError("backup not found")
         import importlib
 
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        if project_root not in sys.path:
-            sys.path.insert(0, project_root)
+        project_root = str(get_paths().install_dir)
+        code_root = _application_code_root()
+        if code_root not in sys.path:
+            sys.path.insert(0, code_root)
         config_module = importlib.reload(importlib.import_module("config"))
         openhab_root, managed = configured_managed_paths(config_module.config, project_root)
         job_root = os.path.realpath(job.get("openhab_root", openhab_root))
@@ -1543,9 +1553,10 @@ class JobManager:
 
         import importlib
 
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        if project_root not in sys.path:
-            sys.path.insert(0, project_root)
+        project_root = str(get_paths().install_dir)
+        code_root = _application_code_root()
+        if code_root not in sys.path:
+            sys.path.insert(0, code_root)
         config_module = importlib.reload(importlib.import_module("config"))
         openhab_path, managed_paths = configured_managed_paths(config_module.config, project_root)
         job_root = os.path.realpath(job.get("openhab_root", openhab_path))

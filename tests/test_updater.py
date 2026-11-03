@@ -14,7 +14,16 @@ def test_trigger_update_passes_install_dir_and_selected_release(monkeypatch, tmp
     monkeypatch.setattr(
         Updater,
         "check_github_version",
-        lambda _self: (True, {"release_tag": "v1.4.0", "commit_hash": "release-commit"}),
+        lambda _self: (
+            True,
+            {
+                "release_tag": "v1.4.0",
+                "commit_hash": "a" * 40,
+                "commit_date": "2026-11-03T00:00:00Z",
+                "commit_message": "Stable release",
+                "author": "Release Bot",
+            },
+        ),
     )
     monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
 
@@ -26,8 +35,57 @@ def test_trigger_update_passes_install_dir_and_selected_release(monkeypatch, tmp
     assert args[0] == ["/bin/bash", str(update_script)]
     assert kwargs["cwd"] == str(tmp_path)
     assert kwargs["env"]["INSTALL_DIR"] == str(tmp_path)
+    assert kwargs["env"]["KNXOH_INSTALL_DIR"] == str(tmp_path)
     assert kwargs["env"]["LOG_FILE"] == os.devnull
     assert kwargs["env"]["RELEASE_TAG"] == "v1.4.0"
+    assert kwargs["env"]["RELEASE_COMMIT_HASH"] == "a" * 40
+    assert kwargs["env"]["RELEASE_COMMIT_DATE"] == "2026-11-03T00:00:00Z"
+    assert kwargs["env"]["RELEASE_COMMIT_MESSAGE"] == "Stable release"
+    assert kwargs["env"]["RELEASE_AUTHOR"] == "Release Bot"
+    assert kwargs["env"]["KNXOH_GITHUB_REPOSITORY"] == "diddip21/knx_to_openhab"
+
+
+def test_trigger_update_runs_the_active_release_script_from_the_stable_install_root(
+    monkeypatch, tmp_path
+):
+    current_release = tmp_path / "current"
+    current_release.mkdir()
+    update_script = current_release / "update.sh"
+    update_script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    popen = Mock()
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.Popen", popen)
+    monkeypatch.setattr(
+        Updater,
+        "check_github_version",
+        lambda _self: (True, {"release_tag": "v1.4.0", "commit_hash": "a" * 40}),
+    )
+    monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
+
+    success, _ = Updater(base_path=str(tmp_path)).trigger_update()
+
+    assert success is True
+    args, kwargs = popen.call_args
+    assert args[0] == ["/bin/bash", str(update_script)]
+    assert kwargs["cwd"] == str(tmp_path)
+
+
+def test_get_current_version_reads_the_active_release_metadata(tmp_path):
+    release_dir = tmp_path / "current"
+    release_dir.mkdir()
+    commit_hash = "b" * 40
+    (release_dir / "version.json").write_text(
+        '{"release_tag":"v1.4.0","commit_hash":"'
+        + commit_hash
+        + '","commit_date":"2026-11-03T00:00:00Z","commit_message":"Release"}',
+        encoding="utf-8",
+    )
+
+    current = Updater(base_path=str(tmp_path)).get_current_version()
+
+    assert current["commit_hash"] == commit_hash
+    assert current["commit_short"] == commit_hash[:7]
+    assert current["release_tag"] == "v1.4.0"
+    assert current["commit_message"] == "Release"
 
 
 def test_check_github_version_resolves_latest_stable_release_commit(monkeypatch):

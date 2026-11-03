@@ -27,7 +27,17 @@ def make_preflight_environment(
     python.write_text(
         "#!/bin/sh\n"
         "if [ \"$1\" = '-c' ]; then printf '%s\\n' \"$PREFLIGHT_PYTHON_VERSION\"; exit 0; fi\n"
-        'if [ "$1" = \'-m\' ] && [ "$2" = \'venv\' ] && [ "$PREFLIGHT_VENV_STATUS" != 0 ]; then exit "$PREFLIGHT_VENV_STATUS"; fi\n'
+        "if [ \"$1\" = '-m' ] && [ \"$2\" = 'venv' ]; then\n"
+        '  if [ "$PREFLIGHT_VENV_STATUS" != 0 ]; then exit "$PREFLIGHT_VENV_STATUS"; fi\n'
+        '  "$PREFLIGHT_REAL_PYTHON" "$@"\n'
+        "  result=$?\n"
+        '  if [ "$result" = 0 ] && [ "$PREFLIGHT_VENV_BROKEN_EXEC" = 1 ]; then\n'
+        '    rm -f "$3/bin/python"\n'
+        "    printf '#!/bin/sh\\nexit 1\\n' > \"$3/bin/python\"\n"
+        '    /bin/chmod +x "$3/bin/python"\n'
+        "  fi\n"
+        '  exit "$result"\n'
+        "fi\n"
         'exec "$PREFLIGHT_REAL_PYTHON" "$@"\n',
         encoding="utf-8",
     )
@@ -50,6 +60,7 @@ def make_preflight_environment(
             "PREFLIGHT_PYTHON_VERSION": python_version,
             "PREFLIGHT_REAL_PYTHON": sys.executable,
             "PREFLIGHT_VENV_STATUS": "0",
+            "PREFLIGHT_VENV_BROKEN_EXEC": "0",
             "PREFLIGHT_CURL_LOG": str(tmp_path / "curl-calls"),
             "PREFLIGHT_CURL_STATUS": str(curl_status),
         }
@@ -73,6 +84,23 @@ def run_preflight(environment, mode, install_dir):
         text=True,
         check=False,
         timeout=10,
+    )
+
+
+def run_venv_check(environment):
+    return subprocess.run(
+        [
+            "/bin/bash",
+            "-c",
+            'source "$1" && verify_venv_support python3',
+            "venv-test",
+            str(INSTALLER),
+        ],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
     )
 
 
@@ -218,3 +246,104 @@ def test_os_preflight_handles_missing_id_like_without_unbound_variable(tmp_path)
 
     assert "designed for Debian-based systems" in result.stdout + result.stderr
     assert "unbound variable" not in result.stderr
+
+
+def test_venv_preflight_creates_and_removes_temporary_environment(tmp_path):
+    environment, root = make_preflight_environment(tmp_path)
+    environment.update({"PATH": f"{root / 'bin'}:/usr/bin:/bin", "TMPDIR": str(root)})
+
+    result = run_venv_check(environment)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert list(root.glob("knxoh-preflight.*")) == []
+
+
+def test_venv_preflight_reports_creation_failure_and_cleans_up(tmp_path):
+    environment, root = make_preflight_environment(tmp_path)
+    environment.update(
+        {
+            "PATH": f"{root / 'bin'}:/usr/bin:/bin",
+            "TMPDIR": str(root),
+            "PREFLIGHT_VENV_STATUS": "7",
+        }
+    )
+
+    result = run_venv_check(environment)
+
+    assert result.returncode != 0
+    assert (
+        "Could not create a temporary Python virtual environment" in result.stdout + result.stderr
+    )
+    assert list(root.glob("knxoh-preflight.*")) == []
+
+
+def test_venv_preflight_reports_unusable_interpreter_and_cleans_up(tmp_path):
+    environment, root = make_preflight_environment(tmp_path)
+    environment.update(
+        {
+            "PATH": f"{root / 'bin'}:/usr/bin:/bin",
+            "TMPDIR": str(root),
+            "PREFLIGHT_VENV_BROKEN_EXEC": "1",
+        }
+    )
+
+    result = run_venv_check(environment)
+
+    assert result.returncode != 0
+    assert "The temporary Python virtual environment is not usable" in result.stdout + result.stderr
+    assert list(root.glob("knxoh-preflight.*")) == []
+
+
+def test_installer_checks_venv_after_packages_but_before_setup(tmp_path):
+    environment, root = make_preflight_environment(tmp_path)
+    install_dir = root / "existing-install"
+    installer_dir = install_dir / "installer"
+    installer_dir.mkdir(parents=True)
+    setup_marker = root / "setup-ran"
+    (installer_dir / "setup.sh").write_text(
+        f"#!/bin/sh\nprintf called > '{setup_marker}'\n", encoding="utf-8"
+    )
+    (installer_dir / "backup_cleanup.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    sudo = root / "bin" / "sudo"
+    sudo.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = '-n' ]; then exit 0; fi\n"
+        'if [ "$1" = \'apt-get\' ]; then shift; exec apt-get "$@"; fi\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    sudo.chmod(0o755)
+    apt_log = root / "apt-called"
+    apt_get = root / "bin" / "apt-get"
+    apt_get.write_text(
+        '#!/bin/sh\nprintf called >> "$PREFLIGHT_APT_LOG"\nexit 0\n',
+        encoding="utf-8",
+    )
+    apt_get.chmod(0o755)
+    environment.update(
+        {
+            "ALLOW_ROOT": "1",
+            "KNXOH_INSTALL_DIR": str(install_dir),
+            "PREFLIGHT_APT_LOG": str(apt_log),
+            "PREFLIGHT_VENV_STATUS": "7",
+            "TMPDIR": str(root),
+            "PATH": f"{root / 'bin'}:/usr/bin:/bin",
+        }
+    )
+
+    result = subprocess.run(
+        ["/bin/bash", str(INSTALLER), "--repair"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+
+    assert result.returncode != 0
+    assert apt_log.is_file()
+    assert (
+        "Could not create a temporary Python virtual environment" in result.stdout + result.stderr
+    )
+    assert not setup_marker.exists()
+    assert list(root.glob("knxoh-preflight.*")) == []

@@ -496,6 +496,28 @@ run_installer_preflight() {
     fi
 }
 
+verify_venv_support() (
+    local python_command="$1"
+    local probe_root
+
+    if ! probe_root="$(mktemp -d "${TMPDIR:-/tmp}/knxoh-preflight.XXXXXX")"; then
+        log_error "Could not create a temporary directory to test Python virtual environment support."
+        exit 1
+    fi
+    trap 'rm -rf -- "$probe_root"' EXIT
+
+    if ! "$python_command" -m venv "$probe_root/venv" >/dev/null 2>&1; then
+        log_error "Could not create a temporary Python virtual environment; check the python3-venv package."
+        exit 1
+    fi
+    if [[ ! -x "$probe_root/venv/bin/python" ]] ||
+       ! "$probe_root/venv/bin/python" -c 'import sys; print(sys.version)' >/dev/null 2>&1; then
+        log_error "The temporary Python virtual environment is not usable."
+        exit 1
+    fi
+    log_success "Python virtual environment support is available."
+)
+
 check_sudo() {
     if ! sudo -n true 2>/dev/null; then
         log_info "Testing sudo access..."
@@ -715,6 +737,9 @@ main() {
         exit 1
     fi
     install_dependencies
+    if ! verify_venv_support python3; then
+        exit 1
+    fi
     clone_repository
     run_setup_script
     display_completion

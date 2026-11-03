@@ -125,6 +125,11 @@ def _make_update_fixture(tmp_path, *, backup_path=None, git_status="", hold_fetc
         install_dir / "installer/create_update_backup.py",
     )
     shutil.copy2(root / "web_ui/backend/auth.py", install_dir / "web_ui/backend/auth.py")
+    (install_dir / "config.json").write_text('{"general": {"legacy": true}}', encoding="utf-8")
+    (install_dir / "web_ui/backend/config.json").write_text(
+        '{"auth": {"enabled": false}}', encoding="utf-8"
+    )
+    (data_dir / "generator.json").write_text('{"general": {}}', encoding="utf-8")
     (config_dir / "config.json").write_text('{"auth": {"enabled": false}}', encoding="utf-8")
     (config_dir / "secrets.env").write_text("", encoding="utf-8")
     (config_dir / "paths.env").write_text("KNXOH_CONFIG_DIR=test\n", encoding="utf-8")
@@ -141,7 +146,13 @@ def _make_update_fixture(tmp_path, *, backup_path=None, git_status="", hold_fetc
         'printf "%s\n" "$*" >> "$GIT_LOG"',
         'case "$*" in',
         '  *"rev-parse --git-dir"*) printf ".git\n"; exit 0 ;;',
-        '  *"status --porcelain"*) printf "%s" "$FAKE_GIT_STATUS"; exit 0 ;;',
+        '  *"status --porcelain"*)',
+        '    if [ "$FAKE_GIT_STATUS" = "legacy-config" ]; then',
+        '      case "$*" in',
+        '        *":(exclude,top)config.json"*"web_ui/backend/config.json"*) exit 0 ;;',
+        "      esac",
+        "    fi",
+        '    printf "%s" "$FAKE_GIT_STATUS"; exit 0 ;;',
         '  *"fetch --depth 1 origin"*)',
         '    touch "$FETCH_MARKER"',
         '    if [ "$HOLD_FETCH" = "1" ]; then sleep 3; fi',
@@ -222,6 +233,26 @@ def test_update_refuses_local_changes_before_creating_a_backup(tmp_path):
     assert "fetch --depth 1" not in git_log.read_text(encoding="utf-8")
     assert not backup_dir.exists()
     assert (data_dir / "updater.lock").is_file()
+
+
+def test_update_allows_preserved_legacy_configs_after_external_config_validation(tmp_path):
+    install_dir, environment, git_log, _, _, _ = _make_update_fixture(
+        tmp_path, git_status="legacy-config"
+    )
+
+    result = subprocess.run(
+        ["bash", str(install_dir / "update.sh")],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Local application changes are present" not in result.stdout
+    assert "Fetching selected stable release" in result.stdout
+    assert "fetch --depth 1" in git_log.read_text(encoding="utf-8")
 
 
 def test_only_one_update_can_hold_the_runtime_lock(tmp_path):

@@ -119,6 +119,14 @@ try:
     config = json.loads(paths.web_config_file.read_text(encoding="utf-8"))
 except (OSError, json.JSONDecodeError) as error:
     raise SystemExit(f"cannot read external Web UI config: {error}") from error
+try:
+    generator_config = json.loads(
+        paths.generator_config_file.read_text(encoding="utf-8")
+    )
+except (OSError, json.JSONDecodeError) as error:
+    raise SystemExit(f"cannot read external generator config: {error}") from error
+if not isinstance(generator_config, dict):
+    raise SystemExit("external generator config must be a JSON object")
 auth = config.get("auth", {}) if isinstance(config, dict) else None
 if not isinstance(auth, dict):
     raise SystemExit("external Web UI auth configuration is invalid")
@@ -140,7 +148,8 @@ PY
     log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' from an interactive SSH terminal (for example, ssh -t), then retry."
     exit 1
 fi
-log "External Web UI configuration and password hash are ready."
+log "External Web UI and generator configuration are ready."
+log "External Web UI password hash is ready."
 
 # The updater runs as the service user. It must not elevate to repair ownership.
 if [[ ! -w ".git" ]]; then
@@ -156,9 +165,12 @@ if ! git -c "safe.directory=$INSTALL_DIR" rev-parse --git-dir > /dev/null 2>&1; 
     exit 1
 fi
 
-# Never hide or overwrite local application changes. Runtime settings, secrets,
-# jobs, and generated data live outside this checkout.
-if ! LOCAL_CHANGES=$(git -c "safe.directory=$INSTALL_DIR" status --porcelain --untracked-files=all -- . ':(exclude)update.log' ':(exclude)version.json'); then
+# Setup preserves these tracked legacy config files after their active settings
+# have been migrated externally and validated above. They are no longer runtime
+# inputs, so do not mistake them for application changes during this preflight.
+if ! LOCAL_CHANGES=$(git -c "safe.directory=$INSTALL_DIR" status --porcelain --untracked-files=all -- . \
+    ':(exclude)update.log' ':(exclude)version.json' \
+    ':(exclude,top)config.json' ':(exclude)web_ui/backend/config.json'); then
     log "ERROR: Could not inspect the installation working tree."
     exit 1
 fi

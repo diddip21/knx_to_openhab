@@ -31,9 +31,21 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           python scripts/build_release.py --version "$version" --output-dir dist
 
+      - name: Determine release channel
+        id: channel
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          version_without_build_metadata="${version%%+*}"
+          if [[ "$version_without_build_metadata" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ steps.channel.outputs.prerelease == 'true' }}

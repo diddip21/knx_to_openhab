@@ -10,6 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="${KNXOH_INSTALL_DIR:-${INSTALL_DIR:-$SCRIPT_DIR}}"
 LOG_FILE="${LOG_FILE:-/var/log/knx_to_openhab_update.log}"
 SERVICE_NAME="knxohui.service"
+RELEASE_TAG="${RELEASE_TAG:-}"
 
 BACKUP_DIR="${KNXOH_BACKUP_DIR:-$(PYTHONPATH="$INSTALL_DIR" python3 -c \
     'from knxoh_paths import get_paths; print(get_paths().backup_dir)')}"
@@ -26,6 +27,11 @@ log "========================================="
 # Change to installation directory
 if ! cd "$INSTALL_DIR"; then
     log "ERROR: Failed to change to $INSTALL_DIR"
+    exit 1
+fi
+
+if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+    log "ERROR: A valid stable release tag is required. Trigger the update from the Web UI again."
     exit 1
 fi
 
@@ -170,10 +176,11 @@ if ! git -c "safe.directory=$INSTALL_DIR" rev-parse --git-dir > /dev/null 2>&1; 
     exit 1
 fi
 
-# Fetch latest changes from GitHub
-log "Fetching latest changes from GitHub..."
-if ! git -c "safe.directory=$INSTALL_DIR" fetch origin; then
-    log "ERROR: Failed to fetch from GitHub. Check network access and repository permissions."
+# Fetch only the stable release selected by the Web UI.
+log "Fetching selected stable release $RELEASE_TAG from GitHub..."
+if ! git -c "safe.directory=$INSTALL_DIR" fetch --depth 1 origin \
+    "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"; then
+    log "ERROR: Failed to fetch release $RELEASE_TAG. Check network access and repository permissions."
     exit 1
 fi
 
@@ -188,7 +195,7 @@ fi
 
 # Get current and remote commit hashes
 CURRENT_COMMIT=$(git -c "safe.directory=$INSTALL_DIR" rev-parse HEAD)
-REMOTE_COMMIT=$(git -c "safe.directory=$INSTALL_DIR" rev-parse origin/main)
+REMOTE_COMMIT=$(git -c "safe.directory=$INSTALL_DIR" rev-parse "$RELEASE_TAG^{commit}")
 
 log "Current commit: $CURRENT_COMMIT"
 log "Remote commit: $REMOTE_COMMIT"
@@ -198,10 +205,10 @@ if [[ "$CURRENT_COMMIT" == "$REMOTE_COMMIT" ]]; then
     exit 0
 fi
 
-# Pull latest changes
-log "Pulling latest changes..."
-if ! git -c "safe.directory=$INSTALL_DIR" pull origin main; then
-    log "ERROR: Git pull failed"
+# Check out the exact release selected by the Web UI.
+log "Checking out selected release $RELEASE_TAG..."
+if ! git -c "safe.directory=$INSTALL_DIR" checkout --detach "$RELEASE_TAG"; then
+    log "ERROR: Could not check out release $RELEASE_TAG"
     log "Attempting to restore from backup..."
     git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"
     exit 1

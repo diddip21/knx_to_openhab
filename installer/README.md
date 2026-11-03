@@ -160,10 +160,16 @@ existing installation:
 
 | Command | Behavior |
 |---------|----------|
-| `bash install.sh --install` | Install only when the target directory does not exist |
-| `bash install.sh --update` | Pull the latest source into an existing Git checkout, then run setup |
-| `bash install.sh --repair` | Run setup for an existing installation without pulling source |
+| `bash install.sh --install` | Install the latest stable release when the target directory does not exist |
+| `bash install.sh --update` | Update an existing Git checkout to the latest stable release, then run setup |
+| `bash install.sh --repair` | Run setup for an existing installation without fetching a release |
 | `bash install.sh --cancel` | Exit before requesting sudo or installing packages |
+
+Use `--version X.Y.Z` with `--install` or `--update` to select an exact
+published release. The version omits the `v` tag prefix. Explicit SemVer
+prereleases such as `1.3.0-rc.1` can be selected this way; they are never
+chosen by the default stable channel. If GitHub has no matching release, the
+installer stops instead of falling back to `main`.
 
 On a first install, running without a mode keeps `--install` as the default.
 For an existing installation, an interactive run asks for update, repair, or
@@ -172,6 +178,11 @@ changing the system. An existing directory is never overwritten by
 `--install`. These choices make the entry point safer; they do not yet make
 every operation in `setup.sh` idempotent or add a reinstall flow (Issue #25
 remains open for those items).
+
+The top-level installer resolves the GitHub release and checks out its exact
+tag. It does not yet stage a separate release directory or verify the published
+archive checksum before activation; the transactional updater work in Issue #26
+owns those guarantees.
 
 ### Existing installations
 

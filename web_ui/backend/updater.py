@@ -4,11 +4,69 @@ Uses Git commits for versioning instead of version.json.
 """
 
 import os
+import re
 import subprocess
+import threading
+import time
 from datetime import datetime
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 import requests  # type: ignore[import]
+
+_RELEASE_CACHE_TTL_SECONDS = 300
+
+_SEMVER_PATTERN = re.compile(
+    r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
+    r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
+)
+
+
+def _parse_semver(tag: str) -> Optional[Tuple[int, int, int, Optional[Tuple[str, ...]]]]:
+    match = _SEMVER_PATTERN.fullmatch(tag)
+    if not match:
+        return None
+
+    prerelease = match.group(4)
+    identifiers = tuple(prerelease.split(".")) if prerelease else None
+    if identifiers and any(
+        identifier.isdigit() and len(identifier) > 1 and identifier.startswith("0")
+        for identifier in identifiers
+    ):
+        return None
+    return int(match.group(1)), int(match.group(2)), int(match.group(3)), identifiers
+
+
+def _compare_semver(left: str, right: str) -> Optional[int]:
+    """Return -1/0/1 by SemVer precedence, or None if either tag is invalid."""
+    left_version = _parse_semver(left)
+    right_version = _parse_semver(right)
+    if left_version is None or right_version is None:
+        return None
+
+    left_core = left_version[:3]
+    right_core = right_version[:3]
+    if left_core != right_core:
+        return (left_core > right_core) - (left_core < right_core)
+
+    left_pre = left_version[3]
+    right_pre = right_version[3]
+    if left_pre is None or right_pre is None:
+        if left_pre is None and right_pre is None:
+            return 0
+        return 1 if left_pre is None else -1
+
+    for left_id, right_id in zip(left_pre, right_pre):
+        if left_id == right_id:
+            continue
+        left_numeric = left_id.isdigit()
+        right_numeric = right_id.isdigit()
+        if left_numeric and right_numeric:
+            return (int(left_id) > int(right_id)) - (int(left_id) < int(right_id))
+        if left_numeric != right_numeric:
+            return -1 if left_numeric else 1
+        return (left_id > right_id) - (left_id < right_id)
+    return (len(left_pre) > len(right_pre)) - (len(left_pre) < len(right_pre))
 
 
 class Updater:
@@ -25,7 +83,9 @@ class Updater:
             os.path.dirname(os.path.dirname(__file__))
         )  # Project root
         self.repo_url = "https://github.com/diddip21/knx_to_openhab"
-        self.branch = "main"
+        self.branch = "stable releases"
+        self._release_cache: Optional[Tuple[float, Dict[str, Any]]] = None
+        self._release_cache_lock = threading.Lock()
 
     def _run_git_command(self, args: Sequence[str]) -> Tuple[bool, str]:
         """
@@ -78,8 +138,11 @@ class Updater:
 
             # Get current branch
             success, current_branch = self._run_git_command(["rev-parse", "--abbrev-ref", "HEAD"])
+            tag_success, release_tag = self._run_git_command(
+                ["describe", "--tags", "--exact-match", "HEAD"]
+            )
 
-            return {
+            version = {
                 "commit_hash": commit_hash,
                 "commit_short": (commit_hash[:7] if commit_hash != "unknown" else "unknown"),
                 "commit_date": commit_date if commit_date else "unknown",
@@ -87,6 +150,9 @@ class Updater:
                 "branch": current_branch if current_branch else self.branch,
                 "repository": self.repo_url,
             }
+            if tag_success and release_tag:
+                version["release_tag"] = release_tag
+            return version
         except Exception as e:
             return {
                 "commit_hash": "unknown",
@@ -100,11 +166,25 @@ class Updater:
 
     def check_github_version(self) -> Tuple[bool, Dict[str, Any]]:
         """
-        Check GitHub for the latest commit on the main branch.
+        Check GitHub for the latest published stable release.
 
         Returns:
             Tuple of (success, commit_info_dict or None)
         """
+        with self._release_cache_lock:
+            now = time.monotonic()
+            if self._release_cache is not None:
+                cached_at, cached_release = self._release_cache
+                if now - cached_at < _RELEASE_CACHE_TTL_SECONDS:
+                    return True, dict(cached_release)
+
+            success, release = self._fetch_github_version()
+            if success:
+                self._release_cache = (time.monotonic(), dict(release))
+            return success, release
+
+    def _fetch_github_version(self) -> Tuple[bool, Dict[str, Any]]:
+        """Resolve the latest stable GitHub release and its commit metadata."""
         try:
             # Extract owner and repo from URL
             # e.g., https://github.com/diddip21/knx_to_openhab -> diddip21/knx_to_openhab
@@ -112,16 +192,35 @@ class Updater:
             owner = parts[-2]
             repo = parts[-1].replace(".git", "")
 
-            # Get latest commit from GitHub API
-            api_url = f"https://api.github.com/repos/{owner}/{repo}/commits/{self.branch}"
-            response = requests.get(api_url, timeout=10)
+            release_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+            release_response = requests.get(release_url, timeout=10)
 
-            if response.status_code != 200:
-                return False, {"error": f"GitHub API returned status {response.status_code}"}
+            if release_response.status_code != 200:
+                return False, {
+                    "error": f"GitHub Releases API returned status {release_response.status_code}"
+                }
 
-            commit_data = response.json()
+            release_data = release_response.json()
+            release_tag = release_data.get("tag_name")
+            if (
+                not isinstance(release_tag, str)
+                or not _SEMVER_PATTERN.fullmatch(release_tag)
+                or "-" in release_tag.split("+", 1)[0]
+                or release_data.get("draft") is not False
+                or release_data.get("prerelease") is not False
+            ):
+                return False, {"error": "Latest stable release metadata is invalid"}
+
+            commit_url = f"https://api.github.com/repos/{owner}/{repo}/commits/{release_tag}"
+            commit_response = requests.get(commit_url, timeout=10)
+            if commit_response.status_code != 200:
+                return False, {
+                    "error": f"GitHub release commit API returned status {commit_response.status_code}"
+                }
+            commit_data = commit_response.json()
 
             return True, {
+                "release_tag": release_tag,
                 "commit_hash": commit_data["sha"],
                 "commit_short": commit_data["sha"][:7],
                 "commit_date": commit_data["commit"]["committer"]["date"],
@@ -130,7 +229,7 @@ class Updater:
                 ],  # First line only
                 "author": commit_data["commit"]["author"]["name"],
                 "repository": self.repo_url,
-                "branch": self.branch,
+                "branch": release_tag,
             }
 
         except requests.RequestException as e:
@@ -161,6 +260,11 @@ class Updater:
         remote_commit = remote.get("commit_hash", "")
 
         update_available = current_commit != remote_commit and current_commit != "unknown"
+        current_release_tag = current.get("release_tag")
+        if isinstance(current_release_tag, str):
+            release_order = _compare_semver(remote.get("release_tag", ""), current_release_tag)
+            if release_order is not None and release_order < 0:
+                update_available = False
 
         return {
             "update_available": update_available,
@@ -173,8 +277,10 @@ class Updater:
             "latest_date": remote.get("commit_date", "unknown"),
             "latest_message": remote.get("commit_message", ""),
             "latest_author": remote.get("author", "unknown"),
+            "latest_release_tag": remote.get("release_tag", "unknown"),
+            "current_release_tag": current_release_tag,
             "repository": self.repo_url,
-            "branch": self.branch,
+            "branch": remote.get("release_tag", self.branch),
         }
 
     def trigger_update(self) -> Tuple[bool, str]:
@@ -185,6 +291,18 @@ class Updater:
             Tuple of (success, message)
         """
         try:
+            release_ok, release = self.check_github_version()
+            release_tag = release.get("release_tag")
+            if not release_ok or not isinstance(release_tag, str):
+                return False, release.get("error", "Could not resolve the latest stable release")
+
+            current = self.get_current_version()
+            current_release_tag = current.get("release_tag")
+            if isinstance(current_release_tag, str):
+                release_order = _compare_semver(release_tag, current_release_tag)
+                if release_order is not None and release_order < 0:
+                    return False, "The installed release is newer than the latest stable release"
+
             update_script = os.path.join(self.base_path, "update.sh")
 
             if not os.path.exists(update_script):
@@ -206,6 +324,7 @@ class Updater:
             env = os.environ.copy()
             env["LOG_FILE"] = os.devnull
             env["INSTALL_DIR"] = self.base_path
+            env["RELEASE_TAG"] = release_tag
 
             # Write header to log
             try:
@@ -240,6 +359,7 @@ class Updater:
                     ["/bin/bash", update_script],
                     cwd=self.base_path,
                     start_new_session=True,
+                    env=env,
                 )
 
             return (

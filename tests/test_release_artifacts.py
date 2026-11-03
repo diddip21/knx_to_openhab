@@ -55,7 +55,7 @@ def test_accepts_semver_versions(version):
 
 @pytest.mark.parametrize(
     "version",
-    ["", "v1.2.3", "01.2.3", "1.02.3", "1.2", "1.2.3-01", "1.2.3..rc", "1.2.3/evil"],
+    ["", "v1.2.3", "01.2.3", "1.02.3", "1.2", "1.2.3-01", "1.2.3..rc", "1.2.3/evil", "١.2.3"],
 )
 def test_rejects_invalid_semver_versions(version):
     with pytest.raises(ReleaseArtifactError):

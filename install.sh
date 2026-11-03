@@ -52,7 +52,9 @@ PY
 }
 INSTALL_DIR="${KNXOH_INSTALL_DIR:-$(read_saved_install_dir)}"
 CONFIG_DIR="${KNXOH_CONFIG_DIR:-$(read_saved_config_dir)}"
-BRANCH="main"
+REQUESTED_VERSION=""
+RELEASE_VERSION=""
+RELEASE_TAG=""
 
 # Helper functions
 log_info() {
@@ -71,15 +73,162 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+is_valid_semver() {
+    python3 - "$1" <<'PY'
+import re
+import sys
+
+pattern = re.compile(
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
+    r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
+)
+match = pattern.fullmatch(sys.argv[1])
+if not match:
+    raise SystemExit(1)
+prerelease = match.group(4)
+if prerelease:
+    for identifier in prerelease.split("."):
+        if identifier.isdigit() and len(identifier) > 1 and identifier.startswith("0"):
+            raise SystemExit(1)
+PY
+}
+
+is_version_older() {
+    python3 - "$1" "$2" <<'PY'
+import re
+import sys
+
+pattern = re.compile(
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+)
+
+def parse(version):
+    match = pattern.fullmatch(version)
+    if not match:
+        return None
+    prerelease = match.group(4)
+    identifiers = tuple(prerelease.split(".")) if prerelease else None
+    if identifiers and any(
+        value.isdigit() and len(value) > 1 and value.startswith("0")
+        for value in identifiers
+    ):
+        return None
+    return tuple(map(int, match.group(1, 2, 3))), identifiers
+
+candidate = parse(sys.argv[1])
+installed = parse(sys.argv[2])
+if candidate is None or installed is None:
+    raise SystemExit(1)
+
+candidate_core, candidate_pre = candidate
+installed_core, installed_pre = installed
+if candidate_core != installed_core:
+    older = candidate_core < installed_core
+elif candidate_pre is None or installed_pre is None:
+    older = candidate_pre is not None and installed_pre is None
+else:
+    older = False
+    for candidate_id, installed_id in zip(candidate_pre, installed_pre):
+        if candidate_id == installed_id:
+            continue
+        candidate_numeric = candidate_id.isdigit()
+        installed_numeric = installed_id.isdigit()
+        if candidate_numeric and installed_numeric:
+            older = int(candidate_id) < int(installed_id)
+        elif candidate_numeric != installed_numeric:
+            older = candidate_numeric
+        else:
+            older = candidate_id < installed_id
+        break
+    else:
+        older = len(candidate_pre) < len(installed_pre)
+
+raise SystemExit(0 if older else 1)
+PY
+}
+
+resolve_release_version() {
+    local requested_version="${1:-}"
+    local endpoint="/releases/latest"
+    if [[ -n "$requested_version" ]]; then
+        endpoint="/releases/tags/v$requested_version"
+    fi
+
+    local response
+    if ! response="$(curl --fail --silent --show-error --location --retry 2 \
+        -H "Accept: application/vnd.github+json" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        "https://api.github.com/repos/diddip21/knx_to_openhab$endpoint" 2>/dev/null)"; then
+        if [[ -n "$requested_version" ]]; then
+            echo "Could not retrieve the published release v$requested_version." >&2
+        else
+            echo "Could not retrieve the latest stable GitHub release." >&2
+        fi
+        return 1
+    fi
+
+    printf '%s' "$response" | python3 -c '
+import json
+import re
+import sys
+
+def fail(message):
+    print(f"Release selection failed: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+pattern = re.compile(
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
+    r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
+)
+try:
+    release = json.load(sys.stdin)
+except (json.JSONDecodeError, UnicodeDecodeError) as error:
+    fail(f"invalid GitHub API response: {error}")
+if not isinstance(release, dict):
+    fail("GitHub API response is not a release object")
+tag = release.get("tag_name")
+if not isinstance(tag, str) or not tag.startswith("v"):
+    fail("release tag must use the v<SemVer> format")
+version = tag[1:]
+match = pattern.fullmatch(version)
+if not match:
+    fail(f"release tag {tag!r} is not SemVer")
+prerelease = match.group(4)
+if prerelease:
+    for identifier in prerelease.split("."):
+        if identifier.isdigit() and len(identifier) > 1 and identifier.startswith("0"):
+            fail(f"numeric prerelease identifier has a leading zero: {identifier}")
+if release.get("draft") is not False:
+    fail("draft releases cannot be installed")
+is_prerelease = release.get("prerelease")
+if not isinstance(is_prerelease, bool):
+    fail("release channel metadata is missing")
+version_is_prerelease = "-" in version.split("+", 1)[0]
+if is_prerelease != version_is_prerelease:
+    fail("release prerelease flag does not match its SemVer version")
+requested = sys.argv[1]
+if requested and version != requested:
+    fail(f"GitHub returned v{version} for an exact request for v{requested}")
+if not requested and is_prerelease:
+    fail("the latest stable endpoint returned a prerelease")
+print(version)
+' "$requested_version"
+}
+
 usage() {
     cat <<'USAGE'
-Usage: bash install.sh [--install | --update | --repair | --cancel]
+Usage: bash install.sh [--install | --update | --repair | --cancel] [--version X.Y.Z]
 
 Modes:
   --install  Install into a new directory (the default on first install)
-  --update   Pull the latest source into an existing Git checkout, then run setup
-  --repair   Run setup for an existing installation without pulling source
+  --update   Update an existing Git checkout to the latest stable release
+  --repair   Run setup for an existing installation without fetching a release
   --cancel   Exit without changing the installation
+  --version  Select an exact published SemVer release, including a beta/RC
   --help     Show this help
 USAGE
 }
@@ -87,6 +236,7 @@ USAGE
 INSTALL_MODE=""
 
 parse_install_mode() {
+    local version_option_seen=0
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --install|--update|--repair|--cancel)
@@ -96,6 +246,35 @@ parse_install_mode() {
                     exit 2
                 fi
                 INSTALL_MODE="${1#--}"
+                ;;
+            --version)
+                if (( version_option_seen )); then
+                    log_error "Specify --version only once."
+                    exit 2
+                fi
+                if [[ $# -lt 2 ]]; then
+                    log_error "--version requires a SemVer value such as 1.2.3."
+                    exit 2
+                fi
+                version_option_seen=1
+                shift
+                REQUESTED_VERSION="$1"
+                if ! is_valid_semver "$REQUESTED_VERSION"; then
+                    log_error "Invalid SemVer release version: $REQUESTED_VERSION"
+                    exit 2
+                fi
+                ;;
+            --version=*)
+                if (( version_option_seen )); then
+                    log_error "Specify --version only once."
+                    exit 2
+                fi
+                version_option_seen=1
+                REQUESTED_VERSION="${1#--version=}"
+                if ! is_valid_semver "$REQUESTED_VERSION"; then
+                    log_error "Invalid SemVer release version: $REQUESTED_VERSION"
+                    exit 2
+                fi
                 ;;
             --help|-h)
                 usage
@@ -109,6 +288,11 @@ parse_install_mode() {
         esac
         shift
     done
+
+    if [[ -n "$REQUESTED_VERSION" && ( "$INSTALL_MODE" == "repair" || "$INSTALL_MODE" == "cancel" ) ]]; then
+        log_error "--version can be used only with --install or --update."
+        exit 2
+    fi
 }
 
 select_install_mode() {
@@ -278,21 +462,64 @@ install_dependencies() {
     log_success "All dependencies installed"
 }
 
+run_git_as_service_user() {
+    if id -u knxohui >/dev/null 2>&1; then
+        sudo -u knxohui "$@"
+    else
+        "$@"
+    fi
+}
+
+update_repository() {
+    log_info "Updating installation to release $RELEASE_TAG..."
+    if [[ -z "$REQUESTED_VERSION" ]]; then
+        local installed_tag
+        installed_tag="$(run_git_as_service_user git -C "$INSTALL_DIR" \
+            describe --tags --exact-match HEAD 2>/dev/null || true)"
+        if [[ "$installed_tag" == v* ]] &&
+           is_valid_semver "${installed_tag#v}" &&
+           is_version_older "$RELEASE_VERSION" "${installed_tag#v}"; then
+            log_info "Keeping installed release $installed_tag; latest stable release $RELEASE_TAG is older."
+            return 0
+        fi
+    fi
+
+    if ! run_git_as_service_user git -C "$INSTALL_DIR" diff --quiet HEAD --; then
+        log_error "Tracked application files have local changes; update stopped without changing them."
+        exit 1
+    fi
+    if ! run_git_as_service_user git -C "$INSTALL_DIR" diff --cached --quiet; then
+        log_error "The installation has staged local changes; update stopped without changing them."
+        exit 1
+    fi
+    if ! run_git_as_service_user git -C "$INSTALL_DIR" fetch --depth 1 origin \
+        "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"; then
+        log_error "Failed to fetch release $RELEASE_TAG."
+        exit 1
+    fi
+
+    local current_commit
+    local target_commit
+    if ! current_commit="$(run_git_as_service_user git -C "$INSTALL_DIR" rev-parse HEAD)" ||
+       ! target_commit="$(run_git_as_service_user git -C "$INSTALL_DIR" rev-parse "$RELEASE_TAG^{commit}")"; then
+        log_error "Could not identify the installed and selected release commits."
+        exit 1
+    fi
+    if [[ "$current_commit" == "$target_commit" ]]; then
+        log_success "Release $RELEASE_TAG is already installed."
+        return 0
+    fi
+    if ! run_git_as_service_user git -C "$INSTALL_DIR" checkout --detach "$RELEASE_TAG"; then
+        log_error "Could not switch the clean checkout to release $RELEASE_TAG."
+        exit 1
+    fi
+
+    log_success "Repository updated to $RELEASE_TAG"
+}
+
 clone_repository() {
     if [[ "$INSTALL_MODE" == "update" ]]; then
-        log_info "Updating existing installation as the service user..."
-        if id -u knxohui >/dev/null 2>&1; then
-            sudo -u knxohui git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH" || {
-                log_error "Failed to update repository"
-                exit 1
-            }
-        else
-            git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH" || {
-                log_error "Failed to update repository"
-                exit 1
-            }
-        fi
-        log_success "Repository updated"
+        update_repository
         return 0
     fi
 
@@ -301,18 +528,18 @@ clone_repository() {
         return 0
     fi
 
-    log_info "Cloning repository from $REPO_URL..."
+    log_info "Cloning release $RELEASE_TAG from $REPO_URL..."
     TEMP_DIR=$(mktemp -d)
-    if ! git clone --branch "$BRANCH" "$REPO_URL" "$TEMP_DIR/repository"; then
+    if ! git clone --depth 1 --single-branch --branch "$RELEASE_TAG" "$REPO_URL" "$TEMP_DIR/repository"; then
         rm -rf "$TEMP_DIR"
-        log_error "Failed to clone repository"
+        log_error "Failed to clone release $RELEASE_TAG"
         exit 1
     fi
     sudo install -d -m 0755 "$INSTALL_DIR"
     sudo rsync -a "$TEMP_DIR/repository/" "$INSTALL_DIR/"
     rm -rf "$TEMP_DIR"
 
-    log_success "Repository cloned successfully"
+    log_success "Release $RELEASE_TAG cloned successfully"
 }
 
 run_setup_script() {
@@ -382,6 +609,10 @@ display_completion() {
 # Main installation flow
 main() {
     select_install_mode
+    if [[ -n "$REQUESTED_VERSION" && "$INSTALL_MODE" != "install" && "$INSTALL_MODE" != "update" ]]; then
+        log_error "--version can be used only with --install or --update."
+        exit 2
+    fi
 
     echo ""
     echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
@@ -395,6 +626,17 @@ main() {
     check_root
     check_os
     check_sudo
+    if [[ "$INSTALL_MODE" == "install" || "$INSTALL_MODE" == "update" ]]; then
+        if ! RELEASE_VERSION="$(resolve_release_version "$REQUESTED_VERSION")"; then
+            exit 1
+        fi
+        RELEASE_TAG="v$RELEASE_VERSION"
+        if [[ -n "$REQUESTED_VERSION" ]]; then
+            log_info "Selected exact release $RELEASE_TAG."
+        else
+            log_info "Using the latest stable release $RELEASE_TAG."
+        fi
+    fi
     install_dependencies
     clone_repository
     run_setup_script
@@ -402,7 +644,7 @@ main() {
 }
 
 # Parse options before checks that can access the system.
-parse_install_mode "$@"
-
-# Run main function
-main
+if [[ "${BASH_SOURCE[0]:-}" == "$0" || -z "${BASH_SOURCE[0]:-}" ]]; then
+    parse_install_mode "$@"
+    main
+fi

@@ -3,6 +3,8 @@
 import os
 import shutil
 import subprocess
+import sys
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -212,6 +214,8 @@ def test_web_updater_checks_out_only_the_selected_release_tag():
     assert '"refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"' in update
     assert 'rev-parse "$RELEASE_TAG^{commit}"' in update
     assert 'checkout --detach "$RELEASE_TAG"' in update
+    assert "restore --source=HEAD --staged --worktree" in update
+    assert "for LEGACY_CONFIG in config.json web_ui/backend/config.json" in update
     assert "origin/main" not in update
     assert "pull origin main" not in update
 
@@ -374,6 +378,7 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
 
     (config_dir / "config.json").write_text('{"auth":{"enabled":false}}', encoding="utf-8")
     (config_dir / "secrets.env").write_text("\n", encoding="utf-8")
+    (data_dir / "generator.json").write_text('{"general":{}}', encoding="utf-8")
     paths_file.write_text("", encoding="utf-8")
 
     git("init", "--bare", "--initial-branch=main", str(remote))
@@ -381,6 +386,11 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
     git("config", "user.name", "Update recovery test", cwd=seed)
     git("config", "user.email", "update-test@example.invalid", cwd=seed)
     (seed / ".gitignore").write_text("venv/\n", encoding="utf-8")
+    (seed / "config.json").write_text('{"general":{"legacy":"old"}}', encoding="utf-8")
+    (seed / "web_ui/backend").mkdir(parents=True)
+    (seed / "web_ui/backend/config.json").write_text(
+        '{"auth":{"enabled":false},"legacy":"old"}', encoding="utf-8"
+    )
     (seed / "requirements.txt").write_text("old-dependency\n", encoding="utf-8")
     git("add", ".", cwd=seed)
     git("commit", "-m", "old release", cwd=seed)
@@ -388,18 +398,37 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
     git("remote", "add", "origin", str(remote), cwd=seed)
     git("push", "-u", "origin", "main", cwd=seed)
     git("clone", "--branch", "main", str(remote), str(install))
+    (install / "config.json").write_text(
+        '{"general":{"legacy":"custom"}}', encoding="utf-8"
+    )
+    (install / "web_ui/backend/config.json").write_text(
+        '{"auth":{"enabled":false},"legacy":"custom"}', encoding="utf-8"
+    )
+    (install / "installer").mkdir()
+    shutil.copy2(
+        ROOT / "installer/create_update_backup.py", install / "installer/create_update_backup.py"
+    )
+    shutil.copy2(ROOT / "knxoh_paths.py", install / "knxoh_paths.py")
+    shutil.copy2(ROOT / "web_ui/backend/auth.py", install / "web_ui/backend/auth.py")
     (seed / "requirements.txt").write_text("new-dependency\n", encoding="utf-8")
+    (seed / "config.json").write_text('{"general":{"legacy":"new-release"}}', encoding="utf-8")
+    (seed / "web_ui/backend/config.json").write_text(
+        '{"auth":{"enabled":false},"legacy":"new-release"}', encoding="utf-8"
+    )
     git("add", "requirements.txt", cwd=seed)
+    git("add", "config.json", "web_ui/backend/config.json", cwd=seed)
     git("commit", "-m", "candidate release", cwd=seed)
     git("tag", "v1.2.0", cwd=seed)
     git("push", "origin", "main", "refs/tags/v1.2.0", cwd=seed)
 
     venv_bin = install / "venv" / "bin"
     venv_bin.mkdir(parents=True)
-    for executable in ("python", "pip"):
-        path = venv_bin / executable
-        path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-        path.chmod(0o755)
+    python = venv_bin / "python"
+    python.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+    python.chmod(0o755)
+    pip = venv_bin / "pip"
+    pip.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    pip.chmod(0o755)
     sudo = fake_bin / "sudo"
     sudo.write_text(
         "#!/bin/bash\n"
@@ -461,6 +490,16 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
     assert int((state / "active-checks").read_text(encoding="utf-8")) >= 3
     assert "The updated service did not become active." in log
     assert "Previous version restored and service is active." in log
+    assert "Restoring migrated legacy configuration copies before checkout..." in log
+    archives = list(backup_dir.glob("pre-update-*.tar.gz"))
+    assert len(archives) == 1
+    with tarfile.open(archives[0], mode="r:gz") as archive:
+        assert archive.extractfile("application/config.json").read() == (
+            b'{"general":{"legacy":"custom"}}'
+        )
+        assert archive.extractfile("application/web_ui/backend/config.json").read() == (
+            b'{"auth":{"enabled":false},"legacy":"custom"}'
+        )
 
 
 def test_privilege_scripts_have_valid_bash_syntax():

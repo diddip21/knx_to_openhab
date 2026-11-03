@@ -218,6 +218,21 @@ if [[ "$CURRENT_COMMIT" == "$REMOTE_COMMIT" ]]; then
     exit 0
 fi
 
+# The installed setup migration has copied both active configurations to the
+# external config/data directories, which were validated above and included in
+# the backup. Reset only their obsolete tracked copies so checkout can replace
+# them without touching unrelated local files.
+log "Restoring migrated legacy configuration copies before checkout..."
+for LEGACY_CONFIG in config.json web_ui/backend/config.json; do
+    if git -c "safe.directory=$INSTALL_DIR" cat-file -e "HEAD:$LEGACY_CONFIG" 2>/dev/null; then
+        if ! git -c "safe.directory=$INSTALL_DIR" restore --source=HEAD --staged --worktree -- \
+            "$LEGACY_CONFIG"; then
+            log "ERROR: Could not restore migrated legacy configuration $LEGACY_CONFIG."
+            exit 1
+        fi
+    fi
+done
+
 # Check out the exact release selected by the Web UI.
 log "Checking out selected release $RELEASE_TAG..."
 if ! git -c "safe.directory=$INSTALL_DIR" checkout --detach "$RELEASE_TAG"; then

@@ -11,6 +11,59 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 
 import requests  # type: ignore[import]
 
+_SEMVER_PATTERN = re.compile(
+    r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
+    r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
+)
+
+
+def _parse_semver(tag: str) -> Optional[Tuple[int, int, int, Optional[Tuple[str, ...]]]]:
+    match = _SEMVER_PATTERN.fullmatch(tag)
+    if not match:
+        return None
+
+    prerelease = match.group(4)
+    identifiers = tuple(prerelease.split(".")) if prerelease else None
+    if identifiers and any(
+        identifier.isdigit() and len(identifier) > 1 and identifier.startswith("0")
+        for identifier in identifiers
+    ):
+        return None
+    return int(match.group(1)), int(match.group(2)), int(match.group(3)), identifiers
+
+
+def _compare_semver(left: str, right: str) -> Optional[int]:
+    """Return -1/0/1 by SemVer precedence, or None if either tag is invalid."""
+    left_version = _parse_semver(left)
+    right_version = _parse_semver(right)
+    if left_version is None or right_version is None:
+        return None
+
+    left_core = left_version[:3]
+    right_core = right_version[:3]
+    if left_core != right_core:
+        return (left_core > right_core) - (left_core < right_core)
+
+    left_pre = left_version[3]
+    right_pre = right_version[3]
+    if left_pre is None or right_pre is None:
+        if left_pre is None and right_pre is None:
+            return 0
+        return 1 if left_pre is None else -1
+
+    for left_id, right_id in zip(left_pre, right_pre):
+        if left_id == right_id:
+            continue
+        left_numeric = left_id.isdigit()
+        right_numeric = right_id.isdigit()
+        if left_numeric and right_numeric:
+            return (int(left_id) > int(right_id)) - (int(left_id) < int(right_id))
+        if left_numeric != right_numeric:
+            return -1 if left_numeric else 1
+        return (left_id > right_id) - (left_id < right_id)
+    return (len(left_pre) > len(right_pre)) - (len(left_pre) < len(right_pre))
+
 
 class Updater:
     """Handles version checking and updates from GitHub using Git commits."""
@@ -79,8 +132,11 @@ class Updater:
 
             # Get current branch
             success, current_branch = self._run_git_command(["rev-parse", "--abbrev-ref", "HEAD"])
+            tag_success, release_tag = self._run_git_command(
+                ["describe", "--tags", "--exact-match", "HEAD"]
+            )
 
-            return {
+            version = {
                 "commit_hash": commit_hash,
                 "commit_short": (commit_hash[:7] if commit_hash != "unknown" else "unknown"),
                 "commit_date": commit_date if commit_date else "unknown",
@@ -88,6 +144,9 @@ class Updater:
                 "branch": current_branch if current_branch else self.branch,
                 "repository": self.repo_url,
             }
+            if tag_success and release_tag:
+                version["release_tag"] = release_tag
+            return version
         except Exception as e:
             return {
                 "commit_hash": "unknown",
@@ -123,14 +182,9 @@ class Updater:
 
             release_data = release_response.json()
             release_tag = release_data.get("tag_name")
-            semver_pattern = re.compile(
-                r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
-                r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
-                r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
-            )
             if (
                 not isinstance(release_tag, str)
-                or not semver_pattern.fullmatch(release_tag)
+                or not _SEMVER_PATTERN.fullmatch(release_tag)
                 or "-" in release_tag.split("+", 1)[0]
                 or release_data.get("draft") is not False
                 or release_data.get("prerelease") is not False
@@ -186,6 +240,11 @@ class Updater:
         remote_commit = remote.get("commit_hash", "")
 
         update_available = current_commit != remote_commit and current_commit != "unknown"
+        current_release_tag = current.get("release_tag")
+        if isinstance(current_release_tag, str):
+            release_order = _compare_semver(remote.get("release_tag", ""), current_release_tag)
+            if release_order is not None and release_order <= 0:
+                update_available = False
 
         return {
             "update_available": update_available,
@@ -199,6 +258,7 @@ class Updater:
             "latest_message": remote.get("commit_message", ""),
             "latest_author": remote.get("author", "unknown"),
             "latest_release_tag": remote.get("release_tag", "unknown"),
+            "current_release_tag": current_release_tag,
             "repository": self.repo_url,
             "branch": remote.get("release_tag", self.branch),
         }
@@ -215,6 +275,13 @@ class Updater:
             release_tag = release.get("release_tag")
             if not release_ok or not isinstance(release_tag, str):
                 return False, release.get("error", "Could not resolve the latest stable release")
+
+            current = self.get_current_version()
+            current_release_tag = current.get("release_tag")
+            if isinstance(current_release_tag, str):
+                release_order = _compare_semver(release_tag, current_release_tag)
+                if release_order is not None and release_order <= 0:
+                    return False, "The installed release is newer than the latest stable release"
 
             update_script = os.path.join(self.base_path, "update.sh")
 

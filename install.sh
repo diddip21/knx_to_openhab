@@ -4,6 +4,14 @@
 
 set -euo pipefail
 
+# The installer reads saved paths with Python before its main flow starts.
+if [[ "${BASH_SOURCE[0]:-}" == "$0" || -z "${BASH_SOURCE[0]:-}" ]]; then
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "[ERROR] Python 3.11 or newer is required by the installer, but python3 was not found." >&2
+        exit 1
+    fi
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -401,16 +409,19 @@ check_root() {
 }
 
 check_os() {
-    if [[ ! -f /etc/os-release ]]; then
+    local os_release_file="${KNXOH_OS_RELEASE_FILE:-/etc/os-release}"
+    if [[ ! -f "$os_release_file" ]]; then
         log_error "Cannot detect OS. /etc/os-release not found."
         exit 1
     fi
-    
-    . /etc/os-release
-    
-    if [[ "$ID" != "debian" ]] && [[ "$ID_LIKE" != *"debian"* ]]; then
+
+    . "$os_release_file"
+    local os_id="${ID:-}"
+    local os_id_like="${ID_LIKE:-}"
+    local os_pretty_name="${PRETTY_NAME:-unknown distribution}"
+    if [[ "$os_id" != "debian" ]] && [[ "$os_id_like" != *"debian"* ]]; then
         log_warning "This installer is designed for Debian-based systems (DietPi, Raspbian, Ubuntu)."
-        log_warning "Detected OS: $PRETTY_NAME"
+        log_warning "Detected OS: $os_pretty_name"
         echo -ne "Continue anyway? (y/N) " >&2
         read -n 1 -r < /dev/tty
         echo
@@ -418,7 +429,70 @@ check_os() {
             exit 1
         fi
     else
-        log_info "Detected OS: $PRETTY_NAME"
+        log_info "Detected OS: $os_pretty_name"
+    fi
+}
+
+run_installer_preflight() {
+    local mode="$1"
+    local install_dir="$2"
+    local python_version
+    local python_major
+    local python_minor
+    local disk_path
+    local df_output
+    local available_kib=""
+    local filesystem blocks used available rest
+    local minimum_free_kib=1048576
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        log_error "Python 3.11 or newer is required by the installer, but python3 was not found."
+        return 1
+    fi
+    if ! python_version="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" ||
+       [[ ! "$python_version" =~ ^[0-9]+\.[0-9]+$ ]]; then
+        log_error "Could not determine the system Python version; install Python 3.11 or newer."
+        return 1
+    fi
+    IFS=. read -r python_major python_minor <<<"$python_version"
+    if (( python_major < 3 || (python_major == 3 && python_minor < 11) )); then
+        log_error "Python 3.11 or newer is required by the installer; found Python $python_version."
+        return 1
+    fi
+
+    disk_path="$install_dir"
+    while [[ ! -e "$disk_path" ]]; do
+        if [[ "$disk_path" == */* ]]; then
+            disk_path="${disk_path%/*}"
+            [[ -n "$disk_path" ]] || disk_path="/"
+        else
+            disk_path="."
+        fi
+    done
+    if ! df_output="$(df -Pk "$disk_path" 2>/dev/null)"; then
+        log_error "Could not check free disk space for $install_dir."
+        return 1
+    fi
+    while read -r filesystem blocks used available rest; do
+        if [[ "$available" =~ ^[0-9]+$ ]]; then
+            available_kib="$available"
+        fi
+    done <<<"$df_output"
+    if [[ ! "$available_kib" =~ ^[0-9]+$ ]]; then
+        log_error "Could not read available disk space for $install_dir."
+        return 1
+    fi
+    if (( available_kib < minimum_free_kib )); then
+        log_error "At least 1 GiB of free space is required on the filesystem containing $install_dir; found $((available_kib / 1024)) MiB."
+        return 1
+    fi
+
+    if [[ "$mode" == "install" || "$mode" == "update" ]]; then
+        if ! curl --fail --silent --show-error --location --connect-timeout 5 --max-time 15 \
+            --output /dev/null https://github.com/diddip21/knx_to_openhab; then
+            log_error "Could not reach GitHub; check the network connection and try again."
+            return 1
+        fi
     fi
 }
 
@@ -636,6 +710,9 @@ main() {
         else
             log_info "Using the latest stable release $RELEASE_TAG."
         fi
+    fi
+    if ! run_installer_preflight "$INSTALL_MODE" "$INSTALL_DIR"; then
+        exit 1
     fi
     install_dependencies
     clone_repository

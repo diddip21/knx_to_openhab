@@ -216,3 +216,35 @@ def test_build_metadata_release_update_is_not_suppressed(monkeypatch, tmp_path):
     assert status["update_available"] is True
     assert success is True
     assert popen.call_count == 1
+
+
+def test_check_github_version_caches_resolved_release(monkeypatch):
+    responses = [
+        Mock(
+            status_code=200,
+            json=Mock(return_value={"tag_name": "v1.4.0", "prerelease": False, "draft": False}),
+        ),
+        Mock(
+            status_code=200,
+            json=Mock(
+                return_value={
+                    "sha": "release-commit",
+                    "commit": {
+                        "committer": {"date": "2026-11-03T00:00:00Z"},
+                        "message": "Stable release",
+                        "author": {"name": "Release Bot"},
+                    },
+                }
+            ),
+        ),
+    ]
+    get = Mock(side_effect=responses)
+    monkeypatch.setattr("web_ui.backend.updater.requests.get", get)
+    updater = Updater()
+
+    first_success, first_release = updater.check_github_version()
+    second_success, second_release = updater.check_github_version()
+
+    assert (first_success, first_release) == (second_success, second_release)
+    assert second_release["release_tag"] == "v1.4.0"
+    assert get.call_count == 2

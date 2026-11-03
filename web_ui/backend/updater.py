@@ -6,10 +6,14 @@ Uses Git commits for versioning instead of version.json.
 import os
 import re
 import subprocess
+import threading
+import time
 from datetime import datetime
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 import requests  # type: ignore[import]
+
+_RELEASE_CACHE_TTL_SECONDS = 300
 
 _SEMVER_PATTERN = re.compile(
     r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
@@ -80,6 +84,8 @@ class Updater:
         )  # Project root
         self.repo_url = "https://github.com/diddip21/knx_to_openhab"
         self.branch = "stable releases"
+        self._release_cache: Optional[Tuple[float, Dict[str, Any]]] = None
+        self._release_cache_lock = threading.Lock()
 
     def _run_git_command(self, args: Sequence[str]) -> Tuple[bool, str]:
         """
@@ -165,6 +171,20 @@ class Updater:
         Returns:
             Tuple of (success, commit_info_dict or None)
         """
+        with self._release_cache_lock:
+            now = time.monotonic()
+            if self._release_cache is not None:
+                cached_at, cached_release = self._release_cache
+                if now - cached_at < _RELEASE_CACHE_TTL_SECONDS:
+                    return True, dict(cached_release)
+
+            success, release = self._fetch_github_version()
+            if success:
+                self._release_cache = (time.monotonic(), dict(release))
+            return success, release
+
+    def _fetch_github_version(self) -> Tuple[bool, Dict[str, Any]]:
+        """Resolve the latest stable GitHub release and its commit metadata."""
         try:
             # Extract owner and repo from URL
             # e.g., https://github.com/diddip21/knx_to_openhab -> diddip21/knx_to_openhab

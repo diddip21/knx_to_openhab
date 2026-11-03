@@ -24,6 +24,7 @@
 - A missing or unsupported Python must be diagnosed before apt/checkout — pin in Task 1.
 - An installation path that does not yet exist must still check the filesystem of its nearest existing parent — pin in Task 1.
 - A repair must skip the GitHub release probe, while install/update must perform it — pin in Task 1.
+- `--help` and explicit `--cancel` work without Python, and unsupported Python is diagnosed before release lookup — pin in Task 1.
 - Missing/broken `venv` support after package setup must be detected before clone/setup, and temporary probe data must be removed — pin in Task 2.
 
 ---
@@ -39,12 +40,12 @@
 - `install.sh` exposes `run_installer_preflight <mode> <install-dir>` for tests and calls it in its main flow.
 - The existing `check_os` remains responsible for OS detection; preflight uses the existing `python3`, `df`, and `curl`. Use a single documented free-space floor of 1 GiB on the filesystem that will contain the install directory.
 - For a not-yet-created install path, resolve its nearest existing parent before querying free space.
-- Host Python must be at least 3.11. The helper should explain that this interpreter is needed by the installer itself.
+- Host Python must be at least 3.11. Check its presence before reading saved paths, but enforce the version floor only after mode selection and before release lookup; explain that the interpreter is needed by the installer itself.
 - Install/update probe HTTPS reachability of the public GitHub repository before apt; repair skips this release probe.
 
 - [ ] **Step 1: Add failing helper tests**
 
-Add tests for supported host/Python, missing or too-old Python, disk space just below and exactly at the 1 GiB floor, unreachable GitHub, repair skipping GitHub, and absent install-dir parent resolution. Source `install.sh` under its existing main guard and use temporary fake commands for deterministic behavior; assert actionable errors and nonzero status on failures.
+Add tests for `--help`/`--cancel` without Python, too-old Python rejected before release lookup, supported Python, missing Python, disk space just below and exactly at the 1 GiB floor, unreachable GitHub, repair skipping GitHub, and absent install-dir parent resolution. Source `install.sh` under its existing main guard and use temporary fake commands for deterministic behavior; assert actionable errors and nonzero status on failures.
 
 - [ ] **Step 2: Run focused tests and confirm expected failures**
 
@@ -57,7 +58,7 @@ Implement `run_installer_preflight <mode> <install-dir>` with named checks and s
 
 - [ ] **Step 4: Wire checks into `install.sh`**
 
-Keep mode validation, `--help`, and `--cancel` ahead of preflight. Run host/Python/disk/release-network checks after mode/OS/sudo/release selection but before `install_dependencies`. Avoid a duplicate GitHub probe for repair.
+Keep option parsing, `--help`, and explicit `--cancel` independent of Python-dependent setup. Enforce Python 3.11 after mode selection and before release lookup; run disk and GitHub checks before `install_dependencies`. Avoid a duplicate GitHub probe for repair.
 
 - [ ] **Step 5: Run helper and installer mode tests**
 

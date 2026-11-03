@@ -26,6 +26,7 @@ Make installer failures easier to diagnose and avoid starting system-changing wo
 ## Implementation decisions
 
 - Keep the existing mode selection and cancel path ahead of system checks so `--help`/`--cancel` remain side-effect-free.
+- Parse `--help`, `--cancel`, and SemVer arguments without Python; check Python availability only when needed to read saved paths, and enforce the Python 3.11 floor after mode selection but before release resolution.
 - Perform host/runtime/disk checks before installing dependencies. Perform the GitHub release/network checks only for modes that need a release; do not imply that `--repair` is fully offline while it still runs `apt-get update`.
 - Use injectable command seams only where needed for deterministic tests; do not add a runtime dependency or require a second bootstrap file.
 - Treat the disk threshold as an explicit documented constant based on the checkout and install workflow, rather than pretending to predict all package sizes; test exact-boundary and insufficient-space behavior.

@@ -229,6 +229,51 @@ def test_missing_python_is_reported_before_path_configuration_uses_python(tmp_pa
     assert "Python 3.11 or newer is required" in result.stdout + result.stderr
 
 
+@pytest.mark.parametrize("arguments", [["--help"], ["--cancel"]])
+def test_help_and_cancel_work_without_python_or_path_overrides(tmp_path, arguments):
+    environment, root = make_preflight_environment(tmp_path)
+    (root / "bin" / "python3").unlink()
+    environment.pop("KNXOH_INSTALL_DIR")
+    environment.pop("KNXOH_CONFIG_DIR")
+    cat = root / "bin" / "cat"
+    cat.write_text('#!/bin/sh\nexec /bin/cat "$@"\n', encoding="utf-8")
+    cat.chmod(0o755)
+
+    result = subprocess.run(
+        ["/bin/bash", str(INSTALLER), *arguments],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Python 3.11 or newer is required" not in result.stdout + result.stderr
+    assert not (root / "curl-calls").exists()
+
+
+def test_unsupported_python_is_rejected_before_release_resolution(tmp_path):
+    environment, root = make_preflight_environment(tmp_path, python_version="3.10")
+    environment["ALLOW_ROOT"] = "1"
+    sudo = root / "bin" / "sudo"
+    sudo.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    sudo.chmod(0o755)
+
+    result = subprocess.run(
+        ["/bin/bash", str(INSTALLER), "--install"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode != 0
+    assert "Python 3.11 or newer is required" in result.stdout + result.stderr
+    assert not (root / "curl-calls").exists()
+
+
 def test_os_preflight_handles_missing_id_like_without_unbound_variable(tmp_path):
     environment, root = make_preflight_environment(tmp_path)
     os_release = root / "unsupported-os-release"

@@ -18,9 +18,8 @@ from copy import deepcopy
 from ipaddress import ip_address
 from pathlib import Path, PurePosixPath
 
-from knxoh_paths import get_paths
-
 from completeness import check_completeness, iter_thing_lines
+from knxoh_paths import get_paths
 
 from . import gateway_config, gateway_undo
 from .deploy_policy import (

@@ -317,24 +317,40 @@ if ! PYTHONPATH="$STAGED_APP_DIR" "$STAGED_APP_DIR/venv/bin/python" -c \
 fi
 log "No release data migration is declared; external configuration and runtime data remain in place."
 
-# Obtain the configured local health-check port from the validated external UI
-# configuration before switching the current release pointer.
-if ! WEB_UI_PORT=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" \
+# Resolve the health-check target from the same normalized settings Gunicorn
+# uses. Only literal IP addresses and localhost are accepted, so the probe
+# cannot be redirected to an unrelated remote host by a configured hostname.
+if ! WEB_UI_ENDPOINT=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" \
     PYTHONPATH="$APP_DIR" "$APP_DIR/venv/bin/python" - <<'PY'
-import json
-from knxoh_paths import get_paths
+import ipaddress
 
-with get_paths().web_config_file.open(encoding="utf-8") as config_file:
-    config = json.load(config_file)
-port = config.get("port", 8080) if isinstance(config, dict) else None
+from web_ui.backend.storage import load_config
+
+config = load_config()
+port = config.get("port", 8085)
 if type(port) is not int or not 1 <= port <= 65535:
     raise SystemExit("external Web UI port must be an integer from 1 to 65535")
-print(port)
+bind_host = str(config.get("bind_host", "127.0.0.1")).strip().strip("[]")
+if bind_host.lower() in ("localhost", "localhost.localdomain"):
+    health_host = "localhost"
+else:
+    try:
+        address = ipaddress.ip_address(bind_host)
+    except ValueError as error:
+        raise SystemExit("external Web UI bind_host must be localhost or an IP address") from error
+    if address.is_unspecified:
+        health_host = "127.0.0.1" if address.version == 4 else "::1"
+    elif address.is_multicast:
+        raise SystemExit("external Web UI bind_host must not be a multicast address")
+    else:
+        health_host = address.compressed
+print(f"{health_host} {port}")
 PY
 ); then
-    log "ERROR: Could not determine the Web UI health-check port."
+    log "ERROR: Could not determine a safe Web UI health-check endpoint."
     exit 1
 fi
+IFS=' ' read -r WEB_UI_HEALTH_HOST WEB_UI_PORT <<< "$WEB_UI_ENDPOINT"
 
 PREVIOUS_LINK=""
 HAD_PREVIOUS_LINK=0
@@ -370,13 +386,16 @@ wait_for_service_health() {
     for attempt in {1..20}; do
         app_dir=$(active_app_dir)
         if sudo systemctl is-active "$SERVICE_NAME" > /dev/null && \
-            "$app_dir/venv/bin/python" - "$WEB_UI_PORT" <<'PY'
+            "$app_dir/venv/bin/python" - "$WEB_UI_HEALTH_HOST" "$WEB_UI_PORT" <<'PY'
 import json
 import sys
 from urllib.request import urlopen
 
 try:
-    with urlopen(f"http://127.0.0.1:{sys.argv[1]}/api/status", timeout=3) as response:
+    host = sys.argv[1]
+    if ":" in host:
+        host = f"[{host.replace('%', '%25')}]"
+    with urlopen(f"http://{host}:{sys.argv[2]}/api/status", timeout=3) as response:
         payload = json.load(response)
     if payload.get("status") != "ok":
         raise SystemExit(1)
@@ -418,6 +437,15 @@ restore_previous_release() {
         return 1
     fi
     if wait_for_service_health; then
+        if [[ -d "$NEW_RELEASE_DIR" && ! -L "$NEW_RELEASE_DIR" ]]; then
+            if rm -rf -- "$NEW_RELEASE_DIR"; then
+                log "Rejected release candidate removed: $RELEASE_TAG."
+            else
+                log "WARNING: Could not remove rejected release candidate: $NEW_RELEASE_DIR"
+            fi
+        elif [[ -e "$NEW_RELEASE_DIR" || -L "$NEW_RELEASE_DIR" ]]; then
+            log "WARNING: Refusing to remove unexpected rejected release path: $NEW_RELEASE_DIR"
+        fi
         log "Previous release restored and health check passed."
         return 0
     fi

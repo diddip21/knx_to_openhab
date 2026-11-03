@@ -1,5 +1,6 @@
 """Regression tests for the service user's privileged command policy."""
 
+import json
 import os
 import shlex
 import shutil
@@ -369,7 +370,10 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
     os.name != "posix" or shutil.which("bash") is None or shutil.which("flock") is None,
     reason="the release updater integration test requires Linux utilities",
 )
-def test_transactional_update_restores_legacy_release_when_health_check_fails(tmp_path):
+@pytest.mark.parametrize("use_default_port", [False, True])
+def test_transactional_update_restores_legacy_release_when_health_check_fails(
+    tmp_path, use_default_port
+):
     install = tmp_path / "install"
     fake_bin = tmp_path / "bin"
     state = tmp_path / "state"
@@ -406,14 +410,21 @@ def test_transactional_update_restores_legacy_release_when_health_check_fails(tm
         def log_message(self, _format, *_args):
             return
 
-    server = HTTPServer(("127.0.0.1", 0), HealthHandler)
+    health_host = "127.0.0.2"
+    try:
+        server = HTTPServer((health_host, 8085 if use_default_port else 0), HealthHandler)
+    except OSError as error:
+        if use_default_port:
+            pytest.skip(f"the default Web UI port 8085 is already in use: {error}")
+        raise
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
     port = server.server_address[1]
 
-    (config_dir / "config.json").write_text(
-        f'{{"auth":{{"enabled":false}},"port":{port}}}', encoding="utf-8"
-    )
+    web_config = {"auth": {"enabled": False}, "bind_host": health_host}
+    if not use_default_port:
+        web_config["port"] = port
+    (config_dir / "config.json").write_text(json.dumps(web_config), encoding="utf-8")
     (config_dir / "secrets.env").write_text("\n", encoding="utf-8")
     (data_dir / "generator.json").write_text('{"general":{}}', encoding="utf-8")
     (data_dir / "jobs").mkdir()
@@ -428,6 +439,7 @@ def test_transactional_update_restores_legacy_release_when_health_check_fails(tm
         ROOT / "installer/create_update_backup.py", install / "installer/create_update_backup.py"
     )
     shutil.copy2(ROOT / "web_ui/backend/auth.py", install / "web_ui/backend/auth.py")
+    shutil.copy2(ROOT / "web_ui/backend/storage.py", install / "web_ui/backend/storage.py")
     (install / "web_ui/backend/config.json").write_text(
         '{"auth":{"enabled":false},"legacy":"shipped"}', encoding="utf-8"
     )
@@ -584,6 +596,8 @@ def test_transactional_update_restores_legacy_release_when_health_check_fails(tm
     assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
     assert "The updated service did not pass its health check." in log
     assert "Previous release restored and health check passed." in log
+    assert "Rejected release candidate removed: v1.2.0." in log
+    assert list((install / "releases").iterdir()) == []
     assert "No release data migration is declared" in log
     archives = list(backup_dir.glob("pre-update-*.tar.gz"))
     assert len(archives) == 1

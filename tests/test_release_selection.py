@@ -327,7 +327,7 @@ def test_default_update_keeps_a_newer_installed_prerelease(tmp_path):
 
     result = _run_sourced_installer(
         environment,
-        "INSTALL_MODE=update; RELEASE_TAG=v1.2.3; update_repository",
+        "INSTALL_MODE=update; RELEASE_TAG=v1.2.3; RELEASE_VERSION=1.4.0; update_repository",
     )
 
     assert result.returncode == 0, result.stderr
@@ -350,7 +350,8 @@ def test_explicit_version_update_can_downgrade_a_newer_prerelease(tmp_path):
 
     result = _run_sourced_installer(
         environment,
-        "INSTALL_MODE=update; RELEASE_TAG=v1.2.3; update_repository",
+        "INSTALL_MODE=update; RELEASE_TAG=v1.2.3; RELEASE_VERSION=1.4.0; "
+        "REQUESTED_VERSION=1.4.0; update_repository",
     )
 
     assert result.returncode == 0, result.stderr

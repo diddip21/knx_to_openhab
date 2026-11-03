@@ -94,6 +94,62 @@ if prerelease:
 PY
 }
 
+is_version_older() {
+    python3 - "$1" "$2" <<'PY'
+import re
+import sys
+
+pattern = re.compile(
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+)
+
+def parse(version):
+    match = pattern.fullmatch(version)
+    if not match:
+        return None
+    prerelease = match.group(4)
+    identifiers = tuple(prerelease.split(".")) if prerelease else None
+    if identifiers and any(
+        value.isdigit() and len(value) > 1 and value.startswith("0")
+        for value in identifiers
+    ):
+        return None
+    return tuple(map(int, match.group(1, 2, 3))), identifiers
+
+candidate = parse(sys.argv[1])
+installed = parse(sys.argv[2])
+if candidate is None or installed is None:
+    raise SystemExit(1)
+
+candidate_core, candidate_pre = candidate
+installed_core, installed_pre = installed
+if candidate_core != installed_core:
+    older = candidate_core < installed_core
+elif candidate_pre is None or installed_pre is None:
+    older = candidate_pre is not None and installed_pre is None
+else:
+    older = False
+    for candidate_id, installed_id in zip(candidate_pre, installed_pre):
+        if candidate_id == installed_id:
+            continue
+        candidate_numeric = candidate_id.isdigit()
+        installed_numeric = installed_id.isdigit()
+        if candidate_numeric and installed_numeric:
+            older = int(candidate_id) < int(installed_id)
+        elif candidate_numeric != installed_numeric:
+            older = candidate_numeric
+        else:
+            older = candidate_id < installed_id
+        break
+    else:
+        older = len(candidate_pre) < len(installed_pre)
+
+raise SystemExit(0 if older else 1)
+PY
+}
+
 resolve_release_version() {
     local requested_version="${1:-}"
     local endpoint="/releases/latest"
@@ -416,6 +472,18 @@ run_git_as_service_user() {
 
 update_repository() {
     log_info "Updating installation to release $RELEASE_TAG..."
+    if [[ -z "$REQUESTED_VERSION" ]]; then
+        local installed_tag
+        installed_tag="$(run_git_as_service_user git -C "$INSTALL_DIR" \
+            describe --tags --exact-match HEAD 2>/dev/null || true)"
+        if [[ "$installed_tag" == v* ]] &&
+           is_valid_semver "${installed_tag#v}" &&
+           is_version_older "$RELEASE_VERSION" "${installed_tag#v}"; then
+            log_info "Keeping installed release $installed_tag; latest stable release $RELEASE_TAG is older."
+            return 0
+        fi
+    fi
+
     if ! run_git_as_service_user git -C "$INSTALL_DIR" diff --quiet HEAD --; then
         log_error "Tracked application files have local changes; update stopped without changing them."
         exit 1

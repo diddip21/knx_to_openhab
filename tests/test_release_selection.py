@@ -257,6 +257,7 @@ def _fake_update_commands(fake_bin, environment, *, worktree_dirty=0, index_dirt
         'case "$*" in\n'
         '  *"diff --quiet HEAD --") exit "$FAKE_WORKTREE_DIRTY" ;;\n'
         '  *"diff --cached --quiet") exit "$FAKE_INDEX_DIRTY" ;;\n'
+        '  *"describe --tags --exact-match HEAD") printf \'%s\\n\' "${FAKE_CURRENT_TAG:-}"; test -n "${FAKE_CURRENT_TAG:-}" ;;\n'
         '  *"fetch --depth 1 origin refs/tags/v1.2.3:refs/tags/v1.2.3") exit 0 ;;\n'
         '  *"rev-parse HEAD") printf \'%s\\n\' "${FAKE_CURRENT_COMMIT:-current}" ;;\n'
         '  *"rev-parse v1.2.3^{commit}") printf \'%s\\n\' "${FAKE_TARGET_COMMIT:-target}" ;;\n'
@@ -317,3 +318,42 @@ def test_update_without_a_new_release_does_not_checkout_again(tmp_path):
     commands = git_log.read_text(encoding="utf-8")
     assert "Release v1.2.3 is already installed." in result.stdout
     assert "checkout" not in commands
+
+
+def test_default_update_keeps_a_newer_installed_prerelease(tmp_path):
+    fake_bin, environment = _source_environment(tmp_path)
+    git_log = _fake_update_commands(fake_bin, environment)
+    environment.update({"FAKE_CURRENT_TAG": "v1.5.0-rc.1", "RELEASE_VERSION": "1.4.0"})
+
+    result = _run_sourced_installer(
+        environment,
+        "INSTALL_MODE=update; RELEASE_TAG=v1.2.3; update_repository",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Keeping installed release v1.5.0-rc.1" in result.stdout
+    commands = git_log.read_text(encoding="utf-8")
+    assert " fetch " not in commands
+    assert "checkout" not in commands
+
+
+def test_explicit_version_update_can_downgrade_a_newer_prerelease(tmp_path):
+    fake_bin, environment = _source_environment(tmp_path)
+    git_log = _fake_update_commands(fake_bin, environment)
+    environment.update(
+        {
+            "FAKE_CURRENT_TAG": "v1.5.0-rc.1",
+            "RELEASE_VERSION": "1.4.0",
+            "REQUESTED_VERSION": "1.4.0",
+        }
+    )
+
+    result = _run_sourced_installer(
+        environment,
+        "INSTALL_MODE=update; RELEASE_TAG=v1.2.3; update_repository",
+    )
+
+    assert result.returncode == 0, result.stderr
+    commands = git_log.read_text(encoding="utf-8")
+    assert "fetch --depth 1 origin refs/tags/v1.2.3:refs/tags/v1.2.3" in commands
+    assert "checkout --detach v1.2.3" in commands

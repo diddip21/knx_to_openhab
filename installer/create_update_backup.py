@@ -113,7 +113,8 @@ def create_update_backup(
     )
     os.close(descriptor)
     temp_path = Path(temp_name)
-    final_path = temp_path.with_suffix(".tar.gz")
+    final_name = temp_path.name.removeprefix(".").removesuffix(".tmp") + ".tar.gz"
+    final_path = backup_root / final_name
 
     try:
         with tarfile.open(temp_path, mode="w:gz") as archive:

@@ -392,24 +392,24 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
         '{"auth":{"enabled":false},"legacy":"old"}', encoding="utf-8"
     )
     (seed / "requirements.txt").write_text("old-dependency\n", encoding="utf-8")
+    (seed / "installer").mkdir()
+    shutil.copy2(ROOT / "update.sh", seed / "update.sh")
+    shutil.copy2(ROOT / "knxoh_paths.py", seed / "knxoh_paths.py")
+    shutil.copy2(
+        ROOT / "installer/create_update_backup.py",
+        seed / "installer/create_update_backup.py",
+    )
+    shutil.copy2(ROOT / "web_ui/backend/auth.py", seed / "web_ui/backend/auth.py")
     git("add", ".", cwd=seed)
     git("commit", "-m", "old release", cwd=seed)
     previous_commit = git("rev-parse", "HEAD", cwd=seed).stdout.strip()
     git("remote", "add", "origin", str(remote), cwd=seed)
     git("push", "-u", "origin", "main", cwd=seed)
     git("clone", "--branch", "main", str(remote), str(install))
-    (install / "config.json").write_text(
-        '{"general":{"legacy":"custom"}}', encoding="utf-8"
-    )
+    (install / "config.json").write_text('{"general":{"legacy":"custom"}}', encoding="utf-8")
     (install / "web_ui/backend/config.json").write_text(
         '{"auth":{"enabled":false},"legacy":"custom"}', encoding="utf-8"
     )
-    (install / "installer").mkdir()
-    shutil.copy2(
-        ROOT / "installer/create_update_backup.py", install / "installer/create_update_backup.py"
-    )
-    shutil.copy2(ROOT / "knxoh_paths.py", install / "knxoh_paths.py")
-    shutil.copy2(ROOT / "web_ui/backend/auth.py", install / "web_ui/backend/auth.py")
     (seed / "requirements.txt").write_text("new-dependency\n", encoding="utf-8")
     (seed / "config.json").write_text('{"general":{"legacy":"new-release"}}', encoding="utf-8")
     (seed / "web_ui/backend/config.json").write_text(

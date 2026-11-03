@@ -421,6 +421,7 @@ class Updater:
                     pass
                 return False, f"Could not prepare the update log: {error}"
 
+            start_error = ""
             try:
                 result = subprocess.run(
                     [
@@ -446,7 +447,7 @@ class Updater:
                         os.unlink(request_path)
                 except (OSError, json.JSONDecodeError):
                     pass
-                detail = start_error if result is None else result.stderr.strip()
+                detail = start_error if result is None else (result.stderr or "").strip()
                 return False, detail or "Could not start the isolated updater service."
 
             return (

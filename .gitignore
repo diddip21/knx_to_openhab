@@ -3,6 +3,8 @@ openhab/*
 *.csv
 *.knxproj*
 !tests/upload.knxprojarchive.json
+!tests/Charne.knxproj.json
+!tests/fixtures/Charne.knxproj
 example.ini
 .vscode/*
 __pycache__/

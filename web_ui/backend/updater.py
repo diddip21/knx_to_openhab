@@ -9,10 +9,12 @@ import re
 import subprocess
 import threading
 import time
+import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 import requests  # type: ignore[import]
+from knxoh_paths import get_paths
 
 _RELEASE_CACHE_TTL_SECONDS = 300
 
@@ -328,7 +330,7 @@ class Updater:
 
     def trigger_update(self) -> Tuple[bool, str]:
         """
-        Trigger the update process by executing update.sh script.
+        Queue the selected release for the independent systemd updater unit.
 
         Returns:
             Tuple of (success, message)
@@ -346,6 +348,23 @@ class Updater:
                 if release_order is not None and release_order < 0:
                     return False, "The installed release is newer than the latest stable release"
 
+            commit_hash = release.get("commit_hash")
+            commit_date = release.get("commit_date")
+            commit_message = release.get("commit_message", "")
+            author = release.get("author") or "unknown"
+            if not isinstance(commit_hash, str) or not re.fullmatch(r"[0-9a-f]{40}", commit_hash):
+                return False, "Selected release metadata is invalid: commit hash."
+            if not isinstance(commit_date, str) or not commit_date or len(commit_date) > 80:
+                return False, "Selected release metadata is invalid: commit date."
+            try:
+                datetime.fromisoformat(commit_date.replace("Z", "+00:00"))
+            except ValueError:
+                return False, "Selected release metadata is invalid: commit date."
+            if not isinstance(commit_message, str) or len(commit_message) > 500:
+                return False, "Selected release metadata is invalid: commit message."
+            if not isinstance(author, str) or not author or len(author) > 200:
+                return False, "Selected release metadata is invalid: author."
+
             current_link = os.path.join(self.base_path, "current")
             if os.path.lexists(current_link):
                 update_script = os.path.join(current_link, "update.sh")
@@ -357,68 +376,80 @@ class Updater:
             if not os.path.exists(update_script):
                 return False, f"Update script not found at {update_script}"
 
-            # Make script executable (optional, since we run with bash explicitly)
-            try:
-                os.chmod(update_script, 0o755)
-            except OSError:
-                # Ignore permission errors (e.g. if file is owned by root but we are knxohui)
-                # We can still execute it via bash if we have read permissions
-                pass
-
-            # Prepare log file
-            log_file = os.path.join(self.base_path, "update.log")
-
-            # Prepare environment with overrides to avoid writing to system logs
-            # and to ensure the update runs from the actual install path.
-            env = os.environ.copy()
-            env["LOG_FILE"] = os.devnull
-            env["INSTALL_DIR"] = self.base_path
-            env["KNXOH_INSTALL_DIR"] = self.base_path
-            env["RELEASE_TAG"] = release_tag
-            env["RELEASE_COMMIT_HASH"] = str(release.get("commit_hash", ""))
-            env["RELEASE_COMMIT_DATE"] = str(release.get("commit_date", ""))
-            env["RELEASE_COMMIT_MESSAGE"] = str(release.get("commit_message", ""))
-            env["RELEASE_AUTHOR"] = str(release.get("author", "unknown"))
             repository_parts = self.repo_url.rstrip("/").split("/")
-            env["KNXOH_GITHUB_REPOSITORY"] = (
+            repository = (
                 f"{repository_parts[-2]}/{repository_parts[-1].removesuffix('.git')}"
             )
-
-            # Write header to log
+            request_id = uuid.uuid4().hex
+            request = {
+                "schema_version": 1,
+                "request_id": request_id,
+                "release_tag": release_tag,
+                "commit_hash": commit_hash,
+                "commit_date": commit_date,
+                "commit_message": commit_message,
+                "author": author,
+                "repository": repository,
+            }
+            data_dir = get_paths(self.base_path).data_dir
+            data_dir.mkdir(parents=True, exist_ok=True)
+            request_path = os.path.join(data_dir, "update-request.json")
+            temporary_path = os.path.join(data_dir, f".update-request-{request_id}.tmp")
             try:
-                with open(log_file, "w") as f:
-                    f.write(f"--- Update triggered at {datetime.now()} ---\n")
-            except Exception:
-                pass  # If we can't write, we can't write. Popen might fail too then.
+                with open(temporary_path, "x", encoding="utf-8") as request_file:
+                    json.dump(request, request_file, ensure_ascii=True)
+                    request_file.write("\n")
+                    request_file.flush()
+                    os.fsync(request_file.fileno())
+                os.chmod(temporary_path, 0o600)
+                os.replace(temporary_path, request_path)
+            finally:
+                try:
+                    os.unlink(temporary_path)
+                except FileNotFoundError:
+                    pass
 
-            # Execute update script in background
-            # The script will handle git pull, dependency updates, and service restart
-            # We redirect output to the log file
-
-            # We need to keep the file handle open just long enough to pass it to Popen
-            # Popen will duplicate it for the child process
+            log_file = os.path.join(self.base_path, "update.log")
             try:
-                log_fd = open(log_file, "a")
-                subprocess.Popen(
-                    ["/bin/bash", update_script],
-                    cwd=self.base_path,
-                    stdout=log_fd,
-                    stderr=subprocess.STDOUT,
-                    env=env,
-                    start_new_session=True,
+                with open(log_file, "w", encoding="utf-8") as log:
+                    log.write(f"Update queued for {release_tag} ({request_id}).\n")
+            except OSError as error:
+                try:
+                    with open(request_path, encoding="utf-8") as request_file:
+                        queued = json.load(request_file)
+                    if queued.get("request_id") == request_id:
+                        os.unlink(request_path)
+                except (OSError, json.JSONDecodeError):
+                    pass
+                return False, f"Could not prepare the update log: {error}"
+
+            try:
+                result = subprocess.run(
+                    [
+                        "/usr/bin/sudo",
+                        "-n",
+                        "/usr/local/sbin/knxohui-service-update",
+                        "start-web-update",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    check=False,
                 )
-                # We can close the fd in the parent process now
-                # The child process has its own handle
-                # context manager wouldn't work easily here with Popen specific needs
-                log_fd.close()
-            except Exception as e:
-                # If opening log file fails, try running without logging to it (fallback)
-                subprocess.Popen(
-                    ["/bin/bash", update_script],
-                    cwd=self.base_path,
-                    start_new_session=True,
-                    env=env,
-                )
+            except (OSError, subprocess.SubprocessError) as error:
+                result = None
+                start_error = str(error)
+
+            if result is None or result.returncode != 0:
+                try:
+                    with open(request_path, encoding="utf-8") as request_file:
+                        queued = json.load(request_file)
+                    if queued.get("request_id") == request_id:
+                        os.unlink(request_path)
+                except (OSError, json.JSONDecodeError):
+                    pass
+                detail = start_error if result is None else result.stderr.strip()
+                return False, detail or "Could not start the isolated updater service."
 
             return (
                 True,

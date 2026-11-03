@@ -33,6 +33,7 @@ def test_sudoers_policy_only_allows_named_service_actions():
             assert f"systemctl {action} {service}" in policy
     for action in ("refresh", "openhab", "evcc"):
         assert f"/usr/local/sbin/knxohui-service-update {action}" in policy
+    assert "/usr/local/sbin/knxohui-service-update start-web-update" in policy
 
 
 def test_installer_scripts_install_and_validate_the_restricted_policy():
@@ -50,6 +51,27 @@ def test_installer_scripts_install_and_validate_the_restricted_policy():
     assert 'REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"' in setup
     assert '"$REPO_ROOT/requirements.txt"' in setup
     assert "--exclude web_ui/backend/config.json" in setup
+    assert '"$BASE/installer/launch_update.sh"' in setup
+    assert '"$BASE/installer/knxohui-update.service"' in setup
+
+
+def test_updater_runs_in_its_own_systemd_unit_outside_the_web_service_cgroup():
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+    helper = (ROOT / "installer" / "service_update.sh").read_text(encoding="utf-8")
+    policy = (ROOT / "installer" / "knxohui.sudoers").read_text(encoding="utf-8")
+    unit = (ROOT / "installer" / "knxohui-update.service").read_text(encoding="utf-8")
+    launcher = (ROOT / "installer" / "launch_update.sh").read_text(encoding="utf-8")
+    updater = (ROOT / "web_ui" / "backend" / "updater.py").read_text(encoding="utf-8")
+
+    assert "start-web-update)" in helper
+    assert "systemctl start --no-block knxohui-update.service" in helper
+    assert "/usr/local/sbin/knxohui-service-update start-web-update" in policy
+    assert "knxohui-update.service" in setup
+    assert "User=knxohui" in unit
+    assert "ExecStart=/usr/local/libexec/knx_to_openhab/launch_update.sh" in unit
+    assert "run_update_request.py" in launcher
+    assert "subprocess.Popen" not in updater
+    assert "start-web-update" in updater
 
 
 def test_installer_runs_provisioner_from_installed_tree():
@@ -492,13 +514,6 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         encoding="utf-8",
     )
 
-    if activation_fails:
-        (install / "version.json").write_text(
-            json.dumps({"release_tag": "v1.1.0", "commit_hash": "b" * 40}),
-            encoding="utf-8",
-        )
-        (install / "current").symlink_to(".")
-
     subprocess.run(["git", "init", "--initial-branch=main", str(install)], check=True)
     subprocess.run(
         ["git", "-C", str(install), "config", "user.name", "Update recovery test"],
@@ -509,10 +524,6 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         check=True,
     )
     subprocess.run(["git", "-C", str(install), "add", "."], check=True)
-    if activation_fails:
-        subprocess.run(
-            ["git", "-C", str(install), "add", "-f", "current", "version.json"], check=True
-        )
     subprocess.run(
         ["git", "-C", str(install), "commit", "-m", "legacy release"],
         check=True,
@@ -530,6 +541,31 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     pip = install / "venv/bin/pip"
     pip.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     pip.chmod(0o755)
+
+    if activation_fails:
+        previous_release = install / "releases/old-release"
+        for relative in (
+            "knxoh_paths.py",
+            "installer/create_update_backup.py",
+            "installer/prepare_release.py",
+            "web_ui/backend/auth.py",
+            "web_ui/backend/storage.py",
+        ):
+            source = install / relative
+            target = previous_release / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+        (previous_release / "version.json").write_text(
+            json.dumps({"release_tag": "v1.1.0", "commit_hash": "b" * 40}),
+            encoding="utf-8",
+        )
+        for executable in ("python", "pip"):
+            target = previous_release / "venv/bin" / executable
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(install / "venv/bin" / executable, target)
+        (install / "current").symlink_to(
+            "releases/old-release", target_is_directory=True
+        )
 
     python3 = fake_bin / "python3"
     python3.write_text(
@@ -626,11 +662,11 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     assert (data_dir / "jobs/user.json").read_text(encoding="utf-8") == "preserved"
     if activation_fails:
         assert (install / "current").is_symlink()
-        assert (install / "current").resolve() == install
+        assert (install / "current").resolve() == install / "releases/old-release"
         assert "Could not atomically activate release v1.2.0." in log
         assert "Unactivated release candidate removed: v1.2.0." in log
         assert not (state / "restarts").exists()
-        assert list((install / "releases").iterdir()) == []
+        assert list((install / "releases").iterdir()) == [install / "releases/old-release"]
     elif health_check_fails:
         assert not (install / "current").exists()
         assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"

@@ -11,6 +11,13 @@ case "$1" in
   provision-yaml)
     /usr/bin/python3 -I /usr/local/libexec/knx_to_openhab/provision_managed_outputs.py
     ;;
+  start-web-update)
+    if /usr/bin/systemctl is-active --quiet knxohui-update.service; then
+      echo "The KNX to OpenHAB updater is already running." >&2
+      exit 4
+    fi
+    /usr/bin/systemctl start --no-block knxohui-update.service
+    ;;
   refresh)
     /usr/bin/apt-get update --error-on=any
     ;;

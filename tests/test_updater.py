@@ -1,6 +1,6 @@
 """Tests for the web UI self-updater."""
 
-import os
+import json
 from unittest.mock import Mock
 
 from web_ui.backend.updater import Updater
@@ -9,8 +9,10 @@ from web_ui.backend.updater import Updater
 def test_trigger_update_passes_install_dir_and_selected_release(monkeypatch, tmp_path):
     update_script = tmp_path / "update.sh"
     update_script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
-    popen = Mock()
-    monkeypatch.setattr("web_ui.backend.updater.subprocess.Popen", popen)
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(data_dir))
+    start_service = Mock(return_value=Mock(returncode=0, stderr=""))
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.run", start_service)
     monkeypatch.setattr(
         Updater,
         "check_github_version",
@@ -30,19 +32,29 @@ def test_trigger_update_passes_install_dir_and_selected_release(monkeypatch, tmp
     success, _ = Updater(base_path=str(tmp_path)).trigger_update()
 
     assert success is True
-    popen.assert_called_once()
-    args, kwargs = popen.call_args
-    assert args[0] == ["/bin/bash", str(update_script)]
-    assert kwargs["cwd"] == str(tmp_path)
-    assert kwargs["env"]["INSTALL_DIR"] == str(tmp_path)
-    assert kwargs["env"]["KNXOH_INSTALL_DIR"] == str(tmp_path)
-    assert kwargs["env"]["LOG_FILE"] == os.devnull
-    assert kwargs["env"]["RELEASE_TAG"] == "v1.4.0"
-    assert kwargs["env"]["RELEASE_COMMIT_HASH"] == "a" * 40
-    assert kwargs["env"]["RELEASE_COMMIT_DATE"] == "2026-11-03T00:00:00Z"
-    assert kwargs["env"]["RELEASE_COMMIT_MESSAGE"] == "Stable release"
-    assert kwargs["env"]["RELEASE_AUTHOR"] == "Release Bot"
-    assert kwargs["env"]["KNXOH_GITHUB_REPOSITORY"] == "diddip21/knx_to_openhab"
+    start_service.assert_called_once_with(
+        [
+            "/usr/bin/sudo",
+            "-n",
+            "/usr/local/sbin/knxohui-service-update",
+            "start-web-update",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    request = json.loads((data_dir / "update-request.json").read_text(encoding="utf-8"))
+    assert request["schema_version"] == 1
+    assert request["release_tag"] == "v1.4.0"
+    assert request["commit_hash"] == "a" * 40
+    assert request["commit_date"] == "2026-11-03T00:00:00Z"
+    assert request["commit_message"] == "Stable release"
+    assert request["author"] == "Release Bot"
+    assert request["repository"] == "diddip21/knx_to_openhab"
+    assert (tmp_path / "update.log").read_text(encoding="utf-8").startswith(
+        "Update queued for v1.4.0"
+    )
 
 
 def test_trigger_update_runs_the_active_release_script_from_the_stable_install_root(
@@ -52,21 +64,27 @@ def test_trigger_update_runs_the_active_release_script_from_the_stable_install_r
     current_release.mkdir()
     update_script = current_release / "update.sh"
     update_script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
-    popen = Mock()
-    monkeypatch.setattr("web_ui.backend.updater.subprocess.Popen", popen)
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(tmp_path / "data"))
+    start_service = Mock(return_value=Mock(returncode=0, stderr=""))
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.run", start_service)
     monkeypatch.setattr(
         Updater,
         "check_github_version",
-        lambda _self: (True, {"release_tag": "v1.4.0", "commit_hash": "a" * 40}),
+        lambda _self: (
+            True,
+            {
+                "release_tag": "v1.4.0",
+                "commit_hash": "a" * 40,
+                "commit_date": "2026-11-03T00:00:00Z",
+            },
+        ),
     )
     monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
 
     success, _ = Updater(base_path=str(tmp_path)).trigger_update()
 
     assert success is True
-    args, kwargs = popen.call_args
-    assert args[0] == ["/bin/bash", str(update_script)]
-    assert kwargs["cwd"] == str(tmp_path)
+    start_service.assert_called_once()
 
 
 def test_get_current_version_reads_the_active_release_metadata(tmp_path):
@@ -158,23 +176,34 @@ def test_check_github_version_rejects_prerelease_tag_from_stable_endpoint(monkey
     get.assert_called_once()
 
 
-def test_trigger_update_preserves_release_tag_when_log_redirection_fails(monkeypatch, tmp_path):
+def test_trigger_update_removes_queued_request_when_worker_service_cannot_start(
+    monkeypatch, tmp_path
+):
     update_script = tmp_path / "update.sh"
     update_script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
-    popen = Mock(side_effect=[OSError("log redirection failed"), None])
-    monkeypatch.setattr("web_ui.backend.updater.subprocess.Popen", popen)
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(data_dir))
+    start_service = Mock(return_value=Mock(returncode=1, stderr="unit already running"))
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.run", start_service)
     monkeypatch.setattr(
         Updater,
         "check_github_version",
-        lambda _self: (True, {"release_tag": "v1.4.0", "commit_hash": "release-commit"}),
+        lambda _self: (
+            True,
+            {
+                "release_tag": "v1.4.0",
+                "commit_hash": "a" * 40,
+                "commit_date": "2026-11-03T00:00:00Z",
+            },
+        ),
     )
     monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
 
-    success, _ = Updater(base_path=str(tmp_path)).trigger_update()
+    success, message = Updater(base_path=str(tmp_path)).trigger_update()
 
-    assert success is True
-    assert popen.call_count == 2
-    assert popen.call_args.kwargs["env"]["RELEASE_TAG"] == "v1.4.0"
+    assert success is False
+    assert "unit already running" in message
+    assert not (data_dir / "update-request.json").exists()
 
 
 def test_check_for_updates_does_not_downgrade_a_newer_prerelease(monkeypatch):
@@ -226,19 +255,40 @@ def test_trigger_update_refuses_to_downgrade_a_newer_prerelease(monkeypatch, tmp
         "check_github_version",
         lambda: (True, {"release_tag": "v1.4.0", "commit_hash": "stable-commit"}),
     )
-    popen = Mock()
-    monkeypatch.setattr("web_ui.backend.updater.subprocess.Popen", popen)
+    start_service = Mock()
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.run", start_service)
 
     success, message = updater.trigger_update()
 
     assert success is False
     assert "newer than the latest stable release" in message
-    popen.assert_not_called()
+    start_service.assert_not_called()
+
+
+def test_trigger_update_rejects_invalid_commit_metadata_before_queueing(monkeypatch, tmp_path):
+    updater = Updater(base_path=str(tmp_path))
+    (tmp_path / "update.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    start_service = Mock()
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.run", start_service)
+    monkeypatch.setattr(
+        updater,
+        "check_github_version",
+        lambda: (True, {"release_tag": "v1.4.0", "commit_hash": "bad"}),
+    )
+    monkeypatch.setattr(updater, "get_current_version", lambda: {"commit_hash": "old"})
+
+    success, message = updater.trigger_update()
+
+    assert success is False
+    assert "commit hash" in message
+    start_service.assert_not_called()
+    assert not (tmp_path / "var/lib/knx_to_openhab/update-request.json").exists()
 
 
 def test_build_metadata_release_update_is_not_suppressed(monkeypatch, tmp_path):
     updater = Updater(base_path=str(tmp_path))
     (tmp_path / "update.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setattr(
         updater,
         "get_current_version",
@@ -256,7 +306,7 @@ def test_build_metadata_release_update_is_not_suppressed(monkeypatch, tmp_path):
         lambda: (
             True,
             {
-                "commit_hash": "build-two-commit",
+                "commit_hash": "c" * 40,
                 "commit_short": "build2",
                 "commit_date": "2026-11-03",
                 "commit_message": "Build two",
@@ -265,15 +315,15 @@ def test_build_metadata_release_update_is_not_suppressed(monkeypatch, tmp_path):
             },
         ),
     )
-    popen = Mock()
-    monkeypatch.setattr("web_ui.backend.updater.subprocess.Popen", popen)
+    start_service = Mock(return_value=Mock(returncode=0, stderr=""))
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.run", start_service)
 
     status = updater.check_for_updates()
     success, _ = updater.trigger_update()
 
     assert status["update_available"] is True
     assert success is True
-    assert popen.call_count == 1
+    assert start_service.call_count == 1
 
 
 def test_check_github_version_caches_resolved_release(monkeypatch):

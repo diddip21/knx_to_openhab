@@ -394,10 +394,11 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
 )
 @pytest.mark.parametrize("use_default_port", [False, True])
 @pytest.mark.parametrize(
-    ("health_check_fails", "activation_fails"), [(True, False), (False, False), (False, True)]
+    ("health_check_fails", "activation_fails", "dependency_fails"),
+    [(True, False, False), (False, False, False), (False, True, False), (False, False, True)],
 )
 def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
-    tmp_path, use_default_port, health_check_fails, activation_fails
+    tmp_path, use_default_port, health_check_fails, activation_fails, dependency_fails
 ):
     install = tmp_path / "install"
     fake_bin = tmp_path / "bin"
@@ -450,7 +451,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     if not use_default_port:
         web_config["port"] = port
     (config_dir / "config.json").write_text(json.dumps(web_config), encoding="utf-8")
-    if not health_check_fails and not activation_fails:
+    if not health_check_fails and not activation_fails and not dependency_fails:
         stale_release = install / "releases" / "old-release"
         stale_release.mkdir(parents=True)
         (stale_release / "version.json").write_text(
@@ -545,7 +546,12 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     python.write_text(f'#!/bin/sh\nexec {real_python} "$@"\n', encoding="utf-8")
     python.chmod(0o755)
     pip = install / "venv/bin/pip"
-    pip.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    pip.write_text(
+        "#!/bin/bash\n"
+        'if [[ "$1" == "install" && "${DEPENDENCY_TEST_FAIL:-0}" == "1" ]]; then exit 1; fi\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
     pip.chmod(0o755)
 
     if activation_fails:
@@ -580,7 +586,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         "  bin_dir = Path(sys.argv[3]) / 'bin'\n"
         "  bin_dir.mkdir(parents=True, exist_ok=True)\n"
         f"  (bin_dir / 'python').write_text('#!/bin/sh\\nexec {real_python} \"$@\"\\n')\n"
-        "  (bin_dir / 'pip').write_text('#!/bin/sh\\nexit 0\\n')\n"
+        "  (bin_dir / 'pip').write_text('#!/bin/bash\\nif [[ \"$1\" == \"install\" && \"${DEPENDENCY_TEST_FAIL:-0}\" == \"1\" ]]; then exit 1; fi\\nexit 0\\n')\n"
         "  (bin_dir / 'python').chmod(0o755)\n"
         "  (bin_dir / 'pip').chmod(0o755)\n"
         "else:\n"
@@ -623,6 +629,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         {
             "PATH": str(fake_bin) + os.pathsep + environment["PATH"],
             "UPDATE_TEST_STATE": str(state),
+            "DEPENDENCY_TEST_FAIL": "1" if dependency_fails else "0",
             "INSTALL_DIR": str(install),
             "KNXOH_INSTALL_DIR": str(install),
             "KNXOH_DATA_DIR": str(data_dir),
@@ -655,14 +662,20 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
 
     assert log_file.exists(), result.stdout + result.stderr
     log = log_file.read_text(encoding="utf-8")
-    assert result.returncode == (1 if health_check_fails or activation_fails else 0), (
-        result.stdout + result.stderr
-    )
+    assert result.returncode == (
+        1 if health_check_fails or activation_fails or dependency_fails else 0
+    ), result.stdout + result.stderr
     assert (install / "config.json").read_text(encoding="utf-8") == (
         '{"general":{"legacy":"custom"}}'
     )
     assert (data_dir / "jobs/user.json").read_text(encoding="utf-8") == "preserved"
-    if activation_fails:
+    if dependency_fails:
+        assert not (install / "current").exists()
+        assert "Could not install dependencies for v1.2.0" in log
+        assert "The active release was not changed." in log
+        assert not (state / "restarts").exists()
+        assert list((install / "releases").iterdir()) == []
+    elif activation_fails:
         assert (install / "current").is_symlink()
         assert (install / "current").resolve() == install / "releases/old-release"
         assert "Could not atomically activate release v1.2.0." in log
@@ -684,7 +697,8 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         assert "Service health check passed for v1.2.0." in log
         assert "Removed obsolete release environment: old-release." in log
         assert list((install / "releases").iterdir()) == [active_release]
-    assert "No release data migration is declared" in log
+    if not dependency_fails:
+        assert "No release data migration is declared" in log
     archives = list(backup_dir.glob("pre-update-*.tar.gz"))
     assert len(archives) == 1
     with tarfile.open(archives[0], mode="r:gz") as archive:

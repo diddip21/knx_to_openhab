@@ -385,7 +385,7 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
     git("init", "--initial-branch=main", str(seed))
     git("config", "user.name", "Update recovery test", cwd=seed)
     git("config", "user.email", "update-test@example.invalid", cwd=seed)
-    (seed / ".gitignore").write_text("venv/\n", encoding="utf-8")
+    shutil.copy2(ROOT / ".gitignore", seed / ".gitignore")
     (seed / "config.json").write_text('{"general":{"legacy":"old"}}', encoding="utf-8")
     (seed / "web_ui/backend").mkdir(parents=True)
     (seed / "web_ui/backend/config.json").write_text(

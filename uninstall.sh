@@ -213,11 +213,13 @@ validate_application_directory
 validate_user_data_directories
 
 UNITS=(
+    knxohui-update.service
     knxohui.service
     knxohui-backup-cleanup.service
     knxohui-backup-cleanup.timer
 )
 UNIT_FILES=(
+    /etc/systemd/system/knxohui-update.service
     /etc/systemd/system/knxohui.service
     /etc/systemd/system/knxohui-backup-cleanup.service
     /etc/systemd/system/knxohui-backup-cleanup.timer

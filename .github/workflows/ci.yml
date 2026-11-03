@@ -77,7 +77,7 @@ jobs:
 
       - name: Black (check)
         run: |
-          black --check .
+          black --check . --diff
 
       - name: Isort (check)
         run: |

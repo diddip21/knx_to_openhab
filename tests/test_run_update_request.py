@@ -36,9 +36,7 @@ def _request(**overrides):
     return result
 
 
-def test_worker_runs_the_selected_release_from_a_stable_systemd_unit(
-    monkeypatch, tmp_path
-):
+def test_worker_runs_the_selected_release_from_a_stable_systemd_unit(monkeypatch, tmp_path):
     install, data = _configure_paths(monkeypatch, tmp_path)
     active_release = install / "current"
     active_release.mkdir()

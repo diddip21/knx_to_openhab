@@ -52,8 +52,8 @@ def test_trigger_update_passes_install_dir_and_selected_release(monkeypatch, tmp
     assert request["commit_message"] == "Stable release"
     assert request["author"] == "Release Bot"
     assert request["repository"] == "diddip21/knx_to_openhab"
-    assert (tmp_path / "update.log").read_text(encoding="utf-8").startswith(
-        "Update queued for v1.4.0"
+    assert (
+        (tmp_path / "update.log").read_text(encoding="utf-8").startswith("Update queued for v1.4.0")
     )
 
 

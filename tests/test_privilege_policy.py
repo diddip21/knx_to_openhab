@@ -563,9 +563,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
             target = previous_release / "venv/bin" / executable
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(install / "venv/bin" / executable, target)
-        (install / "current").symlink_to(
-            "releases/old-release", target_is_directory=True
-        )
+        (install / "current").symlink_to("releases/old-release", target_is_directory=True)
 
     python3 = fake_bin / "python3"
     python3.write_text(
@@ -588,9 +586,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     if activation_fails:
         mv = fake_bin / "mv"
         mv.write_text(
-            "#!/bin/bash\n"
-            'if [[ "$1" == "-Tf" ]]; then exit 1; fi\n'
-            'exec /bin/mv "$@"\n',
+            "#!/bin/bash\n" 'if [[ "$1" == "-Tf" ]]; then exit 1; fi\n' 'exec /bin/mv "$@"\n',
             encoding="utf-8",
         )
         mv.chmod(0o755)
@@ -653,9 +649,9 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
 
     assert log_file.exists(), result.stdout + result.stderr
     log = log_file.read_text(encoding="utf-8")
-    assert result.returncode == (
-        1 if health_check_fails or activation_fails else 0
-    ), result.stdout + result.stderr
+    assert result.returncode == (1 if health_check_fails or activation_fails else 0), (
+        result.stdout + result.stderr
+    )
     assert (install / "config.json").read_text(encoding="utf-8") == (
         '{"general":{"legacy":"custom"}}'
     )

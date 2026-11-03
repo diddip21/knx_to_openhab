@@ -377,9 +377,7 @@ class Updater:
                 return False, f"Update script not found at {update_script}"
 
             repository_parts = self.repo_url.rstrip("/").split("/")
-            repository = (
-                f"{repository_parts[-2]}/{repository_parts[-1].removesuffix('.git')}"
-            )
+            repository = f"{repository_parts[-2]}/{repository_parts[-1].removesuffix('.git')}"
             request_id = uuid.uuid4().hex
             request = {
                 "schema_version": 1,

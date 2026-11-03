@@ -808,8 +808,6 @@ if FLASK_AVAILABLE:
     @app.route("/api/debug/config", methods=["GET"])
     def debug_config():
         """Debug endpoint to check the current configuration."""
-        import os
-
         # Get the main config (from the main config.json)
         project_root = str(get_paths().install_dir)
         main_config_path = get_paths(project_root).generator_config_file

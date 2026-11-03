@@ -11,9 +11,7 @@ INSTALL_DIR="${KNXOH_INSTALL_DIR:-${INSTALL_DIR:-$SCRIPT_DIR}}"
 LOG_FILE="${LOG_FILE:-/var/log/knx_to_openhab_update.log}"
 SERVICE_NAME="knxohui.service"
 RELEASE_TAG="${RELEASE_TAG:-}"
-
-BACKUP_DIR="${KNXOH_BACKUP_DIR:-$(PYTHONPATH="$INSTALL_DIR" python3 -c \
-    'from knxoh_paths import get_paths; print(get_paths().backup_dir)')}"
+PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
 
 # Logging function
 log() {
@@ -35,6 +33,45 @@ if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+
     exit 1
 fi
 
+if [[ -z "${KNXOH_DATA_DIR:-}" ]]; then
+    if ! UPDATE_LOCK_DIR=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" \
+        KNXOH_PATHS_FILE="$PATHS_FILE" PYTHONPATH="$INSTALL_DIR" \
+        python3 -c 'from knxoh_paths import get_paths; print(get_paths().data_dir)'); then
+        log "ERROR: Could not resolve the configured runtime-data path for the update lock."
+        exit 1
+    fi
+else
+    UPDATE_LOCK_DIR="$KNXOH_DATA_DIR"
+fi
+
+if [[ "$UPDATE_LOCK_DIR" != /* ]]; then
+    log "ERROR: The update-lock directory must be an absolute path: $UPDATE_LOCK_DIR"
+    exit 1
+fi
+if ! command -v flock >/dev/null 2>&1; then
+    log "ERROR: The 'flock' utility is required to prevent concurrent updates."
+    exit 1
+fi
+if ! mkdir -p -- "$UPDATE_LOCK_DIR"; then
+    log "ERROR: Could not create update-lock directory: $UPDATE_LOCK_DIR"
+    exit 1
+fi
+
+UPDATE_LOCK_FILE="$UPDATE_LOCK_DIR/updater.lock"
+if [[ -L "$UPDATE_LOCK_FILE" || ( -e "$UPDATE_LOCK_FILE" && ! -f "$UPDATE_LOCK_FILE" ) ]]; then
+    log "ERROR: Update-lock path is not a regular file: $UPDATE_LOCK_FILE"
+    exit 1
+fi
+if ! exec 9>>"$UPDATE_LOCK_FILE"; then
+    log "ERROR: Could not open update-lock file: $UPDATE_LOCK_FILE"
+    exit 1
+fi
+if ! flock -n 9; then
+    log "ERROR: Another KNX to openHAB update is already running. Try again later."
+    exit 1
+fi
+log "Update lock acquired."
+
 # The previous release granted passwordless root Git access. A Web UI update
 # cannot safely replace that policy itself, so require the one-time admin
 # migration before allowing another update to proceed.
@@ -50,7 +87,6 @@ fi
 # Refuse an in-place update until credentials live in the external config tree.
 # An older checkout may still keep its default or plaintext password in tracked
 # files, so fetching first could replace the code before credentials are migrated.
-PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
 if [[ ! -x "$INSTALL_DIR/venv/bin/python" ]]; then
     log "ERROR: The installed Python environment is missing; credential migration cannot be verified."
     log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' from an interactive SSH terminal (for example, ssh -t), then retry."
@@ -112,62 +148,6 @@ if [[ ! -w ".git" ]]; then
     exit 1
 fi
 
-if [[ -d "$BACKUP_DIR" ]] && [[ ! -w "$BACKUP_DIR" ]]; then
-    log "ERROR: The service user cannot write to backup directory $BACKUP_DIR. Run fix_permissions.sh as an administrator."
-    exit 1
-fi
-
-# If backup directory doesn't exist, create it with proper permissions
-if [[ ! -d "$BACKUP_DIR" ]]; then
-    log "Creating backup directory: $BACKUP_DIR"
-    mkdir -p "$BACKUP_DIR" || {
-        log "ERROR: Failed to create backup directory: $BACKUP_DIR"
-        log "Please ensure you have proper permissions or create the directory manually:"
-        log "  sudo mkdir -p $BACKUP_DIR"
-        log "  sudo chown -R knxohui:knxohui $BACKUP_DIR"
-        exit 1
-    }
-fi
-
-# Create backup of current installation
-log "Creating backup of current installation..."
-BACKUP_NAME="pre-update-$(date +%Y%m%d-%H%M%S).tar.gz"
-BACKUP_PATH="$BACKUP_DIR/$BACKUP_NAME"
-
-# Ensure backup directory exists with proper permissions
-if [[ ! -d "$BACKUP_DIR" ]]; then
-    log "Creating backup directory: $BACKUP_DIR"
-    mkdir -p "$BACKUP_DIR" || {
-        log "ERROR: Failed to create backup directory: $BACKUP_DIR"
-        log "Please ensure you have proper permissions or create the directory manually:"
-        log "  sudo mkdir -p $BACKUP_DIR"
-        log "  sudo chown -R knxohui:knxohui $BACKUP_DIR"
-        exit 1
-    }
-fi
-
-tar -czf "$BACKUP_PATH" \
-    --exclude='.git' \
-    --exclude='venv' \
-    --exclude='__pycache__' \
-    --exclude='*.pyc' \
-    --exclude='var' \
-    . || {
-log "WARNING: Backup creation failed, but continuing..."
-}
-
-if [[ -f "$BACKUP_PATH" ]]; then
-    log "Backup created: $BACKUP_PATH"
-else
-    log "WARNING: Backup file not created"
-fi
-
-# Stash any local changes
-log "Stashing local changes..."
-if ! git -c "safe.directory=$INSTALL_DIR" stash; then
-    log "WARNING: Git stash failed, continuing anyway..."
-fi
-
 # Verify git repository is properly configured
 log "Verifying git repository configuration..."
 if ! git -c "safe.directory=$INSTALL_DIR" rev-parse --git-dir > /dev/null 2>&1; then
@@ -176,6 +156,27 @@ if ! git -c "safe.directory=$INSTALL_DIR" rev-parse --git-dir > /dev/null 2>&1; 
     exit 1
 fi
 
+# Never hide or overwrite local application changes. Runtime settings, secrets,
+# jobs, and generated data live outside this checkout.
+if ! LOCAL_CHANGES=$(git -c "safe.directory=$INSTALL_DIR" status --porcelain --untracked-files=all -- . ':(exclude)update.log' ':(exclude)version.json'); then
+    log "ERROR: Could not inspect the installation working tree."
+    exit 1
+fi
+if [[ -n "$LOCAL_CHANGES" ]]; then
+    log "ERROR: Local application changes are present; refusing to update or stash them."
+    log "$LOCAL_CHANGES"
+    log "Commit or move those files, then retry the update."
+    exit 1
+fi
+
+# Snapshot the application and external configuration. The helper publishes
+# only a readable archive, so a failed backup always stops before Git changes.
+log "Creating and validating pre-update backup..."
+if ! BACKUP_PATH=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" PYTHONPATH="$INSTALL_DIR" "$INSTALL_DIR/venv/bin/python" "$INSTALL_DIR/installer/create_update_backup.py" 2>&1); then
+    log "ERROR: Could not create and validate the pre-update backup: $BACKUP_PATH"
+    exit 1
+fi
+log "Backup created and validated: $BACKUP_PATH"
 # Fetch only the stable release selected by the Web UI.
 log "Fetching selected stable release $RELEASE_TAG from GitHub..."
 if ! git -c "safe.directory=$INSTALL_DIR" fetch --depth 1 origin \

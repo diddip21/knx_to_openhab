@@ -1,6 +1,9 @@
 """Tests for the web UI self-updater."""
 
+import fcntl
 import json
+import os
+import stat
 import threading
 from unittest.mock import Mock
 
@@ -394,9 +397,74 @@ def test_concurrent_update_request_cannot_replace_the_request_being_started(monk
     assert not first_thread.is_alive()
     assert first_result["value"][0] is True
     assert second_success is False
-    assert "unit already running" in second_message
-    assert start_mock.call_count == 2
+    assert "progress" in second_message.lower()
+    assert start_mock.call_count == 1
     assert json.loads(request_path.read_text(encoding="utf-8")) == first_request
+
+
+def test_trigger_update_does_not_publish_while_worker_holds_request_lock(monkeypatch, tmp_path):
+    (tmp_path / "update.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    lock_path = data_dir / "update-request.lock"
+    log_path = tmp_path / "update.log"
+    log_path.write_text("worker owns request\n", encoding="utf-8")
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(data_dir))
+    check_version = Mock(
+        return_value=(
+            True,
+            {
+                "release_tag": "v1.4.0",
+                "commit_hash": "a" * 40,
+                "commit_date": "2026-11-03T00:00:00Z",
+            },
+        )
+    )
+    monkeypatch.setattr(Updater, "check_github_version", check_version)
+    monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
+    _allow_isolated_update_worker(monkeypatch)
+    start_service = Mock(return_value=Mock(returncode=0, stderr=""))
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.run", start_service)
+
+    with lock_path.open("a", encoding="utf-8") as held_lock:
+        fcntl.flock(held_lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        success, message = Updater(base_path=str(tmp_path)).trigger_update()
+
+    assert success is False
+    assert "progress" in message.lower()
+    check_version.assert_not_called()
+    start_service.assert_not_called()
+    assert not (data_dir / "update-request.json").exists()
+    assert log_path.read_text(encoding="utf-8") == "worker owns request\n"
+
+
+def test_trigger_update_creates_private_request_lock(monkeypatch, tmp_path):
+    (tmp_path / "update.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(
+        Updater,
+        "check_github_version",
+        lambda _self: (
+            True,
+            {
+                "release_tag": "v1.4.0",
+                "commit_hash": "a" * 40,
+                "commit_date": "2026-11-03T00:00:00Z",
+            },
+        ),
+    )
+    monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
+    _allow_isolated_update_worker(monkeypatch)
+    monkeypatch.setattr(
+        "web_ui.backend.updater.subprocess.run", Mock(return_value=Mock(returncode=0, stderr=""))
+    )
+
+    success, _message = Updater(base_path=str(tmp_path)).trigger_update()
+
+    assert success is True
+    lock_path = data_dir / "update-request.lock"
+    assert stat.S_IMODE(lock_path.stat().st_mode) == 0o600
 
 
 def test_check_for_updates_does_not_downgrade_a_newer_prerelease(monkeypatch):

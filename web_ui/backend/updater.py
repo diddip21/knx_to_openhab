@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 import requests  # type: ignore[import]
 
 from knxoh_paths import get_paths
+from update_request_lock import update_request_lock
 
 _RELEASE_CACHE_TTL_SECONDS = 300
 _UPDATE_WORKER_UNIT = Path("/etc/systemd/system/knxohui-update.service")
@@ -404,8 +405,32 @@ class Updater:
         """
         try:
             data_dir = get_paths(self.base_path).data_dir
+            with update_request_lock(data_dir, blocking=False) as acquired:
+                if not acquired:
+                    return False, "An update is already in progress. Try again later."
+                return self._trigger_update_locked(data_dir)
+        except Exception as e:
+            return False, f"Failed to start update: {str(e)}"
+
+    def _trigger_update_locked(self, data_dir: Path) -> Tuple[bool, str]:
+        try:
             request_path = data_dir / "update-request.json"
-            if os.path.lexists(request_path):
+            running_path = data_dir / "update-request.running.json"
+            pending_exists = os.path.lexists(request_path)
+            running_exists = os.path.lexists(running_path)
+            if pending_exists and running_exists:
+                return (
+                    False,
+                    "Conflicting update requests: both pending and running request files are present.",
+                )
+            if running_exists:
+                try:
+                    os.replace(running_path, request_path)
+                except OSError as error:
+                    return False, f"Could not recover the interrupted update request: {error}"
+                pending_exists = True
+
+            if pending_exists:
                 setup_error = self._update_worker_setup_error()
                 if setup_error:
                     return False, setup_error

@@ -13,9 +13,27 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = ROOT / "install.sh"
 
+
+def _is_debian_based_linux() -> bool:
+    if not sys.platform.startswith("linux") or shutil.which("bash") is None:
+        return False
+    try:
+        os_release = Path("/etc/os-release").read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+    release_values = {}
+    for line in os_release.splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            release_values[key] = value.strip().strip('"').strip("'")
+    release_ids = {release_values.get("ID", ""), *release_values.get("ID_LIKE", "").split()}
+    return bool({"debian", "ubuntu"} & release_ids)
+
+
 pytestmark = pytest.mark.skipif(
-    not sys.platform.startswith("linux") or shutil.which("bash") is None,
-    reason="the installer lifecycle harness requires Linux utilities",
+    not _is_debian_based_linux(),
+    reason="the installer lifecycle harness requires Debian-based Linux utilities",
 )
 
 

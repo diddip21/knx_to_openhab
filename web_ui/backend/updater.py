@@ -475,7 +475,6 @@ class Updater:
                 "repository": repository,
             }
             data_dir.mkdir(parents=True, exist_ok=True)
-            request_path = os.fspath(request_path)
             temporary_path = os.path.join(data_dir, f".update-request-{request_id}.tmp")
             existing_request = False
             try:

@@ -226,10 +226,11 @@ if FLASK_AVAILABLE:
         else:
             referer = request.headers.get("Referer")
             request_origin = _parse_origin(referer, allow_url_path=True) if referer else None
-        return (
-            request_origin is not None
-            and request_origin[0] == "https"
-            and request_origin in normalized_allowed_origins
+        current_origin = _parse_origin(f"{request.scheme}://{request.host}")
+        if request_origin is None or current_origin is None:
+            return False
+        return request_origin == current_origin or (
+            request_origin[0] == "https" and request_origin in normalized_allowed_origins
         )
 
     def _basic_auth_challenge(status: int = 401):
@@ -343,13 +344,13 @@ if FLASK_AVAILABLE:
             )
             if path.startswith("/api/"):
                 return message, 503
-            if acfg.get("mode", "session") == "basic":
+            if acfg.get("mode", "basic") == "basic":
                 response = make_response(message, 503)
                 response.headers["Cache-Control"] = "no-store"
                 return response
             return _render_login(message, 503)
 
-        if acfg.get("mode", "session") == "basic":
+        if acfg.get("mode", "basic") == "basic":
             identity = request.remote_addr or "unknown"
             session_store = _sessions()
             if not session_store.is_login_allowed(identity):
@@ -402,7 +403,7 @@ if FLASK_AVAILABLE:
             response = redirect("/")
             response.headers["Cache-Control"] = "no-store"
             return response
-        if acfg.get("mode", "session") == "basic":
+        if acfg.get("mode", "basic") == "basic":
             response = redirect("/")
             response.headers["Cache-Control"] = "no-store"
             return response
@@ -465,7 +466,7 @@ if FLASK_AVAILABLE:
 
     @app.route("/api/logout", methods=["POST"])
     def logout():
-        if cfg.get("auth", {}).get("mode", "session") == "basic":
+        if cfg.get("auth", {}).get("mode", "basic") == "basic":
             return jsonify({"ok": True})
         session_token = request.cookies.get("knx_session", "")
         if session_token:
@@ -485,7 +486,7 @@ if FLASK_AVAILABLE:
             "index.html",
             csrf_token=request.cookies.get("knx_csrf", ""),
             auth_enabled=cfg.get("auth", {}).get("enabled", False),
-            auth_mode=cfg.get("auth", {}).get("mode", "session"),
+            auth_mode=cfg.get("auth", {}).get("mode", "basic"),
         )
 
     @app.route("/api/upload", methods=["POST"])

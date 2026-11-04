@@ -84,7 +84,12 @@ class TestAuthentication:
         monkeypatch.setitem(
             app_module.cfg,
             "auth",
-            {"enabled": True, "user": username, "password_hash": hash_password(password)},
+            {
+                "enabled": True,
+                "user": username,
+                "password_hash": hash_password(password),
+                "mode": "session",
+            },
         )
         monkeypatch.setitem(app_module.cfg, "sessions_file", str(tmp_path / "sessions.sqlite3"))
         monkeypatch.setattr(app_module, "_session_store", None)
@@ -129,6 +134,7 @@ class TestAuthentication:
                 "enabled": True,
                 "user": "ui-test-user",
                 "password_hash": hash_password("ui-test-password-long-enough"),
+                "mode": "session",
             },
         )
         monkeypatch.setitem(app_module.app.config, "TESTING", True)

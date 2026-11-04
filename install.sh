@@ -614,6 +614,10 @@ display_completion() {
 # Main installation flow
 main() {
     select_install_mode
+    if [[ "$INSTALL_MODE" == "update" && -L "$INSTALL_DIR/current" ]]; then
+        log_error "This installation uses transactional releases. Update it from the Web UI; the CLI updater does not activate releases."
+        exit 2
+    fi
     if [[ -n "$REQUESTED_VERSION" && "$INSTALL_MODE" != "install" && "$INSTALL_MODE" != "update" ]]; then
         log_error "--version can be used only with --install or --update."
         exit 2

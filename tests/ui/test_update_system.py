@@ -8,6 +8,7 @@ from playwright.sync_api import Page, expect
 
 
 def _setup_version_routes(page: Page, update_available=False):
+    calls = {"update": 0, "log": 0}
     current_version = {
         "commit_short": "abc1234",
         "current_commit": "abc1234",
@@ -49,9 +50,11 @@ def _setup_version_routes(page: Page, update_available=False):
                 },
             )
         if url.endswith("/api/version/update") and method == "POST":
+            calls["update"] += 1
             return _fulfill(route, {"status": "updating", "message": "Update started"})
         if url.endswith("/api/version/log"):
-            return _fulfill(route, {"log": ["Starting update...", "Cloning repo...", "Done!"]})
+            calls["log"] += 1
+            return _fulfill(route, {"log": "Starting update...\nRelease archive verified"})
         if url.endswith("/api/jobs"):
             return _fulfill(route, [])
         if url.endswith("/api/services"):
@@ -64,6 +67,7 @@ def _setup_version_routes(page: Page, update_available=False):
         return _fulfill(route, {"error": f"unmocked {url}"}, status=404)
 
     page.route("**/api/**", handler)
+    return calls
 
 
 @pytest.mark.ui
@@ -130,6 +134,21 @@ class TestUpdateSystem:
 
         install_btn = page.locator("#dialogUpdateBtn")
         expect(install_btn).to_be_visible()
+
+    def test_update_button_starts_update_and_polls_log(self, page: Page, base_url, flask_server):
+        calls = _setup_version_routes(page, update_available=True)
+        page.goto(base_url)
+
+        page.locator("#versionBadge").click()
+        expect(page.locator("#updateDialog[open]")).to_be_visible(timeout=10000)
+        page.locator("#dialogUpdateBtn").click()
+
+        expect(page.locator("#updateLogModal[open]")).to_be_visible()
+        expect(page.locator("#updateLogContent")).to_contain_text(
+            "Release archive verified", timeout=10000
+        )
+        assert calls["update"] == 1
+        assert calls["log"] >= 1
 
     def test_update_dialog_cancel(self, page: Page, base_url, flask_server):
         _setup_version_routes(page, update_available=True)

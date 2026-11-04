@@ -7,7 +7,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 
-def _setup_version_routes(page: Page, update_available=False):
+def _setup_version_routes(page: Page, update_available=False, log_state=None):
     calls = {"update": 0, "log": 0}
     current_version = {
         "commit_short": "abc1234",
@@ -54,7 +54,12 @@ def _setup_version_routes(page: Page, update_available=False):
             return _fulfill(route, {"status": "updating", "message": "Update started"})
         if url.endswith("/api/version/log"):
             calls["log"] += 1
-            return _fulfill(route, {"log": "Starting update...\nRelease archive verified"})
+            update_log = (
+                log_state["value"]
+                if log_state is not None
+                else "Starting update...\nRelease archive verified"
+            )
+            return _fulfill(route, {"log": update_log})
         if url.endswith("/api/jobs"):
             return _fulfill(route, [])
         if url.endswith("/api/services"):
@@ -149,6 +154,24 @@ class TestUpdateSystem:
         )
         assert calls["update"] == 1
         assert calls["log"] >= 1
+
+    def test_success_dialog_waits_for_health_validation(self, page: Page, base_url, flask_server):
+        log_state = {"value": "Restarting knxohui.service on release v1.4.0..."}
+        _setup_version_routes(page, update_available=True, log_state=log_state)
+        page.goto(base_url)
+
+        page.locator("#versionBadge").click()
+        expect(page.locator("#updateDialog[open]")).to_be_visible(timeout=10000)
+        page.locator("#dialogUpdateBtn").click()
+
+        expect(page.locator("#updateLogContent")).to_contain_text(
+            "Restarting knxohui.service", timeout=10000
+        )
+        expect(page.locator("#updateSuccessDialog[open]")).to_have_count(0)
+
+        log_state["value"] += "\nUpdate completed successfully!"
+        expect(page.locator("#updateSuccessDialog[open]")).to_be_visible(timeout=5000)
+        page.screenshot(path="docs/screenshots/pr70-update-success-dialog.png", full_page=True)
 
     def test_update_dialog_cancel(self, page: Page, base_url, flask_server):
         _setup_version_routes(page, update_available=True)

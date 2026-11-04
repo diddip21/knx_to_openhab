@@ -2790,8 +2790,8 @@ function startUpdateLogPolling() {
             logContent.scrollTop = logContent.scrollHeight
           }
 
-          // Trigger reload sequence when restart is imminent
-          if (data.log.includes('Restarting knxohui.service') || data.log.includes('Update completed successfully')) {
+          // Trigger reload sequence only after the update passes its health check.
+          if (data.log.includes('Update completed successfully')) {
             if (!successDialog.open) {
               // Stop polling
               clearInterval(updatePollInterval)

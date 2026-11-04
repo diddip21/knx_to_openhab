@@ -107,10 +107,12 @@ def resolve_web_ui_health_endpoint(
                 continue
 
         for result in results:
-            candidate = result[4][0]
+            raw_address = result[4][0]
+            if not isinstance(raw_address, str):
+                continue
             try:
-                resolved = ipaddress.ip_address(candidate)
-                normalized = ipaddress.ip_address(candidate.split("%", 1)[0]).compressed
+                resolved = ipaddress.ip_address(raw_address)
+                normalized = ipaddress.ip_address(raw_address.split("%", 1)[0]).compressed
             except ValueError:
                 continue
             if resolved.is_loopback or normalized in normalized_local:

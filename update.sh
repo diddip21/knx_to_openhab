@@ -266,16 +266,57 @@ if ! mkdir -p -- "$RELEASES_DIR"; then
     exit 1
 fi
 
-# The update lock is already held, so no active updater owns these abandoned
-# direct-child staging directories. Remove them before allocating more space.
-for stale_staging in "$RELEASES_DIR"/.staging-*; do
-    [[ -d "$stale_staging" && ! -L "$stale_staging" ]] || continue
-    if ! rm -rf -- "$stale_staging"; then
-        log "ERROR: Could not remove stale release staging directory: $stale_staging"
-        exit 1
+active_target_is_within() {
+    local candidate_path active_target resolved_candidate
+    candidate_path="$1"
+    [[ -L "$CURRENT_LINK" ]] || return 1
+
+    # If either path cannot be resolved, preserve the candidate rather than
+    # risk deleting the release selected by current.
+    if ! active_target=$(readlink -f -- "$CURRENT_LINK") || \
+        ! resolved_candidate=$(readlink -f -- "$candidate_path"); then
+        return 0
     fi
-    log "Removed stale release staging directory: $(basename -- "$stale_staging")."
-done
+    [[ "$active_target" == "$resolved_candidate" || "$active_target" == "$resolved_candidate/"* ]]
+}
+
+remove_inactive_release_path() {
+    local candidate_path description success_message
+    candidate_path="$1"
+    description="$2"
+    success_message="${3:-Removed $description: $(basename -- "$candidate_path").}"
+    [[ -d "$candidate_path" && ! -L "$candidate_path" ]] || return 0
+    if active_target_is_within "$candidate_path"; then
+        log "Keeping $description because current selects it: $candidate_path"
+        return 0
+    fi
+    if ! rm -rf -- "$candidate_path"; then
+        log "ERROR: Could not remove $description: $candidate_path"
+        return 1
+    fi
+    log "$success_message"
+}
+
+cleanup_abandoned_release_paths() {
+    local stale_path
+
+    # The update lock is already held, so no active updater owns these
+    # abandoned direct-child staging directories.
+    for stale_path in "$RELEASES_DIR"/.staging-*; do
+        [[ -d "$stale_path" && ! -L "$stale_path" ]] || continue
+        remove_inactive_release_path "$stale_path" "stale release staging directory" || return 1
+    done
+
+    for stale_path in "$RELEASES_DIR"/*; do
+        [[ -d "$stale_path" && ! -L "$stale_path" ]] || continue
+        [[ -f "$stale_path/.update-in-progress" && ! -L "$stale_path/.update-in-progress" ]] || continue
+        remove_inactive_release_path "$stale_path" "abandoned release candidate" || return 1
+    done
+}
+
+if ! cleanup_abandoned_release_paths; then
+    exit 1
+fi
 
 RELEASE_DIR_NAME="${RELEASE_TAG#v}-${RELEASE_COMMIT_HASH:0:12}-$(date +%s)-$$"
 NEW_RELEASE_DIR="$RELEASES_DIR/$RELEASE_DIR_NAME"
@@ -285,10 +326,10 @@ if ! STAGING_DIR=$(mktemp -d "$RELEASES_DIR/.staging-${RELEASE_TAG#v}-XXXXXXXX")
 fi
 cleanup_release_staging() {
     if [[ -n "${STAGING_DIR:-}" && -d "$STAGING_DIR" ]]; then
-        rm -rf -- "$STAGING_DIR"
+        remove_inactive_release_path "$STAGING_DIR" "release staging directory" || true
     fi
-    if [[ "${RELEASE_ACTIVATED:-0}" -eq 0 && -d "$NEW_RELEASE_DIR" && ! -L "$NEW_RELEASE_DIR" ]]; then
-        rm -rf -- "$NEW_RELEASE_DIR"
+    if [[ -d "$NEW_RELEASE_DIR" && ! -L "$NEW_RELEASE_DIR" ]]; then
+        remove_inactive_release_path "$NEW_RELEASE_DIR" "unactivated release candidate" || true
     fi
 }
 RELEASE_ACTIVATED=0
@@ -306,6 +347,12 @@ if ! STAGED_APP_DIR=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_
     exit 1
 fi
 log "Verified release staged at $STAGED_APP_DIR."
+
+if [[ -L "$STAGED_APP_DIR/.update-in-progress" ]] || \
+    ! touch -- "$STAGED_APP_DIR/.update-in-progress"; then
+    log "ERROR: Could not mark the staged release candidate as in progress."
+    exit 1
+fi
 
 if ! mv -- "$STAGED_APP_DIR" "$NEW_RELEASE_DIR"; then
     log "ERROR: Could not publish the complete staged release."
@@ -373,11 +420,9 @@ if ! ln -s "releases/$RELEASE_DIR_NAME" "$TEMP_CURRENT_LINK" \
     || ! mv -Tf -- "$TEMP_CURRENT_LINK" "$CURRENT_LINK"; then
     rm -f -- "$TEMP_CURRENT_LINK"
     if [[ -d "$NEW_RELEASE_DIR" && ! -L "$NEW_RELEASE_DIR" ]]; then
-        if rm -rf -- "$NEW_RELEASE_DIR"; then
-            log "Unactivated release candidate removed: $RELEASE_TAG."
-        else
+        remove_inactive_release_path "$NEW_RELEASE_DIR" "unactivated release candidate" \
+            "Unactivated release candidate removed: $RELEASE_TAG." || \
             log "WARNING: Could not remove unactivated release candidate: $NEW_RELEASE_DIR"
-        fi
     fi
     log "ERROR: Could not atomically activate release $RELEASE_TAG."
     exit 1
@@ -504,6 +549,13 @@ if ! wait_for_service_health; then
     log "ERROR: The updated service did not pass its health check."
     restore_previous_release || log "ERROR: Automatic recovery failed. Check: sudo systemctl status $SERVICE_NAME"
     exit 1
+fi
+
+if ! rm -f -- "$NEW_RELEASE_DIR/.update-in-progress"; then
+    log "WARNING: Could not clear the active release candidate marker: $NEW_RELEASE_DIR"
+fi
+if ! cleanup_abandoned_release_paths; then
+    log "WARNING: Could not remove every abandoned release candidate."
 fi
 
 log "Service health check passed for $RELEASE_TAG."

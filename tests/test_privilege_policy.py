@@ -3,6 +3,7 @@
 import json
 import os
 import shlex
+import signal
 import shutil
 import subprocess
 import sys
@@ -392,13 +393,32 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
     os.name != "posix" or shutil.which("bash") is None or shutil.which("flock") is None,
     reason="the release updater integration test requires Linux utilities",
 )
-@pytest.mark.parametrize("use_default_port", [False, True])
 @pytest.mark.parametrize(
-    ("health_check_fails", "activation_fails", "dependency_fails"),
-    [(True, False, False), (False, False, False), (False, True, False), (False, False, True)],
+    (
+        "health_check_fails",
+        "activation_fails",
+        "dependency_fails",
+        "interrupt_after_activation",
+        "active_staging",
+    ),
+    [
+        pytest.param(True, False, False, False, False, id="health-check-rollback"),
+        pytest.param(False, False, False, False, False, id="healthy-update"),
+        pytest.param(False, True, False, False, False, id="activation-failure"),
+        pytest.param(False, False, True, False, False, id="dependency-failure"),
+        pytest.param(False, False, False, True, False, id="activation_signal_boundary"),
+        pytest.param(False, False, False, False, True, id="update_candidate_active_staging"),
+    ],
 )
+@pytest.mark.parametrize("use_default_port", [False, True])
 def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
-    tmp_path, use_default_port, health_check_fails, activation_fails, dependency_fails
+    tmp_path,
+    use_default_port,
+    health_check_fails,
+    activation_fails,
+    dependency_fails,
+    interrupt_after_activation,
+    active_staging,
 ):
     install = tmp_path / "install"
     fake_bin = tmp_path / "bin"
@@ -421,6 +441,10 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     stale_staging = install / "releases" / ".staging-v1.0.0-orphaned"
     stale_staging.mkdir()
     (stale_staging / "partial-release.tar").write_text("interrupted", encoding="utf-8")
+    abandoned_candidate = install / "releases" / "abandoned-candidate"
+    abandoned_candidate.mkdir()
+    (abandoned_candidate / ".update-in-progress").touch()
+    (abandoned_candidate / "partial-file").write_text("incomplete", encoding="utf-8")
 
     class HealthHandler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -576,11 +600,34 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
             encoding="utf-8",
         )
         (previous_release / "release-marker.txt").write_text("previous release", encoding="utf-8")
+        (previous_release / ".update-in-progress").touch()
         for executable in ("python", "pip"):
             target = previous_release / "venv/bin" / executable
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(install / "venv/bin" / executable, target)
         (install / "current").symlink_to("releases/old-release", target_is_directory=True)
+
+    if active_staging:
+        active_app = stale_staging / "active-release"
+        for relative in (
+            "knxoh_paths.py",
+            "installer/create_update_backup.py",
+            "installer/prepare_release.py",
+            "installer/web_ui_endpoint.py",
+            "web_ui/backend/auth.py",
+            "web_ui/backend/storage.py",
+        ):
+            target = active_app / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(install / relative, target)
+        for executable in ("python", "pip"):
+            target = active_app / "venv/bin" / executable
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(install / "venv/bin" / executable, target)
+        (active_app / ".update-in-progress").touch()
+        (install / "current").symlink_to(
+            os.path.relpath(active_app, install), target_is_directory=True
+        )
 
     python3 = fake_bin / "python3"
     python3.write_text(
@@ -602,10 +649,17 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     )
     python3.chmod(0o755)
 
-    if activation_fails:
+    if activation_fails or interrupt_after_activation:
         mv = fake_bin / "mv"
         mv.write_text(
-            "#!/bin/bash\n" 'if [[ "$1" == "-Tf" ]]; then exit 1; fi\n' 'exec /bin/mv "$@"\n',
+            "#!/bin/bash\n"
+            'if [[ "$1" == "-Tf" && "${ACTIVATION_TEST_FAIL:-0}" == "1" ]]; then exit 1; fi\n'
+            'if [[ "$1" == "-Tf" && "${ACTIVATION_TEST_SIGNAL:-0}" == "1" ]]; then\n'
+            '  /bin/mv "$@" || exit $?\n'
+            '  kill -TERM "$PPID"\n'
+            "  exit 0\n"
+            "fi\n"
+            'exec /bin/mv "$@"\n',
             encoding="utf-8",
         )
         mv.chmod(0o755)
@@ -637,6 +691,8 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
             "PATH": str(fake_bin) + os.pathsep + environment["PATH"],
             "UPDATE_TEST_STATE": str(state),
             "DEPENDENCY_TEST_FAIL": "1" if dependency_fails else "0",
+            "ACTIVATION_TEST_FAIL": "1" if activation_fails else "0",
+            "ACTIVATION_TEST_SIGNAL": "1" if interrupt_after_activation else "0",
             "INSTALL_DIR": str(install),
             "KNXOH_INSTALL_DIR": str(install),
             "KNXOH_DATA_DIR": str(data_dir),
@@ -669,20 +725,32 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
 
     assert log_file.exists(), result.stdout + result.stderr
     log = log_file.read_text(encoding="utf-8")
-    assert result.returncode == (
-        1 if health_check_fails or activation_fails or dependency_fails else 0
-    ), (result.stdout + result.stderr)
+    expected_returncode = (
+        -signal.SIGTERM
+        if interrupt_after_activation
+        else 1 if health_check_fails or activation_fails or dependency_fails else 0
+    )
+    assert result.returncode == expected_returncode, result.stdout + result.stderr
     assert (install / "config.json").read_text(encoding="utf-8") == (
         '{"general":{"legacy":"custom"}}'
     )
     assert (data_dir / "jobs/user.json").read_text(encoding="utf-8") == "preserved"
+    if interrupt_after_activation:
+        assert (install / "current").is_symlink()
+        interrupted_release = (install / "current").resolve()
+        assert interrupted_release.is_dir()
+        assert (interrupted_release / ".update-in-progress").is_file()
     assert not stale_staging.exists()
-    if dependency_fails:
+    assert not abandoned_candidate.exists()
+    if interrupt_after_activation:
+        assert not (state / "restarts").exists()
+    elif dependency_fails:
         assert (install / "current").is_symlink()
         assert (install / "current").resolve() == install / "releases/old-release"
         assert (install / "current/release-marker.txt").read_text(encoding="utf-8") == (
             "previous release"
         )
+        assert (install / "current/.update-in-progress").is_file()
         assert "Could not install dependencies for v1.2.0" in log
         assert "The active release was not changed." in log
         assert not (state / "restarts").exists()
@@ -693,6 +761,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         assert "Could not atomically activate release v1.2.0." in log
         assert "Unactivated release candidate removed: v1.2.0." in log
         assert not (state / "restarts").exists()
+        assert (install / "current/.update-in-progress").is_file()
         assert list((install / "releases").iterdir()) == [install / "releases/old-release"]
     elif health_check_fails:
         assert not (install / "current").exists()
@@ -705,10 +774,11 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         assert (install / "current").is_symlink()
         active_release = (install / "current").resolve()
         assert (active_release / "version.json").is_file()
+        assert not (active_release / ".update-in-progress").exists()
         assert (state / "restarts").read_text(encoding="utf-8").strip() == "1"
         assert "Service health check passed for v1.2.0." in log
         assert "Removed obsolete release environment: old-release." in log
-        assert list((install / "releases").iterdir()) == [active_release]
+        assert set((install / "releases").iterdir()) == {active_release}
         launcher_result = subprocess.run(
             [str(active_release / "venv/bin/gunicorn")],
             capture_output=True,

@@ -102,9 +102,7 @@ def resolve_web_ui_health_endpoint(
         normalized_local: set[str] = set()
         for candidate in local:
             try:
-                normalized_local.add(
-                    ipaddress.ip_address(candidate.split("%", 1)[0]).compressed
-                )
+                normalized_local.add(ipaddress.ip_address(candidate.split("%", 1)[0]).compressed)
             except ValueError:
                 continue
 

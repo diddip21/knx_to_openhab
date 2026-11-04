@@ -469,6 +469,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     shutil.copy2(
         ROOT / "installer/create_update_backup.py", install / "installer/create_update_backup.py"
     )
+    shutil.copy2(ROOT / "installer/web_ui_endpoint.py", install / "installer/web_ui_endpoint.py")
     shutil.copy2(ROOT / "web_ui/backend/auth.py", install / "web_ui/backend/auth.py")
     shutil.copy2(ROOT / "web_ui/backend/storage.py", install / "web_ui/backend/storage.py")
     (install / "web_ui/backend/config.json").write_text(
@@ -501,6 +502,11 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         "  target = app / relative\n"
         "  target.parent.mkdir(parents=True, exist_ok=True)\n"
         "  target.write_text(content, encoding='utf-8')\n"
+        "for relative in ('knxoh_paths.py', 'installer/web_ui_endpoint.py',\n"
+        "                 'web_ui/backend/auth.py', 'web_ui/backend/storage.py'):\n"
+        "  target = app / relative\n"
+        "  target.parent.mkdir(parents=True, exist_ok=True)\n"
+        "  target.write_bytes((Path.cwd() / relative).read_bytes())\n"
         "metadata = {\n"
         "  'release_tag': tag, 'version': version,\n"
         "  'commit_hash': argument('--commit-hash'),\n"

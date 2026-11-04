@@ -2,10 +2,7 @@ import json
 
 import pytest
 
-from installer.web_ui_endpoint import (
-    resolve_web_ui_endpoint,
-    resolve_web_ui_health_endpoint,
-)
+from installer.web_ui_endpoint import resolve_web_ui_endpoint, resolve_web_ui_health_endpoint
 
 
 @pytest.fixture
@@ -113,6 +110,4 @@ def test_health_probe_rejects_a_hostname_that_resolves_only_remotely(monkeypatch
     )
 
     with pytest.raises(ValueError, match="does not resolve to a local address"):
-        resolve_web_ui_health_endpoint(
-            "knx-ui.local", 8085, local_addresses={"192.168.1.50"}
-        )
+        resolve_web_ui_health_endpoint("knx-ui.local", 8085, local_addresses={"192.168.1.50"})

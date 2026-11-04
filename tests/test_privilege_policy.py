@@ -571,9 +571,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
             json.dumps({"release_tag": "v1.1.0", "commit_hash": "b" * 40}),
             encoding="utf-8",
         )
-        (previous_release / "release-marker.txt").write_text(
-            "previous release", encoding="utf-8"
-        )
+        (previous_release / "release-marker.txt").write_text("previous release", encoding="utf-8")
         for executable in ("python", "pip"):
             target = previous_release / "venv/bin" / executable
             target.parent.mkdir(parents=True, exist_ok=True)

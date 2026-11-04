@@ -594,6 +594,8 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         '  (bin_dir / \'pip\').write_text(\'#!/bin/bash\\nif [[ "$1" == "install" && "${DEPENDENCY_TEST_FAIL:-0}" == "1" ]]; then exit 1; fi\\nexit 0\\n\')\n'
         "  (bin_dir / 'python').chmod(0o755)\n"
         "  (bin_dir / 'pip').chmod(0o755)\n"
+        "  (bin_dir / 'gunicorn').write_text(f'#!{bin_dir / \"python\"}\\nprint(\"gunicorn launched\")\\n')\n"
+        "  (bin_dir / 'gunicorn').chmod(0o755)\n"
         "else:\n"
         "  os.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n",
         encoding="utf-8",
@@ -707,6 +709,14 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         assert "Service health check passed for v1.2.0." in log
         assert "Removed obsolete release environment: old-release." in log
         assert list((install / "releases").iterdir()) == [active_release]
+        launcher_result = subprocess.run(
+            [str(active_release / "venv/bin/gunicorn")],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert launcher_result.returncode == 0, launcher_result.stderr
+        assert launcher_result.stdout.strip() == "gunicorn launched"
     if not dependency_fails:
         assert "No release data migration is declared" in log
     archives = list(backup_dir.glob("pre-update-*.tar.gz"))

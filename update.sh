@@ -287,7 +287,11 @@ cleanup_release_staging() {
     if [[ -n "${STAGING_DIR:-}" && -d "$STAGING_DIR" ]]; then
         rm -rf -- "$STAGING_DIR"
     fi
+    if [[ "${RELEASE_ACTIVATED:-0}" -eq 0 && -d "$NEW_RELEASE_DIR" && ! -L "$NEW_RELEASE_DIR" ]]; then
+        rm -rf -- "$NEW_RELEASE_DIR"
+    fi
 }
+RELEASE_ACTIVATED=0
 trap cleanup_release_staging EXIT
 
 REPOSITORY="${KNXOH_GITHUB_REPOSITORY:-diddip21/knx_to_openhab}"
@@ -302,6 +306,14 @@ if ! STAGED_APP_DIR=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_
     exit 1
 fi
 log "Verified release staged at $STAGED_APP_DIR."
+
+if ! mv -- "$STAGED_APP_DIR" "$NEW_RELEASE_DIR"; then
+    log "ERROR: Could not publish the complete staged release."
+    exit 1
+fi
+rmdir -- "$STAGING_DIR"
+STAGING_DIR=""
+STAGED_APP_DIR="$NEW_RELEASE_DIR"
 
 log "Creating isolated Python environment for $RELEASE_TAG..."
 if ! python3 -m venv "$STAGED_APP_DIR/venv"; then
@@ -355,12 +367,6 @@ if [[ -L "$CURRENT_LINK" ]]; then
     PREVIOUS_RELEASE_DIR=$(readlink -f -- "$CURRENT_LINK")
     HAD_PREVIOUS_LINK=1
 fi
-if ! mv -- "$STAGED_APP_DIR" "$NEW_RELEASE_DIR"; then
-    log "ERROR: Could not publish the complete staged release."
-    exit 1
-fi
-rmdir -- "$STAGING_DIR"
-STAGING_DIR=""
 
 TEMP_CURRENT_LINK="$INSTALL_DIR/.current-${RELEASE_DIR_NAME}-$$"
 if ! ln -s "releases/$RELEASE_DIR_NAME" "$TEMP_CURRENT_LINK" \
@@ -376,6 +382,7 @@ if ! ln -s "releases/$RELEASE_DIR_NAME" "$TEMP_CURRENT_LINK" \
     log "ERROR: Could not atomically activate release $RELEASE_TAG."
     exit 1
 fi
+RELEASE_ACTIVATED=1
 
 active_app_dir() {
     if [[ -L "$CURRENT_LINK" ]]; then

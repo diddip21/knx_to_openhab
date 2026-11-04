@@ -318,32 +318,16 @@ fi
 log "No release data migration is declared; external configuration and runtime data remain in place."
 
 # Resolve the health-check target from the same normalized settings Gunicorn
-# uses. Only literal IP addresses and localhost are accepted, so the probe
-# cannot be redirected to an unrelated remote host by a configured hostname.
+# uses. Hostnames must resolve to a local interface address before we probe.
 if ! WEB_UI_ENDPOINT=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" \
-    PYTHONPATH="$APP_DIR" "$APP_DIR/venv/bin/python" - <<'PY'
-import ipaddress
-
+    PYTHONPATH="$STAGED_APP_DIR" "$STAGED_APP_DIR/venv/bin/python" - <<'PY'
+from installer.web_ui_endpoint import resolve_web_ui_health_endpoint
 from web_ui.backend.storage import load_config
 
 config = load_config()
-port = config.get("port", 8085)
-if type(port) is not int or not 1 <= port <= 65535:
-    raise SystemExit("external Web UI port must be an integer from 1 to 65535")
-bind_host = str(config.get("bind_host", "127.0.0.1")).strip().strip("[]")
-if bind_host.lower() in ("localhost", "localhost.localdomain"):
-    health_host = "localhost"
-else:
-    try:
-        address = ipaddress.ip_address(bind_host)
-    except ValueError as error:
-        raise SystemExit("external Web UI bind_host must be localhost or an IP address") from error
-    if address.is_unspecified:
-        health_host = "127.0.0.1" if address.version == 4 else "::1"
-    elif address.is_multicast:
-        raise SystemExit("external Web UI bind_host must not be a multicast address")
-    else:
-        health_host = address.compressed
+health_host, port = resolve_web_ui_health_endpoint(
+    config.get("bind_host", "127.0.0.1"), config.get("port", 8085)
+)
 print(f"{health_host} {port}")
 PY
 ); then

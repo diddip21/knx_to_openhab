@@ -476,14 +476,14 @@ class Updater:
                 return False, f"An update request is already pending or running: {detail}"
 
             release_ok, release = self.check_github_version()
-            release_tag = release.get("release_tag")
-            if not release_ok or not isinstance(release_tag, str):
+            latest_release_tag = release.get("release_tag")
+            if not release_ok or not isinstance(latest_release_tag, str):
                 return False, release.get("error", "Could not resolve the latest stable release")
 
             current = self.get_current_version()
             current_release_tag = current.get("release_tag")
             if isinstance(current_release_tag, str):
-                release_order = _compare_semver(release_tag, current_release_tag)
+                release_order = _compare_semver(latest_release_tag, current_release_tag)
                 if release_order is not None and release_order < 0:
                     return False, "The installed release is newer than the latest stable release"
 
@@ -525,7 +525,7 @@ class Updater:
             request = {
                 "schema_version": 1,
                 "request_id": request_id,
-                "release_tag": release_tag,
+                "release_tag": latest_release_tag,
                 "commit_hash": commit_hash,
                 "commit_date": commit_date,
                 "commit_message": commit_message,
@@ -535,7 +535,7 @@ class Updater:
             data_dir.mkdir(parents=True, exist_ok=True)
             log_file = Path(self.base_path) / "update.log"
             try:
-                _write_update_log_header(log_file, release_tag, request_id)
+                _write_update_log_header(log_file, latest_release_tag, request_id)
             except OSError as error:
                 return False, f"Could not prepare the update log: {error}"
 
@@ -585,7 +585,7 @@ class Updater:
 
             return (
                 True,
-                f"Update request for {release_tag} (request_id={request_id}) started. "
+                f"Update request for {latest_release_tag} (request_id={request_id}) started. "
                 "The service will restart automatically.",
             )
 

@@ -3,8 +3,8 @@
 import json
 import os
 import shlex
-import signal
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile

@@ -241,7 +241,7 @@ def test_trigger_update_requires_worker_setup_before_queuing(monkeypatch, tmp_pa
     start_service.assert_not_called()
 
 
-def test_trigger_update_removes_queued_request_when_worker_service_cannot_start(
+def test_trigger_update_preserves_published_request_when_worker_service_cannot_start(
     monkeypatch, tmp_path
 ):
     update_script = tmp_path / "update.sh"
@@ -269,7 +269,78 @@ def test_trigger_update_removes_queued_request_when_worker_service_cannot_start(
 
     assert success is False
     assert "unit already running" in message
-    assert not (data_dir / "update-request.json").exists()
+    request = json.loads((data_dir / "update-request.json").read_text(encoding="utf-8"))
+    assert request["release_tag"] == "v1.4.0"
+
+
+def test_trigger_update_resumes_existing_pending_request(monkeypatch, tmp_path):
+    (tmp_path / "update.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    request_path = data_dir / "update-request.json"
+    data_dir.mkdir()
+    pending_request = {
+        "schema_version": 1,
+        "request_id": "b" * 32,
+        "release_tag": "v1.3.0",
+        "commit_hash": "c" * 40,
+        "commit_date": "2026-11-02T00:00:00Z",
+        "commit_message": "Already queued release",
+        "author": "Release Bot",
+        "repository": "diddip21/knx_to_openhab",
+    }
+    request_bytes = (json.dumps(pending_request) + "\n").encode()
+    request_path.write_bytes(request_bytes)
+    log_path = tmp_path / "update.log"
+    log_path.write_text("Existing request log\n", encoding="utf-8")
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(data_dir))
+    check_version = Mock(side_effect=AssertionError("pending requests must not need GitHub"))
+    monkeypatch.setattr(Updater, "check_github_version", check_version)
+    monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
+    _allow_isolated_update_worker(monkeypatch)
+    start_service = Mock(return_value=Mock(returncode=0, stderr=""))
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.run", start_service)
+
+    success, message = Updater(base_path=str(tmp_path)).trigger_update()
+
+    assert success is True
+    assert "pending" in message.lower()
+    assert start_service.call_count == 1
+    assert request_path.read_bytes() == request_bytes
+    assert log_path.read_text(encoding="utf-8") == "Existing request log\n"
+    check_version.assert_not_called()
+
+
+def test_trigger_update_preserves_pending_request_when_worker_is_running(monkeypatch, tmp_path):
+    (tmp_path / "update.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    request_path = data_dir / "update-request.json"
+    request_bytes = b'{"request_id":"existing"}\n'
+    request_path.write_bytes(request_bytes)
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(
+        Updater,
+        "check_github_version",
+        lambda _self: (
+            True,
+            {
+                "release_tag": "v1.4.0",
+                "commit_hash": "a" * 40,
+                "commit_date": "2026-11-03T00:00:00Z",
+            },
+        ),
+    )
+    monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
+    _allow_isolated_update_worker(monkeypatch)
+    start_service = Mock(return_value=Mock(returncode=4, stderr="unit already running"))
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.run", start_service)
+
+    success, message = Updater(base_path=str(tmp_path)).trigger_update()
+
+    assert success is False
+    assert "already running" in message
+    assert start_service.call_count == 1
+    assert request_path.read_bytes() == request_bytes
 
 
 def test_concurrent_update_request_cannot_replace_the_request_being_started(monkeypatch, tmp_path):
@@ -315,7 +386,7 @@ def test_concurrent_update_request_cannot_replace_the_request_being_started(monk
     first_thread.start()
     try:
         assert first_start_entered.wait(timeout=5)
-        second_success, _ = Updater(base_path=str(tmp_path)).trigger_update()
+        second_success, second_message = Updater(base_path=str(tmp_path)).trigger_update()
     finally:
         allow_first_start_to_finish.set()
         first_thread.join(timeout=5)
@@ -323,7 +394,8 @@ def test_concurrent_update_request_cannot_replace_the_request_being_started(monk
     assert not first_thread.is_alive()
     assert first_result["value"][0] is True
     assert second_success is False
-    assert start_mock.call_count == 1
+    assert "unit already running" in second_message
+    assert start_mock.call_count == 2
     assert json.loads(request_path.read_text(encoding="utf-8")) == first_request
 
 

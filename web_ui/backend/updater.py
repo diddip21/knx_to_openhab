@@ -31,6 +31,29 @@ _SEMVER_PATTERN = re.compile(
 )
 
 
+def _start_update_worker() -> Tuple[bool, str]:
+    try:
+        result = subprocess.run(
+            [
+                "/usr/bin/sudo",
+                "-n",
+                _SERVICE_UPDATE_HELPER,
+                "start-web-update",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        return False, str(error)
+
+    if result.returncode != 0:
+        detail = (result.stderr or "").strip()
+        return False, detail or "Could not start the isolated updater service."
+    return True, ""
+
+
 def _parse_semver(tag: str) -> Optional[Tuple[int, int, int, Optional[Tuple[str, ...]]]]:
     match = _SEMVER_PATTERN.fullmatch(tag)
     if not match:
@@ -380,6 +403,20 @@ class Updater:
             Tuple of (success, message)
         """
         try:
+            data_dir = get_paths(self.base_path).data_dir
+            request_path = data_dir / "update-request.json"
+            if os.path.lexists(request_path):
+                setup_error = self._update_worker_setup_error()
+                if setup_error:
+                    return False, setup_error
+                started, detail = _start_update_worker()
+                if started:
+                    return (
+                        True,
+                        "Pending update request started. The service will restart automatically.",
+                    )
+                return False, f"An update request is already pending or running: {detail}"
+
             release_ok, release = self.check_github_version()
             release_tag = release.get("release_tag")
             if not release_ok or not isinstance(release_tag, str):
@@ -437,10 +474,10 @@ class Updater:
                 "author": author,
                 "repository": repository,
             }
-            data_dir = get_paths(self.base_path).data_dir
             data_dir.mkdir(parents=True, exist_ok=True)
-            request_path = os.path.join(data_dir, "update-request.json")
+            request_path = os.fspath(request_path)
             temporary_path = os.path.join(data_dir, f".update-request-{request_id}.tmp")
+            existing_request = False
             try:
                 with open(temporary_path, "x", encoding="utf-8") as request_file:
                     json.dump(request, request_file, ensure_ascii=True)
@@ -451,7 +488,7 @@ class Updater:
                 try:
                     os.link(temporary_path, request_path)
                 except FileExistsError:
-                    return False, "Another update request is already pending."
+                    existing_request = True
             finally:
                 try:
                     os.unlink(temporary_path)
@@ -459,47 +496,31 @@ class Updater:
                     pass
 
             log_file = os.path.join(self.base_path, "update.log")
-            try:
-                with open(log_file, "w", encoding="utf-8") as log:
-                    log.write(f"Update queued for {release_tag} ({request_id}).\n")
-            except OSError as error:
+            if not existing_request:
                 try:
-                    with open(request_path, encoding="utf-8") as request_file:
-                        queued = json.load(request_file)
-                    if queued.get("request_id") == request_id:
-                        os.unlink(request_path)
-                except (OSError, json.JSONDecodeError):
-                    pass
-                return False, f"Could not prepare the update log: {error}"
+                    with open(log_file, "w", encoding="utf-8") as log:
+                        log.write(f"Update queued for {release_tag} ({request_id}).\n")
+                except OSError as error:
+                    try:
+                        with open(request_path, encoding="utf-8") as request_file:
+                            queued = json.load(request_file)
+                        if queued.get("request_id") == request_id:
+                            os.unlink(request_path)
+                    except (OSError, json.JSONDecodeError):
+                        pass
+                    return False, f"Could not prepare the update log: {error}"
 
-            start_error = ""
-            try:
-                result = subprocess.run(
-                    [
-                        "/usr/bin/sudo",
-                        "-n",
-                        "/usr/local/sbin/knxohui-service-update",
-                        "start-web-update",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=15,
-                    check=False,
+            started, detail = _start_update_worker()
+            if not started:
+                if existing_request:
+                    return False, f"An update request is already pending or running: {detail}"
+                return False, detail
+
+            if existing_request:
+                return (
+                    True,
+                    "Pending update request started. The service will restart automatically.",
                 )
-            except (OSError, subprocess.SubprocessError) as error:
-                result = None
-                start_error = str(error)
-
-            if result is None or result.returncode != 0:
-                try:
-                    with open(request_path, encoding="utf-8") as request_file:
-                        queued = json.load(request_file)
-                    if queued.get("request_id") == request_id:
-                        os.unlink(request_path)
-                except (OSError, json.JSONDecodeError):
-                    pass
-                detail = start_error if result is None else (result.stderr or "").strip()
-                return False, detail or "Could not start the isolated updater service."
 
             return (
                 True,

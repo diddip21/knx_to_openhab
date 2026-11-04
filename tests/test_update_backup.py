@@ -242,6 +242,9 @@ def test_release_preparation_failure_keeps_legacy_install_and_runtime_data(tmp_p
     assert prepare_marker.exists()
     assert "Could not download, verify, or extract release v1.2.3" in result.stdout
     assert not (install_dir / "current").exists()
+    assert (install_dir / "config.json").read_text(encoding="utf-8") == (
+        '{"general": {"legacy": true}}'
+    )
     assert runtime_file.read_text(encoding="utf-8") == '{"custom":"preserve"}'
     assert len(list(backup_dir.glob("pre-update-*.tar.gz"))) == 1
     assert not list((install_dir / "releases").glob(".staging-*"))

@@ -28,7 +28,7 @@ def _is_debian_based_linux() -> bool:
         if separator:
             release_values[key] = value.strip().strip('"').strip("'")
     release_ids = {release_values.get("ID", ""), *release_values.get("ID_LIKE", "").split()}
-    return bool({"debian", "ubuntu"} & release_ids)
+    return "debian" in release_ids
 
 
 pytestmark = pytest.mark.skipif(

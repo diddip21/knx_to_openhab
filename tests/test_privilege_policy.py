@@ -554,7 +554,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     )
     pip.chmod(0o755)
 
-    if activation_fails:
+    if activation_fails or dependency_fails:
         previous_release = install / "releases/old-release"
         for relative in (
             "knxoh_paths.py",
@@ -570,6 +570,9 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         (previous_release / "version.json").write_text(
             json.dumps({"release_tag": "v1.1.0", "commit_hash": "b" * 40}),
             encoding="utf-8",
+        )
+        (previous_release / "release-marker.txt").write_text(
+            "previous release", encoding="utf-8"
         )
         for executable in ("python", "pip"):
             target = previous_release / "venv/bin" / executable
@@ -670,11 +673,15 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     )
     assert (data_dir / "jobs/user.json").read_text(encoding="utf-8") == "preserved"
     if dependency_fails:
-        assert not (install / "current").exists()
+        assert (install / "current").is_symlink()
+        assert (install / "current").resolve() == install / "releases/old-release"
+        assert (install / "current/release-marker.txt").read_text(encoding="utf-8") == (
+            "previous release"
+        )
         assert "Could not install dependencies for v1.2.0" in log
         assert "The active release was not changed." in log
         assert not (state / "restarts").exists()
-        assert list((install / "releases").iterdir()) == []
+        assert list((install / "releases").iterdir()) == [install / "releases/old-release"]
     elif activation_fails:
         assert (install / "current").is_symlink()
         assert (install / "current").resolve() == install / "releases/old-release"

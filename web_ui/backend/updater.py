@@ -55,6 +55,28 @@ def _start_update_worker() -> Tuple[bool, str]:
     return True, ""
 
 
+def _read_update_request_identity(request_path: Path) -> Tuple[str, str]:
+    with request_path.open(encoding="utf-8") as request_file:
+        request = json.load(request_file)
+    if not isinstance(request, dict):
+        raise ValueError("Pending update request has an invalid format.")
+
+    release_tag = request.get("release_tag")
+    request_id = request.get("request_id")
+    if not isinstance(release_tag, str) or not _SEMVER_PATTERN.fullmatch(release_tag):
+        raise ValueError("Pending update request has an invalid release tag.")
+    if not isinstance(request_id, str) or not re.fullmatch(r"[0-9a-f]{32}", request_id):
+        raise ValueError("Pending update request has an invalid identifier.")
+    return release_tag, request_id
+
+
+def _write_update_log_header(log_path: Path, release_tag: str, request_id: str) -> None:
+    with log_path.open("w", encoding="utf-8") as log_file:
+        log_file.write(f"Update queued for {release_tag} (request_id={request_id}).\n")
+        log_file.flush()
+        os.fsync(log_file.fileno())
+
+
 def _parse_semver(tag: str) -> Optional[Tuple[int, int, int, Optional[Tuple[str, ...]]]]:
     match = _SEMVER_PATTERN.fullmatch(tag)
     if not match:
@@ -431,14 +453,25 @@ class Updater:
                 pending_exists = True
 
             if pending_exists:
+                try:
+                    release_tag, request_id = _read_update_request_identity(request_path)
+                except (OSError, ValueError) as error:
+                    return False, f"Could not read the pending update request: {error}"
                 setup_error = self._update_worker_setup_error()
                 if setup_error:
                     return False, setup_error
+                try:
+                    _write_update_log_header(
+                        Path(self.base_path) / "update.log", release_tag, request_id
+                    )
+                except OSError as error:
+                    return False, f"Could not prepare the update log: {error}"
                 started, detail = _start_update_worker()
                 if started:
                     return (
                         True,
-                        "Pending update request started. The service will restart automatically.",
+                        f"Pending update request for {release_tag} (request_id={request_id}) "
+                        "started. The service will restart automatically.",
                     )
                 return False, f"An update request is already pending or running: {detail}"
 
@@ -500,6 +533,12 @@ class Updater:
                 "repository": repository,
             }
             data_dir.mkdir(parents=True, exist_ok=True)
+            log_file = Path(self.base_path) / "update.log"
+            try:
+                _write_update_log_header(log_file, release_tag, request_id)
+            except OSError as error:
+                return False, f"Could not prepare the update log: {error}"
+
             temporary_path = os.path.join(data_dir, f".update-request-{request_id}.tmp")
             existing_request = False
             try:
@@ -519,20 +558,17 @@ class Updater:
                 except FileNotFoundError:
                     pass
 
-            log_file = os.path.join(self.base_path, "update.log")
-            if not existing_request:
+            if existing_request:
                 try:
-                    with open(log_file, "w", encoding="utf-8") as log:
-                        log.write(f"Update queued for {release_tag} ({request_id}).\n")
+                    release_tag, request_id = _read_update_request_identity(request_path)
+                    _write_update_log_header(log_file, release_tag, request_id)
                 except OSError as error:
-                    try:
-                        with open(request_path, encoding="utf-8") as request_file:
-                            queued = json.load(request_file)
-                        if queued.get("request_id") == request_id:
-                            os.unlink(request_path)
-                    except (OSError, json.JSONDecodeError):
-                        pass
-                    return False, f"Could not prepare the update log: {error}"
+                    return (
+                        False,
+                        f"Could not prepare the update log for the pending request: {error}",
+                    )
+                except ValueError as error:
+                    return False, f"Could not read the pending update request: {error}"
 
             started, detail = _start_update_worker()
             if not started:
@@ -543,12 +579,14 @@ class Updater:
             if existing_request:
                 return (
                     True,
-                    "Pending update request started. The service will restart automatically.",
+                    f"Pending update request for {release_tag} (request_id={request_id}) "
+                    "started. The service will restart automatically.",
                 )
 
             return (
                 True,
-                "Update process started. The service will restart automatically.",
+                f"Update request for {release_tag} (request_id={request_id}) started. "
+                "The service will restart automatically.",
             )
 
         except Exception as e:

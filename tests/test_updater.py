@@ -66,6 +66,67 @@ def test_trigger_update_passes_install_dir_and_selected_release(monkeypatch, tmp
     )
 
 
+def test_trigger_update_log_before_publish_is_fsynced(monkeypatch, tmp_path):
+    (tmp_path / "update.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    log_path = tmp_path / "update.log"
+    log_path.write_text(
+        "Update queued for v1.4.0 (request_id=" + "a" * 32 + ").\n"
+        "Update completed successfully!\n",
+        encoding="utf-8",
+    )
+    log_inode = log_path.stat().st_ino
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(
+        Updater,
+        "check_github_version",
+        lambda _self: (
+            True,
+            {
+                "release_tag": "v1.4.0",
+                "commit_hash": "a" * 40,
+                "commit_date": "2026-11-03T00:00:00Z",
+            },
+        ),
+    )
+    monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
+    _allow_isolated_update_worker(monkeypatch)
+    monkeypatch.setattr(
+        "web_ui.backend.updater.subprocess.run", Mock(return_value=Mock(returncode=0, stderr=""))
+    )
+    real_fsync = os.fsync
+    real_link = os.link
+    events = []
+    publication = {}
+
+    def record_fsync(descriptor):
+        if os.fstat(descriptor).st_ino == log_inode:
+            events.append("log_fsync")
+        return real_fsync(descriptor)
+
+    def record_publication(source, target, *args, **kwargs):
+        request = json.loads(open(source, encoding="utf-8").read())
+        publication["log"] = log_path.read_text(encoding="utf-8")
+        publication["request"] = request
+        publication["log_fsynced"] = "log_fsync" in events
+        events.append("publish")
+        return real_link(source, target, *args, **kwargs)
+
+    monkeypatch.setattr("web_ui.backend.updater.os.fsync", record_fsync)
+    monkeypatch.setattr("web_ui.backend.updater.os.link", record_publication)
+
+    success, _message = Updater(base_path=str(tmp_path)).trigger_update()
+
+    expected_header = (
+        f"Update queued for v1.4.0 (request_id={publication['request']['request_id']}).\n"
+    )
+    assert success is True
+    assert publication["log"] == expected_header
+    assert publication["log_fsynced"] is True
+    assert events.index("log_fsync") < events.index("publish")
+    assert log_path.read_text(encoding="utf-8") == expected_header
+
+
 def test_trigger_update_runs_the_active_release_script_from_the_stable_install_root(
     monkeypatch, tmp_path
 ):
@@ -300,17 +361,72 @@ def test_trigger_update_resumes_existing_pending_request(monkeypatch, tmp_path):
     monkeypatch.setattr(Updater, "check_github_version", check_version)
     monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
     _allow_isolated_update_worker(monkeypatch)
-    start_service = Mock(return_value=Mock(returncode=0, stderr=""))
+
+    def start_worker(*_args, **_kwargs):
+        assert log_path.read_text(encoding="utf-8") == (
+            "Update queued for v1.3.0 (request_id=" + "b" * 32 + ").\n"
+        )
+        return Mock(returncode=0, stderr="")
+
+    start_service = Mock(side_effect=start_worker)
     monkeypatch.setattr("web_ui.backend.updater.subprocess.run", start_service)
 
     success, message = Updater(base_path=str(tmp_path)).trigger_update()
 
     assert success is True
-    assert "pending" in message.lower()
+    assert "v1.3.0" in message
+    assert "request_id=" + "b" * 32 in message
     assert start_service.call_count == 1
     assert request_path.read_bytes() == request_bytes
-    assert log_path.read_text(encoding="utf-8") == "Existing request log\n"
+    assert log_path.read_text(encoding="utf-8") == (
+        "Update queued for v1.3.0 (request_id=" + "b" * 32 + ").\n"
+    )
     check_version.assert_not_called()
+
+
+def test_trigger_update_reports_request_that_won_publication_race(monkeypatch, tmp_path):
+    (tmp_path / "update.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(
+        Updater,
+        "check_github_version",
+        lambda _self: (
+            True,
+            {
+                "release_tag": "v1.4.0",
+                "commit_hash": "a" * 40,
+                "commit_date": "2026-11-03T00:00:00Z",
+            },
+        ),
+    )
+    monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
+    _allow_isolated_update_worker(monkeypatch)
+    raced_request = {
+        "schema_version": 1,
+        "request_id": "e" * 32,
+        "release_tag": "v1.3.0",
+        "commit_hash": "d" * 40,
+        "commit_date": "2026-11-02T00:00:00Z",
+        "commit_message": "Already published release",
+        "author": "Release Bot",
+        "repository": "diddip21/knx_to_openhab",
+    }
+
+    def publish_raced_request(_source, target):
+        (data_dir / target).write_text(json.dumps(raced_request), encoding="utf-8")
+        raise FileExistsError
+
+    monkeypatch.setattr("web_ui.backend.updater.os.link", publish_raced_request)
+    monkeypatch.setattr(
+        "web_ui.backend.updater.subprocess.run", Mock(return_value=Mock(returncode=0, stderr=""))
+    )
+
+    success, message = Updater(base_path=str(tmp_path)).trigger_update()
+
+    assert success is True
+    assert "v1.3.0" in message
+    assert "request_id=" + "e" * 32 in message
 
 
 def test_trigger_update_preserves_pending_request_when_worker_is_running(monkeypatch, tmp_path):
@@ -318,7 +434,21 @@ def test_trigger_update_preserves_pending_request_when_worker_is_running(monkeyp
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     request_path = data_dir / "update-request.json"
-    request_bytes = b'{"request_id":"existing"}\n'
+    request_bytes = (
+        json.dumps(
+            {
+                "schema_version": 1,
+                "request_id": "c" * 32,
+                "release_tag": "v1.3.0",
+                "commit_hash": "d" * 40,
+                "commit_date": "2026-11-02T00:00:00Z",
+                "commit_message": "Pending release",
+                "author": "Release Bot",
+                "repository": "diddip21/knx_to_openhab",
+            }
+        )
+        + "\n"
+    ).encode()
     request_path.write_bytes(request_bytes)
     monkeypatch.setenv("KNXOH_DATA_DIR", str(data_dir))
     monkeypatch.setattr(

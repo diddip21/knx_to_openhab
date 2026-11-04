@@ -2738,6 +2738,13 @@ function showUpdateDialog(updateData) {
 }
 let updatePollInterval = null
 
+function parseUpdateRequestIdentity(message) {
+  const match = String(message || '').match(
+    /\b(v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:\+[0-9A-Za-z.-]+)?) \(request_id=([0-9a-f]{32})\)/
+  )
+  return match ? { releaseTag: match[1], requestId: match[2] } : null
+}
+
 async function performUpdate() {
   const updateDialog = document.getElementById('updateDialog')
   const logModal = document.getElementById('updateLogModal')
@@ -2753,27 +2760,34 @@ async function performUpdate() {
     const response = await apiFetch('/api/version/update', { method: 'POST' })
     const data = await response.json()
 
-    if (data.status === 'updating' || data.status === 'simulated') {
-      // Start polling for logs
-      startUpdateLogPolling()
+    if (response.ok && data.status === 'updating') {
+      const requestIdentity = parseUpdateRequestIdentity(data.message)
+      if (!requestIdentity) {
+        setLocalizedMessage(logContent, 'updates.apiError', {
+          error: 'The updater response did not identify the queued request.'
+        })
+        return
+      }
+      setTranslatedMessage(logContent, data.message)
+      startUpdateLogPolling(requestIdentity)
+    } else if (response.ok && data.status === 'simulated') {
+      setTranslatedMessage(logContent, data.message || 'Update simulation')
     } else {
       setLocalizedMessage(logContent, 'updates.apiError', {
-        error: data.error || { i18nKey: 'common.unknownError' }
+        error: data.error || data.message || { i18nKey: 'common.unknownError' }
       })
-      // Try polling anyway in case it partially started
-      startUpdateLogPolling()
     }
   } catch (error) {
     setLocalizedMessage(logContent, 'updates.requestFailed', { error: error.message })
-    // Try polling anyway
-    startUpdateLogPolling()
   }
 }
 
-function startUpdateLogPolling() {
+function startUpdateLogPolling(requestIdentity) {
   const logContent = document.getElementById('updateLogContent')
   const successDialog = document.getElementById('updateSuccessDialog')
   const countdownEl = document.getElementById('reloadCountdown')
+  const requestHeader = `Update queued for ${requestIdentity.releaseTag} (request_id=${requestIdentity.requestId}).`
+  let currentRequestObserved = false
 
   if (updatePollInterval) clearInterval(updatePollInterval)
 
@@ -2783,6 +2797,12 @@ function startUpdateLogPolling() {
       if (res.ok) {
         const data = await res.json()
         if (data.log) {
+          if (!currentRequestObserved && data.log.includes(requestHeader)) {
+            currentRequestObserved = true
+          }
+          // Ignore a previous attempt if the log endpoint briefly lags POST.
+          if (!currentRequestObserved) return
+
           // Update log display
           if (logContent.textContent.length !== data.log.length || !logContent.textContent.startsWith(data.log.substring(0, 20))) {
             clearLocalizedMessage(logContent)

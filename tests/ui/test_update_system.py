@@ -1,13 +1,20 @@
 """UI tests for update system (version check, dialogs, log)."""
 
 import json
+import os
 import re
 
 import pytest
 from playwright.sync_api import Page, expect
 
 
-def _setup_version_routes(page: Page, update_available=False, log_state=None):
+def _setup_version_routes(
+    page: Page,
+    update_available=False,
+    log_state=None,
+    update_response=None,
+    update_status=200,
+):
     calls = {"update": 0, "log": 0}
     current_version = {
         "commit_short": "abc1234",
@@ -51,13 +58,25 @@ def _setup_version_routes(page: Page, update_available=False, log_state=None):
             )
         if url.endswith("/api/version/update") and method == "POST":
             calls["update"] += 1
-            return _fulfill(route, {"status": "updating", "message": "Update started"})
+            return _fulfill(
+                route,
+                update_response
+                or {
+                    "status": "updating",
+                    "message": "Update request for v1.4.0 (request_id=" + "b" * 32 + ") started",
+                },
+                status=update_status,
+            )
         if url.endswith("/api/version/log"):
             calls["log"] += 1
             update_log = (
                 log_state["value"]
                 if log_state is not None
-                else "Starting update...\nRelease archive verified"
+                else (
+                    "Update queued for v1.4.0 (request_id="
+                    + "b" * 32
+                    + ").\nStarting update...\nRelease archive verified"
+                )
             )
             return _fulfill(route, {"log": update_log})
         if url.endswith("/api/jobs"):
@@ -156,7 +175,13 @@ class TestUpdateSystem:
         assert calls["log"] >= 1
 
     def test_success_dialog_waits_for_health_validation(self, page: Page, base_url, flask_server):
-        log_state = {"value": "Restarting knxohui.service on release v1.4.0..."}
+        request_id = "b" * 32
+        log_state = {
+            "value": (
+                f"Update queued for v1.4.0 (request_id={request_id}).\n"
+                "Restarting knxohui.service on release v1.4.0..."
+            )
+        }
         _setup_version_routes(page, update_available=True, log_state=log_state)
         page.goto(base_url)
 
@@ -171,7 +196,75 @@ class TestUpdateSystem:
 
         log_state["value"] += "\nUpdate completed successfully!"
         expect(page.locator("#updateSuccessDialog[open]")).to_be_visible(timeout=5000)
-        page.screenshot(path="docs/screenshots/pr70-update-success-dialog.png", full_page=True)
+        if os.environ.get("CAPTURE_PR70_UPDATE_SCREENSHOT") == "1":
+            page.screenshot(path="docs/screenshots/pr70-update-success-dialog.png", full_page=True)
+
+    def test_stale_success_log_is_ignored_until_current_request_and_rollback(
+        self, page: Page, base_url, flask_server
+    ):
+        old_request_id = "a" * 32
+        current_request_id = "b" * 32
+        log_state = {
+            "value": (
+                f"Update queued for v1.4.0 (request_id={old_request_id}).\n"
+                "Update completed successfully!"
+            )
+        }
+        calls = _setup_version_routes(page, update_available=True, log_state=log_state)
+        page.goto(base_url)
+
+        page.locator("#versionBadge").click()
+        expect(page.locator("#updateDialog[open]")).to_be_visible(timeout=10000)
+        page.locator("#dialogUpdateBtn").click()
+
+        expect(page.locator("#updateLogContent")).to_contain_text("started", timeout=5000)
+        expect(page.locator("#updateSuccessDialog[open]")).to_have_count(0)
+        page.wait_for_timeout(1200)
+        assert calls["log"] >= 1
+        expect(page.locator("#updateLogContent")).not_to_contain_text(
+            "Update completed successfully"
+        )
+        expect(page.locator("#updateSuccessDialog[open]")).to_have_count(0)
+
+        log_state["value"] = (
+            f"Update queued for v1.4.0 (request_id={current_request_id}).\n"
+            "Restarting knxohui.service on release v1.4.0..."
+        )
+        expect(page.locator("#updateLogContent")).to_contain_text(
+            "Restarting knxohui.service", timeout=5000
+        )
+        log_state["value"] += (
+            "\nThe updated service did not pass its health check.\n"
+            "Previous release restored and health check passed."
+        )
+        expect(page.locator("#updateLogContent")).to_contain_text(
+            "Previous release restored", timeout=5000
+        )
+        expect(page.locator("#updateSuccessDialog[open]")).to_have_count(0)
+
+    def test_update_startup_error_is_not_overwritten_by_log_polling(
+        self, page: Page, base_url, flask_server
+    ):
+        calls = _setup_version_routes(
+            page,
+            update_available=True,
+            log_state={"value": "Update completed successfully! from an older request"},
+            update_response={"error": "The updater is already running."},
+            update_status=409,
+        )
+        page.goto(base_url)
+
+        page.locator("#versionBadge").click()
+        expect(page.locator("#updateDialog[open]")).to_be_visible(timeout=10000)
+        page.locator("#dialogUpdateBtn").click()
+
+        expect(page.locator("#updateLogContent")).to_contain_text(
+            "updater is already running", timeout=10000
+        )
+        page.wait_for_timeout(1200)
+        assert calls["log"] == 0
+        expect(page.locator("#updateLogContent")).to_contain_text("updater is already running")
+        expect(page.locator("#updateSuccessDialog[open]")).to_have_count(0)
 
     def test_update_dialog_cancel(self, page: Page, base_url, flask_server):
         _setup_version_routes(page, update_available=True)

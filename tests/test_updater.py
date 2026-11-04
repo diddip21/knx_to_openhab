@@ -1,6 +1,7 @@
 """Tests for the web UI self-updater."""
 
 import json
+import threading
 from unittest.mock import Mock
 
 from web_ui.backend.updater import Updater
@@ -269,6 +270,61 @@ def test_trigger_update_removes_queued_request_when_worker_service_cannot_start(
     assert success is False
     assert "unit already running" in message
     assert not (data_dir / "update-request.json").exists()
+
+
+def test_concurrent_update_request_cannot_replace_the_request_being_started(monkeypatch, tmp_path):
+    (tmp_path / "update.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    request_path = data_dir / "update-request.json"
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(
+        Updater,
+        "check_github_version",
+        lambda _self: (
+            True,
+            {
+                "release_tag": "v1.4.0",
+                "commit_hash": "a" * 40,
+                "commit_date": "2026-11-03T00:00:00Z",
+            },
+        ),
+    )
+    monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
+    _allow_isolated_update_worker(monkeypatch)
+
+    first_start_entered = threading.Event()
+    allow_first_start_to_finish = threading.Event()
+    first_request = {}
+
+    def start_service(*_args, **_kwargs):
+        if not first_start_entered.is_set():
+            first_request.update(json.loads(request_path.read_text(encoding="utf-8")))
+            first_start_entered.set()
+            assert allow_first_start_to_finish.wait(timeout=5)
+            return Mock(returncode=0, stderr="")
+        return Mock(returncode=1, stderr="unit already running")
+
+    start_mock = Mock(side_effect=start_service)
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.run", start_mock)
+    first_result = {}
+    first_thread = threading.Thread(
+        target=lambda: first_result.setdefault(
+            "value", Updater(base_path=str(tmp_path)).trigger_update()
+        )
+    )
+    first_thread.start()
+    try:
+        assert first_start_entered.wait(timeout=5)
+        second_success, _ = Updater(base_path=str(tmp_path)).trigger_update()
+    finally:
+        allow_first_start_to_finish.set()
+        first_thread.join(timeout=5)
+
+    assert not first_thread.is_alive()
+    assert first_result["value"][0] is True
+    assert second_success is False
+    assert start_mock.call_count == 1
+    assert json.loads(request_path.read_text(encoding="utf-8")) == first_request
 
 
 def test_check_for_updates_does_not_downgrade_a_newer_prerelease(monkeypatch):

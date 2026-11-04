@@ -448,7 +448,10 @@ class Updater:
                     request_file.flush()
                     os.fsync(request_file.fileno())
                 os.chmod(temporary_path, 0o600)
-                os.replace(temporary_path, request_path)
+                try:
+                    os.link(temporary_path, request_path)
+                except FileExistsError:
+                    return False, "Another update request is already pending."
             finally:
                 try:
                     os.unlink(temporary_path)

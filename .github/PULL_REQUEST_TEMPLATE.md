@@ -1,0 +1,35 @@
+## Summary
+
+In under 200 words, describe the user problem and why this change is useful. AI assistance is welcome; disclose agent-drafted text in the authoring environment section below.
+
+## Issue and scope
+
+- Issue(s):
+- What this PR changes:
+- What remains out of scope or is still open:
+
+## Behavior and compatibility
+
+- User-visible behavior:
+- Compatibility/default behavior:
+- Configuration or migration impact (or `None`):
+
+## Verification
+
+List the exact commands/checks run and their results. Note any relevant checks not run and why.
+
+## Review checklist
+
+- [ ] Scope is focused and linked to the relevant issue.
+- [ ] Tests cover the changed behavior; existing/default behavior is preserved where required.
+- [ ] Documentation is updated where needed.
+- [ ] `black --check .`, `isort --check-only .`, and `flake8 .` pass.
+- [ ] Applicable tests pass, or exceptions are explained above.
+- [ ] UI changes include screenshots under `docs/screenshots/` with no secrets or personal data.
+
+## Authoring environment disclosure
+
+State one of:
+
+- Written by hand, with no AI agent; or
+- AI-assisted: model, harness and version, and installed plugins used.

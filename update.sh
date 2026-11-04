@@ -266,6 +266,17 @@ if ! mkdir -p -- "$RELEASES_DIR"; then
     exit 1
 fi
 
+# The update lock is already held, so no active updater owns these abandoned
+# direct-child staging directories. Remove them before allocating more space.
+for stale_staging in "$RELEASES_DIR"/.staging-*; do
+    [[ -d "$stale_staging" && ! -L "$stale_staging" ]] || continue
+    if ! rm -rf -- "$stale_staging"; then
+        log "ERROR: Could not remove stale release staging directory: $stale_staging"
+        exit 1
+    fi
+    log "Removed stale release staging directory: $(basename -- "$stale_staging")."
+done
+
 RELEASE_DIR_NAME="${RELEASE_TAG#v}-${RELEASE_COMMIT_HASH:0:12}-$(date +%s)-$$"
 NEW_RELEASE_DIR="$RELEASES_DIR/$RELEASE_DIR_NAME"
 if ! STAGING_DIR=$(mktemp -d "$RELEASES_DIR/.staging-${RELEASE_TAG#v}-XXXXXXXX"); then

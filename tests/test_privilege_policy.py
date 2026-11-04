@@ -410,6 +410,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     for directory in (
         install / "installer",
         install / "web_ui/backend",
+        install / "releases",
         fake_bin,
         state,
         backup_dir,
@@ -417,6 +418,9 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         data_dir,
     ):
         directory.mkdir(parents=True, exist_ok=True)
+    stale_staging = install / "releases" / ".staging-v1.0.0-orphaned"
+    stale_staging.mkdir()
+    (stale_staging / "partial-release.tar").write_text("interrupted", encoding="utf-8")
 
     class HealthHandler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -670,6 +674,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         '{"general":{"legacy":"custom"}}'
     )
     assert (data_dir / "jobs/user.json").read_text(encoding="utf-8") == "preserved"
+    assert not stale_staging.exists()
     if dependency_fails:
         assert (install / "current").is_symlink()
         assert (install / "current").resolve() == install / "releases/old-release"

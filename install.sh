@@ -739,6 +739,9 @@ main() {
     check_root
     check_os
     check_sudo
+    if ! run_installer_preflight "$INSTALL_MODE" "$INSTALL_DIR"; then
+        exit 1
+    fi
     if [[ "$INSTALL_MODE" == "install" || "$INSTALL_MODE" == "update" ]]; then
         if ! RELEASE_VERSION="$(resolve_release_version "$REQUESTED_VERSION")"; then
             exit 1
@@ -749,9 +752,6 @@ main() {
         else
             log_info "Using the latest stable release $RELEASE_TAG."
         fi
-    fi
-    if ! run_installer_preflight "$INSTALL_MODE" "$INSTALL_DIR"; then
-        exit 1
     fi
     install_dependencies
     if ! verify_venv_support python3; then

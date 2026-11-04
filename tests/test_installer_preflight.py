@@ -274,6 +274,34 @@ def test_unsupported_python_is_rejected_before_release_resolution(tmp_path):
     assert not (root / "curl-calls").exists()
 
 
+def test_installer_runs_bounded_connectivity_probe_before_release_lookup(tmp_path):
+    environment, root = make_preflight_environment(tmp_path, curl_status=28)
+    environment.update(
+        {
+            "ALLOW_ROOT": "1",
+            "PATH": f"{root / 'bin'}:/usr/bin:/bin",
+        }
+    )
+    sudo = root / "bin" / "sudo"
+    sudo.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    sudo.chmod(0o755)
+
+    result = subprocess.run(
+        ["/bin/bash", str(INSTALLER), "--install"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "Could not reach GitHub" in output
+    assert "Could not retrieve the latest stable GitHub release" not in output
+    assert (root / "curl-calls").read_text(encoding="utf-8").count("called") == 1
+
+
 def test_os_preflight_handles_missing_id_like_without_unbound_variable(tmp_path):
     environment, root = make_preflight_environment(tmp_path)
     os_release = root / "unsupported-os-release"

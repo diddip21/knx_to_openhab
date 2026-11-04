@@ -50,8 +50,8 @@ for line in lines:
 print("/etc/knx_to_openhab")
 PY
 }
-INSTALL_DIR="${KNXOH_INSTALL_DIR:-$(read_saved_install_dir)}"
-CONFIG_DIR="${KNXOH_CONFIG_DIR:-$(read_saved_config_dir)}"
+INSTALL_DIR="${KNXOH_INSTALL_DIR:-}"
+CONFIG_DIR="${KNXOH_CONFIG_DIR:-}"
 REQUESTED_VERSION=""
 RELEASE_VERSION=""
 RELEASE_TAG=""
@@ -74,24 +74,21 @@ log_error() {
 }
 
 is_valid_semver() {
-    python3 - "$1" <<'PY'
-import re
-import sys
+    local pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$'
+    local prerelease
+    local identifier
+    local -a identifiers
 
-pattern = re.compile(
-    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
-    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
-    r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
-)
-match = pattern.fullmatch(sys.argv[1])
-if not match:
-    raise SystemExit(1)
-prerelease = match.group(4)
-if prerelease:
-    for identifier in prerelease.split("."):
-        if identifier.isdigit() and len(identifier) > 1 and identifier.startswith("0"):
-            raise SystemExit(1)
-PY
+    if [[ ! "$1" =~ $pattern ]]; then
+        return 1
+    fi
+    prerelease="${BASH_REMATCH[5]:-}"
+    IFS=. read -r -a identifiers <<<"$prerelease"
+    for identifier in "${identifiers[@]}"; do
+        if [[ "$identifier" =~ ^0[0-9]+$ ]]; then
+            return 1
+        fi
+    done
 }
 
 is_version_older() {
@@ -401,16 +398,19 @@ check_root() {
 }
 
 check_os() {
-    if [[ ! -f /etc/os-release ]]; then
+    local os_release_file="${1:-/etc/os-release}"
+    if [[ ! -f "$os_release_file" ]]; then
         log_error "Cannot detect OS. /etc/os-release not found."
         exit 1
     fi
-    
-    . /etc/os-release
-    
-    if [[ "$ID" != "debian" ]] && [[ "$ID_LIKE" != *"debian"* ]]; then
+
+    . "$os_release_file"
+    local os_id="${ID:-}"
+    local os_id_like="${ID_LIKE:-}"
+    local os_pretty_name="${PRETTY_NAME:-unknown distribution}"
+    if [[ "$os_id" != "debian" ]] && [[ "$os_id_like" != *"debian"* ]]; then
         log_warning "This installer is designed for Debian-based systems (DietPi, Raspbian, Ubuntu)."
-        log_warning "Detected OS: $PRETTY_NAME"
+        log_warning "Detected OS: $os_pretty_name"
         echo -ne "Continue anyway? (y/N) " >&2
         read -n 1 -r < /dev/tty
         echo
@@ -418,9 +418,107 @@ check_os() {
             exit 1
         fi
     else
-        log_info "Detected OS: $PRETTY_NAME"
+        log_info "Detected OS: $os_pretty_name"
     fi
 }
+
+check_installer_python_available() {
+    if ! command -v python3 >/dev/null 2>&1; then
+        log_error "Python 3.11 or newer is required by the installer, but python3 was not found."
+        return 1
+    fi
+}
+
+check_installer_python() {
+    local python_version
+    local python_major
+    local python_minor
+
+    if ! check_installer_python_available; then
+        return 1
+    fi
+    if ! python_version="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" ||
+       [[ ! "$python_version" =~ ^[0-9]+\.[0-9]+$ ]]; then
+        log_error "Could not determine the system Python version; install Python 3.11 or newer."
+        return 1
+    fi
+    IFS=. read -r python_major python_minor <<<"$python_version"
+    if (( python_major < 3 || (python_major == 3 && python_minor < 11) )); then
+        log_error "Python 3.11 or newer is required by the installer; found Python $python_version."
+        return 1
+    fi
+}
+
+run_installer_preflight() {
+    local mode="$1"
+    local install_dir="$2"
+    local disk_path
+    local df_output
+    local available_kib=""
+    local filesystem blocks used available rest
+    local minimum_free_kib=1048576
+
+    if ! check_installer_python; then
+        return 1
+    fi
+
+    disk_path="$install_dir"
+    while [[ ! -e "$disk_path" ]]; do
+        if [[ "$disk_path" == */* ]]; then
+            disk_path="${disk_path%/*}"
+            [[ -n "$disk_path" ]] || disk_path="/"
+        else
+            disk_path="."
+        fi
+    done
+    if ! df_output="$(df -Pk "$disk_path" 2>/dev/null)"; then
+        log_error "Could not check free disk space for $install_dir."
+        return 1
+    fi
+    while read -r filesystem blocks used available rest; do
+        if [[ "$available" =~ ^[0-9]+$ ]]; then
+            available_kib="$available"
+        fi
+    done <<<"$df_output"
+    if [[ ! "$available_kib" =~ ^[0-9]+$ ]]; then
+        log_error "Could not read available disk space for $install_dir."
+        return 1
+    fi
+    if (( available_kib < minimum_free_kib )); then
+        log_error "At least 1 GiB of free space is required on the filesystem containing $install_dir; found $((available_kib / 1024)) MiB."
+        return 1
+    fi
+
+    if [[ "$mode" == "install" || "$mode" == "update" ]]; then
+        if ! curl --fail --silent --show-error --location --connect-timeout 5 --max-time 15 \
+            --output /dev/null https://github.com/diddip21/knx_to_openhab; then
+            log_error "Could not reach GitHub; check the network connection and try again."
+            return 1
+        fi
+    fi
+}
+
+verify_venv_support() (
+    local python_command="$1"
+    local probe_root
+
+    if ! probe_root="$(mktemp -d "${TMPDIR:-/tmp}/knxoh-preflight.XXXXXX")"; then
+        log_error "Could not create a temporary directory to test Python virtual environment support."
+        exit 1
+    fi
+    trap 'rm -rf -- "$probe_root"' EXIT
+
+    if ! "$python_command" -m venv "$probe_root/venv" >/dev/null 2>&1; then
+        log_error "Could not create a temporary Python virtual environment; check the python3-venv package."
+        exit 1
+    fi
+    if [[ ! -x "$probe_root/venv/bin/python" ]] ||
+       ! "$probe_root/venv/bin/python" -c 'import sys; print(sys.version)' >/dev/null 2>&1; then
+        log_error "The temporary Python virtual environment is not usable."
+        exit 1
+    fi
+    log_success "Python virtual environment support is available."
+)
 
 check_sudo() {
     if ! sudo -n true 2>/dev/null; then
@@ -608,10 +706,25 @@ display_completion() {
 
 # Main installation flow
 main() {
+    if [[ "$INSTALL_MODE" == "cancel" ]]; then
+        select_install_mode
+    fi
+    if ! check_installer_python_available; then
+        exit 1
+    fi
+    if [[ -z "$INSTALL_DIR" ]]; then
+        INSTALL_DIR="$(read_saved_install_dir)"
+    fi
+    if [[ -z "$CONFIG_DIR" ]]; then
+        CONFIG_DIR="$(read_saved_config_dir)"
+    fi
     select_install_mode
     if [[ -n "$REQUESTED_VERSION" && "$INSTALL_MODE" != "install" && "$INSTALL_MODE" != "update" ]]; then
         log_error "--version can be used only with --install or --update."
         exit 2
+    fi
+    if ! check_installer_python; then
+        exit 1
     fi
 
     echo ""
@@ -626,6 +739,9 @@ main() {
     check_root
     check_os
     check_sudo
+    if ! run_installer_preflight "$INSTALL_MODE" "$INSTALL_DIR"; then
+        exit 1
+    fi
     if [[ "$INSTALL_MODE" == "install" || "$INSTALL_MODE" == "update" ]]; then
         if ! RELEASE_VERSION="$(resolve_release_version "$REQUESTED_VERSION")"; then
             exit 1
@@ -638,6 +754,9 @@ main() {
         fi
     fi
     install_dependencies
+    if ! verify_venv_support python3; then
+        exit 1
+    fi
     clone_repository
     run_setup_script
     display_completion

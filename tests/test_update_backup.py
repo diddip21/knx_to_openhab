@@ -222,8 +222,8 @@ def test_update_stops_before_release_preparation_when_snapshot_creation_fails(tm
 
 
 def test_release_preparation_failure_keeps_legacy_install_and_runtime_data(tmp_path):
-    install_dir, environment, _git_log, prepare_marker, data_dir, backup_dir = (
-        _make_update_fixture(tmp_path)
+    install_dir, environment, _git_log, prepare_marker, data_dir, backup_dir = _make_update_fixture(
+        tmp_path
     )
     runtime_file = data_dir / "jobs/user.json"
     runtime_file.parent.mkdir(parents=True, exist_ok=True)

@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = ROOT / "install.sh"
 
 pytestmark = pytest.mark.skipif(
-    os.name != "posix" or shutil.which("bash") is None,
+    not sys.platform.startswith("linux") or shutil.which("bash") is None,
     reason="the installer lifecycle harness requires Linux utilities",
 )
 
@@ -98,7 +98,7 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path):
         "    exit 0\n"
         "  fi\n"
         "done\n"
-        f"exec {shlex.quote(sys.executable)} \"$@\"\n",
+        f'exec {shlex.quote(sys.executable)} "$@"\n',
     )
 
     environment = os.environ.copy()

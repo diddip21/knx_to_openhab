@@ -586,7 +586,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         "  bin_dir = Path(sys.argv[3]) / 'bin'\n"
         "  bin_dir.mkdir(parents=True, exist_ok=True)\n"
         f"  (bin_dir / 'python').write_text('#!/bin/sh\\nexec {real_python} \"$@\"\\n')\n"
-        "  (bin_dir / 'pip').write_text('#!/bin/bash\\nif [[ \"$1\" == \"install\" && \"${DEPENDENCY_TEST_FAIL:-0}\" == \"1\" ]]; then exit 1; fi\\nexit 0\\n')\n"
+        '  (bin_dir / \'pip\').write_text(\'#!/bin/bash\\nif [[ "$1" == "install" && "${DEPENDENCY_TEST_FAIL:-0}" == "1" ]]; then exit 1; fi\\nexit 0\\n\')\n'
         "  (bin_dir / 'python').chmod(0o755)\n"
         "  (bin_dir / 'pip').chmod(0o755)\n"
         "else:\n"
@@ -664,7 +664,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     log = log_file.read_text(encoding="utf-8")
     assert result.returncode == (
         1 if health_check_fails or activation_fails or dependency_fails else 0
-    ), result.stdout + result.stderr
+    ), (result.stdout + result.stderr)
     assert (install / "config.json").read_text(encoding="utf-8") == (
         '{"general":{"legacy":"custom"}}'
     )

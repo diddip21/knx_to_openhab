@@ -49,3 +49,56 @@ validation.
   delete the request before the worker claims it.
 - Leave the restart log message intact for progress reporting, but make the UI
   success dialog depend only on `Update completed successfully`.
+
+## Review-driven hardening
+
+The fresh whole-branch review exposed lifecycle races at the boundaries between
+the Web UI, the systemd worker, and release activation. These changes extend the
+same targeted-fix approach; PR #70 must remain open until they are covered and
+verified.
+
+### Scope
+
+- Serialize Web UI request publication and worker execution with one exclusive
+  lock file in the runtime data directory. A request already pending or claimed
+  must block a second request from replacing it or resetting its log.
+- Initialize and fsync a new request's log before atomically publishing the
+  request. On retry, surface the tag of the durable request and retain the
+  actionable start status in the UI.
+- Let an inactive worker recover an interrupted claimed request without silently
+  deleting it; an active worker must be reported as in progress.
+- Mark final-path release candidates while building them. On retry, remove
+  unactivated marked candidates and abandoned staging trees, but never remove
+  the path selected by `current`. The exit trap must make the same active-target
+  check, independent of the timing of its activation flag.
+- Add regression tests for activation interruption, candidate recovery, request
+  lock/claim races, and stale success logs. Prevent ordinary UI tests from
+  rewriting the committed screenshot.
+
+### Selected approach
+
+Use the existing filesystem and systemd design with a shared `flock` file and
+explicit in-progress candidate markers. This closes the races at their shared
+serialization boundary without introducing a new request database or queue
+protocol. A broader multi-state queue redesign was considered but would expand
+the change and migration surface unnecessarily.
+
+### Additional implementation calls
+
+- Both `Updater.trigger_update()` and `run_update_request.py` use the same
+  `update-request.lock` in the configured data directory. The Web UI lock is
+  non-blocking; the worker waits for it after systemd starts and holds it while
+  claiming and processing the request.
+- `update-request.running.json` is not a slot for another request. If the lock
+  is available but a claimed request remains, restore it to the pending path
+  before restarting the worker; if both paths exist, preserve both and report
+  the conflict rather than deleting either.
+- Write, flush, and `fsync` the per-request log header before publishing its
+  request file. This ensures a retry cannot see an old success marker for a
+  newly published request.
+- A `.update-in-progress` marker is placed in the extracted app before moving
+  it to its final release path. Cleanup removes marked candidates only when
+  they are not the resolved target of `current`; successful health validation
+  removes the new release's marker.
+- Screenshot capture in the Playwright test is opt-in; the committed screenshot
+  remains the reviewed artifact and routine test runs do not dirty it.

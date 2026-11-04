@@ -6,6 +6,10 @@ from unittest.mock import Mock
 from web_ui.backend.updater import Updater
 
 
+def _allow_isolated_update_worker(monkeypatch):
+    monkeypatch.setattr(Updater, "_update_worker_setup_error", lambda _self: None)
+
+
 def test_trigger_update_passes_install_dir_and_selected_release(monkeypatch, tmp_path):
     update_script = tmp_path / "update.sh"
     update_script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
@@ -28,6 +32,7 @@ def test_trigger_update_passes_install_dir_and_selected_release(monkeypatch, tmp
         ),
     )
     monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
+    _allow_isolated_update_worker(monkeypatch)
 
     success, _ = Updater(base_path=str(tmp_path)).trigger_update()
 
@@ -80,6 +85,7 @@ def test_trigger_update_runs_the_active_release_script_from_the_stable_install_r
         ),
     )
     monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
+    _allow_isolated_update_worker(monkeypatch)
 
     success, _ = Updater(base_path=str(tmp_path)).trigger_update()
 
@@ -176,6 +182,64 @@ def test_check_github_version_rejects_prerelease_tag_from_stable_endpoint(monkey
     get.assert_called_once()
 
 
+def test_update_worker_readiness_requires_installed_files_and_sudo_permission(
+    monkeypatch, tmp_path
+):
+    unit = tmp_path / "knxohui-update.service"
+    launcher = tmp_path / "launch_update.sh"
+    helper = tmp_path / "knxohui-service-update"
+    setup_script = tmp_path / "current/installer/setup.sh"
+    for path in (unit, launcher, helper, setup_script):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("installed", encoding="utf-8")
+
+    monkeypatch.setattr("web_ui.backend.updater._UPDATE_WORKER_UNIT", unit)
+    monkeypatch.setattr("web_ui.backend.updater._UPDATE_WORKER_LAUNCHER", launcher)
+    monkeypatch.setattr("web_ui.backend.updater._SERVICE_UPDATE_HELPER", str(helper))
+    permission = Mock(return_value=Mock(returncode=1, stderr="not permitted"))
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.run", permission)
+    updater = Updater(base_path=str(tmp_path))
+
+    error = updater._update_worker_setup_error()
+
+    assert error is not None
+    assert "isolated update worker is not installed or authorized" in error
+    assert "sudo bash" in error
+    assert "current/installer/setup.sh" in error
+    permission.return_value.returncode = 0
+    assert updater._update_worker_setup_error() is None
+
+
+def test_trigger_update_requires_worker_setup_before_queuing(monkeypatch, tmp_path):
+    (tmp_path / "update.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(
+        Updater,
+        "check_github_version",
+        lambda _self: (
+            True,
+            {
+                "release_tag": "v1.4.0",
+                "commit_hash": "a" * 40,
+                "commit_date": "2026-11-03T00:00:00Z",
+            },
+        ),
+    )
+    monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
+    message = "Run setup before queueing an update"
+    monkeypatch.setattr(Updater, "_update_worker_setup_error", lambda _self: message)
+    start_service = Mock()
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.run", start_service)
+
+    success, result = Updater(base_path=str(tmp_path)).trigger_update()
+
+    assert success is False
+    assert result == message
+    assert not (tmp_path / "data/update-request.json").exists()
+    assert not (tmp_path / "update.log").exists()
+    start_service.assert_not_called()
+
+
 def test_trigger_update_removes_queued_request_when_worker_service_cannot_start(
     monkeypatch, tmp_path
 ):
@@ -198,6 +262,7 @@ def test_trigger_update_removes_queued_request_when_worker_service_cannot_start(
         ),
     )
     monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
+    _allow_isolated_update_worker(monkeypatch)
 
     success, message = Updater(base_path=str(tmp_path)).trigger_update()
 
@@ -317,6 +382,7 @@ def test_build_metadata_release_update_is_not_suppressed(monkeypatch, tmp_path):
     )
     start_service = Mock(return_value=Mock(returncode=0, stderr=""))
     monkeypatch.setattr("web_ui.backend.updater.subprocess.run", start_service)
+    _allow_isolated_update_worker(monkeypatch)
 
     status = updater.check_for_updates()
     success, _ = updater.trigger_update()

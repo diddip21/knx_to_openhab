@@ -6,11 +6,13 @@ Uses Git commits for versioning instead of version.json.
 import json
 import os
 import re
+import shlex
 import subprocess
 import threading
 import time
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 import requests  # type: ignore[import]
@@ -18,6 +20,9 @@ import requests  # type: ignore[import]
 from knxoh_paths import get_paths
 
 _RELEASE_CACHE_TTL_SECONDS = 300
+_UPDATE_WORKER_UNIT = Path("/etc/systemd/system/knxohui-update.service")
+_UPDATE_WORKER_LAUNCHER = Path("/usr/local/libexec/knx_to_openhab/launch_update.sh")
+_SERVICE_UPDATE_HELPER = "/usr/local/sbin/knxohui-service-update"
 
 _SEMVER_PATTERN = re.compile(
     r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
@@ -329,6 +334,44 @@ class Updater:
             "branch": remote.get("release_tag", self.branch),
         }
 
+    def _update_worker_setup_error(self) -> Optional[str]:
+        """Return setup guidance when the isolated systemd updater is not ready."""
+        if not _UPDATE_WORKER_UNIT.is_file() or not _UPDATE_WORKER_LAUNCHER.is_file():
+            return self._update_worker_setup_instruction()
+        if not Path(_SERVICE_UPDATE_HELPER).is_file():
+            return self._update_worker_setup_instruction()
+
+        try:
+            permission = subprocess.run(
+                [
+                    "/usr/bin/sudo",
+                    "-n",
+                    "-l",
+                    _SERVICE_UPDATE_HELPER,
+                    "start-web-update",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return self._update_worker_setup_instruction()
+
+        if permission.returncode != 0:
+            return self._update_worker_setup_instruction()
+        return None
+
+    def _update_worker_setup_instruction(self) -> str:
+        setup_script = Path(self.base_path) / "current" / "installer" / "setup.sh"
+        if not setup_script.is_file():
+            setup_script = Path(self.base_path) / "installer" / "setup.sh"
+        command = shlex.join(["sudo", "bash", str(setup_script)])
+        return (
+            "The isolated update worker is not installed or authorized. "
+            f"Run `{command}` once from an administrator terminal, then retry the Web UI update."
+        )
+
     def trigger_update(self) -> Tuple[bool, str]:
         """
         Queue the selected release for the independent systemd updater unit.
@@ -376,6 +419,10 @@ class Updater:
 
             if not os.path.exists(update_script):
                 return False, f"Update script not found at {update_script}"
+
+            setup_error = self._update_worker_setup_error()
+            if setup_error:
+                return False, setup_error
 
             repository_parts = self.repo_url.rstrip("/").split("/")
             repository = f"{repository_parts[-2]}/{repository_parts[-1].removesuffix('.git')}"

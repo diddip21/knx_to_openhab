@@ -471,6 +471,11 @@ run_git_as_service_user() {
 }
 
 update_repository() {
+    if [[ -L "$INSTALL_DIR/current" ]]; then
+        log_error "This installation uses transactional releases. Update it from the Web UI; the CLI updater does not activate releases."
+        exit 1
+    fi
+
     log_info "Updating installation to release $RELEASE_TAG..."
     if [[ -z "$REQUESTED_VERSION" ]]; then
         local installed_tag

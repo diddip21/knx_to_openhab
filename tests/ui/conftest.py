@@ -232,7 +232,7 @@ def auth_preview_server(tmp_path_factory):
         "port": port,
         "trusted_proxy_hops": 0,
         "session_max_age_seconds": 43200,
-        "auth": {"enabled": True, "user": "operator"},
+        "auth": {"enabled": True, "user": "operator", "mode": "session"},
         "retention": {"days": 14, "max_backups": 50, "max_backups_size_mb": 500},
         "general": {"auto_place_unknown": False},
     }

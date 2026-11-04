@@ -8,7 +8,9 @@ import pytest
 from playwright.sync_api import Page, expect
 
 
-def _setup_services_routes(page: Page, cloud_info=None):
+def _setup_services_routes(
+    page: Page, cloud_info=None, *, update_available=False, update_requests=None
+):
     cloud_info = cloud_info or {
         "uuid": "abc-123-def-456",
         "secret": "super-secret-value",
@@ -16,6 +18,7 @@ def _setup_services_routes(page: Page, cloud_info=None):
         "secret_path": "/var/lib/openhab/openhabcloud/secret",
     }
     restart_requests = []
+    update_requests = update_requests if update_requests is not None else []
 
     def _fulfill(route, data, status=200):
         route.fulfill(status=status, content_type="application/json", body=json.dumps(data))
@@ -33,9 +36,9 @@ def _setup_services_routes(page: Page, cloud_info=None):
                 route,
                 {
                     "installed": "5.0.0-1",
-                    "candidate": "5.0.0-1",
+                    "candidate": "5.1.0-1" if update_available else "5.0.0-1",
                     "supported": True,
-                    "update_available": False,
+                    "update_available": update_available,
                     "message": "APT candidate from local package lists.",
                 },
             )
@@ -56,6 +59,13 @@ def _setup_services_routes(page: Page, cloud_info=None):
         if url.endswith("/api/service/restart") and method == "POST":
             restart_requests.append(json.loads(request.post_data or "{}"))
             return _fulfill(route, {"ok": True, "output": "Service restarted"})
+        if re.search(r"/api/service/updates/(openhab|evcc)$", url) and method == "POST":
+            update_requests.append({"url": url, "body": json.loads(request.post_data or "{}")})
+            return _fulfill(
+                route,
+                {"action": url.rsplit("/", 1)[-1], "state": "running", "message": "Starting APT…"},
+                status=202,
+            )
         if url.endswith("/api/openhab/cloud-info"):
             return _fulfill(route, cloud_info)
         if url.endswith("/api/version/check"):
@@ -81,6 +91,51 @@ class TestServicesSection:
 
         services = page.locator("#servicesList .service-item")
         expect(services).to_have_count(2, timeout=10000)
+
+    def test_package_update_shows_progress_without_waiting_for_service_refresh(
+        self, page: Page, base_url, flask_server
+    ):
+        update_requests: list[dict[str, object]] = []
+        page.on("dialog", lambda dialog: dialog.accept())
+        _setup_services_routes(
+            page,
+            cloud_info={
+                "uuid": "demo-uuid-0001",
+                "secret": "demo-only-not-valid",
+                "uuid_path": "/var/lib/openhab/uuid",
+                "secret_path": "/var/lib/openhab/openhabcloud/secret",
+            },
+            update_available=True,
+            update_requests=update_requests,
+        )
+        page.goto(base_url)
+        update_button = page.locator("#servicesList .upgrade-btn").first
+        expect(update_button).to_be_enabled(timeout=10000)
+
+        page.evaluate("""() => {
+          window.serviceRefreshBlocked = false
+          window.refreshServices = async () => {
+            window.serviceRefreshBlocked = true
+            await new Promise(resolve => { window.releaseServiceRefresh = resolve })
+          }
+        }""")
+        with page.expect_response(
+            lambda response: "/api/service/updates/openhab" in response.url
+            and response.request.method == "POST"
+        ):
+            update_button.click()
+
+        expect(update_button).to_be_disabled()
+        expect(page.locator("#refreshPackagesBtn")).to_be_disabled()
+        expect(page.locator("#packageOperationStatus")).to_contain_text("APT wird gestartet")
+        assert update_requests == [
+            {"url": f"{base_url}/api/service/updates/openhab", "body": {"version": "5.1.0-1"}}
+        ]
+        assert not page.evaluate("window.serviceRefreshBlocked")
+        Path("test-results").mkdir(parents=True, exist_ok=True)
+        page.locator("#service-section").screenshot(
+            path="test-results/issue-67-update-in-progress.png"
+        )
 
     def test_concurrent_service_refreshes_do_not_duplicate_entries(
         self, page: Page, base_url, flask_server

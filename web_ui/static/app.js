@@ -1,4 +1,5 @@
 let authRedirectPending = false
+const authMode = document.querySelector('meta[name="auth-mode"]')?.content || 'basic'
 
 async function apiFetch(resource, options = {}) {
   const method = (options.method || 'GET').toUpperCase()
@@ -12,7 +13,8 @@ async function apiFetch(resource, options = {}) {
     headers,
     credentials: options.credentials || 'same-origin'
   })
-  if (response.status === 401 && !authRedirectPending && window.location.pathname !== '/login') {
+  if (response.status === 401 && authMode === 'session' &&
+      !authRedirectPending && window.location.pathname !== '/login') {
     authRedirectPending = true
     window.location.assign('/login')
   }
@@ -986,8 +988,7 @@ async function refreshServices() {
   document.getElementById('refreshPackagesBtn').disabled = busy
   renderPackageOperationStatus(task)
 
-  for (const service of services) {
-    let serviceData = serviceDataCache.get(service)
+  const serviceDataEntries = await Promise.all(services.map(async service => {
     try {
       const pkg = service.split('.')[0]
       const [res, versionRes] = await Promise.all([
@@ -997,7 +998,7 @@ async function refreshServices() {
       if (!res.ok || !versionRes.ok) {
         throw new Error(`Service data unavailable (HTTP ${!res.ok ? res.status : versionRes.status})`)
       }
-      serviceData = {
+      const serviceData = {
         status: await res.json(),
         version: await versionRes.json()
       }
@@ -1006,11 +1007,17 @@ async function refreshServices() {
         serviceDataCache.set(service, serviceData)
         serviceDataCacheGeneration.set(service, refreshGeneration)
       }
-      if (refreshGeneration !== servicesRefreshGeneration) return
+      return [service, serviceData]
     } catch (e) {
       console.error('Error fetching service status:', e)
-      serviceData = serviceDataCache.get(service)
+      return [service, serviceDataCache.get(service)]
     }
+  }))
+  if (refreshGeneration !== servicesRefreshGeneration) return
+  const serviceDataByName = new Map(serviceDataEntries)
+
+  for (const service of services) {
+    const serviceData = serviceDataByName.get(service)
     if (refreshGeneration !== servicesRefreshGeneration) return
     if (!serviceData) continue
 
@@ -1091,7 +1098,17 @@ async function startPackageOperation(action, version = null) {
     }
     currentPackageOperationError = null
     currentPackageOperationErrorHasPrefix = false
-    await refreshServices()
+    const startedTask = {
+      action,
+      state: 'running',
+      message: window.I18N.t('service.message.startingApt')
+    }
+    updateCurrentPackageTask(startedTask)
+    renderPackageOperationStatus(startedTask)
+    document.getElementById('refreshPackagesBtn').disabled = true
+    document.querySelectorAll('#servicesList .upgrade-btn').forEach(button => {
+      button.disabled = true
+    })
     startPackageOperationPolling()
   } catch (e) {
     currentPackageOperationError = e.message

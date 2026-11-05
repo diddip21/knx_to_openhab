@@ -52,9 +52,11 @@ release assets can create a matching checksum.
 - Download the source snapshot for that hash over HTTPS and verify each
   included file against the corresponding Git blob hash and mode from the
   selected commit tree. Reuse the release builder's inclusion/exclusion rules
-  and deterministic archive writer rather than maintaining a second package
-  manifest. Enforce the expanded-size limit across all regular source archive
-  members, including excluded files, while never extracting excluded links.
+  and deterministic archive writer from that selected commit rather than the
+  currently active release. Verify the selected builder's Git blob before
+  loading it, and fail closed if it lacks the explicit-manifest interface.
+  Enforce the expanded-size limit across all regular source archive members,
+  including excluded files, while never extracting source links.
 - Compare the rebuilt archive digest with the downloaded release archive
   before extraction. The `.sha256` sidecar remains an additional corruption
   check. Do not fall back to accepting an asset when commit verification fails.
@@ -69,8 +71,10 @@ release assets can create a matching checksum.
   rollback.
 - During uninstall, stop the Web UI before the updater so it cannot start a new
   update during teardown. Detect and stop an updater in `activating` as well as
-  `active`, and wait for it to stop before removing application or unit files.
-  Tolerate a genuinely absent/inactive unit; abort on an unknown systemd state.
+  `active`, also cancel queued start jobs while `ActiveState=inactive`, and
+  wait until no updater job remains before removing application or unit files.
+  Distinguish `LoadState=not-found` from a loaded inactive unit so genuinely
+  absent units remain idempotent; abort on inspection errors or unknown state.
 - Apply the worker's control-character policy to commit message and author
   metadata before writing or publishing an update request. Invalid metadata
   must leave no pending request behind.
@@ -87,8 +91,9 @@ release assets can create a matching checksum.
   error and cleans temporary files.
 - Recovery messages resolve installer scripts from the active release; absolute
   `current` links produce a valid relative rollback marker.
-- Uninstall stops the Web UI before its final updater check, waits for an
-  activating updater, and only then deletes files.
+- Uninstall stops the Web UI before its final updater check, cancels queued
+  updater starts, waits for the unit and its jobs to stop, tolerates a
+  `LoadState=not-found` unit, and only then deletes files.
 - Control characters are rejected before request publication, and the worker
   and Web UI apply the same policy.
 - Focused tests, full core tests, lint/format checks, UI tests as applicable,

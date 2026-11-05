@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -14,15 +15,10 @@ import tarfile
 import tempfile
 from datetime import datetime
 from pathlib import Path, PurePosixPath
+from types import ModuleType
 from urllib.error import URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
-
-from scripts.build_release import (
-    ReleaseArtifactError,
-    build_release,
-    is_excluded_release_path,
-)
 
 _STABLE_TAG = re.compile(
     r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
@@ -194,17 +190,14 @@ def _fetch_commit_file_manifest(
                 f"Selected commit tree contains a duplicate path: {raw_path}"
             )
         seen.add(path)
-        if is_excluded_release_path(path):
-            continue
-        if entry_type != "blob":
-            raise ReleasePreparationError("Selected commit contains an unsupported file type")
-
+        if entry_type == "blob":
+            valid_modes = {"100644", "100755", "120000"}
+        else:
+            valid_modes = {"160000"}
         raw_mode = entry.get("mode")
+        if raw_mode not in valid_modes:
+            raise ReleasePreparationError("Selected commit contains an unsupported file type")
         blob_hash = entry.get("sha")
-        if raw_mode not in {"100644", "100755"}:
-            raise ReleasePreparationError(
-                f"Selected commit contains an unsupported file mode for {raw_path}"
-            )
         if not isinstance(blob_hash, str) or not _COMMIT.fullmatch(blob_hash):
             raise ReleasePreparationError(
                 f"Selected commit has an invalid blob hash for {raw_path}"
@@ -274,13 +267,8 @@ def _safe_extract_commit_source(source_archive: Path, scratch_dir: Path) -> Path
                 if member.isdir():
                     target.mkdir(mode=0o700, parents=True, exist_ok=True)
                     continue
-                relative_path = PurePosixPath(*path.parts[1:])
-                if is_excluded_release_path(relative_path):
-                    continue
                 if not member.isfile():
-                    raise ReleasePreparationError(
-                        f"Unsupported commit source archive entry: {raw_name}"
-                    )
+                    continue
                 target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
                 if target.exists() or target.is_symlink():
                     raise ReleasePreparationError(
@@ -317,6 +305,83 @@ def _git_blob_sha1(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _verify_commit_source_files(
+    source_root: Path, manifest: list[tuple[PurePosixPath, int, str]]
+) -> None:
+    expected_files: set[PurePosixPath] = set()
+    for relative_path, mode, expected_blob in manifest:
+        if mode not in {0o100644, 0o100755}:
+            continue
+        source_path = source_root.joinpath(*relative_path.parts)
+        if not source_path.is_file() or source_path.is_symlink():
+            raise ReleasePreparationError(
+                f"Commit source is missing a regular file: {relative_path}"
+            )
+        if _git_blob_sha1(source_path) != expected_blob:
+            raise ReleasePreparationError(
+                f"Commit source file does not match selected commit: {relative_path}"
+            )
+        expected_files.add(relative_path)
+
+    for source_path in source_root.rglob("*"):
+        if source_path.is_file() and not source_path.is_symlink():
+            relative_path = PurePosixPath(source_path.relative_to(source_root).as_posix())
+            if relative_path not in expected_files:
+                raise ReleasePreparationError(
+                    f"Commit source contains a file not present in the selected tree: "
+                    f"{relative_path}"
+                )
+
+
+def _load_selected_release_builder(
+    source_root: Path,
+    manifest: list[tuple[PurePosixPath, int, str]],
+    commit_hash: str,
+) -> ModuleType:
+    builder_relative = PurePosixPath("scripts/build_release.py")
+    builder_entry = next((entry for entry in manifest if entry[0] == builder_relative), None)
+    if builder_entry is None or builder_entry[1] not in {0o100644, 0o100755}:
+        raise ReleasePreparationError("Selected commit has no regular release builder")
+
+    builder_path = source_root.joinpath(*builder_relative.parts)
+    if not builder_path.is_file() or builder_path.is_symlink():
+        raise ReleasePreparationError("Selected commit source is missing its release builder")
+    if _git_blob_sha1(builder_path) != builder_entry[2]:
+        raise ReleasePreparationError(
+            "Selected commit release builder failed Git blob verification"
+        )
+
+    module_name = f"_knxoh_selected_release_builder_{commit_hash}"
+    spec = importlib.util.spec_from_file_location(module_name, builder_path)
+    if spec is None or spec.loader is None:
+        raise ReleasePreparationError("Could not load the selected commit's release builder")
+    module = importlib.util.module_from_spec(spec)
+    previous_module = sys.modules.get(module_name)
+    original_sys_path = list(sys.path)
+    sys.modules[module_name] = module
+    sys.path.insert(0, str(source_root))
+    try:
+        spec.loader.exec_module(module)
+    except Exception as error:
+        raise ReleasePreparationError(
+            f"Selected commit release builder could not be loaded: {error}"
+        ) from error
+    finally:
+        sys.path[:] = original_sys_path
+        if previous_module is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous_module
+
+    if not callable(getattr(module, "is_excluded_release_path", None)) or not callable(
+        getattr(module, "build_release", None)
+    ):
+        raise ReleasePreparationError(
+            "Selected commit release builder lacks the required explicit-manifest interface"
+        )
+    return module
+
+
 def _verify_release_matches_commit(
     archive_path: Path,
     *,
@@ -330,34 +395,27 @@ def _verify_release_matches_commit(
     source_url = f"https://api.github.com/repos/{repository}/tarball/{commit_hash}"
     _download(source_url, source_archive)
     source_root = _safe_extract_commit_source(source_archive, scratch_dir)
+    _verify_commit_source_files(source_root, manifest)
+    selected_builder = _load_selected_release_builder(source_root, manifest, commit_hash)
 
     tracked_files: list[tuple[PurePosixPath, int]] = []
     for relative_path, mode, expected_blob in manifest:
-        if is_excluded_release_path(relative_path):
+        if selected_builder.is_excluded_release_path(relative_path):
             continue
         if mode not in {0o100644, 0o100755}:
             raise ReleasePreparationError(
                 f"Selected commit contains an unsupported packaged file mode: {relative_path}"
             )
-        source_path = source_root.joinpath(*relative_path.parts)
-        if not source_path.is_file() or source_path.is_symlink():
-            raise ReleasePreparationError(
-                f"Commit source is missing a regular file: {relative_path}"
-            )
-        if _git_blob_sha1(source_path) != expected_blob:
-            raise ReleasePreparationError(
-                f"Commit source file does not match selected commit: {relative_path}"
-            )
         tracked_files.append((relative_path, mode))
 
     try:
-        rebuilt_archive, _rebuilt_checksum = build_release(
+        rebuilt_archive, _rebuilt_checksum = selected_builder.build_release(
             source_root,
             version,
             scratch_dir / "rebuilt",
             tracked_files=tracked_files,
         )
-    except (OSError, ReleaseArtifactError) as error:
+    except (OSError, TypeError, ValueError) as error:
         raise ReleasePreparationError(
             f"Could not rebuild release from selected commit: {error}"
         ) from error

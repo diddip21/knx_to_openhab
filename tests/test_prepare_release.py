@@ -3,7 +3,7 @@ import io
 import json
 import shutil
 import tarfile
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -69,10 +69,26 @@ def _verify(archive_path, checksum_path, destination, *, tag=_TAG):
     )
 
 
-def _make_commit_source(tmp_path, *, app_content=None, unsafe_member=None):
+def _make_commit_source(
+    tmp_path,
+    *,
+    app_content=None,
+    unsafe_member=None,
+    builder_source=None,
+    extra_files=None,
+):
     source_root = tmp_path / "source" / f"knx_to_openhab-{_COMMIT[:12]}"
     source_root.mkdir(parents=True)
-    files = {"VERSION": f"{_VERSION}\n".encode(), **_REQUIRED_FILES}
+    if builder_source is None:
+        builder_source = (
+            Path(__file__).resolve().parents[1] / "scripts/build_release.py"
+        ).read_bytes()
+    files = {
+        "VERSION": f"{_VERSION}\n".encode(),
+        **_REQUIRED_FILES,
+        "scripts/build_release.py": builder_source,
+        **(extra_files or {}),
+    }
     if app_content is not None:
         files["web_ui/backend/app.py"] = app_content
 
@@ -309,6 +325,46 @@ def test_prepare_release_rejects_asset_replacement_even_with_matching_checksum(
     assert not list(tmp_path.glob(".assets-*"))
 
 
+def test_prepare_release_uses_selected_commit_builder_after_packaging_rule_change(
+    monkeypatch, tmp_path
+):
+    excluded_name = "selected-builder-excluded.txt"
+    builder_source = (Path(__file__).resolve().parents[1] / "scripts/build_release.py").read_bytes()
+    changed_builder_source = builder_source.replace(
+        b"EXCLUDED_NAMES = {\n",
+        f'EXCLUDED_NAMES = {{\n    "{excluded_name}",\n'.encode(),
+        1,
+    )
+    assert changed_builder_source != builder_source
+    source_root, manifest, source_archive = _make_commit_source(
+        tmp_path,
+        builder_source=changed_builder_source,
+        extra_files={excluded_name: b"excluded by the selected builder\n"},
+    )
+    archive_path, checksum_path = build_release(
+        source_root,
+        _VERSION,
+        tmp_path / "release-assets",
+        tracked_files=[
+            (path, mode) for path, mode, _blob in manifest if path != PurePosixPath(excluded_name)
+        ],
+    )
+    _mock_prepare_downloads(monkeypatch, archive_path, checksum_path, source_archive, manifest)
+
+    release_dir = prepare_release(
+        tmp_path / "stage",
+        repository="diddip21/knx_to_openhab",
+        tag=_TAG,
+        commit_hash=_COMMIT,
+        commit_date="2026-11-03T00:00:00Z",
+        commit_message="Release with updated packaging rules",
+        author="Release Bot",
+    )
+
+    assert release_dir == tmp_path / "stage" / _ROOT
+    assert not (release_dir / excluded_name).exists()
+
+
 def test_prepare_release_rejects_truncated_commit_tree(monkeypatch, tmp_path):
     archive_path, checksum_path, manifest, source_archive = _make_commit_release_asset(tmp_path)
     _mock_prepare_downloads(monkeypatch, archive_path, checksum_path, source_archive, manifest)
@@ -449,7 +505,7 @@ def test_fetch_commit_file_manifest_rejects_truncated_tree(monkeypatch):
         prepare_release_module._fetch_commit_file_manifest("diddip21/knx_to_openhab", _COMMIT)
 
 
-def test_fetch_commit_file_manifest_ignores_unsupported_excluded_entries(monkeypatch):
+def test_fetch_commit_file_manifest_preserves_nonregular_entries(monkeypatch):
     version_content = f"{_VERSION}\n".encode()
     version_blob = hashlib.sha1(
         f"blob {len(version_content)}\0".encode() + version_content
@@ -509,7 +565,11 @@ def test_fetch_commit_file_manifest_ignores_unsupported_excluded_entries(monkeyp
         "diddip21/knx_to_openhab", _COMMIT
     )
 
-    assert manifest == [(PurePosixPath("VERSION"), 0o100644, version_blob)]
+    assert manifest == [
+        (PurePosixPath("VERSION"), 0o100644, version_blob),
+        (PurePosixPath("tests/excluded-link"), 0o120000, "c" * 40),
+        (PurePosixPath("tests/excluded-submodule"), 0o160000, "d" * 40),
+    ]
 
 
 def test_safe_extract_commit_source_ignores_symlinks_at_excluded_paths(tmp_path):

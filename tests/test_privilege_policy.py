@@ -226,13 +226,24 @@ def test_web_updater_stops_until_legacy_sudoers_policy_is_migrated():
     assert "installer/migrate_sudoers.sh" in update
 
 
+def test_web_updater_recovery_instructions_use_active_app_dir():
+    update = (ROOT / "update.sh").read_text(encoding="utf-8")
+    recovery_commands = [
+        line for line in update.splitlines() if "sudo bash" in line and "installer/" in line
+    ]
+
+    assert recovery_commands
+    assert all("$APP_DIR/installer/" in line for line in recovery_commands)
+    assert all("$INSTALL_DIR/installer/" not in line for line in recovery_commands)
+
+
 def test_web_updater_checks_external_credentials_before_backup_or_release_changes():
     update = (ROOT / "update.sh").read_text(encoding="utf-8")
 
     preflight = update.index("CREDENTIAL_CHECK=")
     assert "external Web UI config.json or secrets.env is missing" in update
     assert "valid external Argon2id password hash is required" in update
-    assert "sudo bash $INSTALL_DIR/installer/setup.sh" in update
+    assert "sudo bash $APP_DIR/installer/setup.sh" in update
     assert "interactive SSH terminal" in update
     backup = update.index("Creating and validating pre-update backup")
     assert preflight < backup

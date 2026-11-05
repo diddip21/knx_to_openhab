@@ -112,11 +112,11 @@ log "Update lock acquired."
 # cannot safely replace that policy itself, so require the one-time admin
 # migration before allowing another update to proceed.
 if ! SUDO_POLICY=$(sudo -n -l 2>/dev/null); then
-    log "ERROR: Cannot verify the service user's sudoers policy. Run 'sudo bash $INSTALL_DIR/installer/migrate_sudoers.sh' as an administrator, then retry."
+    log "ERROR: Cannot verify the service user's sudoers policy. Run 'sudo bash $APP_DIR/installer/migrate_sudoers.sh' as an administrator, then retry."
     exit 1
 fi
 if printf '%s\n' "$SUDO_POLICY" | grep -Eq '(/usr/bin/git|/bin/git)[[:space:]]+\\*|NOPASSWD:[[:space:]]+ALL'; then
-    log "ERROR: The legacy broad sudoers policy is still installed. Run 'sudo bash $INSTALL_DIR/installer/migrate_sudoers.sh' as an administrator before updating again."
+    log "ERROR: The legacy broad sudoers policy is still installed. Run 'sudo bash $APP_DIR/installer/migrate_sudoers.sh' as an administrator before updating again."
     exit 1
 fi
 
@@ -125,7 +125,7 @@ fi
 # files, so fetching first could replace the code before credentials are migrated.
 if [[ ! -x "$APP_DIR/venv/bin/python" ]]; then
     log "ERROR: The installed Python environment is missing; credential migration cannot be verified."
-    log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' from an interactive SSH terminal (for example, ssh -t), then retry."
+    log "Recovery: run 'sudo bash $APP_DIR/installer/setup.sh' from an interactive SSH terminal (for example, ssh -t), then retry."
     exit 1
 fi
 if ! CREDENTIAL_CHECK=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" \
@@ -181,7 +181,7 @@ if auth.get("enabled", True):
 PY
 ); then
     log "ERROR: Credential migration is incomplete: $CREDENTIAL_CHECK"
-    log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' from an interactive SSH terminal (for example, ssh -t), then retry."
+    log "Recovery: run 'sudo bash $APP_DIR/installer/setup.sh' from an interactive SSH terminal (for example, ssh -t), then retry."
     exit 1
 fi
 log "External Web UI and generator configuration are ready."
@@ -262,7 +262,7 @@ log "Backup created and validated: $BACKUP_PATH"
 # its protected config and does not depend on the incoming Git revision.
 if ! sudo -n /usr/local/sbin/knxohui-service-update provision-yaml; then
     log "ERROR: Could not provision the configured OpenHAB YAML target."
-    log "Run 'sudo bash $INSTALL_DIR/installer/setup.sh' as an administrator, then retry."
+    log "Run 'sudo bash $APP_DIR/installer/setup.sh' as an administrator, then retry."
     exit 1
 fi
 

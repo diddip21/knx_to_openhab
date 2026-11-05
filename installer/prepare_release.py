@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import importlib.util
 import json
@@ -13,6 +14,7 @@ import shutil
 import sys
 import tarfile
 import tempfile
+import zlib
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 from types import ModuleType
@@ -37,6 +39,7 @@ _DOWNLOAD_HOSTS = {
     "release-assets.githubusercontent.com",
 }
 _CHUNK_SIZE = 1024 * 1024
+_ARCHIVE_STREAM_LIMIT = _EXPANDED_LIMIT + _DOWNLOAD_LIMIT
 
 
 class ReleasePreparationError(ValueError):
@@ -382,6 +385,25 @@ def _load_selected_release_builder(
     return module
 
 
+def _decompressed_archive_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    expanded_size = 0
+    try:
+        with gzip.open(path, "rb") as source:
+            while chunk := source.read(_CHUNK_SIZE):
+                expanded_size += len(chunk)
+                if expanded_size > _ARCHIVE_STREAM_LIMIT:
+                    raise ReleasePreparationError(
+                        "Decompressed release archive exceeds the size limit"
+                    )
+                digest.update(chunk)
+    except (OSError, EOFError, zlib.error) as error:
+        if isinstance(error, ReleasePreparationError):
+            raise
+        raise ReleasePreparationError(f"Could not decompress release archive: {error}") from error
+    return digest.hexdigest()
+
+
 def _verify_release_matches_commit(
     archive_path: Path,
     *,
@@ -420,16 +442,9 @@ def _verify_release_matches_commit(
             f"Could not rebuild release from selected commit: {error}"
         ) from error
 
-    expected_digest = hashlib.sha256()
-    actual_digest = hashlib.sha256()
-    for path, digest in ((rebuilt_archive, expected_digest), (archive_path, actual_digest)):
-        try:
-            with path.open("rb") as source:
-                while chunk := source.read(_CHUNK_SIZE):
-                    digest.update(chunk)
-        except OSError as error:
-            raise ReleasePreparationError(f"Could not read release archive: {error}") from error
-    if expected_digest.digest() != actual_digest.digest():
+    expected_digest = _decompressed_archive_digest(rebuilt_archive)
+    actual_digest = _decompressed_archive_digest(archive_path)
+    if expected_digest != actual_digest:
         raise ReleasePreparationError(
             "Release archive does not match the selected commit's deterministic build"
         )

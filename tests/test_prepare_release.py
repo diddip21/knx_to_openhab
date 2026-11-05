@@ -1,3 +1,4 @@
+import gzip
 import hashlib
 import io
 import json
@@ -283,6 +284,35 @@ def test_prepare_release_accepts_archive_rebuilt_from_selected_commit(monkeypatc
     ]
     assert any("/tarball/" in url for url in requested_urls)
     assert not list(tmp_path.glob(".assets-*"))
+
+
+def test_prepare_release_accepts_archive_recompressed_with_different_gzip_level(
+    monkeypatch, tmp_path
+):
+    archive_path, checksum_path, manifest, source_archive = _make_commit_release_asset(tmp_path)
+    original_archive = archive_path.read_bytes()
+    recompressed_archive = gzip.compress(
+        gzip.decompress(original_archive), compresslevel=1, mtime=0
+    )
+    assert recompressed_archive != original_archive
+    archive_path.write_bytes(recompressed_archive)
+    checksum_path.write_text(
+        f"{hashlib.sha256(recompressed_archive).hexdigest()}  {archive_path.name}\n",
+        encoding="ascii",
+    )
+    _mock_prepare_downloads(monkeypatch, archive_path, checksum_path, source_archive, manifest)
+
+    release_dir = prepare_release(
+        tmp_path / "stage",
+        repository="diddip21/knx_to_openhab",
+        tag=_TAG,
+        commit_hash=_COMMIT,
+        commit_date="2026-11-03T00:00:00Z",
+        commit_message="Stable release",
+        author="Release Bot",
+    )
+
+    assert release_dir == tmp_path / "stage" / _ROOT
 
 
 def test_prepare_release_rejects_asset_replacement_even_with_matching_checksum(

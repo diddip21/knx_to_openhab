@@ -78,6 +78,14 @@ release assets can create a matching checksum.
 - Apply the worker's control-character policy to commit message and author
   metadata before writing or publishing an update request. Invalid metadata
   must leave no pending request behind.
+- Verify the selected builder's archive payload independently of gzip/zlib
+  implementation by comparing the decompressed deterministic tar stream; keep
+  the release `.sha256` check over the downloaded compressed bytes.
+- Validate every HTTPS redirect target before following it. GitHub API requests
+  remain on `api.github.com`; release/source downloads may redirect only among
+  the existing allowlisted GitHub asset hosts.
+- Print copy-paste-safe recovery commands for supported install paths containing
+  whitespace by shell-escaping the complete setup-script path.
 
 ## Acceptance criteria
 
@@ -96,5 +104,13 @@ release assets can create a matching checksum.
   `LoadState=not-found` unit, and only then deletes files.
 - Control characters are rejected before request publication, and the worker
   and Web UI apply the same policy.
+- Recompressing the same selected-commit tar payload with a different gzip
+  compression level does not block a valid update, while changing its tar
+  contents still fails verification.
+- An HTTP redirect to an untrusted intermediate host is rejected before that
+  host is contacted, even if the redirect chain would later return to an
+  allowlisted host.
+- Recovery guidance for an installation path containing spaces can be copied
+  into a shell and invokes the correct active `installer/setup.sh` path.
 - Focused tests, full core tests, lint/format checks, UI tests as applicable,
   and `git diff --check` pass before the PR is considered ready for review.

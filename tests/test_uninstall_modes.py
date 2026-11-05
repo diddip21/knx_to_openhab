@@ -17,7 +17,7 @@ def test_uninstaller_removes_the_transactional_update_unit():
 
     assert "knxohui-update.service" in content
     assert "/etc/systemd/system/knxohui-update.service" in content
-    assert content.index("knxohui-update.service") < content.index("knxohui.service")
+    assert content.index("knxohui.service") < content.index("knxohui-update.service")
 
 
 def create_fixture(tmp_path):
@@ -58,8 +58,16 @@ case "${1:-}" in
   systemctl)
     case "${2:-}" in
       show)
-        if [[ -n "${FAKE_SYSTEM_STATE_FILE:-}" && -f "$FAKE_SYSTEM_STATE_FILE" ]]; then
+        unit="${5:-}"
+        if [[ "$unit" == knxohui-update.service && -n "${FAKE_SYSTEM_STATE_FILE:-}" \
+          && -f "$FAKE_SYSTEM_STATE_FILE" ]]; then
           state=$(<"$FAKE_SYSTEM_STATE_FILE")
+        elif [[ "$unit" == knxohui.service && "${FAKE_WEB_ACTIVE:-0}" == 1 ]]; then
+          if [[ -n "${FAKE_WEB_STATE_FILE:-}" && -f "$FAKE_WEB_STATE_FILE" ]]; then
+            state=$(<"$FAKE_WEB_STATE_FILE")
+          else
+            state=active
+          fi
         elif [[ "${FAKE_ACTIVE:-0}" == 1 ]]; then
           state=active
         else
@@ -71,7 +79,17 @@ case "${1:-}" in
       is-enabled) exit 1 ;;
       stop)
         [[ "${FAKE_STOP_FAIL:-0}" != 1 ]] || exit 1
-        [[ -z "${FAKE_SYSTEM_STATE_FILE:-}" ]] || printf 'inactive\n' > "$FAKE_SYSTEM_STATE_FILE"
+        if [[ -n "${FAKE_SYSTEM_STATE_FILE:-}" ]]; then
+          case "${3:-}" in
+            knxohui-update.service) printf 'inactive\n' > "$FAKE_SYSTEM_STATE_FILE" ;;
+            knxohui.service)
+              [[ -z "${FAKE_WEB_STATE_FILE:-}" ]] \
+                || printf 'inactive\n' > "$FAKE_WEB_STATE_FILE"
+              [[ "${FAKE_START_UPDATER_WHEN_WEB_STOPS:-0}" != 1 ]] \
+                || printf 'activating\n' > "$FAKE_SYSTEM_STATE_FILE"
+              ;;
+          esac
+        fi
         ;;
     esac
     ;;
@@ -363,3 +381,29 @@ def test_uninstall_aborts_on_unknown_updater_state_before_file_removal(tmp_path)
     assert "state" in result.stderr.lower()
     assert app.exists()
     assert "rm" not in sudo_arguments(sudo_log)
+
+
+def test_uninstall_quiesces_web_service_before_final_updater_stop(tmp_path):
+    environment, app, _, _, _, _, sudo_log = create_fixture(tmp_path)
+    state_file = tmp_path / "systemd-state"
+    state_file.write_text("inactive\n", encoding="utf-8")
+    web_state_file = tmp_path / "web-systemd-state"
+    web_state_file.write_text("active\n", encoding="utf-8")
+    environment.update(
+        {
+            "FAKE_SYSTEM_STATE_FILE": str(state_file),
+            "FAKE_WEB_STATE_FILE": str(web_state_file),
+            "FAKE_WEB_ACTIVE": "1",
+            "FAKE_START_UPDATER_WHEN_WEB_STOPS": "1",
+        }
+    )
+
+    result = run_uninstaller(environment, ["--yes"])
+
+    assert result.returncode == 0, result.stderr
+    assert not app.exists()
+    calls = sudo_arguments(sudo_log)
+    update_state_check = calls.index("knxohui-update.service")
+    assert calls.index("knxohui.service", calls.index("stop")) < update_state_check
+    assert calls.index("stop", update_state_check) < calls.index("rm")
+    assert state_file.read_text(encoding="utf-8").strip() == "inactive"

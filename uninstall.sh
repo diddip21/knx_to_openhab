@@ -213,8 +213,8 @@ validate_application_directory
 validate_user_data_directories
 
 UNITS=(
-    knxohui-update.service
     knxohui.service
+    knxohui-update.service
     knxohui-backup-cleanup.service
     knxohui-backup-cleanup.timer
 )

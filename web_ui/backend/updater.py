@@ -510,8 +510,15 @@ class Updater:
                 return False, "Selected release metadata is invalid: commit date."
             if not isinstance(commit_message, str) or len(commit_message) > 500:
                 return False, "Selected release metadata is invalid: commit message."
+            if any(ord(character) < 32 and character not in "\t" for character in commit_message):
+                return (
+                    False,
+                    "Selected release metadata contains control characters: commit message.",
+                )
             if not isinstance(author, str) or not author or len(author) > 200:
                 return False, "Selected release metadata is invalid: author."
+            if any(ord(character) < 32 and character not in "\t" for character in author):
+                return False, "Selected release metadata contains control characters: author."
 
             current_link = os.path.join(self.base_path, "current")
             if os.path.lexists(current_link):

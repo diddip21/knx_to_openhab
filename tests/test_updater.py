@@ -7,6 +7,8 @@ import stat
 import threading
 from unittest.mock import Mock
 
+import pytest
+
 from web_ui.backend.updater import Updater
 
 
@@ -778,6 +780,46 @@ def test_trigger_update_rejects_invalid_commit_metadata_before_queueing(monkeypa
     assert "commit hash" in message
     start_service.assert_not_called()
     assert not (tmp_path / "var/lib/knx_to_openhab/update-request.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("commit_message", "message\rwith carriage return"),
+        ("commit_message", "message\x00with NUL"),
+        ("author", "author\rwith carriage return"),
+        ("author", "author\x00with NUL"),
+    ],
+)
+def test_trigger_update_rejects_control_characters_before_queueing(
+    monkeypatch, tmp_path, field, value
+):
+    updater = Updater(base_path=str(tmp_path))
+    (tmp_path / "update.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(tmp_path / "data"))
+    release = {
+        "release_tag": "v1.4.0",
+        "commit_hash": "a" * 40,
+        "commit_date": "2026-11-03T00:00:00Z",
+        "commit_message": "Stable release",
+        "author": "Release Bot",
+    }
+    release[field] = value
+    monkeypatch.setattr(updater, "check_github_version", lambda: (True, release))
+    monkeypatch.setattr(updater, "get_current_version", lambda: {"commit_hash": "old"})
+    monkeypatch.setattr(updater, "_update_worker_setup_error", lambda: None)
+    start_worker = Mock(return_value=Mock(returncode=0, stderr=""))
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.run", start_worker)
+
+    success, message = updater.trigger_update()
+
+    assert success is False
+    assert field.replace("_", " ") in message.lower()
+    start_worker.assert_not_called()
+    data_dir = tmp_path / "data"
+    assert not (data_dir / "update-request.json").exists()
+    assert not (data_dir / "update-request.running.json").exists()
+    assert not list(data_dir.glob(".update-request-*.tmp"))
 
 
 def test_build_metadata_release_update_is_not_suppressed(monkeypatch, tmp_path):

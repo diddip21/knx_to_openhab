@@ -447,3 +447,89 @@ def test_fetch_commit_file_manifest_rejects_truncated_tree(monkeypatch):
 
     with pytest.raises(ReleasePreparationError, match="truncated"):
         prepare_release_module._fetch_commit_file_manifest("diddip21/knx_to_openhab", _COMMIT)
+
+
+def test_fetch_commit_file_manifest_ignores_unsupported_excluded_entries(monkeypatch):
+    version_content = f"{_VERSION}\n".encode()
+    version_blob = hashlib.sha1(
+        f"blob {len(version_content)}\0".encode() + version_content
+    ).hexdigest()
+
+    class ApiResponse(io.BytesIO):
+        headers = {}
+
+        def __init__(self, body, url):
+            super().__init__(body)
+            self._url = url
+
+        def geturl(self):
+            return self._url
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            self.close()
+
+    def fake_urlopen(request, timeout):
+        url = request.full_url
+        if "/git/commits/" in url:
+            body = json.dumps({"tree": {"sha": "b" * 40}}).encode()
+        else:
+            body = json.dumps(
+                {
+                    "truncated": False,
+                    "tree": [
+                        {
+                            "path": "VERSION",
+                            "mode": "100644",
+                            "type": "blob",
+                            "sha": version_blob,
+                        },
+                        {
+                            "path": "tests/excluded-link",
+                            "mode": "120000",
+                            "type": "blob",
+                            "sha": "c" * 40,
+                        },
+                        {
+                            "path": "tests/excluded-submodule",
+                            "mode": "160000",
+                            "type": "commit",
+                            "sha": "d" * 40,
+                        },
+                    ],
+                }
+            ).encode()
+        return ApiResponse(body, url)
+
+    monkeypatch.setattr(prepare_release_module, "urlopen", fake_urlopen)
+
+    manifest = prepare_release_module._fetch_commit_file_manifest(
+        "diddip21/knx_to_openhab", _COMMIT
+    )
+
+    assert manifest == [(PurePosixPath("VERSION"), 0o100644, version_blob)]
+
+
+def test_safe_extract_commit_source_ignores_symlinks_at_excluded_paths(tmp_path):
+    source_archive = tmp_path / "source.tar.gz"
+    root_name = f"knx_to_openhab-{_COMMIT[:12]}"
+    with tarfile.open(source_archive, "w:gz") as archive:
+        root = tarfile.TarInfo(root_name)
+        root.type = tarfile.DIRTYPE
+        archive.addfile(root)
+        content = f"{_VERSION}\n".encode()
+        version = tarfile.TarInfo(f"{root_name}/VERSION")
+        version.size = len(content)
+        archive.addfile(version, io.BytesIO(content))
+        excluded_link = tarfile.TarInfo(f"{root_name}/tests/excluded-link")
+        excluded_link.type = tarfile.SYMTYPE
+        excluded_link.linkname = "../../outside"
+        archive.addfile(excluded_link)
+
+    extracted_root = prepare_release_module._safe_extract_commit_source(source_archive, tmp_path)
+
+    assert (extracted_root / "VERSION").read_bytes() == content
+    assert not (extracted_root / "tests" / "excluded-link").exists()
+    assert not (tmp_path / "outside").exists()

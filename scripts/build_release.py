@@ -74,7 +74,8 @@ def validate_tag(tag: str, expected_version: str | None = None) -> str:
     return version
 
 
-def _is_excluded(relative_path: PurePosixPath) -> bool:
+def is_excluded_release_path(relative_path: PurePosixPath) -> bool:
+    """Return whether a tracked path is omitted from release artifacts."""
     parts = relative_path.parts
     basename = relative_path.name
     if not parts or parts[0] in EXCLUDED_TOP_LEVEL or basename in EXCLUDED_NAMES:
@@ -117,7 +118,7 @@ def _tracked_files(repo_root: Path) -> Iterable[tuple[PurePosixPath, int]]:
                 )
             if relative_path.is_absolute() or ".." in relative_path.parts:
                 raise ReleaseArtifactError(f"Unsafe tracked path in release: {relative_path}")
-            if not _is_excluded(relative_path):
+            if not is_excluded_release_path(relative_path):
                 yield relative_path, int(mode_text, 8)
         except (UnicodeDecodeError, ValueError) as error:
             if isinstance(error, ReleaseArtifactError):
@@ -155,7 +156,7 @@ def _release_file_list(
         if relative_path in seen:
             raise ReleaseArtifactError(f"Duplicate tracked release path: {relative_path}")
         seen.add(relative_path)
-        if not _is_excluded(relative_path):
+        if not is_excluded_release_path(relative_path):
             files.append((relative_path, mode))
     files.sort(key=lambda item: item[0].as_posix())
     if not files:

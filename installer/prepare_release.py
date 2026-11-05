@@ -18,7 +18,11 @@ from urllib.error import URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
-from scripts.build_release import ReleaseArtifactError, build_release
+from scripts.build_release import (
+    ReleaseArtifactError,
+    build_release,
+    is_excluded_release_path,
+)
 
 _STABLE_TAG = re.compile(
     r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
@@ -169,14 +173,10 @@ def _fetch_commit_file_manifest(
         if not isinstance(entry, dict):
             raise ReleasePreparationError("Selected commit tree contains an invalid entry")
         entry_type = entry.get("type")
-        if entry_type == "tree":
-            continue
-        if entry_type != "blob":
+        if entry_type not in ("tree", "blob", "commit"):
             raise ReleasePreparationError("Selected commit contains an unsupported file type")
 
         raw_path = entry.get("path")
-        raw_mode = entry.get("mode")
-        blob_hash = entry.get("sha")
         if not isinstance(raw_path, str) or not raw_path or "\\" in raw_path:
             raise ReleasePreparationError("Selected commit tree contains an unsafe file path")
         path = PurePosixPath(raw_path)
@@ -187,11 +187,20 @@ def _fetch_commit_file_manifest(
             or path.as_posix() != raw_path
         ):
             raise ReleasePreparationError("Selected commit tree contains an unsafe file path")
+        if entry_type == "tree":
+            continue
         if path in seen:
             raise ReleasePreparationError(
                 f"Selected commit tree contains a duplicate path: {raw_path}"
             )
         seen.add(path)
+        if is_excluded_release_path(path):
+            continue
+        if entry_type != "blob":
+            raise ReleasePreparationError("Selected commit contains an unsupported file type")
+
+        raw_mode = entry.get("mode")
+        blob_hash = entry.get("sha")
         if raw_mode not in {"100644", "100755"}:
             raise ReleasePreparationError(
                 f"Selected commit contains an unsupported file mode for {raw_path}"
@@ -259,6 +268,9 @@ def _safe_extract_commit_source(source_archive: Path, scratch_dir: Path) -> Path
                 if member.isdir():
                     target.mkdir(mode=0o700, parents=True, exist_ok=True)
                     continue
+                relative_path = PurePosixPath(*path.parts[1:])
+                if is_excluded_release_path(relative_path):
+                    continue
                 if not member.isfile():
                     raise ReleasePreparationError(
                         f"Unsupported commit source archive entry: {raw_name}"
@@ -318,6 +330,8 @@ def _verify_release_matches_commit(
 
     tracked_files: list[tuple[PurePosixPath, int]] = []
     for relative_path, mode, expected_blob in manifest:
+        if is_excluded_release_path(relative_path):
+            continue
         if mode not in {0o100644, 0o100755}:
             raise ReleasePreparationError(
                 f"Selected commit contains an unsupported packaged file mode: {relative_path}"

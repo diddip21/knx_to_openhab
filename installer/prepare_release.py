@@ -265,6 +265,12 @@ def _safe_extract_commit_source(source_archive: Path, scratch_dir: Path) -> Path
                     root_seen = True
                     target.mkdir(mode=0o700, parents=True, exist_ok=True)
                     continue
+                if member.isfile():
+                    expanded_size += member.size
+                    if member.size < 0 or expanded_size > _EXPANDED_LIMIT:
+                        raise ReleasePreparationError(
+                            "Expanded commit source exceeds the size limit"
+                        )
                 if member.isdir():
                     target.mkdir(mode=0o700, parents=True, exist_ok=True)
                     continue
@@ -275,9 +281,6 @@ def _safe_extract_commit_source(source_archive: Path, scratch_dir: Path) -> Path
                     raise ReleasePreparationError(
                         f"Unsupported commit source archive entry: {raw_name}"
                     )
-                expanded_size += member.size
-                if member.size < 0 or expanded_size > _EXPANDED_LIMIT:
-                    raise ReleasePreparationError("Expanded commit source exceeds the size limit")
                 target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
                 if target.exists() or target.is_symlink():
                     raise ReleasePreparationError(

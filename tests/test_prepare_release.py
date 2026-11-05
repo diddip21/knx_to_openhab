@@ -533,3 +533,23 @@ def test_safe_extract_commit_source_ignores_symlinks_at_excluded_paths(tmp_path)
     assert (extracted_root / "VERSION").read_bytes() == content
     assert not (extracted_root / "tests" / "excluded-link").exists()
     assert not (tmp_path / "outside").exists()
+
+
+def test_safe_extract_commit_source_counts_excluded_files_toward_size_limit(monkeypatch, tmp_path):
+    monkeypatch.setattr(prepare_release_module, "_EXPANDED_LIMIT", 10)
+    source_archive = tmp_path / "source.tar.gz"
+    root_name = f"knx_to_openhab-{_COMMIT[:12]}"
+    with tarfile.open(source_archive, "w:gz") as archive:
+        root = tarfile.TarInfo(root_name)
+        root.type = tarfile.DIRTYPE
+        archive.addfile(root)
+        for relative_path, content in (
+            ("VERSION", b"1.2.3\n"),
+            ("tests/excluded.txt", b"12345"),
+        ):
+            member = tarfile.TarInfo(f"{root_name}/{relative_path}")
+            member.size = len(content)
+            archive.addfile(member, io.BytesIO(content))
+
+    with pytest.raises(ReleasePreparationError, match="Expanded commit source exceeds"):
+        prepare_release_module._safe_extract_commit_source(source_archive, tmp_path)

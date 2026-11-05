@@ -1,15 +1,19 @@
 import hashlib
 import io
 import json
+import shutil
 import tarfile
+from pathlib import PurePosixPath
 
 import pytest
 
+import installer.prepare_release as prepare_release_module
 from installer.prepare_release import (
     ReleasePreparationError,
     prepare_release,
     verify_and_extract,
 )
+from scripts.build_release import build_release
 
 _VERSION = "1.2.3"
 _TAG = f"v{_VERSION}"
@@ -63,6 +67,75 @@ def _verify(archive_path, checksum_path, destination, *, tag=_TAG):
         commit_message="Stable release",
         author="Release Bot",
     )
+
+
+def _make_commit_source(tmp_path, *, app_content=None, unsafe_member=None):
+    source_root = tmp_path / "source" / f"knx_to_openhab-{_COMMIT[:12]}"
+    source_root.mkdir(parents=True)
+    files = {"VERSION": f"{_VERSION}\n".encode(), **_REQUIRED_FILES}
+    if app_content is not None:
+        files["web_ui/backend/app.py"] = app_content
+
+    manifest = []
+    for relative, content in files.items():
+        target = source_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+        mode = 0o100755 if relative.endswith(".sh") else 0o100644
+        blob = hashlib.sha1(f"blob {len(content)}\0".encode() + content).hexdigest()
+        manifest.append((PurePosixPath(relative), mode, blob))
+
+    source_archive = tmp_path / "source.tar.gz"
+    with tarfile.open(source_archive, "w:gz") as archive:
+        root = tarfile.TarInfo(source_root.name)
+        root.type = tarfile.DIRTYPE
+        root.mode = 0o755
+        archive.addfile(root)
+        for relative, content in files.items():
+            member = tarfile.TarInfo(f"{source_root.name}/{relative}")
+            member.size = len(content)
+            member.mode = 0o755 if relative.endswith(".sh") else 0o644
+            archive.addfile(member, io.BytesIO(content))
+        if unsafe_member is not None:
+            member = tarfile.TarInfo(unsafe_member)
+            content = b"outside"
+            member.size = len(content)
+            archive.addfile(member, io.BytesIO(content))
+    return source_root, manifest, source_archive
+
+
+def _make_commit_release_asset(tmp_path, *, app_content=None):
+    source_root, manifest, source_archive = _make_commit_source(tmp_path, app_content=app_content)
+    archive_path, checksum_path = build_release(
+        source_root,
+        _VERSION,
+        tmp_path / "release-assets",
+        tracked_files=[(path, mode) for path, mode, _blob in manifest],
+    )
+    return archive_path, checksum_path, manifest, source_archive
+
+
+def _mock_prepare_downloads(monkeypatch, archive_path, checksum_path, source_archive, manifest):
+    requested_urls = []
+
+    def fake_download(url, destination, *, limit=256 * 1024 * 1024):
+        requested_urls.append(url)
+        if url.endswith(".sha256"):
+            source = checksum_path
+        elif "/tarball/" in url:
+            source = source_archive
+        else:
+            source = archive_path
+        shutil.copyfile(source, destination)
+
+    monkeypatch.setattr(prepare_release_module, "_download", fake_download)
+    monkeypatch.setattr(
+        prepare_release_module,
+        "_fetch_commit_file_manifest",
+        lambda _repository, _commit: manifest,
+        raising=False,
+    )
+    return requested_urls
 
 
 def test_verifies_checksum_extracts_release_and_writes_metadata(tmp_path):
@@ -138,6 +211,10 @@ def test_rejects_prerelease_and_nonempty_staging_directory(tmp_path):
 def test_prepare_release_downloads_expected_https_assets_and_cleans_staging(monkeypatch, tmp_path):
     archive_path, checksum_path = _make_archive(tmp_path, version="1.2.3+build.1")
     requested_urls = []
+    monkeypatch.setattr(
+        "installer.prepare_release._verify_release_matches_commit",
+        lambda *_args, **_kwargs: None,
+    )
 
     def fake_download(url, destination, *, limit=256 * 1024 * 1024):
         requested_urls.append(url)
@@ -165,3 +242,208 @@ def test_prepare_release_downloads_expected_https_assets_and_cleans_staging(monk
     )
     assert "%2B" in requested_urls[0]
     assert not list(tmp_path.glob(".assets-*"))
+
+
+def test_prepare_release_accepts_archive_rebuilt_from_selected_commit(monkeypatch, tmp_path):
+    archive_path, checksum_path, manifest, source_archive = _make_commit_release_asset(tmp_path)
+    requested_urls = _mock_prepare_downloads(
+        monkeypatch, archive_path, checksum_path, source_archive, manifest
+    )
+    destination = tmp_path / "stage"
+
+    release_dir = prepare_release(
+        destination,
+        repository="diddip21/knx_to_openhab",
+        tag=_TAG,
+        commit_hash=_COMMIT,
+        commit_date="2026-11-03T00:00:00Z",
+        commit_message="Stable release",
+        author="Release Bot",
+    )
+
+    assert release_dir == destination / _ROOT
+    assert (release_dir / "web_ui/backend/app.py").read_bytes() == _REQUIRED_FILES[
+        "web_ui/backend/app.py"
+    ]
+    assert any("/tarball/" in url for url in requested_urls)
+    assert not list(tmp_path.glob(".assets-*"))
+
+
+def test_prepare_release_rejects_asset_replacement_even_with_matching_checksum(
+    monkeypatch, tmp_path
+):
+    commit_archive, _commit_checksum, manifest, source_archive = _make_commit_release_asset(
+        tmp_path / "selected-commit"
+    )
+    substituted_archive, substituted_checksum, _other_manifest, _other_source = (
+        _make_commit_release_asset(
+            tmp_path / "substituted-release",
+            app_content=b"malicious substituted application\n",
+        )
+    )
+    assert substituted_archive != commit_archive
+    assert substituted_checksum.read_text(encoding="ascii").startswith(
+        hashlib.sha256(substituted_archive.read_bytes()).hexdigest()
+    )
+    _mock_prepare_downloads(
+        monkeypatch,
+        substituted_archive,
+        substituted_checksum,
+        source_archive,
+        manifest,
+    )
+    destination = tmp_path / "stage"
+
+    with pytest.raises(ReleasePreparationError, match="selected commit"):
+        prepare_release(
+            destination,
+            repository="diddip21/knx_to_openhab",
+            tag=_TAG,
+            commit_hash=_COMMIT,
+            commit_date="2026-11-03T00:00:00Z",
+            commit_message="Stable release",
+            author="Release Bot",
+        )
+
+    assert list(destination.iterdir()) == []
+    assert not list(tmp_path.glob(".assets-*"))
+
+
+def test_prepare_release_rejects_truncated_commit_tree(monkeypatch, tmp_path):
+    archive_path, checksum_path, manifest, source_archive = _make_commit_release_asset(tmp_path)
+    _mock_prepare_downloads(monkeypatch, archive_path, checksum_path, source_archive, manifest)
+
+    def truncated_manifest(_repository, _commit):
+        raise ReleasePreparationError("Selected commit tree is truncated")
+
+    monkeypatch.setattr(
+        prepare_release_module,
+        "_fetch_commit_file_manifest",
+        truncated_manifest,
+        raising=False,
+    )
+
+    with pytest.raises(ReleasePreparationError, match="truncated"):
+        prepare_release(
+            tmp_path / "stage",
+            repository="diddip21/knx_to_openhab",
+            tag=_TAG,
+            commit_hash=_COMMIT,
+            commit_date="2026-11-03T00:00:00Z",
+            commit_message="Stable release",
+            author="Release Bot",
+        )
+
+    assert not list(tmp_path.glob(".assets-*"))
+
+
+def test_prepare_release_rejects_unsafe_commit_source_paths(monkeypatch, tmp_path):
+    source_root, manifest, source_archive = _make_commit_source(
+        tmp_path, unsafe_member="../outside.txt"
+    )
+    archive_path, checksum_path = build_release(
+        source_root,
+        _VERSION,
+        tmp_path / "release-assets",
+        tracked_files=[(path, mode) for path, mode, _blob in manifest],
+    )
+    _mock_prepare_downloads(monkeypatch, archive_path, checksum_path, source_archive, manifest)
+
+    with pytest.raises(ReleasePreparationError, match="Unsafe.*source|source.*path"):
+        prepare_release(
+            tmp_path / "stage",
+            repository="diddip21/knx_to_openhab",
+            tag=_TAG,
+            commit_hash=_COMMIT,
+            commit_date="2026-11-03T00:00:00Z",
+            commit_message="Stable release",
+            author="Release Bot",
+        )
+
+    assert not (tmp_path / "outside.txt").exists()
+    assert not list(tmp_path.glob(".assets-*"))
+
+
+def test_prepare_release_rejects_untrusted_source_redirect(monkeypatch, tmp_path):
+    class RedirectedResponse(io.BytesIO):
+        headers = {}
+
+        def geturl(self):
+            return "https://attacker.example/source.tar.gz"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            self.close()
+
+    monkeypatch.setattr(
+        prepare_release_module,
+        "urlopen",
+        lambda _request, timeout: RedirectedResponse(b"not trusted"),
+    )
+
+    with pytest.raises(ReleasePreparationError, match="untrusted host"):
+        prepare_release_module._download(
+            "https://api.github.com/repos/diddip21/knx_to_openhab/tarball/" + _COMMIT,
+            tmp_path / "source.tar.gz",
+        )
+
+
+def test_download_accepts_github_source_snapshot_redirect(monkeypatch, tmp_path):
+    class RedirectedResponse(io.BytesIO):
+        headers = {"Content-Length": "7"}
+
+        def geturl(self):
+            return "https://codeload.github.com/diddip21/knx_to_openhab/tar.gz/" + _COMMIT
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            self.close()
+
+    monkeypatch.setattr(
+        prepare_release_module,
+        "urlopen",
+        lambda _request, timeout: RedirectedResponse(b"snapshot"),
+    )
+    destination = tmp_path / "source.tar.gz"
+
+    prepare_release_module._download(
+        "https://api.github.com/repos/diddip21/knx_to_openhab/tarball/" + _COMMIT,
+        destination,
+    )
+
+    assert destination.read_bytes() == b"snapshot"
+
+
+def test_fetch_commit_file_manifest_rejects_truncated_tree(monkeypatch):
+    class ApiResponse(io.BytesIO):
+        headers = {}
+
+        def __init__(self, body, url):
+            super().__init__(body)
+            self._url = url
+
+        def geturl(self):
+            return self._url
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            self.close()
+
+    def fake_urlopen(request, timeout):
+        url = request.full_url
+        if "/git/commits/" in url:
+            body = json.dumps({"tree": {"sha": "b" * 40}}).encode()
+        else:
+            body = json.dumps({"truncated": True, "tree": []}).encode()
+        return ApiResponse(body, url)
+
+    monkeypatch.setattr(prepare_release_module, "urlopen", fake_urlopen)
+
+    with pytest.raises(ReleasePreparationError, match="truncated"):
+        prepare_release_module._fetch_commit_file_manifest("diddip21/knx_to_openhab", _COMMIT)

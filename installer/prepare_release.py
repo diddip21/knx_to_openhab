@@ -18,6 +18,8 @@ from urllib.error import URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
+from scripts.build_release import ReleaseArtifactError, build_release
+
 _STABLE_TAG = re.compile(
     r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
     r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
@@ -27,8 +29,10 @@ _REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _SHA256_LINE = re.compile(r"^([0-9a-f]{64})  ([A-Za-z0-9_.+-]+)$")
 _DOWNLOAD_LIMIT = 256 * 1024 * 1024
 _EXPANDED_LIMIT = 1024 * 1024 * 1024
+_GITHUB_API_RESPONSE_LIMIT = 16 * 1024 * 1024
 _DOWNLOAD_HOSTS = {
     "github.com",
+    "codeload.github.com",
     "objects.githubusercontent.com",
     "release-assets.githubusercontent.com",
 }
@@ -106,6 +110,254 @@ def _download(url: str, destination: Path, *, limit: int = _DOWNLOAD_LIMIT) -> N
         if isinstance(error, ReleasePreparationError):
             raise
         raise ReleasePreparationError(f"Could not download release asset: {error}") from error
+
+
+def _github_api_json(url: str) -> dict[str, object]:
+    request = Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "knx-to-openhab-updater",
+        },
+    )
+    try:
+        with urlopen(request, timeout=30) as response:
+            final_url = urlsplit(response.geturl())
+            if final_url.scheme != "https" or final_url.hostname != "api.github.com":
+                raise ReleasePreparationError("GitHub API redirected to an untrusted host")
+            content_length = response.headers.get("Content-Length")
+            if content_length and int(content_length) > _GITHUB_API_RESPONSE_LIMIT:
+                raise ReleasePreparationError("GitHub API response exceeds the size limit")
+            payload = response.read(_GITHUB_API_RESPONSE_LIMIT + 1)
+    except (OSError, URLError, ValueError) as error:
+        if isinstance(error, ReleasePreparationError):
+            raise
+        raise ReleasePreparationError(f"Could not fetch GitHub commit metadata: {error}") from error
+
+    if len(payload) > _GITHUB_API_RESPONSE_LIMIT:
+        raise ReleasePreparationError("GitHub API response exceeds the size limit")
+    try:
+        result = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ReleasePreparationError("GitHub returned invalid commit metadata") from error
+    if not isinstance(result, dict):
+        raise ReleasePreparationError("GitHub returned invalid commit metadata")
+    return result
+
+
+def _fetch_commit_file_manifest(
+    repository: str, commit_hash: str
+) -> list[tuple[PurePosixPath, int, str]]:
+    commit_url = f"https://api.github.com/repos/{repository}/git/commits/{commit_hash}"
+    commit_data = _github_api_json(commit_url)
+    tree_data = commit_data.get("tree")
+    tree_hash = tree_data.get("sha") if isinstance(tree_data, dict) else None
+    if not isinstance(tree_hash, str) or not _COMMIT.fullmatch(tree_hash):
+        raise ReleasePreparationError("Selected commit has invalid Git tree metadata")
+
+    tree_url = f"https://api.github.com/repos/{repository}/git/trees/{tree_hash}?recursive=1"
+    tree_response = _github_api_json(tree_url)
+    if tree_response.get("truncated") is not False:
+        raise ReleasePreparationError("Selected commit tree is truncated or incomplete")
+    entries = tree_response.get("tree")
+    if not isinstance(entries, list):
+        raise ReleasePreparationError("Selected commit tree has an invalid format")
+
+    manifest: list[tuple[PurePosixPath, int, str]] = []
+    seen: set[PurePosixPath] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ReleasePreparationError("Selected commit tree contains an invalid entry")
+        entry_type = entry.get("type")
+        if entry_type == "tree":
+            continue
+        if entry_type != "blob":
+            raise ReleasePreparationError("Selected commit contains an unsupported file type")
+
+        raw_path = entry.get("path")
+        raw_mode = entry.get("mode")
+        blob_hash = entry.get("sha")
+        if not isinstance(raw_path, str) or not raw_path or "\\" in raw_path:
+            raise ReleasePreparationError("Selected commit tree contains an unsafe file path")
+        path = PurePosixPath(raw_path)
+        if (
+            path.is_absolute()
+            or ".." in path.parts
+            or not path.parts
+            or path.as_posix() != raw_path
+        ):
+            raise ReleasePreparationError("Selected commit tree contains an unsafe file path")
+        if path in seen:
+            raise ReleasePreparationError(
+                f"Selected commit tree contains a duplicate path: {raw_path}"
+            )
+        seen.add(path)
+        if raw_mode not in {"100644", "100755"}:
+            raise ReleasePreparationError(
+                f"Selected commit contains an unsupported file mode for {raw_path}"
+            )
+        if not isinstance(blob_hash, str) or not _COMMIT.fullmatch(blob_hash):
+            raise ReleasePreparationError(
+                f"Selected commit has an invalid blob hash for {raw_path}"
+            )
+        manifest.append((path, int(raw_mode, 8), blob_hash))
+
+    if not manifest:
+        raise ReleasePreparationError("Selected commit tree contains no regular files")
+    return manifest
+
+
+def _safe_extract_commit_source(source_archive: Path, scratch_dir: Path) -> Path:
+    source_dir = scratch_dir / "source"
+    if source_dir.exists() or source_dir.is_symlink():
+        raise ReleasePreparationError("Commit source staging path already exists")
+    source_dir.mkdir(mode=0o700)
+    root_name: str | None = None
+    root_seen = False
+    seen: set[str] = set()
+    expanded_size = 0
+    try:
+        with tarfile.open(source_archive, mode="r:gz") as archive:
+            for member in archive:
+                raw_name = member.name
+                path = PurePosixPath(raw_name)
+                normalized_name = raw_name.rstrip("/")
+                if (
+                    not raw_name
+                    or "\\" in raw_name
+                    or path.is_absolute()
+                    or ".." in path.parts
+                    or path.as_posix() != normalized_name
+                    or not path.parts
+                ):
+                    raise ReleasePreparationError(
+                        f"Unsafe commit source archive path: {raw_name!r}"
+                    )
+                if root_name is None:
+                    root_name = path.parts[0]
+                elif path.parts[0] != root_name:
+                    raise ReleasePreparationError("Commit source archive has multiple roots")
+                if normalized_name in seen:
+                    raise ReleasePreparationError(
+                        f"Duplicate commit source archive path: {raw_name}"
+                    )
+                seen.add(normalized_name)
+                target = source_dir.joinpath(*path.parts)
+                try:
+                    target.relative_to(source_dir)
+                except ValueError as error:
+                    raise ReleasePreparationError(
+                        f"Commit source path escapes staging: {raw_name}"
+                    ) from error
+
+                if len(path.parts) == 1:
+                    if not member.isdir():
+                        raise ReleasePreparationError("Commit source root must be a directory")
+                    root_seen = True
+                    target.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    continue
+                if member.isdir():
+                    target.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    continue
+                if not member.isfile():
+                    raise ReleasePreparationError(
+                        f"Unsupported commit source archive entry: {raw_name}"
+                    )
+                expanded_size += member.size
+                if member.size < 0 or expanded_size > _EXPANDED_LIMIT:
+                    raise ReleasePreparationError("Expanded commit source exceeds the size limit")
+                target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                if target.exists() or target.is_symlink():
+                    raise ReleasePreparationError(
+                        f"Commit source file collides with an existing path: {raw_name}"
+                    )
+                source = archive.extractfile(member)
+                if source is None:
+                    raise ReleasePreparationError(f"Could not read commit source file: {raw_name}")
+                with source, target.open("xb") as output:
+                    shutil.copyfileobj(source, output, _CHUNK_SIZE)
+                target.chmod(0o755 if member.mode & 0o111 else 0o644)
+
+        if root_name is None or not root_seen:
+            raise ReleasePreparationError("Commit source archive is missing its root directory")
+        return source_dir / root_name
+    except (OSError, tarfile.TarError) as error:
+        raise ReleasePreparationError(
+            f"Could not extract commit source archive: {error}"
+        ) from error
+
+
+def _git_blob_sha1(path: Path) -> str:
+    size = path.stat().st_size
+    digest = hashlib.sha1()
+    digest.update(f"blob {size}\0".encode("ascii"))
+    try:
+        with path.open("rb") as source:
+            while chunk := source.read(_CHUNK_SIZE):
+                digest.update(chunk)
+    except OSError as error:
+        raise ReleasePreparationError(
+            f"Could not read commit source file {path}: {error}"
+        ) from error
+    return digest.hexdigest()
+
+
+def _verify_release_matches_commit(
+    archive_path: Path,
+    *,
+    repository: str,
+    commit_hash: str,
+    version: str,
+    scratch_dir: Path,
+) -> None:
+    manifest = _fetch_commit_file_manifest(repository, commit_hash)
+    source_archive = scratch_dir / "commit-source.tar.gz"
+    source_url = f"https://api.github.com/repos/{repository}/tarball/{commit_hash}"
+    _download(source_url, source_archive)
+    source_root = _safe_extract_commit_source(source_archive, scratch_dir)
+
+    tracked_files: list[tuple[PurePosixPath, int]] = []
+    for relative_path, mode, expected_blob in manifest:
+        if mode not in {0o100644, 0o100755}:
+            raise ReleasePreparationError(
+                f"Selected commit contains an unsupported packaged file mode: {relative_path}"
+            )
+        source_path = source_root.joinpath(*relative_path.parts)
+        if not source_path.is_file() or source_path.is_symlink():
+            raise ReleasePreparationError(
+                f"Commit source is missing a regular file: {relative_path}"
+            )
+        if _git_blob_sha1(source_path) != expected_blob:
+            raise ReleasePreparationError(
+                f"Commit source file does not match selected commit: {relative_path}"
+            )
+        tracked_files.append((relative_path, mode))
+
+    try:
+        rebuilt_archive, _rebuilt_checksum = build_release(
+            source_root,
+            version,
+            scratch_dir / "rebuilt",
+            tracked_files=tracked_files,
+        )
+    except (OSError, ReleaseArtifactError) as error:
+        raise ReleasePreparationError(
+            f"Could not rebuild release from selected commit: {error}"
+        ) from error
+
+    expected_digest = hashlib.sha256()
+    actual_digest = hashlib.sha256()
+    for path, digest in ((rebuilt_archive, expected_digest), (archive_path, actual_digest)):
+        try:
+            with path.open("rb") as source:
+                while chunk := source.read(_CHUNK_SIZE):
+                    digest.update(chunk)
+        except OSError as error:
+            raise ReleasePreparationError(f"Could not read release archive: {error}") from error
+    if expected_digest.digest() != actual_digest.digest():
+        raise ReleasePreparationError(
+            "Release archive does not match the selected commit's deterministic build"
+        )
 
 
 def _verify_checksum(archive_path: Path, checksum_path: Path, expected_name: str) -> None:
@@ -291,6 +543,13 @@ def prepare_release(
     try:
         _download(f"{base_url}/{quote(archive_name, safe='')}", archive_path)
         _download(f"{base_url}/{quote(checksum_name, safe='')}", checksum_path, limit=1024)
+        _verify_release_matches_commit(
+            archive_path,
+            repository=repository,
+            commit_hash=commit_hash,
+            version=version,
+            scratch_dir=download_dir,
+        )
         return verify_and_extract(
             archive_path,
             checksum_path,

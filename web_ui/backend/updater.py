@@ -23,6 +23,7 @@ from update_request_lock import update_request_lock
 _RELEASE_CACHE_TTL_SECONDS = 300
 _UPDATE_WORKER_UNIT = Path("/etc/systemd/system/knxohui-update.service")
 _UPDATE_WORKER_LAUNCHER = Path("/usr/local/libexec/knx_to_openhab/launch_update.sh")
+_WEB_UI_LAUNCHER = Path("/usr/local/libexec/knx_to_openhab/launch_web.sh")
 _SERVICE_UPDATE_HELPER = "/usr/local/sbin/knxohui-service-update"
 
 _SEMVER_PATTERN = re.compile(
@@ -383,6 +384,14 @@ class Updater:
     def _update_worker_setup_error(self) -> Optional[str]:
         """Return setup guidance when the isolated systemd updater is not ready."""
         if not _UPDATE_WORKER_UNIT.is_file() or not _UPDATE_WORKER_LAUNCHER.is_file():
+            return self._update_worker_setup_instruction()
+        if not _WEB_UI_LAUNCHER.is_file():
+            return self._update_worker_setup_instruction()
+        try:
+            launcher_contents = _WEB_UI_LAUNCHER.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return self._update_worker_setup_instruction()
+        if "# KNXOH_BOOT_RECOVERY_VERSION=1" not in launcher_contents.splitlines():
             return self._update_worker_setup_instruction()
         if not Path(_SERVICE_UPDATE_HELPER).is_file():
             return self._update_worker_setup_instruction()

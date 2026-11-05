@@ -252,16 +252,18 @@ def test_update_worker_readiness_requires_installed_files_and_sudo_permission(
 ):
     unit = tmp_path / "knxohui-update.service"
     launcher = tmp_path / "launch_update.sh"
+    web_launcher = tmp_path / "launch_web.sh"
     helper = tmp_path / "knxohui-service-update"
     setup_script = tmp_path / "current/installer/setup.sh"
-    for path in (unit, launcher, helper, setup_script):
+    for path in (unit, launcher, web_launcher, helper, setup_script):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("installed", encoding="utf-8")
 
     monkeypatch.setattr("web_ui.backend.updater._UPDATE_WORKER_UNIT", unit)
     monkeypatch.setattr("web_ui.backend.updater._UPDATE_WORKER_LAUNCHER", launcher)
+    monkeypatch.setattr("web_ui.backend.updater._WEB_UI_LAUNCHER", web_launcher)
     monkeypatch.setattr("web_ui.backend.updater._SERVICE_UPDATE_HELPER", str(helper))
-    permission = Mock(return_value=Mock(returncode=1, stderr="not permitted"))
+    permission = Mock(return_value=Mock(returncode=0, stderr=""))
     monkeypatch.setattr("web_ui.backend.updater.subprocess.run", permission)
     updater = Updater(base_path=str(tmp_path))
 
@@ -271,6 +273,21 @@ def test_update_worker_readiness_requires_installed_files_and_sudo_permission(
     assert "isolated update worker is not installed or authorized" in error
     assert "sudo bash" in error
     assert "current/installer/setup.sh" in error
+    permission.assert_not_called()
+
+    web_launcher.write_text("# KNXOH_BOOT_RECOVERY_VERSION=1-disabled\n", encoding="utf-8")
+    error = updater._update_worker_setup_error()
+
+    assert error is not None
+    permission.assert_not_called()
+
+    web_launcher.write_text("# KNXOH_BOOT_RECOVERY_VERSION=1\n", encoding="utf-8")
+    permission.return_value.returncode = 1
+    permission.return_value.stderr = "not permitted"
+    error = updater._update_worker_setup_error()
+
+    assert error is not None
+    permission.assert_called_once()
     permission.return_value.returncode = 0
     assert updater._update_worker_setup_error() is None
 

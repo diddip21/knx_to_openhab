@@ -2,8 +2,7 @@ import hashlib
 import os
 import subprocess
 import tarfile
-from pathlib import Path
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 import pytest
 

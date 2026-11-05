@@ -400,15 +400,17 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
         "dependency_fails",
         "interrupt_after_activation",
         "active_staging",
+        "marker_clear_fails",
     ),
     [
-        pytest.param(True, False, False, False, False, id="health-check-rollback"),
-        pytest.param(False, False, False, False, False, id="healthy-update"),
-        pytest.param(False, True, False, False, False, id="activation-failure"),
-        pytest.param(False, False, True, False, False, id="dependency-failure"),
-        pytest.param(False, False, False, True, False, id="activation_signal_boundary"),
-        pytest.param(True, False, False, True, False, id="activation_signal_retry_rollback"),
-        pytest.param(False, False, False, False, True, id="update_candidate_active_staging"),
+        pytest.param(True, False, False, False, False, False, id="health-check-rollback"),
+        pytest.param(False, False, False, False, False, False, id="healthy-update"),
+        pytest.param(False, True, False, False, False, False, id="activation-failure"),
+        pytest.param(False, False, True, False, False, False, id="dependency-failure"),
+        pytest.param(False, False, False, True, False, False, id="activation_signal_boundary"),
+        pytest.param(True, False, False, True, False, False, id="activation_signal_retry_rollback"),
+        pytest.param(False, False, False, False, True, False, id="update_candidate_active_staging"),
+        pytest.param(False, False, False, False, False, True, id="marker_clear_failure"),
     ],
 )
 @pytest.mark.parametrize("use_default_port", [False, True])
@@ -420,6 +422,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     dependency_fails,
     interrupt_after_activation,
     active_staging,
+    marker_clear_fails,
 ):
     install = tmp_path / "install"
     fake_bin = tmp_path / "bin"
@@ -588,7 +591,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     )
     pip.chmod(0o755)
 
-    if activation_fails or dependency_fails or interrupt_after_activation:
+    if activation_fails or dependency_fails or interrupt_after_activation or marker_clear_fails:
         previous_release = install / "releases/old-release"
         for relative in (
             "knxoh_paths.py",
@@ -694,6 +697,19 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     fake_sleep = fake_bin / "sleep"
     fake_sleep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     fake_sleep.chmod(0o755)
+    if marker_clear_fails:
+        fake_rm = fake_bin / "rm"
+        fake_rm.write_text(
+            "#!/bin/bash\n"
+            'if [[ "${MARKER_CLEAR_TEST_FAIL:-0}" == "1" ]]; then\n'
+            '  for path in "$@"; do\n'
+            '    [[ "$path" == */.update-in-progress ]] && exit 1\n'
+            "  done\n"
+            "fi\n"
+            'exec /bin/rm "$@"\n',
+            encoding="utf-8",
+        )
+        fake_rm.chmod(0o755)
 
     log_file = tmp_path / "update.log"
     environment = os.environ.copy()
@@ -704,6 +720,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
             "DEPENDENCY_TEST_FAIL": "1" if dependency_fails else "0",
             "ACTIVATION_TEST_FAIL": "1" if activation_fails else "0",
             "ACTIVATION_TEST_SIGNAL": "1" if interrupt_after_activation else "0",
+            "MARKER_CLEAR_TEST_FAIL": "1" if marker_clear_fails else "0",
             "INSTALL_DIR": str(install),
             "KNXOH_INSTALL_DIR": str(install),
             "KNXOH_DATA_DIR": str(data_dir),
@@ -757,7 +774,11 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     expected_returncode = (
         -signal.SIGTERM
         if interrupt_after_activation
-        else 1 if health_check_fails or activation_fails or dependency_fails else 0
+        else (
+            1
+            if health_check_fails or activation_fails or dependency_fails or marker_clear_fails
+            else 0
+        )
     )
     assert result.returncode == expected_returncode, result.stdout + result.stderr
     assert (install / "config.json").read_text(encoding="utf-8") == (
@@ -816,6 +837,13 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         assert "Previous release restored and health check passed." in log
         assert "Rejected release candidate removed: v1.2.0." in log
         assert list((install / "releases").iterdir()) == []
+    elif marker_clear_fails:
+        assert (install / "current").resolve() == install / "releases/old-release"
+        assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
+        assert "Could not clear the active release candidate marker" in log
+        assert "Previous release restored and health check passed." in log
+        assert "Update completed successfully!" not in log
+        assert list((install / "releases").iterdir()) == [install / "releases/old-release"]
     else:
         assert (install / "current").is_symlink()
         active_release = (install / "current").resolve()

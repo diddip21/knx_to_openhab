@@ -611,7 +611,9 @@ if ! wait_for_service_health; then
 fi
 
 if ! rm -f -- "$NEW_RELEASE_DIR/.update-in-progress"; then
-    log "WARNING: Could not clear the active release candidate marker: $NEW_RELEASE_DIR"
+    log "ERROR: Could not clear the active release candidate marker: $NEW_RELEASE_DIR"
+    restore_previous_release || log "ERROR: Automatic recovery failed. Check: sudo systemctl status $SERVICE_NAME"
+    exit 1
 fi
 if ! cleanup_abandoned_release_paths; then
     log "WARNING: Could not remove every abandoned release candidate."

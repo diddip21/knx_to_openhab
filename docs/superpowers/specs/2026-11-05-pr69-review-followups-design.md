@@ -66,7 +66,8 @@ release assets can create a matching checksum.
 - Persist release rollback targets only in the validated, install-relative
   `releases/...` form. Preserve the existing `legacy` marker for legacy
   rollback.
-- During uninstall, detect and stop an updater in `activating` as well as
+- During uninstall, stop the Web UI before the updater so it cannot start a new
+  update during teardown. Detect and stop an updater in `activating` as well as
   `active`, and wait for it to stop before removing application or unit files.
   Tolerate a genuinely absent/inactive unit; abort on an unknown systemd state.
 - Apply the worker's control-character policy to commit message and author
@@ -85,7 +86,8 @@ release assets can create a matching checksum.
   error and cleans temporary files.
 - Recovery messages resolve installer scripts from the active release; absolute
   `current` links produce a valid relative rollback marker.
-- Uninstall waits for an activating updater before deleting files.
+- Uninstall stops the Web UI before its final updater check, waits for an
+  activating updater, and only then deletes files.
 - Control characters are rejected before request publication, and the worker
   and Web UI apply the same policy.
 - Focused tests, full core tests, lint/format checks, UI tests as applicable,

@@ -25,6 +25,7 @@
 - A valid source archive must match the selected commit's blob hashes and rebuild byte-for-byte (`test_prepare_release_accepts_archive_rebuilt_from_selected_commit`).
 - A truncated or malformed Git tree must fail closed and clean temporary assets (`test_prepare_release_rejects_truncated_commit_tree`).
 - GitHub source tar paths and redirects must remain bounded and restricted to HTTPS allowlisted hosts (`test_prepare_release_rejects_unsafe_commit_source_paths`, `test_prepare_release_rejects_untrusted_source_redirect`).
+- Excluded source files remain subject to the expanded-size limit, while excluded links are not extracted (`test_safe_extract_commit_source_counts_excluded_files_toward_size_limit`, `test_safe_extract_commit_source_ignores_symlinks_at_excluded_paths`).
 - Existing checksum-mismatch and unsafe-release-member rejection must continue to pass (`test_rejects_a_checksum_mismatch_without_leaving_extracted_files`, `test_rejects_unsafe_archive_paths`).
 
 ---
@@ -78,7 +79,7 @@ Add `test_prepare_release_accepts_archive_rebuilt_from_selected_commit` and `tes
 
 - [x] **Step 2: Add failing tests for invalid source metadata and redirects**
 
-Add `test_prepare_release_rejects_truncated_commit_tree`, `test_prepare_release_rejects_unsafe_commit_source_paths`, and `test_prepare_release_rejects_untrusted_source_redirect`. Assert the error is actionable, no source path escapes the scratch directory, and all temporary `.assets-*` content is removed.
+Add `test_prepare_release_rejects_truncated_commit_tree`, `test_prepare_release_rejects_unsafe_commit_source_paths`, `test_prepare_release_rejects_untrusted_source_redirect`, `test_safe_extract_commit_source_ignores_symlinks_at_excluded_paths`, and `test_safe_extract_commit_source_counts_excluded_files_toward_size_limit`. Assert actionable errors, safe paths, no extraction of excluded links, and that excluded regular-member sizes count toward the expansion limit. Existing `prepare_release` integration tests assert temporary `.assets-*` cleanup.
 
 - [x] **Step 3: Run the new tests to verify they fail**
 

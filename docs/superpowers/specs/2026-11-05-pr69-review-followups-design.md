@@ -53,7 +53,8 @@ release assets can create a matching checksum.
   included file against the corresponding Git blob hash and mode from the
   selected commit tree. Reuse the release builder's inclusion/exclusion rules
   and deterministic archive writer rather than maintaining a second package
-  manifest.
+  manifest. Enforce the expanded-size limit across all regular source archive
+  members, including excluded files, while never extracting excluded links.
 - Compare the rebuilt archive digest with the downloaded release archive
   before extraction. The `.sha256` sidecar remains an additional corruption
   check. Do not fall back to accepting an asset when commit verification fails.

@@ -145,7 +145,7 @@ if FLASK_AVAILABLE:
 
     # Fix openhab_path to be absolute if it's relative and based on project root
 
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    project_root = str(get_paths().install_dir)
     if "openhab_path" in cfg:
         openhab_path = cfg["openhab_path"]
         # If openhab_path is relative (doesn't start with / on Unix or a drive letter on Windows),
@@ -155,7 +155,7 @@ if FLASK_AVAILABLE:
 
     job_mgr = JobManager(cfg)
     # Use project root directory as base path for updater
-    updater = Updater(base_path=project_root)
+    updater = Updater(base_path=str(get_paths(project_root).install_dir))
     service_updates = ServiceUpdates()
 
     # Durable session and CSRF handling -------------------------------------------
@@ -726,7 +726,7 @@ if FLASK_AVAILABLE:
         job_id = latest_job["id"]
 
         # Check configured paths
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        project_root = str(get_paths().install_dir)
         main_config_path = get_paths(project_root).generator_config_file
 
         if main_config_path.exists():
@@ -809,10 +809,8 @@ if FLASK_AVAILABLE:
     @app.route("/api/debug/config", methods=["GET"])
     def debug_config():
         """Debug endpoint to check the current configuration."""
-        import os
-
         # Get the main config (from the main config.json)
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        project_root = str(get_paths().install_dir)
         main_config_path = get_paths(project_root).generator_config_file
 
         main_config = {}
@@ -997,7 +995,7 @@ if FLASK_AVAILABLE:
         # If backup specified, extract file from backup
         if backup_name:
             # Use the configured backup directory from config, with a sensible default
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            project_root = str(get_paths().install_dir)
             backups_dir_config = cfg.get("backups_dir", "var/backups/knx_to_openhab")
             if not os.path.isabs(backups_dir_config):
                 backups_dir = os.path.join(project_root, backups_dir_config)

@@ -471,6 +471,11 @@ run_git_as_service_user() {
 }
 
 update_repository() {
+    if [[ -L "$INSTALL_DIR/current" ]]; then
+        log_error "This installation uses transactional releases. Update it from the Web UI; the CLI updater does not activate releases."
+        exit 1
+    fi
+
     log_info "Updating installation to release $RELEASE_TAG..."
     if [[ -z "$REQUESTED_VERSION" ]]; then
         local installed_tag
@@ -609,6 +614,10 @@ display_completion() {
 # Main installation flow
 main() {
     select_install_mode
+    if [[ "$INSTALL_MODE" == "update" && -L "$INSTALL_DIR/current" ]]; then
+        log_error "This installation uses transactional releases. Update it from the Web UI; the CLI updater does not activate releases."
+        exit 2
+    fi
     if [[ -n "$REQUESTED_VERSION" && "$INSTALL_MODE" != "install" && "$INSTALL_MODE" != "update" ]]; then
         log_error "--version can be used only with --install or --update."
         exit 2

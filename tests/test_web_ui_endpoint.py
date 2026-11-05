@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from installer.web_ui_endpoint import resolve_web_ui_endpoint
+from installer.web_ui_endpoint import resolve_web_ui_endpoint, resolve_web_ui_health_endpoint
 
 
 @pytest.fixture
@@ -86,4 +86,69 @@ def test_invalid_port_is_rejected(config_path):
     _set_config(config_path, "127.0.0.1", 70000)
 
     with pytest.raises(ValueError, match="between 1 and 65535"):
+        resolve_web_ui_endpoint(config_path, "192.168.1.10")
+
+
+def test_health_probe_resolves_a_hostname_to_a_local_interface(monkeypatch):
+    monkeypatch.setattr(
+        "installer.web_ui_endpoint.socket.getaddrinfo",
+        lambda host, port, type: [
+            (2, type, 6, "", ("192.168.1.50", port)),
+            (2, type, 6, "", ("192.168.1.51", port)),
+        ],
+    )
+
+    assert resolve_web_ui_health_endpoint(
+        "knx-ui.local", 8085, local_addresses={"192.168.1.50"}
+    ) == ("192.168.1.50", 8085)
+
+
+def test_health_probe_rejects_a_hostname_that_resolves_only_remotely(monkeypatch):
+    monkeypatch.setattr(
+        "installer.web_ui_endpoint.socket.getaddrinfo",
+        lambda host, port, type: [(2, type, 6, "", ("192.168.1.51", port))],
+    )
+
+    with pytest.raises(ValueError, match="does not resolve to a local address"):
+        resolve_web_ui_health_endpoint("knx-ui.local", 8085, local_addresses={"192.168.1.50"})
+
+
+def test_health_probe_accepts_decimal_string_port():
+    assert resolve_web_ui_health_endpoint("127.0.0.1", "8085") == ("127.0.0.1", 8085)
+
+
+def test_endpoint_resolution_normalizes_string_port_consistently(config_path):
+    _set_config(config_path, "127.0.0.1", "8085")
+
+    assert resolve_web_ui_endpoint(config_path, "192.168.1.10") == ("loopback", "127.0.0.1", 8085)
+    assert resolve_web_ui_health_endpoint("127.0.0.1", "8085") == ("127.0.0.1", 8085)
+
+
+@pytest.mark.parametrize("port", [True, 8085.0])
+def test_health_probe_rejects_non_integer_ports(config_path, port):
+    with pytest.raises(ValueError):
+        resolve_web_ui_health_endpoint("127.0.0.1", port)
+
+    _set_config(config_path, "127.0.0.1", port)
+    with pytest.raises(ValueError):
+        resolve_web_ui_endpoint(config_path, "192.168.1.10")
+
+
+@pytest.mark.parametrize("port", ["", "+8085", "8085.0", "not-a-port"])
+def test_health_probe_rejects_malformed_port_strings(config_path, port):
+    with pytest.raises(ValueError):
+        resolve_web_ui_health_endpoint("127.0.0.1", port)
+
+    _set_config(config_path, "127.0.0.1", port)
+    with pytest.raises(ValueError):
+        resolve_web_ui_endpoint(config_path, "192.168.1.10")
+
+
+@pytest.mark.parametrize("port", [0, 65536, "0", "65536"])
+def test_health_probe_rejects_out_of_range_ports(config_path, port):
+    with pytest.raises(ValueError):
+        resolve_web_ui_health_endpoint("127.0.0.1", port)
+
+    _set_config(config_path, "127.0.0.1", port)
+    with pytest.raises(ValueError):
         resolve_web_ui_endpoint(config_path, "192.168.1.10")

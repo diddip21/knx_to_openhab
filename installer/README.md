@@ -7,6 +7,7 @@ This directory contains installation and maintenance scripts for the web UI.
 - **`setup.sh`** — Main installer script (run once as sudo)
 - **`backup_cleanup.sh`** — Backup retention enforcement script
 - **`knxohui.service`** — systemd unit for Flask web server
+- **`knxohui-update.service`** — independent systemd unit for release updates
 - **`knxohui-backup-cleanup.service`** — systemd unit for cleanup oneshot
 - **`knxohui-backup-cleanup.timer`** — systemd timer (runs cleanup daily)
 
@@ -21,7 +22,7 @@ This will:
 1. Install the application under `/opt/knx_to_openhab` by default
 2. Migrate settings and runtime data out of the application tree
 3. Provision the service user and only the generated OpenHAB output files
-4. Install systemd launchers and the backup-cleanup timer
+4. Install systemd launchers, the update worker, and the backup-cleanup timer
 5. Install and validate the restricted sudoers policy with `visudo`
 6. Start the Flask web server on the configured port (8085 by default)
 
@@ -137,17 +138,21 @@ See `WEBUI_INSTALLATION.md` for full documentation.
 
 ## Service user privileges
 
-The web UI runs as the unprivileged `knxohui` service user. Git-based application
-updates run as that user; Git is not granted through sudo. The sudoers policy in
+The web UI runs as the unprivileged `knxohui` service user. Application updates
+are queued by that user and run in the separate `knxohui-update.service`, so a
+restart of the web service cannot kill the updater before its health check or
+rollback completes. Git is not granted through sudo. The sudoers policy in
 `knxohui.sudoers` permits only exact `systemctl restart` and `systemctl is-active`
 commands for `openhab.service`, `knxohui.service`, and `evcc.service`. It does not
 grant a shell, arbitrary Git commands, or wildcard command arguments. Re-running
 `setup.sh` or `fix_permissions.sh` replaces the prior policy and checks it with
 `visudo -cf`.
 
-The package update buttons use the root-owned `/usr/local/sbin/knxohui-service-update`
-helper. Sudoers allows only its `refresh`, `openhab`, `evcc`, and `provision-yaml`
-actions. The YAML action runs a separate root-owned helper that provisions only the
+The update worker is started only through the fixed `start-web-update` action of
+the root-owned `/usr/local/sbin/knxohui-service-update` helper. Package update
+buttons use the same helper. Sudoers allows only its `start-web-update`, `refresh`,
+`openhab`, `evcc`, and `provision-yaml` actions. The YAML action runs a separate
+root-owned helper that provisions only the
 configured `.yaml` target directly under the protected OpenHAB `yaml/` directory;
 it does not import or execute code from the application tree. The installer preserves
 an existing `web_ui/backend/config.json` when copying new code and records the

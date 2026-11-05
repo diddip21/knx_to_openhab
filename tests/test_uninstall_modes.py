@@ -9,8 +9,15 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 UNINSTALLER = ROOT / "uninstall.sh"
-
 pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="Bash is required")
+
+
+def test_uninstaller_removes_the_transactional_update_unit():
+    content = UNINSTALLER.read_text(encoding="utf-8")
+
+    assert "knxohui-update.service" in content
+    assert "/etc/systemd/system/knxohui-update.service" in content
+    assert content.index("knxohui-update.service") < content.index("knxohui.service")
 
 
 def create_fixture(tmp_path):

@@ -11,15 +11,26 @@ import subprocess
 from pathlib import Path
 
 
+def _normalize_port(port: object) -> int:
+    if type(port) is int:
+        normalized_port = port
+    elif type(port) is str and port.isascii() and port.isdecimal():
+        normalized_port = int(port)
+    else:
+        raise ValueError("Web UI port must be an integer from 1 to 65535")
+
+    if not 1 <= normalized_port <= 65535:
+        raise ValueError("Web UI port must be between 1 and 65535")
+    return normalized_port
+
+
 def resolve_web_ui_endpoint(config_path: Path, lan_ip: str) -> tuple[str, str, int]:
     config = json.loads(Path(config_path).read_text(encoding="utf-8"))
     if not isinstance(config, dict):
         raise ValueError("Web UI configuration must be a JSON object")
 
     bind_host = str(config.get("bind_host") or "127.0.0.1").strip().strip("[]")
-    port = int(config.get("port", 8085))
-    if not 1 <= port <= 65535:
-        raise ValueError("Web UI port must be between 1 and 65535")
+    port = _normalize_port(config.get("port", 8085))
 
     try:
         address = ipaddress.ip_address(bind_host)
@@ -83,8 +94,7 @@ def resolve_web_ui_health_endpoint(
     bind_host: str, port: object, local_addresses: set[str] | None = None
 ) -> tuple[str, int]:
     """Resolve the Web UI listener to a local address safe for an update health probe."""
-    if type(port) is not int or not 1 <= port <= 65535:
-        raise ValueError("Web UI port must be an integer from 1 to 65535")
+    port = _normalize_port(port)
 
     host = str(bind_host or "127.0.0.1").strip().strip("[]")
     if host.lower() in ("localhost", "localhost.localdomain"):

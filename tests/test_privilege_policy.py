@@ -1,10 +1,15 @@
 """Regression tests for the service user's privileged command policy."""
 
+import json
 import os
+import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
@@ -29,6 +34,7 @@ def test_sudoers_policy_only_allows_named_service_actions():
             assert f"systemctl {action} {service}" in policy
     for action in ("refresh", "openhab", "evcc"):
         assert f"/usr/local/sbin/knxohui-service-update {action}" in policy
+    assert "/usr/local/sbin/knxohui-service-update start-web-update" in policy
 
 
 def test_installer_scripts_install_and_validate_the_restricted_policy():
@@ -46,6 +52,37 @@ def test_installer_scripts_install_and_validate_the_restricted_policy():
     assert 'REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"' in setup
     assert '"$REPO_ROOT/requirements.txt"' in setup
     assert "--exclude web_ui/backend/config.json" in setup
+    for artifact in (
+        "provision_managed_outputs.py",
+        "launch_web.sh",
+        "launch_backup_cleanup.sh",
+        "launch_update.sh",
+        "set_ui_password.py",
+        "knxohui.service",
+        "knxohui-update.service",
+        "knxohui-backup-cleanup.service",
+        "knxohui-backup-cleanup.timer",
+    ):
+        assert f'"$REPO_ROOT/installer/{artifact}"' in setup
+
+
+def test_updater_runs_in_its_own_systemd_unit_outside_the_web_service_cgroup():
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+    helper = (ROOT / "installer" / "service_update.sh").read_text(encoding="utf-8")
+    policy = (ROOT / "installer" / "knxohui.sudoers").read_text(encoding="utf-8")
+    unit = (ROOT / "installer" / "knxohui-update.service").read_text(encoding="utf-8")
+    launcher = (ROOT / "installer" / "launch_update.sh").read_text(encoding="utf-8")
+    updater = (ROOT / "web_ui" / "backend" / "updater.py").read_text(encoding="utf-8")
+
+    assert "start-web-update)" in helper
+    assert "systemctl start --no-block knxohui-update.service" in helper
+    assert "/usr/local/sbin/knxohui-service-update start-web-update" in policy
+    assert "knxohui-update.service" in setup
+    assert "User=knxohui" in unit
+    assert "ExecStart=/usr/local/libexec/knx_to_openhab/launch_update.sh" in unit
+    assert "run_update_request.py" in launcher
+    assert "subprocess.Popen" not in updater
+    assert "start-web-update" in updater
 
 
 def test_installer_runs_provisioner_from_installed_tree():
@@ -66,7 +103,7 @@ def test_yaml_provisioning_uses_one_fixed_root_owned_action():
     policy = (ROOT / "installer" / "knxohui.sudoers").read_text(encoding="utf-8")
     update = (ROOT / "update.sh").read_text(encoding="utf-8")
 
-    assert '"$BASE/installer/provision_managed_outputs.py"' in setup
+    assert '"$REPO_ROOT/installer/provision_managed_outputs.py"' in setup
     assert "/usr/local/libexec/knx_to_openhab/provision_managed_outputs.py" in setup
     assert "sudo install -o root -g root -m 0755" in setup
     assert "/usr/local/libexec/knx_to_openhab/provision_managed_outputs.py" in repair
@@ -79,7 +116,7 @@ def test_yaml_provisioning_uses_one_fixed_root_owned_action():
     assert "/usr/local/sbin/knxohui-service-update provision-yaml" in policy
     assert "sudo -n /usr/local/sbin/knxohui-service-update provision-yaml" in update
     assert "interactive SSH terminal" in update
-    restart_index = update.index('log "Restarting $SERVICE_NAME..."')
+    restart_index = update.index('log "Restarting $SERVICE_NAME on release')
     assert update.index("provision-yaml") < restart_index
     assert "managed_openhab_root" in setup_provisioner
     assert "os.fchown(descriptor, 0, service_gid)" in setup_provisioner
@@ -97,42 +134,47 @@ def test_yaml_provisioning_uses_one_fixed_root_owned_action():
     os.name != "posix" or shutil.which("bash") is None,
     reason="the updater retry integration test requires a POSIX shell environment",
 )
-def test_updater_retries_yaml_provisioning_when_git_is_already_current(tmp_path):
+def test_transactional_update_no_op_does_not_backup_or_provision(tmp_path):
     install_dir = tmp_path / "install"
-    backup_dir = tmp_path / "backups"
+    release_dir = install_dir / "releases" / "1.4.0"
+    config_dir = tmp_path / "config"
     data_dir = tmp_path / "data"
     bin_dir = tmp_path / "bin"
-    (install_dir / ".git").mkdir(parents=True)
-    (install_dir / "venv" / "bin").mkdir(parents=True)
-    backup_dir.mkdir()
+    (release_dir / "venv" / "bin").mkdir(parents=True)
+    config_dir.mkdir()
     data_dir.mkdir()
     bin_dir.mkdir()
+    backup_blocker = tmp_path / "backup-is-disabled"
+    backup_blocker.write_text("a no-op must not try to create this directory", encoding="utf-8")
+    config_file = config_dir / "config.json"
+    config_file.write_text('{"auth":{"enabled":false}}', encoding="utf-8")
+    (config_dir / "secrets.env").write_text("\n", encoding="utf-8")
+    (data_dir / "generator.json").write_text('{"general":{}}', encoding="utf-8")
+    paths_file = tmp_path / "paths.env"
+    paths_file.write_text("", encoding="utf-8")
+
+    commit_hash = "a" * 40
+    (release_dir / "version.json").write_text(
+        f'{{"release_tag":"v1.4.0","commit_hash":"{commit_hash}"}}',
+        encoding="utf-8",
+    )
+    shutil.copy2(ROOT / "knxoh_paths.py", release_dir / "knxoh_paths.py")
+    (release_dir / "web_ui/backend").mkdir(parents=True)
+    shutil.copy2(ROOT / "web_ui/backend/auth.py", release_dir / "web_ui/backend/auth.py")
+    real_python = shlex.quote(sys.executable)
+    fake_python = release_dir / "venv" / "bin" / "python"
+    fake_python.write_text(f'#!/bin/sh\nexec {real_python} "$@"\n', encoding="utf-8")
+    fake_python.chmod(0o755)
+    (install_dir / "current").symlink_to("releases/1.4.0")
 
     updater = install_dir / "update.sh"
     updater.write_text((ROOT / "update.sh").read_text(encoding="utf-8"), encoding="utf-8")
-    fake_python = install_dir / "venv" / "bin" / "python"
-    fake_python.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
-    fake_python.chmod(0o755)
-
-    fake_git = bin_dir / "git"
-    fake_git.write_text(
-        "#!/usr/bin/env bash\n"
-        'case " $* " in\n'
-        '  *" rev-parse --git-dir "*) printf ".git\\n" ;;\n'
-        '  *" rev-parse HEAD "*|*" rev-parse "$RELEASE_TAG^{commit}" "*) printf "same-commit\\n" ;;\n'
-        '  *" status --porcelain "*) exit 0 ;;\n'
-        '  *" stash "*|*" fetch --depth 1 origin refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG "*) exit 0 ;;\n'
-        '  *) printf "unexpected git command: %s\\n" "$*" >&2; exit 90 ;;\n'
-        "esac\n",
-        encoding="utf-8",
-    )
-    fake_git.chmod(0o755)
 
     provision_marker = tmp_path / "provision-attempted"
     fake_sudo = bin_dir / "sudo"
     fake_sudo.write_text(
         "#!/usr/bin/env bash\n"
-        'if [[ "$1 $2" == "-n -l" ]]; then exit 0; fi\n'
+        'if [[ "$1 $2" == "-n -l" ]]; then echo "NOPASSWD: limited service commands"; exit 0; fi\n'
         'if [[ "$*" == *provision-yaml* ]]; then touch "$PROVISION_MARKER"; exit 1; fi\n'
         "exit 0\n",
         encoding="utf-8",
@@ -144,10 +186,13 @@ def test_updater_retries_yaml_provisioning_when_git_is_already_current(tmp_path)
         {
             "PATH": f"{bin_dir}:{environment['PATH']}",
             "KNXOH_INSTALL_DIR": str(install_dir),
+            "KNXOH_CONFIG_DIR": str(config_dir),
             "KNXOH_DATA_DIR": str(data_dir),
-            "KNXOH_BACKUP_DIR": str(backup_dir),
+            "KNXOH_BACKUP_DIR": str(backup_blocker),
+            "KNXOH_PATHS_FILE": str(paths_file),
             "LOG_FILE": str(tmp_path / "update.log"),
             "RELEASE_TAG": "v1.4.0",
+            "RELEASE_COMMIT_HASH": commit_hash,
             "PROVISION_MARKER": str(provision_marker),
         }
     )
@@ -160,8 +205,10 @@ def test_updater_retries_yaml_provisioning_when_git_is_already_current(tmp_path)
         check=False,
     )
 
-    assert provision_marker.exists(), result.stdout + result.stderr
-    assert result.returncode != 0, "a provisioning failure must make the updater fail"
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not provision_marker.exists()
+    assert backup_blocker.is_file()
+    assert "Already running selected release v1.4.0." in result.stdout
 
 
 def test_permission_repair_restores_external_runtime_data_ownership():
@@ -179,7 +226,7 @@ def test_web_updater_stops_until_legacy_sudoers_policy_is_migrated():
     assert "installer/migrate_sudoers.sh" in update
 
 
-def test_web_updater_checks_external_credentials_before_backup_or_git_changes():
+def test_web_updater_checks_external_credentials_before_backup_or_release_changes():
     update = (ROOT / "update.sh").read_text(encoding="utf-8")
 
     preflight = update.index("CREDENTIAL_CHECK=")
@@ -189,9 +236,8 @@ def test_web_updater_checks_external_credentials_before_backup_or_git_changes():
     assert "interactive SSH terminal" in update
     backup = update.index("Creating and validating pre-update backup")
     assert preflight < backup
-    assert backup < update.index('git -c "safe.directory=$INSTALL_DIR" fetch')
+    assert backup < update.index('"$APP_DIR/installer/prepare_release.py"')
     assert 'git -c "safe.directory=$INSTALL_DIR" stash' not in update
-    assert preflight < update.index('git -c "safe.directory=$INSTALL_DIR" fetch --depth 1 origin')
 
 
 def test_update_script_never_elevates_git_or_uses_a_global_safe_directory():
@@ -206,16 +252,15 @@ def test_update_script_never_elevates_git_or_uses_a_global_safe_directory():
     assert "systemctl is-active --quiet" not in update
 
 
-def test_web_updater_checks_out_only_the_selected_release_tag():
+def test_web_updater_uses_only_verified_stable_release_assets():
     update = (ROOT / "update.sh").read_text(encoding="utf-8")
 
     assert 'RELEASE_TAG="${RELEASE_TAG:-}"' in update
-    assert "fetch --depth 1 origin \\" in update
-    assert '"refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"' in update
-    assert 'rev-parse "$RELEASE_TAG^{commit}"' in update
-    assert 'checkout --detach "$RELEASE_TAG"' in update
-    assert "restore --source=HEAD --staged --worktree" in update
-    assert "for LEGACY_CONFIG in config.json web_ui/backend/config.json" in update
+    assert 'RELEASE_COMMIT_HASH="${RELEASE_COMMIT_HASH:-}"' in update
+    assert '"$APP_DIR/installer/prepare_release.py"' in update
+    assert 'mv -Tf -- "$TEMP_CURRENT_LINK" "$CURRENT_LINK"' in update
+    assert 'git -c "safe.directory=$INSTALL_DIR" fetch' not in update
+    assert 'checkout --detach "$RELEASE_TAG"' not in update
     assert "origin/main" not in update
     assert "pull origin main" not in update
 
@@ -255,11 +300,11 @@ def test_setup_runs_password_prompt_without_nested_sudo_when_already_root():
 def test_web_updater_rolls_back_if_updated_service_fails_health_check():
     update = (ROOT / "update.sh").read_text(encoding="utf-8")
 
-    assert "wait_for_service_active()" in update
+    assert "wait_for_service_health()" in update
     assert "restore_previous_release()" in update
-    assert 'git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"' in update
-    assert "if ! wait_for_service_active; then" in update
-    assert update.index("if ! wait_for_service_active; then") < update.index(
+    assert 'mv -Tf -- "$TEMP_CURRENT_LINK" "$CURRENT_LINK"' in update
+    assert "if ! wait_for_service_health; then" in update
+    assert update.index("if ! wait_for_service_health; then") < update.index(
         'log "Update completed successfully!"'
     )
 
@@ -354,9 +399,126 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
         assert not (config.parent / "paths.env").exists()
 
 
-def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path):
-    remote = tmp_path / "remote.git"
-    seed = tmp_path / "seed"
+@pytest.mark.skipif(
+    os.name != "posix" or shutil.which("bash") is None or shutil.which("flock") is None,
+    reason="the release updater integration test requires Linux utilities",
+)
+@pytest.mark.parametrize(
+    (
+        "health_check_fails",
+        "activation_fails",
+        "dependency_fails",
+        "interrupt_after_activation",
+        "active_staging",
+        "marker_clear_fails",
+        "directory_sync_fails",
+        "restore_pointer_sync_fails",
+        "unsafe_saved_target",
+    ),
+    [
+        pytest.param(
+            True, False, False, False, False, False, False, False, False, id="health-check-rollback"
+        ),
+        pytest.param(
+            False, False, False, False, False, False, False, False, False, id="healthy-update"
+        ),
+        pytest.param(
+            False, True, False, False, False, False, False, False, False, id="activation-failure"
+        ),
+        pytest.param(
+            False, False, True, False, False, False, False, False, False, id="dependency-failure"
+        ),
+        pytest.param(
+            False,
+            False,
+            False,
+            True,
+            False,
+            False,
+            False,
+            False,
+            False,
+            id="activation_signal_boundary",
+        ),
+        pytest.param(
+            True,
+            False,
+            False,
+            True,
+            False,
+            False,
+            False,
+            False,
+            False,
+            id="activation_signal_retry_rollback",
+        ),
+        pytest.param(
+            False,
+            False,
+            False,
+            False,
+            True,
+            False,
+            False,
+            False,
+            False,
+            id="update_candidate_active_staging",
+        ),
+        pytest.param(
+            False, False, False, False, False, True, False, False, False, id="marker_clear_failure"
+        ),
+        pytest.param(
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            True,
+            False,
+            False,
+            id="directory_sync_failure",
+        ),
+        pytest.param(
+            True,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            True,
+            False,
+            id="restore_pointer_sync_failure",
+        ),
+        pytest.param(
+            True,
+            False,
+            False,
+            True,
+            False,
+            False,
+            False,
+            False,
+            True,
+            id="unsafe_interrupted_rollback_target",
+        ),
+    ],
+)
+@pytest.mark.parametrize("use_default_port", [False, True])
+def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
+    tmp_path,
+    use_default_port,
+    health_check_fails,
+    activation_fails,
+    dependency_fails,
+    interrupt_after_activation,
+    active_staging,
+    marker_clear_fails,
+    directory_sync_fails,
+    restore_pointer_sync_fails,
+    unsafe_saved_target,
+):
     install = tmp_path / "install"
     fake_bin = tmp_path / "bin"
     state = tmp_path / "state"
@@ -364,71 +526,263 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
     config_dir = tmp_path / "config"
     data_dir = tmp_path / "data"
     paths_file = tmp_path / "paths.env"
-    for directory in (seed, fake_bin, state, backup_dir, config_dir, data_dir):
+    for directory in (
+        install / "installer",
+        install / "web_ui/backend",
+        install / "releases",
+        fake_bin,
+        state,
+        backup_dir,
+        config_dir,
+        data_dir,
+    ):
         directory.mkdir(parents=True, exist_ok=True)
+    stale_staging = install / "releases" / ".staging-v1.0.0-orphaned"
+    stale_staging.mkdir()
+    (stale_staging / "partial-release.tar").write_text("interrupted", encoding="utf-8")
+    abandoned_candidate = install / "releases" / "abandoned-candidate"
+    abandoned_candidate.mkdir()
+    (abandoned_candidate / ".update-in-progress").touch()
+    (abandoned_candidate / "partial-file").write_text("incomplete", encoding="utf-8")
 
-    def git(*args, cwd=None):
-        return subprocess.run(
-            ["git", *args],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=True,
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path != "/api/status":
+                self.send_error(404)
+                return
+            if (
+                health_check_fails
+                and (install / "current").is_symlink()
+                and (install / "current").resolve().name.startswith("1.2.0-")
+            ):
+                status, payload = 503, b'{"status":"starting"}'
+            else:
+                status, payload = 200, b'{"status":"ok"}'
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, _format, *_args):
+            return
+
+    health_host = "127.0.0.2"
+    try:
+        server = HTTPServer((health_host, 8085 if use_default_port else 0), HealthHandler)
+    except OSError as error:
+        if use_default_port:
+            pytest.skip(f"the default Web UI port 8085 is already in use: {error}")
+        raise
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    port = server.server_address[1]
+
+    web_config = {"auth": {"enabled": False}, "bind_host": health_host}
+    if not use_default_port:
+        web_config["port"] = port
+    (config_dir / "config.json").write_text(json.dumps(web_config), encoding="utf-8")
+    if not health_check_fails and not activation_fails and not dependency_fails:
+        stale_release = install / "releases" / "old-release"
+        stale_release.mkdir(parents=True)
+        (stale_release / "version.json").write_text(
+            json.dumps({"release_tag": "v0.9.0"}), encoding="utf-8"
         )
-
-    (config_dir / "config.json").write_text('{"auth":{"enabled":false}}', encoding="utf-8")
     (config_dir / "secrets.env").write_text("\n", encoding="utf-8")
     (data_dir / "generator.json").write_text('{"general":{}}', encoding="utf-8")
+    (data_dir / "jobs").mkdir()
+    (data_dir / "jobs/user.json").write_text("preserved", encoding="utf-8")
     paths_file.write_text("", encoding="utf-8")
 
-    git("init", "--bare", "--initial-branch=main", str(remote))
-    git("init", "--initial-branch=main", str(seed))
-    git("config", "user.name", "Update recovery test", cwd=seed)
-    git("config", "user.email", "update-test@example.invalid", cwd=seed)
-    shutil.copy2(ROOT / ".gitignore", seed / ".gitignore")
-    (seed / "config.json").write_text('{"general":{"legacy":"old"}}', encoding="utf-8")
-    (seed / "web_ui/backend").mkdir(parents=True)
-    (seed / "web_ui/backend/config.json").write_text(
-        '{"auth":{"enabled":false},"legacy":"old"}', encoding="utf-8"
-    )
-    (seed / "requirements.txt").write_text("old-dependency\n", encoding="utf-8")
-    (seed / "installer").mkdir()
-    shutil.copy2(ROOT / "update.sh", seed / "update.sh")
-    shutil.copy2(ROOT / "knxoh_paths.py", seed / "knxoh_paths.py")
+    shutil.copy2(ROOT / ".gitignore", install / ".gitignore")
+    (install / "requirements.txt").write_text("legacy-dependency\n", encoding="utf-8")
+    shutil.copy2(ROOT / "update.sh", install / "update.sh")
+    shutil.copy2(ROOT / "knxoh_paths.py", install / "knxoh_paths.py")
     shutil.copy2(
-        ROOT / "installer/create_update_backup.py",
-        seed / "installer/create_update_backup.py",
+        ROOT / "installer/create_update_backup.py", install / "installer/create_update_backup.py"
     )
-    shutil.copy2(ROOT / "web_ui/backend/auth.py", seed / "web_ui/backend/auth.py")
-    git("add", ".", cwd=seed)
-    git("commit", "-m", "old release", cwd=seed)
-    previous_commit = git("rev-parse", "HEAD", cwd=seed).stdout.strip()
-    git("remote", "add", "origin", str(remote), cwd=seed)
-    git("push", "-u", "origin", "main", cwd=seed)
-    git("clone", "--branch", "main", str(remote), str(install))
+    shutil.copy2(ROOT / "installer/web_ui_endpoint.py", install / "installer/web_ui_endpoint.py")
+    shutil.copy2(ROOT / "web_ui/backend/auth.py", install / "web_ui/backend/auth.py")
+    shutil.copy2(ROOT / "web_ui/backend/storage.py", install / "web_ui/backend/storage.py")
+    (install / "web_ui/backend/config.json").write_text(
+        '{"auth":{"enabled":false},"legacy":"shipped"}', encoding="utf-8"
+    )
+    (install / "config.json").write_text('{"legacy":"shipped"}', encoding="utf-8")
+
+    release_helper = install / "installer/prepare_release.py"
+    release_helper.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        "def argument(name): return sys.argv[sys.argv.index(name) + 1]\n"
+        "tag = argument('--tag')\n"
+        "version = tag[1:]\n"
+        "app = Path(argument('--destination')) / ('knx_to_openhab-' + version)\n"
+        "files = {\n"
+        "  'requirements.txt': 'unused\\n',\n"
+        "  'update.sh': '#!/bin/bash\\n',\n"
+        "  'knxoh_paths.py': '# path helper\\n',\n"
+        "  'installer/create_update_backup.py': '# backup helper\\n',\n"
+        "  'installer/prepare_release.py': '# release helper\\n',\n"
+        "  'installer/launch_web.sh': '#!/bin/bash\\n',\n"
+        "  'web_ui/backend/app.py': '# application\\n',\n"
+        "  'web_ui/backend/updater.py': '# updater\\n',\n"
+        "  'web_ui/__init__.py': '',\n"
+        "  'web_ui/backend/__init__.py': '',\n"
+        "}\n"
+        "for relative, content in files.items():\n"
+        "  target = app / relative\n"
+        "  target.parent.mkdir(parents=True, exist_ok=True)\n"
+        "  target.write_text(content, encoding='utf-8')\n"
+        "for relative in ('knxoh_paths.py', 'installer/prepare_release.py',\n"
+        "                 'installer/web_ui_endpoint.py',\n"
+        "                 'web_ui/backend/auth.py', 'web_ui/backend/storage.py'):\n"
+        "  target = app / relative\n"
+        "  target.parent.mkdir(parents=True, exist_ok=True)\n"
+        "  target.write_bytes((Path.cwd() / relative).read_bytes())\n"
+        "metadata = {\n"
+        "  'release_tag': tag, 'version': version,\n"
+        "  'commit_hash': argument('--commit-hash'),\n"
+        "  'commit_date': argument('--commit-date'),\n"
+        "  'commit_message': argument('--commit-message'),\n"
+        "  'author': argument('--author'),\n"
+        "  'repository': argument('--repository'), 'branch': tag,\n"
+        "}\n"
+        "(app / 'version.json').write_text(json.dumps(metadata), encoding='utf-8')\n"
+        "print(app)\n",
+        encoding="utf-8",
+    )
+
+    subprocess.run(["git", "init", "--initial-branch=main", str(install)], check=True)
+    subprocess.run(
+        ["git", "-C", str(install), "config", "user.name", "Update recovery test"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(install), "config", "user.email", "update-test@example.invalid"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(install), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(install), "commit", "-m", "legacy release"],
+        check=True,
+    )
     (install / "config.json").write_text('{"general":{"legacy":"custom"}}', encoding="utf-8")
     (install / "web_ui/backend/config.json").write_text(
         '{"auth":{"enabled":false},"legacy":"custom"}', encoding="utf-8"
     )
-    (seed / "requirements.txt").write_text("new-dependency\n", encoding="utf-8")
-    (seed / "config.json").write_text('{"general":{"legacy":"new-release"}}', encoding="utf-8")
-    (seed / "web_ui/backend/config.json").write_text(
-        '{"auth":{"enabled":false},"legacy":"new-release"}', encoding="utf-8"
-    )
-    git("add", "requirements.txt", cwd=seed)
-    git("add", "config.json", "web_ui/backend/config.json", cwd=seed)
-    git("commit", "-m", "candidate release", cwd=seed)
-    git("tag", "v1.2.0", cwd=seed)
-    git("push", "origin", "main", "refs/tags/v1.2.0", cwd=seed)
 
-    venv_bin = install / "venv" / "bin"
-    venv_bin.mkdir(parents=True)
-    python = venv_bin / "python"
-    python.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+    real_python = shlex.quote(sys.executable)
+    python = install / "venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text(f'#!/bin/sh\nexec {real_python} "$@"\n', encoding="utf-8")
     python.chmod(0o755)
-    pip = venv_bin / "pip"
-    pip.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gunicorn = install / "venv/bin/gunicorn"
+    gunicorn.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gunicorn.chmod(0o755)
+    pip = install / "venv/bin/pip"
+    pip.write_text(
+        "#!/bin/bash\n"
+        'if [[ "$1" == "install" && "${DEPENDENCY_TEST_FAIL:-0}" == "1" ]]; then exit 1; fi\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
     pip.chmod(0o755)
+
+    if (
+        activation_fails
+        or dependency_fails
+        or interrupt_after_activation
+        or marker_clear_fails
+        or directory_sync_fails
+        or restore_pointer_sync_fails
+    ):
+        previous_release = install / "releases/old-release"
+        for relative in (
+            "knxoh_paths.py",
+            "installer/create_update_backup.py",
+            "installer/prepare_release.py",
+            "web_ui/backend/auth.py",
+            "web_ui/backend/storage.py",
+        ):
+            source = install / relative
+            target = previous_release / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+        (previous_release / "version.json").write_text(
+            json.dumps({"release_tag": "v1.1.0", "commit_hash": "b" * 40}),
+            encoding="utf-8",
+        )
+        (previous_release / "release-marker.txt").write_text("previous release", encoding="utf-8")
+        if (
+            activation_fails
+            or dependency_fails
+            or (health_check_fails and interrupt_after_activation)
+        ):
+            (previous_release / ".update-in-progress").touch()
+        for executable in ("python", "pip", "gunicorn"):
+            target = previous_release / "venv/bin" / executable
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(install / "venv/bin" / executable, target)
+        (install / "current").symlink_to("releases/old-release", target_is_directory=True)
+
+    if active_staging:
+        active_app = stale_staging / "active-release"
+        for relative in (
+            "knxoh_paths.py",
+            "installer/create_update_backup.py",
+            "installer/prepare_release.py",
+            "installer/web_ui_endpoint.py",
+            "web_ui/backend/auth.py",
+            "web_ui/backend/storage.py",
+        ):
+            target = active_app / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(install / relative, target)
+        for executable in ("python", "pip"):
+            target = active_app / "venv/bin" / executable
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(install / "venv/bin" / executable, target)
+        (active_app / ".update-in-progress").touch()
+        (install / "current").symlink_to(
+            os.path.relpath(active_app, install), target_is_directory=True
+        )
+
+    python3 = fake_bin / "python3"
+    python3.write_text(
+        f"#!{sys.executable}\n"
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "if sys.argv[1:3] == ['-m', 'venv']:\n"
+        "  bin_dir = Path(sys.argv[3]) / 'bin'\n"
+        "  bin_dir.mkdir(parents=True, exist_ok=True)\n"
+        f"  (bin_dir / 'python').write_text('#!/bin/sh\\nexec {real_python} \"$@\"\\n')\n"
+        '  (bin_dir / \'pip\').write_text(\'#!/bin/bash\\nif [[ "$1" == "install" && "${DEPENDENCY_TEST_FAIL:-0}" == "1" ]]; then exit 1; fi\\nexit 0\\n\')\n'
+        "  (bin_dir / 'python').chmod(0o755)\n"
+        "  (bin_dir / 'pip').chmod(0o755)\n"
+        "  (bin_dir / 'gunicorn').write_text(f'#!{bin_dir / \"python\"}\\nprint(\"gunicorn launched\")\\n')\n"
+        "  (bin_dir / 'gunicorn').chmod(0o755)\n"
+        "else:\n"
+        "  os.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n",
+        encoding="utf-8",
+    )
+    python3.chmod(0o755)
+
+    if activation_fails or interrupt_after_activation:
+        mv = fake_bin / "mv"
+        mv.write_text(
+            "#!/bin/bash\n"
+            'if [[ "$1" == "-Tf" && "${ACTIVATION_TEST_FAIL:-0}" == "1" ]]; then exit 1; fi\n'
+            'if [[ "$1" == "-Tf" && "${ACTIVATION_TEST_SIGNAL:-0}" == "1" ]]; then\n'
+            '  /bin/mv "$@" || exit $?\n'
+            '  kill -TERM "$PPID"\n'
+            "  exit 0\n"
+            "fi\n"
+            'exec /bin/mv "$@"\n',
+            encoding="utf-8",
+        )
+        mv.chmod(0o755)
+
     sudo = fake_bin / "sudo"
     sudo.write_text(
         "#!/bin/bash\n"
@@ -436,17 +790,11 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
         '  echo "systemctl restart knxohui.service is permitted"\n  exit 0\nfi\n'
         'if [[ "$*" == *provision-yaml* ]]; then exit 0; fi\n'
         'if [[ "$1" == "systemctl" && "$2" == "restart" ]]; then\n'
-        "  count=0\n"
-        '  [[ -f "$UPDATE_TEST_STATE/restarts" ]] && count=$(<"$UPDATE_TEST_STATE/restarts")\n'
-        '  count=$((count + 1))\n  echo "$count" > "$UPDATE_TEST_STATE/restarts"\n'
-        "  if (( count == 1 )); then exit 0; fi\n"
-        '  touch "$UPDATE_TEST_STATE/active"\n  exit 0\nfi\n'
+        '  count=0; [[ -f "$UPDATE_TEST_STATE/restarts" ]] && count=$(<"$UPDATE_TEST_STATE/restarts")\n'
+        '  echo $((count + 1)) > "$UPDATE_TEST_STATE/restarts"\n'
+        '  touch "$UPDATE_TEST_STATE/active"; exit 0\nfi\n'
         'if [[ "$1" == "systemctl" && "$2" == "is-active" ]]; then\n'
-        '  [[ -f "$UPDATE_TEST_STATE/active" ]] || exit 3\n'
-        "  count=0\n"
-        '  [[ -f "$UPDATE_TEST_STATE/active-checks" ]] && count=$(<"$UPDATE_TEST_STATE/active-checks")\n'
-        "  count=$((count + 1))\n"
-        '  echo "$count" > "$UPDATE_TEST_STATE/active-checks"\n  exit 0\nfi\n'
+        '  [[ -f "$UPDATE_TEST_STATE/active" ]] && exit 0 || exit 3\nfi\n'
         "exit 0\n",
         encoding="utf-8",
     )
@@ -454,52 +802,230 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
     fake_sleep = fake_bin / "sleep"
     fake_sleep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     fake_sleep.chmod(0o755)
+    if marker_clear_fails:
+        fake_rm = fake_bin / "rm"
+        fake_rm.write_text(
+            "#!/bin/bash\n"
+            'if [[ "${MARKER_CLEAR_TEST_FAIL:-0}" == "1" ]]; then\n'
+            '  for path in "$@"; do\n'
+            '    [[ "$path" == */.update-in-progress ]] && exit 1\n'
+            "  done\n"
+            "fi\n"
+            'exec /bin/rm "$@"\n',
+            encoding="utf-8",
+        )
+        fake_rm.chmod(0o755)
+    if directory_sync_fails or restore_pointer_sync_fails:
+        fake_sync = fake_bin / "sync"
+        fake_sync.write_text(
+            "#!/bin/bash\n"
+            '  for path in "$@"; do\n'
+            '    if [[ "${MARKER_DURABILITY_SYNC_FAIL:-0}" == "1" && '
+            '"$path" == */releases/* && -d "$path" ]]; then exit 1; fi\n'
+            '    if [[ "${RESTORE_POINTER_SYNC_FAIL:-0}" == "1" && '
+            '"$path" == "$INSTALL_DIR" ]]; then exit 1; fi\n'
+            "  done\n"
+            'exec /bin/sync "$@"\n',
+            encoding="utf-8",
+        )
+        fake_sync.chmod(0o755)
+
     log_file = tmp_path / "update.log"
-    env = os.environ.copy()
-    env.update(
+    environment = os.environ.copy()
+    environment.update(
         {
-            "PATH": str(fake_bin) + os.pathsep + env["PATH"],
+            "PATH": str(fake_bin) + os.pathsep + environment["PATH"],
             "UPDATE_TEST_STATE": str(state),
+            "DEPENDENCY_TEST_FAIL": "1" if dependency_fails else "0",
+            "ACTIVATION_TEST_FAIL": "1" if activation_fails else "0",
+            "ACTIVATION_TEST_SIGNAL": "1" if interrupt_after_activation else "0",
+            "MARKER_CLEAR_TEST_FAIL": "1" if marker_clear_fails else "0",
+            "MARKER_DURABILITY_SYNC_FAIL": "1" if directory_sync_fails else "0",
+            "RESTORE_POINTER_SYNC_FAIL": "1" if restore_pointer_sync_fails else "0",
             "INSTALL_DIR": str(install),
+            "KNXOH_INSTALL_DIR": str(install),
             "KNXOH_DATA_DIR": str(data_dir),
             "KNXOH_BACKUP_DIR": str(backup_dir),
             "KNXOH_CONFIG_DIR": str(config_dir),
             "KNXOH_PATHS_FILE": str(paths_file),
             "LOG_FILE": str(log_file),
+            "UPDATE_REQUEST_ID": "d" * 32,
             "RELEASE_TAG": "v1.2.0",
+            "RELEASE_COMMIT_HASH": "c" * 40,
+            "RELEASE_COMMIT_DATE": "2026-11-03T00:00:00Z",
+            "RELEASE_COMMIT_MESSAGE": "Candidate release",
+            "RELEASE_AUTHOR": "Release Bot",
+            "KNXOH_GITHUB_REPOSITORY": "diddip21/knx_to_openhab",
         }
     )
+    try:
+        result = subprocess.run(
+            ["bash", str(ROOT / "update.sh")],
+            cwd=install,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+        retry_result = None
+        interrupted_release = None
+        if interrupt_after_activation:
+            interrupted_release = (install / "current").resolve()
+            assert interrupted_release.is_dir()
+            assert (interrupted_release / ".update-in-progress").is_file()
+            if unsafe_saved_target:
+                (interrupted_release / ".update-in-progress").write_text(
+                    "../../outside\n", encoding="utf-8"
+                )
+            retry_environment = environment.copy()
+            retry_environment["ACTIVATION_TEST_SIGNAL"] = "0"
+            retry_result = subprocess.run(
+                ["bash", str(ROOT / "update.sh")],
+                cwd=install,
+                env=retry_environment,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
+    finally:
+        server.shutdown()
+        server_thread.join(timeout=5)
+        server.server_close()
 
-    result = subprocess.run(
-        ["bash", str(ROOT / "update.sh")],
-        cwd=install,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
-    )
-    current_commit = git("rev-parse", "HEAD", cwd=install).stdout.strip()
     assert log_file.exists(), result.stdout + result.stderr
     log = log_file.read_text(encoding="utf-8")
-
-    assert result.returncode == 1
-    assert current_commit == previous_commit
-    assert (state / "active").is_file()
-    assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
-    assert int((state / "active-checks").read_text(encoding="utf-8")) >= 3
-    assert "The updated service did not become active." in log
-    assert "Previous version restored and service is active." in log
-    assert "Restoring migrated legacy configuration copies before checkout..." in log
+    expected_returncode = (
+        -signal.SIGTERM
+        if interrupt_after_activation
+        else (
+            1
+            if (
+                health_check_fails
+                or activation_fails
+                or dependency_fails
+                or marker_clear_fails
+                or directory_sync_fails
+                or restore_pointer_sync_fails
+            )
+            else 0
+        )
+    )
+    assert result.returncode == expected_returncode, result.stdout + result.stderr
+    assert (install / "config.json").read_text(encoding="utf-8") == (
+        '{"general":{"legacy":"custom"}}'
+    )
+    assert (data_dir / "jobs/user.json").read_text(encoding="utf-8") == "preserved"
+    if interrupt_after_activation:
+        assert interrupted_release is not None
+        assert retry_result is not None
+        assert "Already running selected release" not in log
+        if health_check_fails:
+            assert retry_result.returncode == 1, retry_result.stdout + retry_result.stderr
+            if unsafe_saved_target:
+                assert (install / "current").resolve() == interrupted_release
+                assert (interrupted_release / ".update-in-progress").read_text(
+                    encoding="utf-8"
+                ) == "../../outside\n"
+                assert not (state / "restarts").exists()
+                assert "unsafe target" in log
+            else:
+                assert (install / "current").resolve() == install / "releases/old-release"
+                assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
+                assert "The updated service did not pass its health check." in log
+                assert "Previous release restored and health check passed." in log
+        else:
+            assert retry_result.returncode == 0, retry_result.stdout + retry_result.stderr
+            assert (install / "current").is_symlink()
+            assert not ((install / "current").resolve() / ".update-in-progress").exists()
+            assert (state / "restarts").read_text(encoding="utf-8").strip() == "1"
+            assert "Service health check passed for v1.2.0." in log
+            assert "Update completed successfully! (request_id=" + "d" * 32 + ")" in log
+        if health_check_fails:
+            assert interrupted_release.is_dir()
+            assert (interrupted_release / ".update-in-progress").is_file()
+        else:
+            assert not interrupted_release.exists()
+    assert not stale_staging.exists()
+    assert not abandoned_candidate.exists()
+    if interrupt_after_activation:
+        assert retry_result is not None
+    elif dependency_fails:
+        assert (install / "current").is_symlink()
+        assert (install / "current").resolve() == install / "releases/old-release"
+        assert (install / "current/release-marker.txt").read_text(encoding="utf-8") == (
+            "previous release"
+        )
+        assert (install / "current/.update-in-progress").is_file()
+        assert "Could not install dependencies for v1.2.0" in log
+        assert "The active release was not changed." in log
+        assert not (state / "restarts").exists()
+        assert list((install / "releases").iterdir()) == [install / "releases/old-release"]
+    elif activation_fails:
+        assert (install / "current").is_symlink()
+        assert (install / "current").resolve() == install / "releases/old-release"
+        assert "Could not atomically activate release v1.2.0." in log
+        assert "Unactivated release candidate removed: v1.2.0." in log
+        assert not (state / "restarts").exists()
+        assert (install / "current/.update-in-progress").is_file()
+        assert list((install / "releases").iterdir()) == [install / "releases/old-release"]
+    elif health_check_fails and not restore_pointer_sync_fails:
+        assert not (install / "current").exists()
+        assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
+        assert "The updated service did not pass its health check." in log
+        assert "Previous release restored and health check passed." in log
+        assert "Rejected release candidate removed: v1.2.0." in log
+        assert list((install / "releases").iterdir()) == []
+    elif marker_clear_fails or directory_sync_fails:
+        assert (install / "current").resolve() == install / "releases/old-release"
+        assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
+        if marker_clear_fails:
+            assert "Could not clear the active release candidate marker" in log
+        else:
+            assert "Could not persist release marker removal" in log
+        assert "Previous release restored and health check passed." in log
+        assert "Update completed successfully!" not in log
+        assert list((install / "releases").iterdir()) == [install / "releases/old-release"]
+    elif restore_pointer_sync_fails:
+        assert (install / "current").resolve() == install / "releases/old-release"
+        assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
+        assert "Could not persist the restored current release pointer" in log
+        assert "restored pointer durability could not be confirmed" in log
+        assert "Update completed successfully!" not in log
+        retained_candidates = [
+            release
+            for release in (install / "releases").iterdir()
+            if release != install / "releases/old-release"
+        ]
+        assert len(retained_candidates) == 1
+        assert (retained_candidates[0] / ".update-in-progress").is_file()
+    else:
+        assert (install / "current").is_symlink()
+        active_release = (install / "current").resolve()
+        assert (active_release / "version.json").is_file()
+        assert not (active_release / ".update-in-progress").exists()
+        assert (state / "restarts").read_text(encoding="utf-8").strip() == "1"
+        assert "Service health check passed for v1.2.0." in log
+        assert "Removed obsolete release environment: old-release." in log
+        assert set((install / "releases").iterdir()) == {active_release}
+        launcher_result = subprocess.run(
+            [str(active_release / "venv/bin/gunicorn")],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert launcher_result.returncode == 0, launcher_result.stderr
+        assert launcher_result.stdout.strip() == "gunicorn launched"
+    if not dependency_fails:
+        assert "No release data migration is declared" in log
     archives = list(backup_dir.glob("pre-update-*.tar.gz"))
     assert len(archives) == 1
     with tarfile.open(archives[0], mode="r:gz") as archive:
         assert archive.extractfile("application/config.json").read() == (
             b'{"general":{"legacy":"custom"}}'
         )
-        assert archive.extractfile("application/web_ui/backend/config.json").read() == (
-            b'{"auth":{"enabled":false},"legacy":"custom"}'
-        )
+        assert archive.extractfile("runtime data/jobs/user.json").read() == b"preserved"
 
 
 def test_privilege_scripts_have_valid_bash_syntax():

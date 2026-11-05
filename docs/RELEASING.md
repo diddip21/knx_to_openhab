@@ -35,9 +35,16 @@ the `v` tag prefix is omitted. Prereleases are never selected by default.
 exists, the installer stops instead of falling back to the moving `main`
 branch.
 
-This installer step checks the selected GitHub release metadata and checks out
-its exact tag. Downloading the release archive and verifying its checksum
-before staged activation belongs to the transactional updater work in
-[#26](https://github.com/diddip21/knx_to_openhab/issues/26). CLI and Web UI
-version display and release-specific migration notes remain open work for
-[#30](https://github.com/diddip21/knx_to_openhab/issues/30).
+The installer checks selected GitHub release metadata and checks out its exact
+tag. The Web UI updater downloads the matching source archive and `.sha256`
+asset, verifies the digest, builds a separate Python environment, and only then
+atomically switches the `current` release link. If the service health endpoint
+fails, it restores the prior link (or the legacy installation) and restarts the
+previous version. External configuration and runtime data stay in their
+existing paths; this project currently has no release-specific data migrations.
+After a successful health check, the updater keeps the active and immediately
+previous release and removes older release environments. A rejected release is
+removed after rollback succeeds.
+
+CLI and Web UI version display and release-specific migration notes remain open
+work for [#30](https://github.com/diddip21/knx_to_openhab/issues/30).

@@ -229,7 +229,7 @@ sudo install -o root -g root -m 0755 \
     /usr/local/sbin/knxohui-service-update
 sudo install -d -o root -g root -m 0755 /usr/local/libexec/knx_to_openhab
 sudo install -o root -g root -m 0755 \
-    "$BASE/installer/provision_managed_outputs.py" \
+    "$REPO_ROOT/installer/provision_managed_outputs.py" \
     /usr/local/libexec/knx_to_openhab/provision_managed_outputs.py
 
 echo "Migrating configuration, jobs, staging data and backups"
@@ -289,19 +289,23 @@ sudo bash "$BASE/installer/migrate_sudoers.sh"
 
 echo "Installing systemd launch helpers"
 sudo install -d -o root -g root -m 0755 /usr/local/libexec/knx_to_openhab
-sudo install -o root -g root -m 0755 "$BASE/installer/launch_web.sh" \
+sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/launch_web.sh" \
     /usr/local/libexec/knx_to_openhab/launch_web.sh
-sudo install -o root -g root -m 0755 "$BASE/installer/launch_backup_cleanup.sh" \
+sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/launch_backup_cleanup.sh" \
     /usr/local/libexec/knx_to_openhab/launch_backup_cleanup.sh
-sudo install -o root -g root -m 0755 "$BASE/installer/set_ui_password.py" \
+sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/launch_update.sh" \
+    /usr/local/libexec/knx_to_openhab/launch_update.sh
+sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/set_ui_password.py" \
     /usr/local/libexec/knx_to_openhab/set_ui_password.py
 
 echo "Installing systemd units and timers"
-sudo install -o root -g root -m 0644 "$BASE/installer/knxohui.service" \
+sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/knxohui.service" \
     /etc/systemd/system/knxohui.service
-sudo install -o root -g root -m 0644 "$BASE/installer/knxohui-backup-cleanup.service" \
+sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/knxohui-update.service" \
+    /etc/systemd/system/knxohui-update.service
+sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/knxohui-backup-cleanup.service" \
     /etc/systemd/system/knxohui-backup-cleanup.service
-sudo install -o root -g root -m 0644 "$BASE/installer/knxohui-backup-cleanup.timer" \
+sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/knxohui-backup-cleanup.timer" \
     /etc/systemd/system/knxohui-backup-cleanup.timer
 sudo systemctl daemon-reload
 sudo systemctl enable knxohui.service

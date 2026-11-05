@@ -17,6 +17,7 @@ Cmnd_Alias KNOHUI_SERVICE_COMMANDS = \
     /usr/local/sbin/knxohui-service-update refresh, \
     /usr/local/sbin/knxohui-service-update openhab, \
     /usr/local/sbin/knxohui-service-update evcc, \
-    /usr/local/sbin/knxohui-service-update provision-yaml
+    /usr/local/sbin/knxohui-service-update provision-yaml, \
+    /usr/local/sbin/knxohui-service-update start-web-update
 
 knxohui ALL=(root) NOPASSWD: KNOHUI_SERVICE_COMMANDS

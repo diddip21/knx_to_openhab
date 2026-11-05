@@ -367,3 +367,59 @@ def test_backup_cleanup_uses_canonical_external_paths(tmp_path):
     assert "Backups dir: " + str(backup_dir) in result.stdout
     assert not older.exists()
     assert newest.exists()
+
+
+def test_relative_runtime_paths_stay_at_the_stable_install_root(tmp_path, monkeypatch):
+    install_dir = tmp_path / "opt/knx_to_openhab"
+    release_dir = install_dir / "releases/v1.2.3-cafebabe"
+    config_dir = tmp_path / "etc/knx_to_openhab"
+    data_dir = tmp_path / "var/lib/knx_to_openhab"
+    release_dir.mkdir(parents=True)
+    config_dir.mkdir(parents=True)
+    data_dir.mkdir(parents=True)
+    (config_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "openhab_path": "openhab",
+                "backups_dir": "var/backups/knx_to_openhab",
+                "auth": {"enabled": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (config_dir / "secrets.env").write_text("", encoding="utf-8")
+    (data_dir / "generator.json").write_text('{"general":{}}', encoding="utf-8")
+    monkeypatch.setenv("KNXOH_INSTALL_DIR", str(install_dir))
+    monkeypatch.setenv("KNXOH_CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("KNXOH_BACKUP_DIR", str(tmp_path / "var/backups/knx_to_openhab"))
+    monkeypatch.setenv("KNXOH_PATHS_FILE", str(tmp_path / "missing-paths.env"))
+
+    config = load_config(release_dir)
+
+    assert config["openhab_path"] == str(install_dir / "openhab")
+    assert config["backups_dir"] == str(install_dir / "var/backups/knx_to_openhab")
+
+
+def test_job_manager_relative_paths_stay_at_the_stable_install_root(tmp_path, monkeypatch):
+    from web_ui.backend.jobs import JobManager
+
+    install_dir = tmp_path / "opt/knx_to_openhab"
+    release_dir = install_dir / "releases/v1.2.3-cafebabe"
+    release_dir.mkdir(parents=True)
+    monkeypatch.setenv("KNXOH_INSTALL_DIR", str(install_dir))
+    monkeypatch.setenv("KNXOH_PATHS_FILE", str(tmp_path / "missing-paths.env"))
+
+    manager = JobManager(
+        {
+            "jobs_dir": "var/lib/knx_to_openhab/jobs",
+            "staging_dir": "var/lib/knx_to_openhab/staging",
+            "backups_dir": "var/backups/knx_to_openhab",
+        }
+    )
+    try:
+        assert manager.jobs_dir == str(install_dir / "var/lib/knx_to_openhab/jobs")
+        assert manager.staging_dir == str(install_dir / "var/lib/knx_to_openhab/staging")
+        assert manager.backups_dir == str(install_dir / "var/backups/knx_to_openhab")
+    finally:
+        manager.executor.shutdown(wait=True)

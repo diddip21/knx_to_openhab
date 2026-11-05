@@ -1,0 +1,12 @@
+[Unit]
+Description=KNX to OpenHAB Transactional Updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=knxohui
+Group=knxohui
+EnvironmentFile=/etc/knx_to_openhab/paths.env
+ExecStart=/usr/local/libexec/knx_to_openhab/launch_update.sh
+TimeoutStartSec=0

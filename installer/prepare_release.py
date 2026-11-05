@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath
 from types import ModuleType
 from urllib.error import URLError
 from urllib.parse import quote, urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 _STABLE_TAG = re.compile(
     r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
@@ -33,6 +33,7 @@ _DOWNLOAD_LIMIT = 256 * 1024 * 1024
 _EXPANDED_LIMIT = 1024 * 1024 * 1024
 _GITHUB_API_RESPONSE_LIMIT = 16 * 1024 * 1024
 _DOWNLOAD_HOSTS = {
+    "api.github.com",
     "github.com",
     "codeload.github.com",
     "objects.githubusercontent.com",
@@ -44,6 +45,45 @@ _ARCHIVE_STREAM_LIMIT = _EXPANDED_LIMIT + _DOWNLOAD_LIMIT
 
 class ReleasePreparationError(ValueError):
     """Raised when a release asset cannot be trusted or staged safely."""
+
+
+def _validate_download_url(url: str, allowed_hosts: set[str] | frozenset[str]) -> None:
+    parsed = urlsplit(url)
+    try:
+        port = parsed.port
+    except ValueError as error:
+        raise ReleasePreparationError("Download URL has an invalid port") from error
+    if parsed.scheme != "https":
+        raise ReleasePreparationError("Download redirect must use HTTPS")
+    if (
+        parsed.hostname not in allowed_hosts
+        or port not in (None, 443)
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ReleasePreparationError("Download redirect uses an untrusted host")
+
+
+class _AllowlistedRedirectHandler(HTTPRedirectHandler):
+    def __init__(self, allowed_hosts: set[str] | frozenset[str]):
+        super().__init__()
+        self.allowed_hosts = frozenset(host.lower() for host in allowed_hosts)
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_download_url(newurl, self.allowed_hosts)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _open_url(
+    request: Request,
+    *,
+    timeout: int,
+    allowed_hosts: set[str] | frozenset[str],
+):
+    normalized_hosts = frozenset(host.lower() for host in allowed_hosts)
+    _validate_download_url(request.full_url, normalized_hosts)
+    opener = build_opener(_AllowlistedRedirectHandler(normalized_hosts))
+    return opener.open(request, timeout=timeout)
 
 
 def _release_version(tag: str) -> str:
@@ -90,7 +130,7 @@ def _validate_metadata(
 def _download(url: str, destination: Path, *, limit: int = _DOWNLOAD_LIMIT) -> None:
     request = Request(url, headers={"User-Agent": "knx-to-openhab-updater"})
     try:
-        with urlopen(request, timeout=30) as response:
+        with _open_url(request, timeout=30, allowed_hosts=_DOWNLOAD_HOSTS) as response:
             final_url = urlsplit(response.geturl())
             if final_url.scheme != "https" or final_url.hostname not in _DOWNLOAD_HOSTS:
                 raise ReleasePreparationError("Release download redirected to an untrusted host")
@@ -124,7 +164,7 @@ def _github_api_json(url: str) -> dict[str, object]:
         },
     )
     try:
-        with urlopen(request, timeout=30) as response:
+        with _open_url(request, timeout=30, allowed_hosts={"api.github.com"}) as response:
             final_url = urlsplit(response.geturl())
             if final_url.scheme != "https" or final_url.hostname != "api.github.com":
                 raise ReleasePreparationError("GitHub API redirected to an untrusted host")

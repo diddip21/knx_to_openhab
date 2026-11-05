@@ -465,8 +465,8 @@ def test_prepare_release_rejects_untrusted_source_redirect(monkeypatch, tmp_path
 
     monkeypatch.setattr(
         prepare_release_module,
-        "urlopen",
-        lambda _request, timeout: RedirectedResponse(b"not trusted"),
+        "_open_url",
+        lambda _request, **_kwargs: RedirectedResponse(b"not trusted"),
     )
 
     with pytest.raises(ReleasePreparationError, match="untrusted host"):
@@ -474,6 +474,59 @@ def test_prepare_release_rejects_untrusted_source_redirect(monkeypatch, tmp_path
             "https://api.github.com/repos/diddip21/knx_to_openhab/tarball/" + _COMMIT,
             tmp_path / "source.tar.gz",
         )
+
+
+def test_redirect_handler_rejects_untrusted_intermediate_host_before_following():
+    handler_type = getattr(prepare_release_module, "_AllowlistedRedirectHandler", None)
+    assert handler_type is not None, "redirect targets must be validated before urllib follows them"
+    handler = handler_type({"api.github.com", "codeload.github.com"})
+    request = prepare_release_module.Request("https://api.github.com/start")
+
+    with pytest.raises(ReleasePreparationError, match="untrusted host"):
+        handler.redirect_request(
+            request,
+            None,
+            302,
+            "Found",
+            {"Location": "https://attacker.example/then-allowed"},
+            "https://attacker.example/then-allowed",
+        )
+
+
+def test_redirect_handler_rejects_https_downgrade_before_following():
+    handler_type = getattr(prepare_release_module, "_AllowlistedRedirectHandler", None)
+    assert handler_type is not None, "redirect targets must be validated before urllib follows them"
+    handler = handler_type({"api.github.com"})
+    request = prepare_release_module.Request("https://api.github.com/start")
+
+    with pytest.raises(ReleasePreparationError, match="HTTPS"):
+        handler.redirect_request(
+            request,
+            None,
+            302,
+            "Found",
+            {"Location": "http://api.github.com/downgrade"},
+            "http://api.github.com/downgrade",
+        )
+
+
+def test_redirect_handler_allows_trusted_github_asset_host():
+    handler = prepare_release_module._AllowlistedRedirectHandler(
+        {"api.github.com", "codeload.github.com"}
+    )
+    request = prepare_release_module.Request("https://api.github.com/start")
+
+    redirected = handler.redirect_request(
+        request,
+        None,
+        302,
+        "Found",
+        {"Location": "https://codeload.github.com/archive.tar.gz"},
+        "https://codeload.github.com/archive.tar.gz",
+    )
+
+    assert redirected is not None
+    assert redirected.full_url == "https://codeload.github.com/archive.tar.gz"
 
 
 def test_download_accepts_github_source_snapshot_redirect(monkeypatch, tmp_path):
@@ -491,8 +544,8 @@ def test_download_accepts_github_source_snapshot_redirect(monkeypatch, tmp_path)
 
     monkeypatch.setattr(
         prepare_release_module,
-        "urlopen",
-        lambda _request, timeout: RedirectedResponse(b"snapshot"),
+        "_open_url",
+        lambda _request, **_kwargs: RedirectedResponse(b"snapshot"),
     )
     destination = tmp_path / "source.tar.gz"
 
@@ -521,7 +574,7 @@ def test_fetch_commit_file_manifest_rejects_truncated_tree(monkeypatch):
         def __exit__(self, *_args):
             self.close()
 
-    def fake_urlopen(request, timeout):
+    def fake_open_url(request, *, timeout, allowed_hosts):
         url = request.full_url
         if "/git/commits/" in url:
             body = json.dumps({"tree": {"sha": "b" * 40}}).encode()
@@ -529,7 +582,7 @@ def test_fetch_commit_file_manifest_rejects_truncated_tree(monkeypatch):
             body = json.dumps({"truncated": True, "tree": []}).encode()
         return ApiResponse(body, url)
 
-    monkeypatch.setattr(prepare_release_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(prepare_release_module, "_open_url", fake_open_url)
 
     with pytest.raises(ReleasePreparationError, match="truncated"):
         prepare_release_module._fetch_commit_file_manifest("diddip21/knx_to_openhab", _COMMIT)
@@ -557,7 +610,7 @@ def test_fetch_commit_file_manifest_preserves_nonregular_entries(monkeypatch):
         def __exit__(self, *_args):
             self.close()
 
-    def fake_urlopen(request, timeout):
+    def fake_open_url(request, *, timeout, allowed_hosts):
         url = request.full_url
         if "/git/commits/" in url:
             body = json.dumps({"tree": {"sha": "b" * 40}}).encode()
@@ -589,7 +642,7 @@ def test_fetch_commit_file_manifest_preserves_nonregular_entries(monkeypatch):
             ).encode()
         return ApiResponse(body, url)
 
-    monkeypatch.setattr(prepare_release_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(prepare_release_module, "_open_url", fake_open_url)
 
     manifest = prepare_release_module._fetch_commit_file_manifest(
         "diddip21/knx_to_openhab", _COMMIT

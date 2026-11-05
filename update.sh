@@ -442,10 +442,29 @@ if [[ -L "$CURRENT_LINK" ]]; then
     if [[ -f "$CURRENT_MARKER" && ! -L "$CURRENT_MARKER" ]]; then
         RECOVERY_TARGET=$(<"$CURRENT_MARKER")
         if [[ "$RECOVERY_TARGET" == "legacy" ]]; then
+            if [[ ! -x "$INSTALL_DIR/venv/bin/gunicorn" ]]; then
+                log "ERROR: Legacy release recovery target is not runnable under $INSTALL_DIR."
+                exit 1
+            fi
             log "Recovering the legacy installation as the rollback target."
         elif [[ -n "$RECOVERY_TARGET" ]]; then
+            if [[ "$RECOVERY_TARGET" != releases/* || ! -d "$RELEASES_DIR" || \
+                -L "$RELEASES_DIR" ]]; then
+                log "ERROR: Release recovery marker has an unsafe target: $RECOVERY_TARGET"
+                exit 1
+            fi
+            if ! PREVIOUS_RELEASE_DIR=$(readlink -f -- "$INSTALL_DIR/$RECOVERY_TARGET") || \
+                [[ ! -d "$PREVIOUS_RELEASE_DIR" || \
+                    "$PREVIOUS_RELEASE_DIR" != "$RELEASES_DIR/"* || \
+                    "$PREVIOUS_RELEASE_DIR" == "$CURRENT_ACTIVE_RELEASE" ]]; then
+                log "ERROR: Release recovery target is missing or outside $RELEASES_DIR: $RECOVERY_TARGET"
+                exit 1
+            fi
+            if [[ ! -x "$PREVIOUS_RELEASE_DIR/venv/bin/gunicorn" ]]; then
+                log "ERROR: Release recovery target is not runnable: $PREVIOUS_RELEASE_DIR"
+                exit 1
+            fi
             PREVIOUS_LINK="$RECOVERY_TARGET"
-            PREVIOUS_RELEASE_DIR=$(readlink -f -- "$PREVIOUS_LINK")
             HAD_PREVIOUS_LINK=1
             log "Recovering the previous release pointer from the active candidate."
         else

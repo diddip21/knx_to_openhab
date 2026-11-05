@@ -567,6 +567,15 @@ class Updater:
                 except FileNotFoundError:
                     pass
 
+            try:
+                directory_fd = os.open(data_dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            except OSError as error:
+                return False, f"Could not persist the pending update request: {error}"
+
             if existing_request:
                 try:
                     release_tag, request_id = _read_update_request_identity(request_path)

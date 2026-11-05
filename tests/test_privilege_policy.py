@@ -52,8 +52,18 @@ def test_installer_scripts_install_and_validate_the_restricted_policy():
     assert 'REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"' in setup
     assert '"$REPO_ROOT/requirements.txt"' in setup
     assert "--exclude web_ui/backend/config.json" in setup
-    assert '"$BASE/installer/launch_update.sh"' in setup
-    assert '"$BASE/installer/knxohui-update.service"' in setup
+    for artifact in (
+        "provision_managed_outputs.py",
+        "launch_web.sh",
+        "launch_backup_cleanup.sh",
+        "launch_update.sh",
+        "set_ui_password.py",
+        "knxohui.service",
+        "knxohui-update.service",
+        "knxohui-backup-cleanup.service",
+        "knxohui-backup-cleanup.timer",
+    ):
+        assert f'"$REPO_ROOT/installer/{artifact}"' in setup
 
 
 def test_updater_runs_in_its_own_systemd_unit_outside_the_web_service_cgroup():
@@ -93,7 +103,7 @@ def test_yaml_provisioning_uses_one_fixed_root_owned_action():
     policy = (ROOT / "installer" / "knxohui.sudoers").read_text(encoding="utf-8")
     update = (ROOT / "update.sh").read_text(encoding="utf-8")
 
-    assert '"$BASE/installer/provision_managed_outputs.py"' in setup
+    assert '"$REPO_ROOT/installer/provision_managed_outputs.py"' in setup
     assert "/usr/local/libexec/knx_to_openhab/provision_managed_outputs.py" in setup
     assert "sudo install -o root -g root -m 0755" in setup
     assert "/usr/local/libexec/knx_to_openhab/provision_managed_outputs.py" in repair
@@ -403,26 +413,39 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
         "marker_clear_fails",
         "directory_sync_fails",
         "restore_pointer_sync_fails",
+        "unsafe_saved_target",
     ),
     [
         pytest.param(
-            True, False, False, False, False, False, False, False, id="health-check-rollback"
-        ),
-        pytest.param(False, False, False, False, False, False, False, False, id="healthy-update"),
-        pytest.param(
-            False, True, False, False, False, False, False, False, id="activation-failure"
+            True, False, False, False, False, False, False, False, False, id="health-check-rollback"
         ),
         pytest.param(
-            False, False, True, False, False, False, False, False, id="dependency-failure"
+            False, False, False, False, False, False, False, False, False, id="healthy-update"
         ),
         pytest.param(
-            False, False, False, True, False, False, False, False, id="activation_signal_boundary"
+            False, True, False, False, False, False, False, False, False, id="activation-failure"
+        ),
+        pytest.param(
+            False, False, True, False, False, False, False, False, False, id="dependency-failure"
+        ),
+        pytest.param(
+            False,
+            False,
+            False,
+            True,
+            False,
+            False,
+            False,
+            False,
+            False,
+            id="activation_signal_boundary",
         ),
         pytest.param(
             True,
             False,
             False,
             True,
+            False,
             False,
             False,
             False,
@@ -438,16 +461,47 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
             False,
             False,
             False,
+            False,
             id="update_candidate_active_staging",
         ),
         pytest.param(
-            False, False, False, False, False, True, False, False, id="marker_clear_failure"
+            False, False, False, False, False, True, False, False, False, id="marker_clear_failure"
         ),
         pytest.param(
-            False, False, False, False, False, False, True, False, id="directory_sync_failure"
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            True,
+            False,
+            False,
+            id="directory_sync_failure",
         ),
         pytest.param(
-            True, False, False, False, False, False, False, True, id="restore_pointer_sync_failure"
+            True,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            True,
+            False,
+            id="restore_pointer_sync_failure",
+        ),
+        pytest.param(
+            True,
+            False,
+            False,
+            True,
+            False,
+            False,
+            False,
+            False,
+            True,
+            id="unsafe_interrupted_rollback_target",
         ),
     ],
 )
@@ -463,6 +517,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     marker_clear_fails,
     directory_sync_fails,
     restore_pointer_sync_fails,
+    unsafe_saved_target,
 ):
     install = tmp_path / "install"
     fake_bin = tmp_path / "bin"
@@ -622,6 +677,9 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     python.parent.mkdir(parents=True)
     python.write_text(f'#!/bin/sh\nexec {real_python} "$@"\n', encoding="utf-8")
     python.chmod(0o755)
+    gunicorn = install / "venv/bin/gunicorn"
+    gunicorn.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gunicorn.chmod(0o755)
     pip = install / "venv/bin/pip"
     pip.write_text(
         "#!/bin/bash\n"
@@ -662,7 +720,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
             or (health_check_fails and interrupt_after_activation)
         ):
             (previous_release / ".update-in-progress").touch()
-        for executable in ("python", "pip"):
+        for executable in ("python", "pip", "gunicorn"):
             target = previous_release / "venv/bin" / executable
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(install / "venv/bin" / executable, target)
@@ -816,6 +874,10 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
             interrupted_release = (install / "current").resolve()
             assert interrupted_release.is_dir()
             assert (interrupted_release / ".update-in-progress").is_file()
+            if unsafe_saved_target:
+                (interrupted_release / ".update-in-progress").write_text(
+                    "../../outside\n", encoding="utf-8"
+                )
             retry_environment = environment.copy()
             retry_environment["ACTIVATION_TEST_SIGNAL"] = "0"
             retry_result = subprocess.run(
@@ -861,10 +923,18 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         assert "Already running selected release" not in log
         if health_check_fails:
             assert retry_result.returncode == 1, retry_result.stdout + retry_result.stderr
-            assert (install / "current").resolve() == install / "releases/old-release"
-            assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
-            assert "The updated service did not pass its health check." in log
-            assert "Previous release restored and health check passed." in log
+            if unsafe_saved_target:
+                assert (install / "current").resolve() == interrupted_release
+                assert (interrupted_release / ".update-in-progress").read_text(
+                    encoding="utf-8"
+                ) == "../../outside\n"
+                assert not (state / "restarts").exists()
+                assert "unsafe target" in log
+            else:
+                assert (install / "current").resolve() == install / "releases/old-release"
+                assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
+                assert "The updated service did not pass its health check." in log
+                assert "Previous release restored and health check passed." in log
         else:
             assert retry_result.returncode == 0, retry_result.stdout + retry_result.stderr
             assert (install / "current").is_symlink()

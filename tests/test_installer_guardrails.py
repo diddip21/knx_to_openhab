@@ -41,7 +41,9 @@ def test_setup_stops_service_before_migration_and_restarts_after_unit_reload():
 
     assert stop_index < migration_index < daemon_reload_index < restart_index
     assert "sudo systemctl enable --now knxohui.service" not in setup
-    assert 'sudo install -o root -g root -m 0755 "$BASE/installer/set_ui_password.py" ' in setup
+    assert (
+        'sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/set_ui_password.py" ' in setup
+    )
     assert "AUTH_PREFLIGHT_STATUS=3" in setup
     assert 'AUTH_PREFLIGHT_STATUS" -eq 1 || "$AUTH_PREFLIGHT_STATUS" -eq 3' in setup
     assert "generate one and show it once" in setup

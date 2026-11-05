@@ -66,6 +66,93 @@ def test_trigger_update_passes_install_dir_and_selected_release(monkeypatch, tmp
     )
 
 
+def test_trigger_update_fsyncs_request_directory_before_starting_worker(monkeypatch, tmp_path):
+    (tmp_path / "update.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(
+        Updater,
+        "check_github_version",
+        lambda _self: (
+            True,
+            {
+                "release_tag": "v1.4.0",
+                "commit_hash": "a" * 40,
+                "commit_date": "2026-11-03T00:00:00Z",
+            },
+        ),
+    )
+    monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
+    _allow_isolated_update_worker(monkeypatch)
+
+    events = []
+    real_fsync = os.fsync
+    real_link = os.link
+
+    def record_fsync(descriptor):
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            events.append("request_directory_fsync")
+        return real_fsync(descriptor)
+
+    def record_link(source, target, *args, **kwargs):
+        result = real_link(source, target, *args, **kwargs)
+        events.append("publish")
+        return result
+
+    def start_worker(*_args, **_kwargs):
+        events.append("worker")
+        return Mock(returncode=0, stderr="")
+
+    monkeypatch.setattr("web_ui.backend.updater.os.fsync", record_fsync)
+    monkeypatch.setattr("web_ui.backend.updater.os.link", record_link)
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.run", start_worker)
+
+    success, _message = Updater(base_path=str(tmp_path)).trigger_update()
+
+    assert success is True
+    assert events.index("publish") < events.index("request_directory_fsync")
+    assert events.index("request_directory_fsync") < events.index("worker")
+
+
+def test_trigger_update_does_not_start_worker_if_request_directory_fsync_fails(
+    monkeypatch, tmp_path
+):
+    (tmp_path / "update.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(
+        Updater,
+        "check_github_version",
+        lambda _self: (
+            True,
+            {
+                "release_tag": "v1.4.0",
+                "commit_hash": "a" * 40,
+                "commit_date": "2026-11-03T00:00:00Z",
+            },
+        ),
+    )
+    monkeypatch.setattr(Updater, "get_current_version", lambda _self: {"commit_hash": "old"})
+    _allow_isolated_update_worker(monkeypatch)
+    real_fsync = os.fsync
+
+    def fail_directory_fsync(descriptor):
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError("injected directory fsync failure")
+        return real_fsync(descriptor)
+
+    monkeypatch.setattr("web_ui.backend.updater.os.fsync", fail_directory_fsync)
+    start_worker = Mock(return_value=Mock(returncode=0, stderr=""))
+    monkeypatch.setattr("web_ui.backend.updater.subprocess.run", start_worker)
+
+    success, message = Updater(base_path=str(tmp_path)).trigger_update()
+
+    assert success is False
+    assert "injected directory fsync failure" in message
+    start_worker.assert_not_called()
+    assert (data_dir / "update-request.json").is_file()
+
+
 def test_trigger_update_log_before_publish_is_fsynced(monkeypatch, tmp_path):
     (tmp_path / "update.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
     data_dir = tmp_path / "data"

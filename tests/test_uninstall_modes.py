@@ -59,6 +59,14 @@ case "${1:-}" in
     case "${2:-}" in
       show)
         unit="${5:-}"
+        if [[ "${3:-}" == --property=LoadState ]]; then
+          if [[ "$unit" == "${FAKE_MISSING_UNIT:-}" ]]; then
+            printf 'not-found\n'
+          else
+            printf 'loaded\n'
+          fi
+          exit 0
+        fi
         if [[ "$unit" == knxohui-update.service && -n "${FAKE_SYSTEM_STATE_FILE:-}" \
           && -f "$FAKE_SYSTEM_STATE_FILE" ]]; then
           state=$(<"$FAKE_SYSTEM_STATE_FILE")
@@ -84,6 +92,7 @@ case "${1:-}" in
       is-enabled) exit 1 ;;
       stop)
         [[ "${FAKE_STOP_FAIL:-0}" != 1 ]] || exit 1
+        [[ "${3:-}" != "${FAKE_MISSING_UNIT:-}" ]] || exit 5
         if [[ -n "${FAKE_SYSTEM_STATE_FILE:-}" ]]; then
           case "${3:-}" in
             knxohui-update.service)
@@ -442,3 +451,18 @@ def test_uninstall_cancels_pending_updater_start_when_state_is_inactive(tmp_path
     list_jobs_index = calls.index("list-jobs", stop_index)
     assert update_state_check < stop_index < list_jobs_index < calls.index("rm")
     assert pending_start_file.read_text(encoding="utf-8") == ""
+
+
+def test_uninstall_tolerates_unit_that_is_not_installed(tmp_path):
+    environment, app, _, _, _, _, sudo_log = create_fixture(tmp_path)
+    missing_unit = "knxohui-backup-cleanup.service"
+    environment["FAKE_MISSING_UNIT"] = missing_unit
+
+    result = run_uninstaller(environment, ["--yes"])
+
+    assert result.returncode == 0, result.stderr
+    assert not app.exists()
+    calls = sudo_arguments(sudo_log)
+    assert missing_unit in calls
+    missing_unit_index = calls.index(missing_unit)
+    assert "stop" not in calls[missing_unit_index - 1 : missing_unit_index + 2]

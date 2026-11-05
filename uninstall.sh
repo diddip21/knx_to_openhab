@@ -289,8 +289,16 @@ validate_application_directory
 validate_user_data_directories
 
 stop_unit_before_removal() {
-    local unit="$1" active_state attempt pending_jobs
+    local unit="$1" load_state active_state attempt pending_jobs
     local job_id job_unit job_type job_state has_pending_job has_pending_start
+    if ! load_state=$(sudo systemctl show --property=LoadState --value "$unit"); then
+        fail "Could not inspect $unit load state; no files were removed."
+    fi
+    if [[ "$load_state" == not-found ]]; then
+        return 0
+    fi
+    [[ -n "$load_state" ]] || fail "Unknown $unit load state; no files were removed."
+
     if ! active_state=$(sudo systemctl show --property=ActiveState --value "$unit"); then
         fail "Could not inspect $unit state; no files were removed."
     fi

@@ -14,7 +14,8 @@
 
 - Do not remove application or unit files until the updater is stopped.
 - Stop the Web UI before checking/stopping the updater so no new update request can start during teardown.
-- Tolerate an absent or genuinely inactive updater unit; abort before file removal on an unknown state or failed stop.
+- Stop an inactive updater too, then inspect systemd jobs and confirm no queued start remains before file removal.
+- Use `LoadState` to distinguish an absent unit from a loaded inactive unit; tolerate `not-found`, abort on inspection errors or unknown active state.
 - Preserve existing uninstall confirmation and user-data retention behavior.
 
 ## Review Focus
@@ -22,6 +23,8 @@
 - A `Type=oneshot` updater in `activating` must be stopped before application deletion (`test_uninstall_stops_updater_while_oneshot_unit_is_activating`).
 - A Web UI that starts an updater while shutting down must be quiesced before the final updater check (`test_uninstall_quiesces_web_service_before_final_updater_stop`).
 - An inactive or not-installed updater must still permit idempotent uninstall (`test_normal_uninstall_removes_app_but_preserves_user_data`, `test_purge_removes_custom_paths_and_service_account_and_can_repeat`).
+- An inactive updater with an accepted start job must receive a synchronous stop and be confirmed job-free before deletion (`test_uninstall_cancels_pending_updater_start_when_state_is_inactive`).
+- A unit with `LoadState=not-found` must not receive `stop`, which systemd rejects for nonexistent units (`test_uninstall_tolerates_unit_that_is_not_installed`).
 - A stop failure must continue to prevent deletion (`test_failed_service_stop_prevents_file_removal`).
 - An unknown systemd state must abort safely before any managed file removal (add an unknown-state assertion to the new test or a focused companion test).
 
@@ -58,3 +61,12 @@ Expected: all uninstall modes, idempotence, confirmation, stop-failure, and new 
 - [x] **Step 5: Commit the updater coordination change**
 
 Use commit message: `fix: stop activating updater before uninstall`.
+
+### Task 2: Cancel queued starts and preserve absent-unit idempotence
+
+The full review found that a `systemctl start --no-block` job can still be queued while `ActiveState=inactive`. The cleanup must issue synchronous `stop` even for `inactive`, inspect `list-jobs`, and repeat until no start/stop job remains. `systemctl show --property=ActiveState` returns `inactive` for an unknown unit, so inspect `LoadState` first and skip only an explicit `not-found` unit.
+
+- [x] Add `test_uninstall_cancels_pending_updater_start_when_state_is_inactive`; verify it fails because the existing inactive branch does not issue stop/job inspection.
+- [x] Implement stop-and-job polling and add `test_uninstall_tolerates_unit_that_is_not_installed` to verify a missing unit is not stopped.
+- [x] Run `pytest tests/test_uninstall_modes.py -q` and `bash -n uninstall.sh`.
+- [x] Commit queued-start cancellation as `fix: cancel pending updater starts before uninstall`; missing-unit `LoadState` handling is completed in the follow-up commit.

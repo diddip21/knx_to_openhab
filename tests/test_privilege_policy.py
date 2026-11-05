@@ -407,6 +407,7 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
         pytest.param(False, True, False, False, False, id="activation-failure"),
         pytest.param(False, False, True, False, False, id="dependency-failure"),
         pytest.param(False, False, False, True, False, id="activation_signal_boundary"),
+        pytest.param(True, False, False, True, False, id="activation_signal_retry_rollback"),
         pytest.param(False, False, False, False, True, id="update_candidate_active_staging"),
     ],
 )
@@ -451,7 +452,11 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
             if self.path != "/api/status":
                 self.send_error(404)
                 return
-            if health_check_fails and (install / "current").is_symlink():
+            if (
+                health_check_fails
+                and (install / "current").is_symlink()
+                and (install / "current").resolve().name.startswith("1.2.0-")
+            ):
                 status, payload = 503, b'{"status":"starting"}'
             else:
                 status, payload = 200, b'{"status":"ok"}'
@@ -531,7 +536,8 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         "  target = app / relative\n"
         "  target.parent.mkdir(parents=True, exist_ok=True)\n"
         "  target.write_text(content, encoding='utf-8')\n"
-        "for relative in ('knxoh_paths.py', 'installer/web_ui_endpoint.py',\n"
+        "for relative in ('knxoh_paths.py', 'installer/prepare_release.py',\n"
+        "                 'installer/web_ui_endpoint.py',\n"
         "                 'web_ui/backend/auth.py', 'web_ui/backend/storage.py'):\n"
         "  target = app / relative\n"
         "  target.parent.mkdir(parents=True, exist_ok=True)\n"
@@ -582,7 +588,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     )
     pip.chmod(0o755)
 
-    if activation_fails or dependency_fails:
+    if activation_fails or dependency_fails or interrupt_after_activation:
         previous_release = install / "releases/old-release"
         for relative in (
             "knxoh_paths.py",
@@ -600,7 +606,12 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
             encoding="utf-8",
         )
         (previous_release / "release-marker.txt").write_text("previous release", encoding="utf-8")
-        (previous_release / ".update-in-progress").touch()
+        if (
+            activation_fails
+            or dependency_fails
+            or (health_check_fails and interrupt_after_activation)
+        ):
+            (previous_release / ".update-in-progress").touch()
         for executable in ("python", "pip"):
             target = previous_release / "venv/bin" / executable
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -700,6 +711,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
             "KNXOH_CONFIG_DIR": str(config_dir),
             "KNXOH_PATHS_FILE": str(paths_file),
             "LOG_FILE": str(log_file),
+            "UPDATE_REQUEST_ID": "d" * 32,
             "RELEASE_TAG": "v1.2.0",
             "RELEASE_COMMIT_HASH": "c" * 40,
             "RELEASE_COMMIT_DATE": "2026-11-03T00:00:00Z",
@@ -718,6 +730,23 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
             check=False,
             timeout=60,
         )
+        retry_result = None
+        interrupted_release = None
+        if interrupt_after_activation:
+            interrupted_release = (install / "current").resolve()
+            assert interrupted_release.is_dir()
+            assert (interrupted_release / ".update-in-progress").is_file()
+            retry_environment = environment.copy()
+            retry_environment["ACTIVATION_TEST_SIGNAL"] = "0"
+            retry_result = subprocess.run(
+                ["bash", str(ROOT / "update.sh")],
+                cwd=install,
+                env=retry_environment,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
     finally:
         server.shutdown()
         server_thread.join(timeout=5)
@@ -736,14 +765,31 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     )
     assert (data_dir / "jobs/user.json").read_text(encoding="utf-8") == "preserved"
     if interrupt_after_activation:
-        assert (install / "current").is_symlink()
-        interrupted_release = (install / "current").resolve()
-        assert interrupted_release.is_dir()
-        assert (interrupted_release / ".update-in-progress").is_file()
+        assert interrupted_release is not None
+        assert retry_result is not None
+        assert "Already running selected release" not in log
+        if health_check_fails:
+            assert retry_result.returncode == 1, retry_result.stdout + retry_result.stderr
+            assert (install / "current").resolve() == install / "releases/old-release"
+            assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
+            assert "The updated service did not pass its health check." in log
+            assert "Previous release restored and health check passed." in log
+        else:
+            assert retry_result.returncode == 0, retry_result.stdout + retry_result.stderr
+            assert (install / "current").is_symlink()
+            assert not ((install / "current").resolve() / ".update-in-progress").exists()
+            assert (state / "restarts").read_text(encoding="utf-8").strip() == "1"
+            assert "Service health check passed for v1.2.0." in log
+            assert "Update completed successfully! (request_id=" + "d" * 32 + ")" in log
+        if health_check_fails:
+            assert interrupted_release.is_dir()
+            assert (interrupted_release / ".update-in-progress").is_file()
+        else:
+            assert not interrupted_release.exists()
     assert not stale_staging.exists()
     assert not abandoned_candidate.exists()
     if interrupt_after_activation:
-        assert not (state / "restarts").exists()
+        assert retry_result is not None
     elif dependency_fails:
         assert (install / "current").is_symlink()
         assert (install / "current").resolve() == install / "releases/old-release"

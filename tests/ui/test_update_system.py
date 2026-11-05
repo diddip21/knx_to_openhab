@@ -58,6 +58,9 @@ def _setup_version_routes(
             )
         if url.endswith("/api/version/update") and method == "POST":
             calls["update"] += 1
+            if callable(update_response):
+                response_data, response_status = update_response(calls["update"])
+                return _fulfill(route, response_data, status=response_status)
             return _fulfill(
                 route,
                 update_response
@@ -195,6 +198,7 @@ class TestUpdateSystem:
         expect(page.locator("#updateSuccessDialog[open]")).to_have_count(0)
 
         log_state["value"] += "\nUpdate completed successfully!"
+        log_state["value"] += f" (request_id={request_id})"
         expect(page.locator("#updateSuccessDialog[open]")).to_be_visible(timeout=5000)
         if os.environ.get("CAPTURE_PR70_UPDATE_SCREENSHOT") == "1":
             page.screenshot(path="docs/screenshots/pr70-update-success-dialog.png", full_page=True)
@@ -263,6 +267,113 @@ class TestUpdateSystem:
         )
         page.wait_for_timeout(1200)
         assert calls["log"] == 0
+        expect(page.locator("#updateLogContent")).to_contain_text("updater is already running")
+        expect(page.locator("#updateSuccessDialog[open]")).to_have_count(0)
+
+    def test_success_from_a_different_request_is_ignored(self, page: Page, base_url, flask_server):
+        current_request_id = "b" * 32
+        other_request_id = "a" * 32
+        log_state = {
+            "value": (
+                f"Update queued for v1.4.0 (request_id={current_request_id}).\n"
+                "Restarting knxohui.service on release v1.4.0..."
+            )
+        }
+        _setup_version_routes(page, update_available=True, log_state=log_state)
+        page.goto(base_url)
+
+        page.locator("#versionBadge").click()
+        expect(page.locator("#updateDialog[open]")).to_be_visible(timeout=10000)
+        page.locator("#dialogUpdateBtn").click()
+        expect(page.locator("#updateLogContent")).to_contain_text(
+            "Restarting knxohui.service", timeout=10000
+        )
+
+        log_state["value"] = (
+            f"Update queued for v1.4.0 (request_id={other_request_id}).\n"
+            "Update completed successfully!"
+        )
+        page.wait_for_timeout(1300)
+
+        expect(page.locator("#updateSuccessDialog[open]")).to_have_count(0)
+        expect(page.locator("#updateLogContent")).not_to_contain_text(
+            "Update completed successfully"
+        )
+
+    def test_success_without_current_request_marker_is_ignored(
+        self, page: Page, base_url, flask_server
+    ):
+        request_id = "b" * 32
+        log_state = {
+            "value": (
+                f"Update queued for v1.4.0 (request_id={request_id}).\n"
+                "Restarting knxohui.service on release v1.4.0..."
+            )
+        }
+        _setup_version_routes(page, update_available=True, log_state=log_state)
+        page.goto(base_url)
+
+        page.locator("#versionBadge").click()
+        expect(page.locator("#updateDialog[open]")).to_be_visible(timeout=10000)
+        page.locator("#dialogUpdateBtn").click()
+        expect(page.locator("#updateLogContent")).to_contain_text(
+            "Restarting knxohui.service", timeout=10000
+        )
+        log_state["value"] += "\nUpdate completed successfully!"
+        page.wait_for_timeout(1300)
+
+        expect(page.locator("#updateLogContent")).to_contain_text("Update completed successfully")
+        expect(page.locator("#updateSuccessDialog[open]")).to_have_count(0)
+
+    def test_old_poll_cannot_overwrite_new_attempt_startup_error(
+        self, page: Page, base_url, flask_server
+    ):
+        request_id = "b" * 32
+        log_state = {
+            "value": (
+                f"Update queued for v1.4.0 (request_id={request_id}).\n"
+                "Restarting knxohui.service on release v1.4.0..."
+            )
+        }
+
+        def update_response(call_number):
+            if call_number == 1:
+                return (
+                    {
+                        "status": "updating",
+                        "message": f"Update request for v1.4.0 (request_id={request_id}) started",
+                    },
+                    200,
+                )
+            log_state["value"] += f"\nUpdate completed successfully! (request_id={request_id})"
+            return ({"error": "The updater is already running."}, 409)
+
+        calls = _setup_version_routes(
+            page,
+            update_available=True,
+            log_state=log_state,
+            update_response=update_response,
+        )
+        page.goto(base_url)
+
+        page.locator("#versionBadge").click()
+        expect(page.locator("#updateDialog[open]")).to_be_visible(timeout=10000)
+        page.locator("#dialogUpdateBtn").click()
+        expect(page.locator("#updateLogContent")).to_contain_text(
+            "Restarting knxohui.service", timeout=10000
+        )
+        page.locator("#updateLogModal .close-btn").click()
+        expect(page.locator("#updateLogModal[open]")).to_have_count(0)
+
+        page.locator("#versionBadge").click()
+        expect(page.locator("#updateDialog[open]")).to_be_visible(timeout=10000)
+        page.locator("#dialogUpdateBtn").click()
+        expect(page.locator("#updateLogContent")).to_contain_text(
+            "updater is already running", timeout=10000
+        )
+        page.wait_for_timeout(1300)
+
+        assert calls["update"] == 2
         expect(page.locator("#updateLogContent")).to_contain_text("updater is already running")
         expect(page.locator("#updateSuccessDialog[open]")).to_have_count(0)
 

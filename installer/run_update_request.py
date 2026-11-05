@@ -16,7 +16,7 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(APP_ROOT))
 
 from knxoh_paths import get_paths  # noqa: E402
-from update_request_lock import update_request_lock  # noqa: E402
+from update_request_lock import update_request_lock_with_fd  # noqa: E402
 
 _TAG = re.compile(
     r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
@@ -75,6 +75,7 @@ def _validate_request(raw: Any) -> dict[str, str]:
         raise ValueError("Update request targets an unexpected repository.")
 
     return {
+        "request_id": request_id,
         "release_tag": tag,
         "commit_hash": commit_hash,
         "commit_date": commit_date,
@@ -89,10 +90,11 @@ def run_update_request() -> int:
     request_path = paths.data_dir / _REQUEST_NAME
     running_path: Path | None = None
     log_path = paths.install_dir / "update.log"
+    updater_finished = False
 
     try:
-        with update_request_lock(paths.data_dir, blocking=True) as acquired:
-            if not acquired:
+        with update_request_lock_with_fd(paths.data_dir, blocking=True) as lock_fd:
+            if lock_fd is None:
                 raise RuntimeError("Could not acquire the update request lock.")
 
             try:
@@ -128,6 +130,7 @@ def run_update_request() -> int:
                         "KNXOH_CONFIG_DIR": str(paths.config_dir),
                         "KNXOH_BACKUP_DIR": str(paths.backup_dir),
                         "LOG_FILE": str(log_path),
+                        "UPDATE_REQUEST_ID": release["request_id"],
                         "RELEASE_TAG": release["release_tag"],
                         "RELEASE_COMMIT_HASH": release["commit_hash"],
                         "RELEASE_COMMIT_DATE": release["commit_date"],
@@ -150,10 +153,22 @@ def run_update_request() -> int:
                         stdout=log_file,
                         stderr=subprocess.STDOUT,
                         check=False,
+                        pass_fds=(lock_fd,),
                     )
+                    updater_finished = True
+                    if result.returncode == 0:
+                        success_marker = (
+                            "Update completed successfully! "
+                            f"(request_id={release['request_id']})"
+                        )
+                        log_file.flush()
+                        if success_marker not in log_path.read_text(encoding="utf-8"):
+                            log_file.write(success_marker + "\n")
+                            log_file.flush()
+                            os.fsync(log_file.fileno())
                 return result.returncode
             finally:
-                if running_path is not None:
+                if running_path is not None and updater_finished:
                     running_path.unlink(missing_ok=True)
     except Exception as error:
         try:

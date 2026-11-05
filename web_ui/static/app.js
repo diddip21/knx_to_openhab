@@ -2737,6 +2737,20 @@ function showUpdateDialog(updateData) {
   document.getElementById('updateDialog').showModal()
 }
 let updatePollInterval = null
+let updatePollGeneration = 0
+
+function stopUpdateLogPolling() {
+  updatePollGeneration++
+  if (updatePollInterval !== null) {
+    clearInterval(updatePollInterval)
+    updatePollInterval = null
+  }
+}
+
+const updateLogModal = document.getElementById('updateLogModal')
+if (updateLogModal) {
+  updateLogModal.addEventListener('close', stopUpdateLogPolling)
+}
 
 function parseUpdateRequestIdentity(message) {
   const match = String(message || '').match(
@@ -2749,6 +2763,8 @@ async function performUpdate() {
   const updateDialog = document.getElementById('updateDialog')
   const logModal = document.getElementById('updateLogModal')
   const logContent = document.getElementById('updateLogContent')
+
+  stopUpdateLogPolling()
 
   // Close the update info dialog and open log modal
   updateDialog.close()
@@ -2787,21 +2803,25 @@ function startUpdateLogPolling(requestIdentity) {
   const successDialog = document.getElementById('updateSuccessDialog')
   const countdownEl = document.getElementById('reloadCountdown')
   const requestHeader = `Update queued for ${requestIdentity.releaseTag} (request_id=${requestIdentity.requestId}).`
-  let currentRequestObserved = false
+  const requestSuccessMarker = `Update completed successfully! (request_id=${requestIdentity.requestId})`
+  let pollInFlight = false
 
-  if (updatePollInterval) clearInterval(updatePollInterval)
+  stopUpdateLogPolling()
+  const pollGeneration = updatePollGeneration
 
   updatePollInterval = setInterval(async () => {
+    if (pollGeneration !== updatePollGeneration || pollInFlight) return
+    pollInFlight = true
     try {
       const res = await apiFetch('/api/version/log')
+      if (pollGeneration !== updatePollGeneration) return
       if (res.ok) {
         const data = await res.json()
-        if (data.log) {
-          if (!currentRequestObserved && data.log.includes(requestHeader)) {
-            currentRequestObserved = true
-          }
-          // Ignore a previous attempt if the log endpoint briefly lags POST.
-          if (!currentRequestObserved) return
+        if (pollGeneration !== updatePollGeneration) return
+        // Every response must still belong to this request. The shared log
+        // may have been reset after this poll started or another attempt may
+        // have completed while an older request was in flight.
+        if (typeof data.log === 'string' && data.log.includes(requestHeader)) {
 
           // Update log display
           if (logContent.textContent.length !== data.log.length || !logContent.textContent.startsWith(data.log.substring(0, 20))) {
@@ -2811,10 +2831,10 @@ function startUpdateLogPolling(requestIdentity) {
           }
 
           // Trigger reload sequence only after the update passes its health check.
-          if (data.log.includes('Update completed successfully')) {
+          if (data.log.includes(requestSuccessMarker)) {
             if (!successDialog.open) {
               // Stop polling
-              clearInterval(updatePollInterval)
+              stopUpdateLogPolling()
 
               // Show success dialog
               document.getElementById('updateLogModal').close()
@@ -2840,6 +2860,8 @@ function startUpdateLogPolling(requestIdentity) {
     } catch (e) {
       // Ignore network errors as service might be restarting
       console.log('Poll error (expected during restart):', e)
+    } finally {
+      pollInFlight = false
     }
   }, 1000)
 }

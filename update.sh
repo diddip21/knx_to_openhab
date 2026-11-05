@@ -64,6 +64,10 @@ if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+
     log "ERROR: A valid stable release tag is required. Trigger the update from the Web UI again."
     exit 1
 fi
+if [[ -n "${UPDATE_REQUEST_ID:-}" && ! "$UPDATE_REQUEST_ID" =~ ^[0-9a-f]{32}$ ]]; then
+    log "ERROR: The update request identifier is invalid."
+    exit 1
+fi
 
 if [[ -z "${KNXOH_DATA_DIR:-}" ]]; then
     if ! UPDATE_LOCK_DIR=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" \
@@ -218,7 +222,8 @@ fi
 
 # A transactional installation can retry the latest stable release without
 # downloading or replacing its active environment.
-if [[ -L "$CURRENT_LINK" && -f "$APP_DIR/version.json" ]]; then
+if [[ -L "$CURRENT_LINK" && -f "$APP_DIR/version.json" && \
+    ! -e "$APP_DIR/.update-in-progress" && ! -L "$APP_DIR/.update-in-progress" ]]; then
     if "$APP_DIR/venv/bin/python" - "$APP_DIR/version.json" "$RELEASE_TAG" \
         "$RELEASE_COMMIT_HASH" <<'PY'
 import json
@@ -237,6 +242,10 @@ PY
         log "Already running selected release $RELEASE_TAG."
         exit 0
     fi
+fi
+if [[ -L "$CURRENT_LINK" && \
+    ( -e "$APP_DIR/.update-in-progress" || -L "$APP_DIR/.update-in-progress" ) ]]; then
+    log "Detected an interrupted release activation; retrying release validation."
 fi
 
 # Snapshot the application and external configuration before any update work.
@@ -267,7 +276,7 @@ if ! mkdir -p -- "$RELEASES_DIR"; then
 fi
 
 active_target_is_within() {
-    local candidate_path active_target resolved_candidate
+    local candidate_path active_target resolved_candidate recovery_target resolved_recovery
     candidate_path="$1"
     [[ -L "$CURRENT_LINK" ]] || return 1
 
@@ -277,7 +286,24 @@ active_target_is_within() {
         ! resolved_candidate=$(readlink -f -- "$candidate_path"); then
         return 0
     fi
-    [[ "$active_target" == "$resolved_candidate" || "$active_target" == "$resolved_candidate/"* ]]
+    if [[ "$active_target" == "$resolved_candidate" || \
+        "$active_target" == "$resolved_candidate/"* ]]; then
+        return 0
+    fi
+
+    # An interrupted active candidate records the pointer needed for rollback.
+    # Preserve that target too; otherwise startup cleanup could erase the only
+    # known-good release before recovery gets a chance to restore it.
+    if [[ -f "$active_target/.update-in-progress" && \
+        ! -L "$active_target/.update-in-progress" ]]; then
+        recovery_target=$(<"$active_target/.update-in-progress")
+        if [[ -n "$recovery_target" && "$recovery_target" != "legacy" ]] && \
+            resolved_recovery=$(readlink -f -- "$recovery_target"); then
+            [[ "$resolved_recovery" == "$resolved_candidate" || \
+                "$resolved_recovery" == "$resolved_candidate/"* ]] && return 0
+        fi
+    fi
+    return 1
 }
 
 remove_inactive_release_path() {
@@ -410,9 +436,42 @@ PREVIOUS_LINK=""
 PREVIOUS_RELEASE_DIR=""
 HAD_PREVIOUS_LINK=0
 if [[ -L "$CURRENT_LINK" ]]; then
-    PREVIOUS_LINK=$(readlink -- "$CURRENT_LINK")
-    PREVIOUS_RELEASE_DIR=$(readlink -f -- "$CURRENT_LINK")
-    HAD_PREVIOUS_LINK=1
+    CURRENT_ACTIVE_RELEASE=$(readlink -f -- "$CURRENT_LINK")
+    CURRENT_MARKER="$CURRENT_ACTIVE_RELEASE/.update-in-progress"
+    if [[ -f "$CURRENT_MARKER" && ! -L "$CURRENT_MARKER" ]]; then
+        RECOVERY_TARGET=$(<"$CURRENT_MARKER")
+        if [[ "$RECOVERY_TARGET" == "legacy" ]]; then
+            log "Recovering the legacy installation as the rollback target."
+        elif [[ -n "$RECOVERY_TARGET" ]]; then
+            PREVIOUS_LINK="$RECOVERY_TARGET"
+            PREVIOUS_RELEASE_DIR=$(readlink -f -- "$PREVIOUS_LINK")
+            HAD_PREVIOUS_LINK=1
+            log "Recovering the previous release pointer from the active candidate."
+        else
+            # Older candidates may have an empty marker from before the
+            # rollback target was persisted. Retain that active path rather
+            # than inventing a target that could discard a usable release.
+            PREVIOUS_LINK=$(readlink -- "$CURRENT_LINK")
+            PREVIOUS_RELEASE_DIR="$CURRENT_ACTIVE_RELEASE"
+            HAD_PREVIOUS_LINK=1
+            log "WARNING: Active candidate has no saved rollback target; retaining it for rollback."
+        fi
+    else
+        PREVIOUS_LINK=$(readlink -- "$CURRENT_LINK")
+        PREVIOUS_RELEASE_DIR="$CURRENT_ACTIVE_RELEASE"
+        HAD_PREVIOUS_LINK=1
+    fi
+fi
+
+RELEASE_RECOVERY_TARGET="$PREVIOUS_LINK"
+if (( ! HAD_PREVIOUS_LINK )); then
+    RELEASE_RECOVERY_TARGET="legacy"
+fi
+if [[ "$RELEASE_RECOVERY_TARGET" == *$'\n'* ]] || \
+    ! printf '%s\n' "$RELEASE_RECOVERY_TARGET" > "$STAGED_APP_DIR/.update-in-progress" || \
+    ! sync -f -- "$STAGED_APP_DIR/.update-in-progress"; then
+    log "ERROR: Could not persist the previous release pointer before activation."
+    exit 1
 fi
 
 TEMP_CURRENT_LINK="$INSTALL_DIR/.current-${RELEASE_DIR_NAME}-$$"
@@ -561,7 +620,11 @@ fi
 log "Service health check passed for $RELEASE_TAG."
 prune_obsolete_releases
 log "========================================="
-log "Update completed successfully!"
+if [[ -n "${UPDATE_REQUEST_ID:-}" ]]; then
+    log "Update completed successfully! (request_id=$UPDATE_REQUEST_ID)"
+else
+    log "Update completed successfully!"
+fi
 log "Active release: $RELEASE_TAG ($RELEASE_COMMIT_HASH)"
 log "Backup saved to: $BACKUP_PATH"
 log "========================================="

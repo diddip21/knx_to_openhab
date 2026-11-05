@@ -483,6 +483,18 @@ if [[ -L "$CURRENT_LINK" ]]; then
     fi
 fi
 
+if (( HAD_PREVIOUS_LINK )); then
+    case "$PREVIOUS_RELEASE_DIR" in
+        "$RELEASES_DIR"/*)
+            PREVIOUS_LINK="releases/${PREVIOUS_RELEASE_DIR#"$RELEASES_DIR"/}"
+            ;;
+        *)
+            log "ERROR: The validated rollback release is outside $RELEASES_DIR."
+            exit 1
+            ;;
+    esac
+fi
+
 RELEASE_RECOVERY_TARGET="$PREVIOUS_LINK"
 if (( ! HAD_PREVIOUS_LINK )); then
     RELEASE_RECOVERY_TARGET="legacy"

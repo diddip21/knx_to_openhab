@@ -425,25 +425,67 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
         "directory_sync_fails",
         "restore_pointer_sync_fails",
         "unsafe_saved_target",
+        "absolute_current_link",
     ),
     [
         pytest.param(
-            True, False, False, False, False, False, False, False, False, id="health-check-rollback"
+            True,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            id="health-check-rollback",
         ),
         pytest.param(
-            False, False, False, False, False, False, False, False, False, id="healthy-update"
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            id="healthy-update",
         ),
         pytest.param(
-            False, True, False, False, False, False, False, False, False, id="activation-failure"
+            False,
+            True,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            id="activation-failure",
         ),
         pytest.param(
-            False, False, True, False, False, False, False, False, False, id="dependency-failure"
+            False,
+            False,
+            True,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            id="dependency-failure",
         ),
         pytest.param(
             False,
             False,
             False,
             True,
+            False,
             False,
             False,
             False,
@@ -461,6 +503,7 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
             False,
             False,
             False,
+            False,
             id="activation_signal_retry_rollback",
         ),
         pytest.param(
@@ -473,10 +516,21 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
             False,
             False,
             False,
+            False,
             id="update_candidate_active_staging",
         ),
         pytest.param(
-            False, False, False, False, False, True, False, False, False, id="marker_clear_failure"
+            False,
+            False,
+            False,
+            False,
+            False,
+            True,
+            False,
+            False,
+            False,
+            False,
+            id="marker_clear_failure",
         ),
         pytest.param(
             False,
@@ -486,6 +540,7 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
             False,
             False,
             True,
+            False,
             False,
             False,
             id="directory_sync_failure",
@@ -500,6 +555,7 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
             False,
             True,
             False,
+            False,
             id="restore_pointer_sync_failure",
         ),
         pytest.param(
@@ -512,7 +568,21 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
             False,
             False,
             True,
+            False,
             id="unsafe_interrupted_rollback_target",
+        ),
+        pytest.param(
+            True,
+            False,
+            False,
+            True,
+            False,
+            False,
+            False,
+            False,
+            False,
+            True,
+            id="absolute-current-link",
         ),
     ],
 )
@@ -529,6 +599,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     directory_sync_fails,
     restore_pointer_sync_fails,
     unsafe_saved_target,
+    absolute_current_link,
 ):
     install = tmp_path / "install"
     fake_bin = tmp_path / "bin"
@@ -735,7 +806,8 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
             target = previous_release / "venv/bin" / executable
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(install / "venv/bin" / executable, target)
-        (install / "current").symlink_to("releases/old-release", target_is_directory=True)
+        current_target = previous_release if absolute_current_link else "releases/old-release"
+        (install / "current").symlink_to(current_target, target_is_directory=True)
 
     if active_staging:
         active_app = stale_staging / "active-release"
@@ -885,6 +957,10 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
             interrupted_release = (install / "current").resolve()
             assert interrupted_release.is_dir()
             assert (interrupted_release / ".update-in-progress").is_file()
+            if absolute_current_link:
+                assert (interrupted_release / ".update-in-progress").read_text(
+                    encoding="utf-8"
+                ) == "releases/old-release\n"
             if unsafe_saved_target:
                 (interrupted_release / ".update-in-progress").write_text(
                     "../../outside\n", encoding="utf-8"

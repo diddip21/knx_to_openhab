@@ -402,23 +402,53 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
         "active_staging",
         "marker_clear_fails",
         "directory_sync_fails",
+        "restore_pointer_sync_fails",
     ),
     [
-        pytest.param(True, False, False, False, False, False, False, id="health-check-rollback"),
-        pytest.param(False, False, False, False, False, False, False, id="healthy-update"),
-        pytest.param(False, True, False, False, False, False, False, id="activation-failure"),
-        pytest.param(False, False, True, False, False, False, False, id="dependency-failure"),
         pytest.param(
-            False, False, False, True, False, False, False, id="activation_signal_boundary"
+            True, False, False, False, False, False, False, False, id="health-check-rollback"
+        ),
+        pytest.param(False, False, False, False, False, False, False, False, id="healthy-update"),
+        pytest.param(
+            False, True, False, False, False, False, False, False, id="activation-failure"
         ),
         pytest.param(
-            True, False, False, True, False, False, False, id="activation_signal_retry_rollback"
+            False, False, True, False, False, False, False, False, id="dependency-failure"
         ),
         pytest.param(
-            False, False, False, False, True, False, False, id="update_candidate_active_staging"
+            False, False, False, True, False, False, False, False, id="activation_signal_boundary"
         ),
-        pytest.param(False, False, False, False, False, True, False, id="marker_clear_failure"),
-        pytest.param(False, False, False, False, False, False, True, id="directory_sync_failure"),
+        pytest.param(
+            True,
+            False,
+            False,
+            True,
+            False,
+            False,
+            False,
+            False,
+            id="activation_signal_retry_rollback",
+        ),
+        pytest.param(
+            False,
+            False,
+            False,
+            False,
+            True,
+            False,
+            False,
+            False,
+            id="update_candidate_active_staging",
+        ),
+        pytest.param(
+            False, False, False, False, False, True, False, False, id="marker_clear_failure"
+        ),
+        pytest.param(
+            False, False, False, False, False, False, True, False, id="directory_sync_failure"
+        ),
+        pytest.param(
+            True, False, False, False, False, False, False, True, id="restore_pointer_sync_failure"
+        ),
     ],
 )
 @pytest.mark.parametrize("use_default_port", [False, True])
@@ -432,6 +462,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     active_staging,
     marker_clear_fails,
     directory_sync_fails,
+    restore_pointer_sync_fails,
 ):
     install = tmp_path / "install"
     fake_bin = tmp_path / "bin"
@@ -606,6 +637,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         or interrupt_after_activation
         or marker_clear_fails
         or directory_sync_fails
+        or restore_pointer_sync_fails
     ):
         previous_release = install / "releases/old-release"
         for relative in (
@@ -725,15 +757,16 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
             encoding="utf-8",
         )
         fake_rm.chmod(0o755)
-    if directory_sync_fails:
+    if directory_sync_fails or restore_pointer_sync_fails:
         fake_sync = fake_bin / "sync"
         fake_sync.write_text(
             "#!/bin/bash\n"
-            'if [[ "${MARKER_DURABILITY_SYNC_FAIL:-0}" == "1" ]]; then\n'
             '  for path in "$@"; do\n'
-            '    [[ "$path" == */releases/* && -d "$path" ]] && exit 1\n'
+            '    if [[ "${MARKER_DURABILITY_SYNC_FAIL:-0}" == "1" && '
+            '"$path" == */releases/* && -d "$path" ]]; then exit 1; fi\n'
+            '    if [[ "${RESTORE_POINTER_SYNC_FAIL:-0}" == "1" && '
+            '"$path" == "$INSTALL_DIR" ]]; then exit 1; fi\n'
             "  done\n"
-            "fi\n"
             'exec /bin/sync "$@"\n',
             encoding="utf-8",
         )
@@ -750,6 +783,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
             "ACTIVATION_TEST_SIGNAL": "1" if interrupt_after_activation else "0",
             "MARKER_CLEAR_TEST_FAIL": "1" if marker_clear_fails else "0",
             "MARKER_DURABILITY_SYNC_FAIL": "1" if directory_sync_fails else "0",
+            "RESTORE_POINTER_SYNC_FAIL": "1" if restore_pointer_sync_fails else "0",
             "INSTALL_DIR": str(install),
             "KNXOH_INSTALL_DIR": str(install),
             "KNXOH_DATA_DIR": str(data_dir),
@@ -811,6 +845,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
                 or dependency_fails
                 or marker_clear_fails
                 or directory_sync_fails
+                or restore_pointer_sync_fails
             )
             else 0
         )
@@ -865,7 +900,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         assert not (state / "restarts").exists()
         assert (install / "current/.update-in-progress").is_file()
         assert list((install / "releases").iterdir()) == [install / "releases/old-release"]
-    elif health_check_fails:
+    elif health_check_fails and not restore_pointer_sync_fails:
         assert not (install / "current").exists()
         assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
         assert "The updated service did not pass its health check." in log
@@ -882,6 +917,19 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
         assert "Previous release restored and health check passed." in log
         assert "Update completed successfully!" not in log
         assert list((install / "releases").iterdir()) == [install / "releases/old-release"]
+    elif restore_pointer_sync_fails:
+        assert (install / "current").resolve() == install / "releases/old-release"
+        assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
+        assert "Could not persist the restored current release pointer" in log
+        assert "restored pointer durability could not be confirmed" in log
+        assert "Update completed successfully!" not in log
+        retained_candidates = [
+            release
+            for release in (install / "releases").iterdir()
+            if release != install / "releases/old-release"
+        ]
+        assert len(retained_candidates) == 1
+        assert (retained_candidates[0] / ".update-in-progress").is_file()
     else:
         assert (install / "current").is_symlink()
         active_release = (install / "current").resolve()

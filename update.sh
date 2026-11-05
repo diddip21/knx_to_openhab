@@ -354,7 +354,8 @@ cleanup_release_staging() {
     if [[ -n "${STAGING_DIR:-}" && -d "$STAGING_DIR" ]]; then
         remove_inactive_release_path "$STAGING_DIR" "release staging directory" || true
     fi
-    if [[ -d "$NEW_RELEASE_DIR" && ! -L "$NEW_RELEASE_DIR" ]]; then
+    if [[ "${PRESERVE_RELEASE_CANDIDATE:-0}" != 1 && \
+        -d "$NEW_RELEASE_DIR" && ! -L "$NEW_RELEASE_DIR" ]]; then
         remove_inactive_release_path "$NEW_RELEASE_DIR" "unactivated release candidate" || true
     fi
 }
@@ -531,6 +532,7 @@ PY
 }
 
 restore_previous_release() {
+    local restored_pointer_durable=1
     log "Restoring the previous release pointer..."
     if (( HAD_PREVIOUS_LINK )); then
         local restore_link="$INSTALL_DIR/.current-restore-$$"
@@ -547,11 +549,22 @@ restore_previous_release() {
         fi
     fi
 
+    if ! sync -f -- "$INSTALL_DIR"; then
+        log "ERROR: Could not persist the restored current release pointer; restored pointer durability could not be confirmed."
+        restored_pointer_durable=0
+        PRESERVE_RELEASE_CANDIDATE=1
+    fi
+
     if ! sudo systemctl restart "$SERVICE_NAME"; then
         log "ERROR: The previous version could not be restarted."
         return 1
     fi
     if wait_for_service_health; then
+        if (( ! restored_pointer_durable )); then
+            log "ERROR: Restored pointer durability could not be confirmed; retaining rejected release candidate for startup recovery."
+            log "Previous release restored and health check passed."
+            return 1
+        fi
         if [[ -d "$NEW_RELEASE_DIR" && ! -L "$NEW_RELEASE_DIR" ]]; then
             if rm -rf -- "$NEW_RELEASE_DIR"; then
                 log "Rejected release candidate removed: $RELEASE_TAG."

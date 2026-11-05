@@ -288,16 +288,38 @@ validate_separate_paths
 validate_application_directory
 validate_user_data_directories
 
-for unit in "${UNITS[@]}"; do
-    if sudo systemctl is-active --quiet "$unit"; then
-        sudo systemctl stop "$unit"
-    else
-        status=$?
-        case "$status" in
-            3|4) ;;
-            *) fail "Could not inspect $unit (systemctl is-active exited $status); no files were removed." ;;
-        esac
+stop_unit_before_removal() {
+    local unit="$1" active_state attempt
+    if ! active_state=$(sudo systemctl show --property=ActiveState --value "$unit"); then
+        fail "Could not inspect $unit state; no files were removed."
     fi
+
+    case "$active_state" in
+        active|activating|reloading)
+            if ! sudo systemctl stop "$unit"; then
+                fail "Could not stop $unit; no files were removed."
+            fi
+            ;;
+        deactivating) ;;
+        inactive|failed|dead|not-found) return 0 ;;
+        *) fail "Unknown $unit state '$active_state'; no files were removed." ;;
+    esac
+
+    for ((attempt = 0; attempt < 30; attempt++)); do
+        if ! active_state=$(sudo systemctl show --property=ActiveState --value "$unit"); then
+            fail "Could not recheck $unit state; no files were removed."
+        fi
+        case "$active_state" in
+            inactive|failed|dead|not-found) return 0 ;;
+            active|activating|deactivating|reloading) sleep 1 ;;
+            *) fail "Unknown $unit state '$active_state'; no files were removed." ;;
+        esac
+    done
+    fail "Timed out waiting for $unit to stop; no files were removed."
+}
+
+for unit in "${UNITS[@]}"; do
+    stop_unit_before_removal "$unit"
     if sudo systemctl is-enabled --quiet "$unit"; then
         sudo systemctl disable "$unit"
     else

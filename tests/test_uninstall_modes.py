@@ -57,9 +57,22 @@ printf '\\0' >> "$SUDO_LOG"
 case "${1:-}" in
   systemctl)
     case "${2:-}" in
+      show)
+        if [[ -n "${FAKE_SYSTEM_STATE_FILE:-}" && -f "$FAKE_SYSTEM_STATE_FILE" ]]; then
+          state=$(<"$FAKE_SYSTEM_STATE_FILE")
+        elif [[ "${FAKE_ACTIVE:-0}" == 1 ]]; then
+          state=active
+        else
+          state="${FAKE_ACTIVE_STATE:-inactive}"
+        fi
+        printf '%s\n' "$state"
+        ;;
       is-active) [[ "${FAKE_ACTIVE:-0}" == 1 ]] && exit 0 || exit 3 ;;
       is-enabled) exit 1 ;;
-      stop) [[ "${FAKE_STOP_FAIL:-0}" != 1 ]] || exit 1 ;;
+      stop)
+        [[ "${FAKE_STOP_FAIL:-0}" != 1 ]] || exit 1
+        [[ -z "${FAKE_SYSTEM_STATE_FILE:-}" ]] || printf 'inactive\n' > "$FAKE_SYSTEM_STATE_FILE"
+        ;;
     esac
     ;;
   rm)
@@ -322,3 +335,31 @@ def test_failed_service_stop_prevents_file_removal(tmp_path):
     calls = sudo_arguments(sudo_log)
     assert "stop" in calls
     assert "rm" not in calls
+
+
+def test_uninstall_stops_updater_while_oneshot_unit_is_activating(tmp_path):
+    environment, app, _, _, _, _, sudo_log = create_fixture(tmp_path)
+    state_file = tmp_path / "systemd-state"
+    state_file.write_text("activating\n", encoding="utf-8")
+    environment["FAKE_SYSTEM_STATE_FILE"] = str(state_file)
+
+    result = run_uninstaller(environment, ["--yes"])
+
+    assert result.returncode == 0, result.stderr
+    assert not app.exists()
+    calls = sudo_arguments(sudo_log)
+    assert "show" in calls
+    assert calls.index("stop") < calls.index("rm")
+    assert state_file.read_text(encoding="utf-8").strip() == "inactive"
+
+
+def test_uninstall_aborts_on_unknown_updater_state_before_file_removal(tmp_path):
+    environment, app, _, _, _, _, sudo_log = create_fixture(tmp_path)
+    environment["FAKE_ACTIVE_STATE"] = "unknown"
+
+    result = run_uninstaller(environment, ["--yes"])
+
+    assert result.returncode != 0
+    assert "state" in result.stderr.lower()
+    assert app.exists()
+    assert "rm" not in sudo_arguments(sudo_log)

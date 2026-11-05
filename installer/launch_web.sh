@@ -44,6 +44,9 @@ if flock -n "$UPDATE_LOCK_FD"; then
             if [[ -L "$ACTIVE_MARKER" || ! -f "$ACTIVE_MARKER" ]]; then
                 fail_startup "release recovery marker is not a regular file: $ACTIVE_MARKER"
             fi
+            if ! LC_ALL=C tr -d '\000' < "$ACTIVE_MARKER" | cmp -s - "$ACTIVE_MARKER"; then
+                fail_startup "release recovery marker contains binary or unreadable data: $ACTIVE_MARKER"
+            fi
             RECOVERY_MARKER_LINES=()
             if ! mapfile -t RECOVERY_MARKER_LINES < "$ACTIVE_MARKER"; then
                 fail_startup "could not read release recovery marker: $ACTIVE_MARKER"

@@ -133,3 +133,17 @@ def test_launcher_fails_closed_when_update_lock_is_a_symlink(tmp_path):
     assert result.returncode != 0
     assert (install_dir / "current").resolve().name == "candidate"
     assert result.stdout == ""
+
+
+def test_launcher_rejects_nul_byte_in_recovery_marker(tmp_path):
+    install_dir, data_dir, _ = _make_transactional_install(tmp_path)
+    candidate_release = install_dir / "releases/candidate"
+    marker = candidate_release / ".update-in-progress"
+    marker.write_bytes(b"releases/previous\x00ignored\n")
+
+    result = _launch(install_dir, data_dir)
+
+    assert result.returncode != 0
+    assert (install_dir / "current").resolve() == candidate_release
+    assert marker.is_file()
+    assert result.stdout == ""

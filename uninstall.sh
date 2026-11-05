@@ -289,19 +289,19 @@ validate_application_directory
 validate_user_data_directories
 
 stop_unit_before_removal() {
-    local unit="$1" active_state attempt
+    local unit="$1" active_state attempt pending_jobs
+    local job_id job_unit job_type job_state has_pending_job has_pending_start
     if ! active_state=$(sudo systemctl show --property=ActiveState --value "$unit"); then
         fail "Could not inspect $unit state; no files were removed."
     fi
 
     case "$active_state" in
-        active|activating|reloading)
+        active|activating|deactivating|reloading|inactive|failed|dead)
             if ! sudo systemctl stop "$unit"; then
                 fail "Could not stop $unit; no files were removed."
             fi
             ;;
-        deactivating) ;;
-        inactive|failed|dead|not-found) return 0 ;;
+        not-found) return 0 ;;
         *) fail "Unknown $unit state '$active_state'; no files were removed." ;;
     esac
 
@@ -310,10 +310,33 @@ stop_unit_before_removal() {
             fail "Could not recheck $unit state; no files were removed."
         fi
         case "$active_state" in
-            inactive|failed|dead|not-found) return 0 ;;
-            active|activating|deactivating|reloading) sleep 1 ;;
+            inactive|failed|dead|not-found) ;;
+            active|activating|deactivating|reloading)
+                sleep 1
+                continue
+                ;;
             *) fail "Unknown $unit state '$active_state'; no files were removed." ;;
         esac
+
+        if ! pending_jobs=$(sudo systemctl list-jobs --no-legend --no-pager "$unit"); then
+            fail "Could not inspect pending jobs for $unit; no files were removed."
+        fi
+        has_pending_job=0
+        has_pending_start=0
+        while read -r job_id job_unit job_type job_state; do
+            if [[ "$job_unit" == "$unit" ]]; then
+                has_pending_job=1
+                [[ "$job_type" == stop ]] || has_pending_start=1
+            fi
+        done <<< "$pending_jobs"
+        if (( has_pending_start )); then
+            if ! sudo systemctl stop "$unit"; then
+                fail "Could not cancel a pending start for $unit; no files were removed."
+            fi
+        elif (( ! has_pending_job )); then
+            return 0
+        fi
+        sleep 1
     done
     fail "Timed out waiting for $unit to stop; no files were removed."
 }

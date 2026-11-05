@@ -75,13 +75,22 @@ case "${1:-}" in
         fi
         printf '%s\n' "$state"
         ;;
+      list-jobs)
+        if [[ -n "${FAKE_PENDING_START_FILE:-}" && -s "$FAKE_PENDING_START_FILE" ]]; then
+          printf '1 knxohui-update.service start waiting\n'
+        fi
+        ;;
       is-active) [[ "${FAKE_ACTIVE:-0}" == 1 ]] && exit 0 || exit 3 ;;
       is-enabled) exit 1 ;;
       stop)
         [[ "${FAKE_STOP_FAIL:-0}" != 1 ]] || exit 1
         if [[ -n "${FAKE_SYSTEM_STATE_FILE:-}" ]]; then
           case "${3:-}" in
-            knxohui-update.service) printf 'inactive\n' > "$FAKE_SYSTEM_STATE_FILE" ;;
+            knxohui-update.service)
+              printf 'inactive\n' > "$FAKE_SYSTEM_STATE_FILE"
+              [[ -z "${FAKE_PENDING_START_FILE:-}" ]] \
+                || : > "$FAKE_PENDING_START_FILE"
+              ;;
             knxohui.service)
               [[ -z "${FAKE_WEB_STATE_FILE:-}" ]] \
                 || printf 'inactive\n' > "$FAKE_WEB_STATE_FILE"
@@ -407,3 +416,29 @@ def test_uninstall_quiesces_web_service_before_final_updater_stop(tmp_path):
     assert calls.index("knxohui.service", calls.index("stop")) < update_state_check
     assert calls.index("stop", update_state_check) < calls.index("rm")
     assert state_file.read_text(encoding="utf-8").strip() == "inactive"
+
+
+def test_uninstall_cancels_pending_updater_start_when_state_is_inactive(tmp_path):
+    environment, app, _, _, _, _, sudo_log = create_fixture(tmp_path)
+    state_file = tmp_path / "systemd-state"
+    state_file.write_text("inactive\n", encoding="utf-8")
+    pending_start_file = tmp_path / "pending-start"
+    pending_start_file.write_text("queued\n", encoding="utf-8")
+    environment.update(
+        {
+            "FAKE_SYSTEM_STATE_FILE": str(state_file),
+            "FAKE_PENDING_START_FILE": str(pending_start_file),
+        }
+    )
+
+    result = run_uninstaller(environment, ["--yes"])
+
+    assert result.returncode == 0, result.stderr
+    assert not app.exists()
+    calls = sudo_arguments(sudo_log)
+    assert "list-jobs" in calls
+    update_state_check = calls.index("knxohui-update.service")
+    stop_index = calls.index("stop", update_state_check)
+    list_jobs_index = calls.index("list-jobs", stop_index)
+    assert update_state_check < stop_index < list_jobs_index < calls.index("rm")
+    assert pending_start_file.read_text(encoding="utf-8") == ""

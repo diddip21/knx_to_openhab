@@ -615,6 +615,12 @@ if ! rm -f -- "$NEW_RELEASE_DIR/.update-in-progress"; then
     restore_previous_release || log "ERROR: Automatic recovery failed. Check: sudo systemctl status $SERVICE_NAME"
     exit 1
 fi
+# Persist the marker unlink's directory metadata before reporting success.
+if ! sync -f -- "$NEW_RELEASE_DIR"; then
+    log "ERROR: Could not persist release marker removal for $NEW_RELEASE_DIR."
+    restore_previous_release || log "ERROR: Automatic recovery failed. Check: sudo systemctl status $SERVICE_NAME"
+    exit 1
+fi
 if ! cleanup_abandoned_release_paths; then
     log "WARNING: Could not remove every abandoned release candidate."
 fi

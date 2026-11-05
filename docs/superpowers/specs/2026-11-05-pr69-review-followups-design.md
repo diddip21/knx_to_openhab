@@ -85,7 +85,8 @@ release assets can create a matching checksum.
   remain on `api.github.com`; release/source downloads may redirect only among
   the existing allowlisted GitHub asset hosts.
 - Print copy-paste-safe recovery commands for supported install paths containing
-  whitespace by shell-escaping the complete setup-script path.
+  whitespace by shell-escaping the complete setup and sudoers-migration script
+  paths.
 
 ## Acceptance criteria
 
@@ -111,6 +112,7 @@ release assets can create a matching checksum.
   host is contacted, even if the redirect chain would later return to an
   allowlisted host.
 - Recovery guidance for an installation path containing spaces can be copied
-  into a shell and invokes the correct active `installer/setup.sh` path.
+  into a shell and invokes the correct active `installer/setup.sh` or
+  `installer/migrate_sudoers.sh` path.
 - Focused tests, full core tests, lint/format checks, UI tests as applicable,
   and `git diff --check` pass before the PR is considered ready for review.

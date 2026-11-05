@@ -228,13 +228,83 @@ def test_web_updater_stops_until_legacy_sudoers_policy_is_migrated():
 
 def test_web_updater_recovery_instructions_use_active_app_dir():
     update = (ROOT / "update.sh").read_text(encoding="utf-8")
-    recovery_commands = [
-        line for line in update.splitlines() if "sudo bash" in line and "installer/" in line
-    ]
 
-    assert recovery_commands
-    assert all("$APP_DIR/installer/" in line for line in recovery_commands)
-    assert all("$INSTALL_DIR/installer/" not in line for line in recovery_commands)
+    assert (
+        "printf -v SETUP_RECOVERY_COMMAND 'sudo bash %q' \"$APP_DIR/installer/setup.sh\"" in update
+    )
+    assert (
+        "printf -v MIGRATE_SUDOERS_RECOVERY_COMMAND 'sudo bash %q' "
+        '"$APP_DIR/installer/migrate_sudoers.sh"'
+    ) in update
+    assert '"sudo bash $APP_DIR/installer/' not in update
+
+
+@pytest.mark.parametrize(
+    ("sudo_policy", "script_name"),
+    [
+        ("limited", "setup.sh"),
+        ("unavailable", "migrate_sudoers.sh"),
+    ],
+)
+def test_update_recovery_command_quotes_install_path_with_spaces(
+    tmp_path, sudo_policy, script_name
+):
+    install_dir = tmp_path / "install with spaces"
+    install_dir.mkdir()
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_sudo = fake_bin / "sudo"
+    fake_sudo.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1 $2" == "-n -l" ]]; then\n'
+        '  [[ "${FAKE_SUDO_POLICY:-limited}" != unavailable ]] || exit 1\n'
+        "  echo 'NOPASSWD: limited service commands'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_sudo.chmod(0o755)
+    expected_script = install_dir / "installer" / script_name
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+            "KNXOH_INSTALL_DIR": str(install_dir),
+            "KNXOH_DATA_DIR": str(tmp_path / "runtime data"),
+            "LOG_FILE": str(tmp_path / "update.log"),
+            "RELEASE_TAG": "v1.2.3",
+            "FAKE_SUDO_POLICY": sudo_policy,
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "update.sh")],
+        cwd=install_dir,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    recovery_line = next(
+        (
+            line
+            for line in result.stdout.splitlines()
+            if "sudo bash" in line and script_name in line
+        ),
+        "",
+    )
+    assert recovery_line, result.stdout + result.stderr
+    if script_name == "setup.sh":
+        marker, suffix = "Recovery: run ", " from "
+    else:
+        marker, suffix = "Run ", " as an administrator"
+    assert marker in recovery_line, f"recovery command marker {marker!r} missing: {recovery_line}"
+    command = recovery_line.split(marker, 1)[1].split(suffix, 1)[0].strip(" '\"")
+    assert shlex.split(command) == ["sudo", "bash", str(expected_script)]
 
 
 def test_web_updater_checks_external_credentials_before_backup_or_release_changes():
@@ -243,7 +313,9 @@ def test_web_updater_checks_external_credentials_before_backup_or_release_change
     preflight = update.index("CREDENTIAL_CHECK=")
     assert "external Web UI config.json or secrets.env is missing" in update
     assert "valid external Argon2id password hash is required" in update
-    assert "sudo bash $APP_DIR/installer/setup.sh" in update
+    assert (
+        "printf -v SETUP_RECOVERY_COMMAND 'sudo bash %q' \"$APP_DIR/installer/setup.sh\"" in update
+    )
     assert "interactive SSH terminal" in update
     backup = update.index("Creating and validating pre-update backup")
     assert preflight < backup

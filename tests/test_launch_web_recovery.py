@@ -106,7 +106,9 @@ def test_launcher_does_not_rollback_while_update_lock_is_held(tmp_path):
     assert result.stdout.strip() == "candidate"
 
 
-@pytest.mark.parametrize("marker", ["", "../../outside", "releases/missing"])
+@pytest.mark.parametrize(
+    "marker", ["", "../../outside", "releases/missing", "releases/previous\n\n"]
+)
 def test_launcher_rejects_unsafe_rollback_target(tmp_path, marker):
     install_dir, data_dir, _ = _make_transactional_install(tmp_path)
     candidate_release = install_dir / "releases/candidate"

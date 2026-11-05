@@ -44,11 +44,15 @@ if flock -n "$UPDATE_LOCK_FD"; then
             if [[ -L "$ACTIVE_MARKER" || ! -f "$ACTIVE_MARKER" ]]; then
                 fail_startup "release recovery marker is not a regular file: $ACTIVE_MARKER"
             fi
-            if ! RECOVERY_TARGET=$(<"$ACTIVE_MARKER"); then
+            RECOVERY_MARKER_LINES=()
+            if ! mapfile -t RECOVERY_MARKER_LINES < "$ACTIVE_MARKER"; then
                 fail_startup "could not read release recovery marker: $ACTIVE_MARKER"
             fi
-            if [[ -z "$RECOVERY_TARGET" || "$RECOVERY_TARGET" == *$'\n'* || \
-                "$RECOVERY_TARGET" == *$'\r'* ]]; then
+            if (( ${#RECOVERY_MARKER_LINES[@]} != 1 )); then
+                fail_startup "release recovery marker is empty or malformed: $ACTIVE_MARKER"
+            fi
+            RECOVERY_TARGET="${RECOVERY_MARKER_LINES[0]}"
+            if [[ -z "$RECOVERY_TARGET" || "$RECOVERY_TARGET" == *$'\r'* ]]; then
                 fail_startup "release recovery marker is empty or malformed: $ACTIVE_MARKER"
             fi
 

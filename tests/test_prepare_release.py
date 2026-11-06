@@ -696,3 +696,47 @@ def test_safe_extract_commit_source_counts_excluded_files_toward_size_limit(monk
 
     with pytest.raises(ReleasePreparationError, match="Expanded commit source exceeds"):
         prepare_release_module._safe_extract_commit_source(source_archive, tmp_path)
+
+
+def test_safe_extract_commit_source_counts_pax_metadata_toward_size_limit(monkeypatch, tmp_path):
+    root_name = f"knx_to_openhab-{_COMMIT[:12]}"
+    baseline_archive = tmp_path / "baseline.tar.gz"
+    pax_archive = tmp_path / "pax.tar.gz"
+
+    for archive_path, pax_headers in (
+        (baseline_archive, {}),
+        (pax_archive, {"comment": "x" * 100_000}),
+    ):
+        with tarfile.open(archive_path, mode="w:gz", format=tarfile.PAX_FORMAT) as archive:
+            root = tarfile.TarInfo(root_name)
+            root.type = tarfile.DIRTYPE
+            root.pax_headers = pax_headers
+            archive.addfile(root)
+
+    baseline_size = len(gzip.decompress(baseline_archive.read_bytes()))
+    pax_size = len(gzip.decompress(pax_archive.read_bytes()))
+    assert pax_size > baseline_size
+
+    exact_limit_scratch = tmp_path / "exact-limit"
+    exact_limit_scratch.mkdir()
+    monkeypatch.setattr(prepare_release_module, "_EXPANDED_LIMIT", pax_size)
+    extracted_root = prepare_release_module._safe_extract_commit_source(
+        pax_archive, exact_limit_scratch
+    )
+    assert extracted_root.is_dir()
+
+    below_limit_scratch = tmp_path / "below-limit"
+    below_limit_scratch.mkdir()
+    monkeypatch.setattr(prepare_release_module, "_EXPANDED_LIMIT", baseline_size)
+    with pytest.raises(ReleasePreparationError, match="Expanded commit source exceeds"):
+        prepare_release_module._safe_extract_commit_source(pax_archive, below_limit_scratch)
+    shutil.rmtree(below_limit_scratch)
+
+
+def test_safe_extract_commit_source_rejects_truncated_gzip(tmp_path):
+    source_archive, _ = _make_archive(tmp_path)
+    truncated_archive = tmp_path / "truncated.tar.gz"
+    truncated_archive.write_bytes(source_archive.read_bytes()[:-8])
+
+    with pytest.raises(ReleasePreparationError, match="Could not extract commit source archive"):
+        prepare_release_module._safe_extract_commit_source(truncated_archive, tmp_path)

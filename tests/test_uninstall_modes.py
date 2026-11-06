@@ -9,7 +9,7 @@ import pytest
 if os.name == "posix":
     import pty
 else:
-    pty = None
+    pty = None  # type: ignore[assignment]
 
 ROOT = Path(__file__).resolve().parents[1]
 UNINSTALLER = ROOT / "uninstall.sh"

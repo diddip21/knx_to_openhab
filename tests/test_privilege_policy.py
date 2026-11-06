@@ -736,7 +736,7 @@ def test_setup_preflights_credentials_before_stopping_services():
     assert "generate one and show it once" in setup
     assert setup.index(
         'echo "The existing Web UI credential configuration is invalid."'
-    ) < setup.index('echo "Stopping the Web UI and backup cleanup during migration"')
+    ) < setup.index('echo "Stopping services and waiting for the updater to finish"')
 
 
 def test_setup_restores_previously_active_services_after_failure():
@@ -746,7 +746,7 @@ def test_setup_restores_previously_active_services_after_failure():
     assert "trap restore_previous_services EXIT" in setup
     assert 'sudo systemctl start "$unit"' in setup
     assert setup.index("trap restore_previous_services EXIT") < setup.index(
-        'echo "Stopping the Web UI and backup cleanup during migration"'
+        'echo "Stopping services and waiting for the updater to finish"'
     )
     assert "SETUP_COMPLETED=1" in setup
 
@@ -848,7 +848,7 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
         if status == 1:
             assert result.returncode != 4
             assert message in result.stdout
-            assert "Stopping the Web UI" in result.stdout
+            assert "Stopping services and waiting for the updater to finish" in result.stdout
             assert "Credential migration needs an interactive terminal." not in result.stderr
             assert sudo_calls and "mutation" in sudo_calls
         else:

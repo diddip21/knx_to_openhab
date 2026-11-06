@@ -60,7 +60,7 @@ Run: `pytest tests/test_maintenance_lock.py -q`; `bash -n installer/maintenance_
 
 Expected: all tests pass; syntax succeeds.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ### Task 2: Gate stable service and update/recovery launchers
 
@@ -97,7 +97,7 @@ Run: `pytest tests/test_setup_updater_quiescing.py tests/test_repair_release_ven
 
 Expected: all tests pass, including launch attempts during exclusive maintenance.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ### Task 3: Make setup acquire and hold exclusive maintenance ownership
 
@@ -105,6 +105,8 @@ Expected: all tests pass, including launch attempts during exclusive maintenance
 - Modify: `installer/setup.sh`
 - Modify: `installer/quiesce_update_service.sh`
 - Create: `installer/quiesce_systemd_unit.sh`
+- Create: `installer/setup_maintenance.sh`
+- Create: `installer/install_update_unit.sh`
 - Modify: `tests/test_setup_updater_quiescing.py`
 - Modify: `docs/PRODUCTION_GUIDE.md`
 
@@ -112,22 +114,24 @@ Expected: all tests pass, including launch attempts during exclusive maintenance
 - Consumes: Task 1 lock helper and Task 2 shared-lock launchers.
 - Produces: setup stops services, loops through updater quiescence and exclusive lock acquisition, verifies final service state/jobs before its first application mutation, releases ownership before restarting/restoring services, and preserves a masked updater unit.
 - `quiesce_systemd_unit.sh UNIT` exits successfully only for inactive/failed/not-found units with no pending jobs; inspection errors fail closed.
+- `setup_maintenance.sh` exports `acquire_setup_maintenance_lock()` and `release_maintenance_lock()` for setup to source.
+- `install_update_unit.sh SOURCE DESTINATION` installs only when systemd does not report `LoadState=masked`.
 
-- [ ] **Step 1: Add regressions for activating UI, queued starts, not-found active units, masked units, and lock-acquisition races**
+- [x] **Step 1: Add regressions for activating UI, queued starts, not-found active units, masked units, and lock-acquisition races**
 
 Assert setup re-stops and re-quiesces when a shared start wins a lock race; assert an active or queued unit whose fragment is not-found is not accepted; assert pre-existing masks are never replaced; assert EXIT cleanup releases the lock before restoring services.
 
-- [ ] **Step 2: Run the new regressions and verify they fail against current setup/quiescence**
+- [x] **Step 2: Run the new regressions and verify they fail against current setup/quiescence**
 
 Run: `pytest tests/test_setup_updater_quiescing.py -q`.
 
 Expected: failures expose the missing generic state/job inspection and exclusive-lock retry behavior.
 
-- [ ] **Step 3: Implement fail-closed unit quiescence and setup lock lifecycle**
+- [x] **Step 3: Implement fail-closed unit quiescence and setup lock lifecycle**
 
 Use `systemctl show` and `list-jobs`, cancel queued non-stop jobs, synchronously stop active/activating services, and recheck state/jobs. For updater `LoadState=not-found`, continue to inspect retained `ActiveState` and jobs. Setup repeats stop/quiesce when shared-lock contention occurs; only after the exclusive lock and final checks may it mutate application files. Skip replacing an updater unit that systemd reports masked.
 
-- [ ] **Step 4: Run setup, installer, and recovery tests**
+- [x] **Step 4: Run setup, installer, and recovery tests**
 
 Run: `pytest tests/test_setup_updater_quiescing.py tests/test_installer_guardrails.py tests/test_privilege_policy.py tests/integration/test_installer.py -q`; `bash -n installer/setup.sh installer/quiesce_systemd_unit.sh installer/quiesce_update_service.sh`.
 

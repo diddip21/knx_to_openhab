@@ -16,13 +16,12 @@ fi
 if ! LOAD_STATE=$(sudo systemctl show --property=LoadState --value "$UNIT"); then
     fail "Could not inspect the updater unit load state."
 fi
-if [[ "$LOAD_STATE" == not-found ]]; then
-    printf 'Updater unit is not installed; no updater work can overlap setup.\n'
-    exit 0
-fi
-if [[ -z "$LOAD_STATE" ]]; then
-    fail "The updater unit load state is unknown."
-fi
+case "$LOAD_STATE" in
+    loaded|masked|not-found) ;;
+    *)
+        fail "The updater unit load state is unknown."
+        ;;
+esac
 
 START_SECONDS=$SECONDS
 while :; do
@@ -39,10 +38,7 @@ while :; do
             continue
             ;;
         inactive|failed|dead) ;;
-        not-found)
-            printf 'Updater unit was removed; no updater work can overlap setup.\n'
-            exit 0
-            ;;
+        not-found) ;;
         *) fail "Unknown updater state: $ACTIVE_STATE" ;;
     esac
 
@@ -75,10 +71,7 @@ while :; do
             sleep 1
             continue
             ;;
-        not-found)
-            printf 'Updater unit was removed; no updater work can overlap setup.\n'
-            exit 0
-            ;;
+        not-found) ;;
         *) fail "Unknown updater state: $ACTIVE_STATE" ;;
     esac
     if ! PENDING_JOBS=$(sudo systemctl list-jobs --no-legend --no-pager "$UNIT"); then

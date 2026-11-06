@@ -34,7 +34,8 @@ def test_setup_rejects_system_wide_application_directory_before_writes(tmp_path,
 def test_setup_stops_service_before_migration_and_restarts_after_unit_reload():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
 
-    stop_index = setup.index("stop_unit_if_active knxohui.service")
+    setup_start = setup.index('echo "Stopping services and waiting for the updater to finish"')
+    stop_index = setup.index("quiesce_setup_services", setup_start)
     migration_index = setup.index("migrate_runtime_data.py")
     daemon_reload_index = setup.index("sudo systemctl daemon-reload", migration_index)
     restart_index = setup.index("sudo systemctl restart knxohui.service")
@@ -77,6 +78,6 @@ def test_setup_can_recover_missing_credentials_without_a_tty(tmp_path):
     )
 
     assert "generate one and show it once" in result.stdout
-    assert "Stopping the Web UI" in result.stdout
+    assert "If no usable Web UI password is configured" in result.stdout
     assert "Credential migration needs an interactive terminal" not in result.stderr
     assert "No service, package or runtime data was changed" not in result.stderr

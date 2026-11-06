@@ -3,7 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-source "$SCRIPT_DIR/setup_update_service_mask.sh"
+KNXOH_MAINTENANCE_LOCK_FILE="${KNXOH_MAINTENANCE_LOCK_FILE:-/run/lock/knx_to_openhab/maintenance.lock}"
+source "$SCRIPT_DIR/setup_maintenance.sh"
 PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
 SERVICE_USER="knxohui"
 
@@ -76,13 +77,6 @@ echo "Using application directory: $BASE"
 echo "Using configuration directory: $CONFIG_DIR"
 echo "Using runtime data directory: $DATA_DIR"
 echo "Using backup directory: $BACKUP_DIR"
-
-stop_unit_if_active() {
-    local unit="$1"
-    if sudo systemctl is-active --quiet "$unit"; then
-        sudo systemctl stop "$unit"
-    fi
-}
 
 AUTH_PREFLIGHT_CONFIG="$CONFIG_DIR/config.json"
 if [[ ! -f "$AUTH_PREFLIGHT_CONFIG" && -f "$BASE/web_ui/backend/config.json" ]]; then
@@ -176,6 +170,17 @@ fi
 if [[ "$AUTH_PREFLIGHT_STATUS" -eq 1 || "$AUTH_PREFLIGHT_STATUS" -eq 3 ]]; then
     echo "If no usable Web UI password is configured, setup will generate one and show it once."
 fi
+
+if ! getent group "$SERVICE_USER" >/dev/null 2>&1; then
+    sudo groupadd -r "$SERVICE_USER"
+fi
+if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
+    sudo useradd -r -g "$SERVICE_USER" -s /usr/sbin/nologin "$SERVICE_USER"
+fi
+sudo env "KNXOH_MAINTENANCE_LOCK_FILE=$KNXOH_MAINTENANCE_LOCK_FILE" \
+    bash -c 'source "$1/maintenance_lock.sh"; ensure_maintenance_lock "$2"' \
+    _ "$SCRIPT_DIR" "$SERVICE_USER"
+
 PREVIOUSLY_ACTIVE_UNITS=()
 for unit in knxohui-backup-cleanup.timer knxohui-backup-cleanup.service knxohui.service; do
     if sudo systemctl is-active --quiet "$unit"; then
@@ -184,11 +189,21 @@ for unit in knxohui-backup-cleanup.timer knxohui-backup-cleanup.service knxohui.
 done
 SETUP_COMPLETED=0
 
+quiesce_setup_services() {
+    sudo bash "$REPO_ROOT/installer/quiesce_systemd_unit.sh" knxohui-backup-cleanup.timer || return
+    sudo bash "$REPO_ROOT/installer/quiesce_systemd_unit.sh" knxohui-backup-cleanup.service || return
+    sudo bash "$REPO_ROOT/installer/quiesce_systemd_unit.sh" knxohui.service || return
+    sudo bash "$REPO_ROOT/installer/quiesce_update_service.sh" || return
+    sudo bash "$REPO_ROOT/installer/quiesce_systemd_unit.sh" knxohui-backup-cleanup.timer || return
+    sudo bash "$REPO_ROOT/installer/quiesce_systemd_unit.sh" knxohui-backup-cleanup.service || return
+    sudo bash "$REPO_ROOT/installer/quiesce_systemd_unit.sh" knxohui.service
+}
+
 restore_previous_services() {
     local exit_status=$?
     trap - EXIT
-    if ! unmask_update_service_after_setup; then
-        echo "Could not remove the setup-owned updater runtime mask." >&2
+    if ! release_maintenance_lock; then
+        echo "Could not release the setup maintenance lock." >&2
     fi
     if (( exit_status != 0 && SETUP_COMPLETED == 0 && ${#PREVIOUSLY_ACTIVE_UNITS[@]} > 0 )); then
         echo "Setup failed; restoring services that were active before migration." >&2
@@ -202,23 +217,22 @@ restore_previous_services() {
     exit "$exit_status"
 }
 trap restore_previous_services EXIT
-echo "Stopping the Web UI and backup cleanup during migration"
-stop_unit_if_active knxohui-backup-cleanup.timer
-stop_unit_if_active knxohui-backup-cleanup.service
-stop_unit_if_active knxohui.service
-mask_update_service_for_setup
-echo "Waiting for the updater to finish and cancelling queued update starts"
-sudo bash "$REPO_ROOT/installer/quiesce_update_service.sh"
-echo "Stopping the Web UI again after updater shutdown"
-stop_unit_if_active knxohui.service
-sudo bash "$REPO_ROOT/installer/quiesce_update_service.sh"
-
-if ! getent group "$SERVICE_USER" >/dev/null 2>&1; then
-    sudo groupadd -r "$SERVICE_USER"
-fi
-if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
-    sudo useradd -r -g "$SERVICE_USER" -s /usr/sbin/nologin "$SERVICE_USER"
-fi
+echo "Stopping services and waiting for the updater to finish"
+quiesce_setup_services
+echo "Installing lock-aware stable service launch helpers"
+sudo install -d -o root -g root -m 0755 /usr/local/libexec/knx_to_openhab
+sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/maintenance_lock.sh" \
+    /usr/local/libexec/knx_to_openhab/maintenance_lock.sh
+sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/launch_web.sh" \
+    /usr/local/libexec/knx_to_openhab/launch_web.sh
+sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/launch_backup_cleanup.sh" \
+    /usr/local/libexec/knx_to_openhab/launch_backup_cleanup.sh
+sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/launch_update.sh" \
+    /usr/local/libexec/knx_to_openhab/launch_update.sh
+sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/repair_release_venv.sh" \
+    /usr/local/libexec/knx_to_openhab/repair_release_venv.sh
+echo "Acquiring exclusive maintenance lock and rechecking systemd state"
+acquire_setup_maintenance_lock quiesce_setup_services
 
 sudo mkdir -p "$BASE"
 sudo chown "$SERVICE_USER":"$SERVICE_USER" "$BASE"
@@ -299,16 +313,6 @@ sudo bash "$BASE/installer/migrate_sudoers.sh"
 
 echo "Installing systemd launch helpers"
 sudo install -d -o root -g root -m 0755 /usr/local/libexec/knx_to_openhab
-sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/maintenance_lock.sh" \
-    /usr/local/libexec/knx_to_openhab/maintenance_lock.sh
-sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/launch_web.sh" \
-    /usr/local/libexec/knx_to_openhab/launch_web.sh
-sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/launch_backup_cleanup.sh" \
-    /usr/local/libexec/knx_to_openhab/launch_backup_cleanup.sh
-sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/launch_update.sh" \
-    /usr/local/libexec/knx_to_openhab/launch_update.sh
-sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/repair_release_venv.sh" \
-    /usr/local/libexec/knx_to_openhab/repair_release_venv.sh
 sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/set_ui_password.py" \
     /usr/local/libexec/knx_to_openhab/set_ui_password.py
 
@@ -334,23 +338,25 @@ if [[ -L "$BASE/current" ]]; then
         "KNXOH_DATA_DIR=$DATA_DIR" \
         "KNXOH_PATHS_FILE=$PATHS_FILE" \
         "KNXOH_EXPECTED_RELEASE=$ACTIVE_RELEASE" \
+        "KNXOH_SETUP_LOCK_HELD=1" \
         bash /usr/local/libexec/knx_to_openhab/repair_release_venv.sh
 fi
 
 echo "Installing systemd units and timers"
 sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/knxohui.service" \
     /etc/systemd/system/knxohui.service
-sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/knxohui-update.service" \
+sudo bash "$REPO_ROOT/installer/install_update_unit.sh" \
+    "$REPO_ROOT/installer/knxohui-update.service" \
     /etc/systemd/system/knxohui-update.service
 sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/knxohui-backup-cleanup.service" \
     /etc/systemd/system/knxohui-backup-cleanup.service
 sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/knxohui-backup-cleanup.timer" \
     /etc/systemd/system/knxohui-backup-cleanup.timer
 sudo systemctl daemon-reload
+release_maintenance_lock
 sudo systemctl enable knxohui.service
 sudo systemctl restart knxohui.service
 sudo systemctl enable --now knxohui-backup-cleanup.timer
-unmask_update_service_after_setup
 SETUP_COMPLETED=1
 
 echo "Installation complete. Web UI: http://127.0.0.1:$PORT"

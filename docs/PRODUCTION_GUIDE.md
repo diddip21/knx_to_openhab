@@ -125,13 +125,15 @@ before continuing; setup does not need a terminal password prompt. If setup fail
 stopping services, it attempts to restart the services that were active before migration.
 Retry the Web UI update after setup completes.
 
-Before changing files, setup waits for any running transactional updater to finish
-and cancels queued updater starts. It temporarily runtime-masks the updater during
-setup and stops the Web UI again after the updater exits, because the updater's
-health check may restart it. The mask is removed after setup completes (or during
-failure recovery). If the updater cannot be confirmed idle within 15 minutes,
-setup stops before installation or runtime-data changes; resolve the updater
-issue and run setup again.
+Before changing files, setup waits for any running updater to finish and cancels
+queued starts. Service launchers take a non-blocking shared maintenance lock;
+setup takes that lock exclusively, rechecks unit states and queued jobs (including
+units whose systemd fragment is missing), and retries quiescence if a service wins
+the lock race. The Web UI is checked again after the updater exits because the
+updater's health check may restart it. Setup preserves an administrator-masked
+updater unit rather than replacing the mask. If a service cannot be confirmed
+quiescent or setup cannot acquire the lock within 15 minutes, it stops before
+application or runtime-data changes; resolve the service issue and run setup again.
 
 If an active transactional release has a missing or unusable Python environment,
 the updater prints a recovery command. When the stable repair helper is already

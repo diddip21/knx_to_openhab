@@ -1,24 +1,40 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-APP_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
+INSTALL_DIR="${KNXOH_INSTALL_DIR:-}"
+DATA_DIR="${KNXOH_DATA_DIR:-}"
+PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
+EXPECTED_RELEASE="${KNXOH_EXPECTED_RELEASE:-}"
 
 fail() {
     printf 'ERROR: %s\n' "$1" >&2
     exit 1
 }
 
-if [[ ! -f "$APP_DIR/knxoh_paths.py" || -L "$APP_DIR/knxoh_paths.py" ]]; then
-    fail "The active release is missing its path helper."
+if [[ -z "$INSTALL_DIR" || "$INSTALL_DIR" != /* ]]; then
+    fail "The installation directory must be provided as an absolute path."
+fi
+if [[ -z "$DATA_DIR" || "$DATA_DIR" != /* ]]; then
+    fail "The runtime-data directory must be provided as an absolute path."
+fi
+if [[ -z "$EXPECTED_RELEASE" || "$EXPECTED_RELEASE" != /* ]]; then
+    fail "The expected active release must be provided as an absolute path."
+fi
+if [[ "$PATHS_FILE" != /* || ! -f "$PATHS_FILE" || -L "$PATHS_FILE" ]]; then
+    fail "The installer paths file is missing or unsafe: $PATHS_FILE"
+fi
+if [[ ! -f "$INSTALL_DIR/knxoh_paths.py" || -L "$INSTALL_DIR/knxoh_paths.py" ]]; then
+    fail "The stable installation is missing its path helper."
 fi
 
-if ! RESOLVED_PATHS=$(PYTHONPATH="$APP_DIR" python3 - "$APP_DIR" <<'PY'
+if ! RESOLVED_PATHS=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" \
+    KNXOH_DATA_DIR="$DATA_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" \
+    PYTHONPATH="$INSTALL_DIR" python3 - <<'PY'
 import sys
 
 from knxoh_paths import get_paths
 
-paths = get_paths(sys.argv[1])
+paths = get_paths()
 print(paths.install_dir)
 print(paths.data_dir)
 PY
@@ -29,28 +45,13 @@ mapfile -t PATH_VALUES <<<"$RESOLVED_PATHS"
 if (( ${#PATH_VALUES[@]} != 2 )); then
     fail "The installed application and runtime-data paths are invalid."
 fi
-INSTALL_DIR="${PATH_VALUES[0]}"
-DATA_DIR="${PATH_VALUES[1]}"
-if [[ "$INSTALL_DIR" != /* || "$DATA_DIR" != /* ]]; then
-    fail "The installed application and runtime-data paths must be absolute."
+RESOLVED_INSTALL_DIR="${PATH_VALUES[0]}"
+RESOLVED_DATA_DIR="${PATH_VALUES[1]}"
+if [[ "$RESOLVED_INSTALL_DIR" != "$INSTALL_DIR" || "$RESOLVED_DATA_DIR" != "$DATA_DIR" ]]; then
+    fail "The supplied install/data paths do not match the configured paths file."
 fi
-
-case "$APP_DIR" in
-    "$INSTALL_DIR"/releases/*) ;;
-    *) fail "The repair target is not under the installation releases directory." ;;
-esac
 
 CURRENT_LINK="$INSTALL_DIR/current"
-if [[ ! -L "$CURRENT_LINK" ]]; then
-    fail "The installation has no active transactional release."
-fi
-if ! CURRENT_RELEASE=$(readlink -f -- "$CURRENT_LINK"); then
-    fail "Could not resolve the active release link."
-fi
-if [[ "$CURRENT_RELEASE" != "$APP_DIR" ]]; then
-    fail "This release is no longer the active current release."
-fi
-
 if [[ ! -d "$DATA_DIR" ]]; then
     fail "The configured runtime-data directory does not exist: $DATA_DIR"
 fi
@@ -64,6 +65,31 @@ fi
 if ! flock -n 9; then
     fail "An updater is running; retry environment repair after it finishes."
 fi
+
+if [[ ! -L "$CURRENT_LINK" ]]; then
+    fail "The installation has no active transactional release."
+fi
+if ! CURRENT_RELEASE=$(readlink -f -- "$CURRENT_LINK"); then
+    fail "Could not resolve the active release link."
+fi
+if ! EXPECTED_RELEASE=$(readlink -f -- "$EXPECTED_RELEASE"); then
+    fail "Could not resolve the expected active release."
+fi
+case "$CURRENT_RELEASE" in
+    "$INSTALL_DIR"/releases/*) ;;
+    *) fail "The active release target is outside the installation releases directory." ;;
+esac
+case "$EXPECTED_RELEASE" in
+    "$INSTALL_DIR"/releases/*) ;;
+    *) fail "The expected release is outside the installation releases directory." ;;
+esac
+if [[ ! -d "$CURRENT_RELEASE" ]]; then
+    fail "The active release directory is missing: $CURRENT_RELEASE"
+fi
+if [[ "$CURRENT_RELEASE" != "$EXPECTED_RELEASE" ]]; then
+    fail "This release is no longer the active current release."
+fi
+APP_DIR="$CURRENT_RELEASE"
 
 REQUIREMENTS_FILE="$APP_DIR/requirements.txt"
 if [[ ! -f "$REQUIREMENTS_FILE" || -L "$REQUIREMENTS_FILE" ]]; then

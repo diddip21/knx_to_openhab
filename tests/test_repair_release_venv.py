@@ -31,6 +31,7 @@ def create_install(tmp_path):
     (release / "web_ui" / "backend" / "auth.py").write_text(
         "def is_password_hash(value):\n    return bool(value)\n", encoding="utf-8"
     )
+    shutil.copy2(ROOT / "knxoh_paths.py", install / "knxoh_paths.py")
 
     paths_file = tmp_path / "paths.env"
     paths_file.write_text(
@@ -59,6 +60,14 @@ def create_install(tmp_path):
     }
 
 
+def install_stable_helper(installation, destination):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(REPAIR_SCRIPT, destination)
+    destination.chmod(0o755)
+    shutil.copy2(ROOT / "knxoh_paths.py", installation["install"] / "knxoh_paths.py")
+    return destination
+
+
 def helper_environment(installation, extra=None):
     environment = os.environ.copy()
     for name in (
@@ -68,6 +77,9 @@ def helper_environment(installation, extra=None):
         "KNXOH_BACKUP_DIR",
     ):
         environment.pop(name, None)
+    environment["KNXOH_INSTALL_DIR"] = str(installation["install"])
+    environment["KNXOH_DATA_DIR"] = str(installation["data"])
+    environment["KNXOH_EXPECTED_RELEASE"] = str(installation["release"])
     environment["KNXOH_PATHS_FILE"] = str(installation["paths_file"])
     if extra:
         environment.update(extra)
@@ -175,6 +187,79 @@ def test_repair_release_venv_refuses_busy_updater_lock(tmp_path):
     assert (installation["install"] / "current").resolve() == installation["release"]
 
 
+def test_stable_repair_helper_recovers_release_without_local_helper(tmp_path):
+    installation = create_install(tmp_path)
+    installation["helper"].unlink()
+    stable_helper = install_stable_helper(
+        installation,
+        tmp_path / "usr-local" / "libexec" / "repair_release_venv.sh",
+    )
+    environment = helper_environment(
+        installation,
+        {
+            "KNXOH_INSTALL_DIR": str(installation["install"]),
+            "KNXOH_DATA_DIR": str(installation["data"]),
+        },
+    )
+
+    result = subprocess.run(
+        ["bash", str(stable_helper)],
+        cwd=installation["install"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert os.access(installation["release"] / "venv" / "bin" / "python", os.X_OK)
+    assert not installation["helper"].exists()
+
+
+def test_repair_revalidates_current_after_lock_acquisition(tmp_path):
+    installation = create_install(tmp_path)
+    current = installation["install"] / "current"
+    other_release = installation["install"] / "releases" / "other"
+    other_release.mkdir()
+    (other_release / "requirements.txt").write_text("", encoding="utf-8")
+    shutil.copy2(ROOT / "knxoh_paths.py", other_release / "knxoh_paths.py")
+    (other_release / "web_ui" / "backend").mkdir(parents=True)
+    (other_release / "web_ui" / "__init__.py").write_text("", encoding="utf-8")
+    (other_release / "web_ui" / "backend" / "__init__.py").write_text("", encoding="utf-8")
+    (other_release / "web_ui" / "backend" / "auth.py").write_text(
+        "def is_password_hash(value):\n    return bool(value)\n", encoding="utf-8"
+    )
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    fake_flock = fake_bin / "flock"
+    fake_flock.write_text(
+        "#!/bin/bash\n"
+        'if [[ "${1:-}" == "-n" && "${2:-}" == "9" ]]; then\n'
+        '  rm -- "$RACE_CURRENT_LINK"\n'
+        '  ln -s -- "$RACE_NEXT_RELEASE" "$RACE_CURRENT_LINK"\n'
+        "fi\n"
+        'exec /usr/bin/flock "$@"\n',
+        encoding="utf-8",
+    )
+    fake_flock.chmod(0o755)
+    environment = helper_environment(
+        installation,
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+            "RACE_CURRENT_LINK": str(current),
+            "RACE_NEXT_RELEASE": str(other_release),
+        },
+    )
+
+    result = run_helper(installation, environment)
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "no longer the active current release" in (result.stdout + result.stderr)
+    assert current.resolve() == other_release.resolve()
+    assert not (installation["release"] / "venv").exists()
+
+
 def test_repair_release_venv_restores_previous_venv_after_failure(tmp_path):
     installation = create_install(tmp_path)
     previous_venv = installation["release"] / "venv"
@@ -215,6 +300,11 @@ def test_repair_release_venv_is_idempotent(tmp_path):
 
 def test_recovery_command_repairs_active_venv_and_retry_passes_preflight(tmp_path):
     installation = create_install(tmp_path)
+    installation["helper"].unlink()
+    stable_helper = install_stable_helper(
+        installation,
+        tmp_path / "stable libexec" / "repair_release_venv.sh",
+    )
     release = installation["release"]
     (release / "version.json").write_text(
         '{"release_tag":"v1.2.3","commit_hash":"' + "a" * 40 + '"}\n',
@@ -233,7 +323,15 @@ def test_recovery_command_repairs_active_venv_and_retry_passes_preflight(tmp_pat
         "fi\n"
         'if [[ "${1:-}" == "-u" && "${2:-}" == "knxohui" ]]; then\n'
         "  shift 2\n"
-        '  exec "$@"\n'
+        "  args=()\n"
+        '  for arg in "$@"; do\n'
+        '    if [[ "$arg" == "/usr/local/libexec/knx_to_openhab/repair_release_venv.sh" ]]; then\n'
+        '      arg="$TEST_STABLE_HELPER"\n'
+        "    fi\n"
+        '    args+=("$arg")\n'
+        "  done\n"
+        "  exec env -u KNXOH_INSTALL_DIR -u KNXOH_DATA_DIR -u KNXOH_PATHS_FILE "
+        '-u KNXOH_EXPECTED_RELEASE "${args[@]}"\n'
         "fi\n"
         "exit 1\n",
         encoding="utf-8",
@@ -252,6 +350,7 @@ def test_recovery_command_repairs_active_venv_and_retry_passes_preflight(tmp_pat
             "RELEASE_TAG": "v1.2.3",
             "RELEASE_COMMIT_HASH": "a" * 40,
             "REPAIR_TEST_REAL_PYTHON": sys.executable,
+            "TEST_STABLE_HELPER": str(stable_helper),
         },
     )
 
@@ -276,8 +375,13 @@ def test_recovery_command_repairs_active_venv_and_retry_passes_preflight(tmp_pat
         "sudo",
         "-u",
         "knxohui",
+        "env",
+        f"KNXOH_INSTALL_DIR={installation['install']}",
+        f"KNXOH_DATA_DIR={installation['data']}",
+        f"KNXOH_PATHS_FILE={installation['paths_file']}",
+        f"KNXOH_EXPECTED_RELEASE={installation['release']}",
         "bash",
-        str(installation["helper"]),
+        "/usr/local/libexec/knx_to_openhab/repair_release_venv.sh",
     ]
 
     repair_result = subprocess.run(
@@ -307,3 +411,99 @@ def test_recovery_command_repairs_active_venv_and_retry_passes_preflight(tmp_pat
     assert "External Web UI and generator configuration are ready." in retry.stdout
     assert "Already running selected release v1.2.3." in retry.stdout
     assert "active release is incomplete" not in retry.stdout
+
+
+def test_recovery_command_preserves_custom_paths_under_sudo(tmp_path):
+    installation = create_install(tmp_path)
+    installation["helper"].unlink()
+    stable_helper = install_stable_helper(
+        installation,
+        tmp_path / "stable libexec" / "repair_release_venv.sh",
+    )
+    active_update = installation["release"] / "update.sh"
+    shutil.copy2(ROOT / "update.sh", active_update)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_sudo = fake_bin / "sudo"
+    fake_sudo.write_text(
+        "#!/bin/bash\n"
+        'if [[ "${1:-}" == "-n" && "${2:-}" == "-l" ]]; then\n'
+        '  echo "NOPASSWD: limited service commands"\n'
+        "  exit 0\n"
+        "fi\n"
+        'if [[ "${1:-}" == "-u" && "${2:-}" == "knxohui" ]]; then\n'
+        "  shift 2\n"
+        "  args=()\n"
+        '  for arg in "$@"; do\n'
+        '    if [[ "$arg" == "/usr/local/libexec/knx_to_openhab/repair_release_venv.sh" ]]; then\n'
+        '      arg="$TEST_STABLE_HELPER"\n'
+        "    fi\n"
+        '    args+=("$arg")\n'
+        "  done\n"
+        "  exec env -u KNXOH_INSTALL_DIR -u KNXOH_DATA_DIR -u KNXOH_PATHS_FILE "
+        '-u KNXOH_EXPECTED_RELEASE "${args[@]}"\n'
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    fake_sudo.chmod(0o755)
+    environment = helper_environment(
+        installation,
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+            "KNXOH_INSTALL_DIR": str(installation["install"]),
+            "KNXOH_DATA_DIR": str(installation["data"]),
+            "KNXOH_CONFIG_DIR": str(tmp_path / "configuration"),
+            "KNXOH_BACKUP_DIR": str(tmp_path / "backups"),
+            "LOG_FILE": str(tmp_path / "update.log"),
+            "RELEASE_TAG": "v1.2.3",
+            "RELEASE_COMMIT_HASH": "a" * 40,
+            "TEST_STABLE_HELPER": str(stable_helper),
+        },
+    )
+
+    update_text = active_update.read_text(encoding="utf-8")
+    assert "/usr/local/libexec/knx_to_openhab/repair_release_venv.sh" in update_text
+
+    update_result = subprocess.run(
+        ["bash", str(active_update)],
+        cwd=installation["install"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert update_result.returncode == 1, update_result.stdout + update_result.stderr
+    recovery_line = next(
+        (line for line in update_result.stdout.splitlines() if "Recovery: run " in line), ""
+    )
+    assert recovery_line, update_result.stdout + update_result.stderr
+    command = recovery_line.split("Recovery: run ", 1)[1].split(" from ", 1)[0].strip(" '\"")
+    command_args = shlex.split(command)
+    assert command_args == [
+        "sudo",
+        "-u",
+        "knxohui",
+        "env",
+        f"KNXOH_INSTALL_DIR={installation['install']}",
+        f"KNXOH_DATA_DIR={installation['data']}",
+        f"KNXOH_PATHS_FILE={installation['paths_file']}",
+        f"KNXOH_EXPECTED_RELEASE={installation['release']}",
+        "bash",
+        "/usr/local/libexec/knx_to_openhab/repair_release_venv.sh",
+    ]
+
+    repair_result = subprocess.run(
+        command_args,
+        cwd=installation["install"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+
+    assert repair_result.returncode == 0, repair_result.stdout + repair_result.stderr
+    assert os.access(installation["release"] / "venv" / "bin" / "python", os.X_OK)

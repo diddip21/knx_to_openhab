@@ -337,6 +337,7 @@ def test_transactional_update_missing_venv_emits_repair_command(tmp_path):
             "INSTALL_DIR": str(install),
             "KNXOH_INSTALL_DIR": str(install),
             "KNXOH_DATA_DIR": str(tmp_path / "runtime data"),
+            "KNXOH_PATHS_FILE": str(tmp_path / "paths file.env"),
             "LOG_FILE": str(tmp_path / "update.log"),
             "RELEASE_TAG": "v1.2.3",
         }
@@ -363,8 +364,13 @@ def test_transactional_update_missing_venv_emits_repair_command(tmp_path):
         "sudo",
         "-u",
         "knxohui",
+        "env",
+        f"KNXOH_INSTALL_DIR={install}",
+        f"KNXOH_DATA_DIR={tmp_path / 'runtime data'}",
+        f"KNXOH_PATHS_FILE={tmp_path / 'paths file.env'}",
+        f"KNXOH_EXPECTED_RELEASE={active}",
         "bash",
-        str(active / "installer" / "repair_release_venv.sh"),
+        "/usr/local/libexec/knx_to_openhab/repair_release_venv.sh",
     ]
 
 
@@ -378,6 +384,7 @@ def test_transactional_update_missing_release_fails_closed(tmp_path):
             "INSTALL_DIR": str(install),
             "KNXOH_INSTALL_DIR": str(install),
             "KNXOH_DATA_DIR": str(tmp_path / "runtime data"),
+            "KNXOH_PATHS_FILE": str(tmp_path / "paths file.env"),
             "LOG_FILE": str(tmp_path / "update.log"),
             "RELEASE_TAG": "v1.2.3",
         }
@@ -431,6 +438,7 @@ def test_transactional_update_unusable_venv_emits_repair_command(tmp_path):
             "INSTALL_DIR": str(install),
             "KNXOH_INSTALL_DIR": str(install),
             "KNXOH_DATA_DIR": str(tmp_path / "runtime data"),
+            "KNXOH_PATHS_FILE": str(tmp_path / "paths file.env"),
             "LOG_FILE": str(tmp_path / "update.log"),
             "RELEASE_TAG": "v1.2.3",
         }
@@ -456,8 +464,13 @@ def test_transactional_update_unusable_venv_emits_repair_command(tmp_path):
         "sudo",
         "-u",
         "knxohui",
+        "env",
+        f"KNXOH_INSTALL_DIR={install}",
+        f"KNXOH_DATA_DIR={tmp_path / 'runtime data'}",
+        f"KNXOH_PATHS_FILE={tmp_path / 'paths file.env'}",
+        f"KNXOH_EXPECTED_RELEASE={active}",
         "bash",
-        str(active / "installer" / "repair_release_venv.sh"),
+        "/usr/local/libexec/knx_to_openhab/repair_release_venv.sh",
     ]
 
 
@@ -530,7 +543,7 @@ def test_update_script_never_elevates_git_or_uses_a_global_safe_directory():
 
     assert "sudo git" not in update
     assert "sudo -u git" not in update
-    assert "sudo -u knxohui bash" in update
+    assert "sudo -u knxohui env" in update
     assert "safe.directory='*'" not in update
     assert "git config --global" not in update
     assert 'git -c "safe.directory=$INSTALL_DIR"' in update

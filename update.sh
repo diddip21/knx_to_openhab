@@ -62,8 +62,6 @@ fi
 
 printf -v SETUP_RECOVERY_COMMAND 'sudo bash %q' "$APP_DIR/installer/setup.sh"
 printf -v MIGRATE_SUDOERS_RECOVERY_COMMAND 'sudo bash %q' "$APP_DIR/installer/migrate_sudoers.sh"
-printf -v VENV_RECOVERY_COMMAND 'sudo -u knxohui bash %q' \
-    "$APP_DIR/installer/repair_release_venv.sh"
 
 if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
     log "ERROR: A valid stable release tag is required. Trigger the update from the Web UI again."
@@ -89,6 +87,10 @@ if [[ "$UPDATE_LOCK_DIR" != /* ]]; then
     log "ERROR: The update-lock directory must be an absolute path: $UPDATE_LOCK_DIR"
     exit 1
 fi
+VENV_REPAIR_HELPER="/usr/local/libexec/knx_to_openhab/repair_release_venv.sh"
+printf -v VENV_RECOVERY_COMMAND \
+    'sudo -u knxohui env KNXOH_INSTALL_DIR=%q KNXOH_DATA_DIR=%q KNXOH_PATHS_FILE=%q KNXOH_EXPECTED_RELEASE=%q bash %q' \
+    "$INSTALL_DIR" "$UPDATE_LOCK_DIR" "$PATHS_FILE" "$APP_DIR" "$VENV_REPAIR_HELPER"
 if ! command -v flock >/dev/null 2>&1; then
     log "ERROR: The 'flock' utility is required to prevent concurrent updates."
     exit 1

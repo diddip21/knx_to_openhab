@@ -60,7 +60,6 @@ else
     APP_DIR="$INSTALL_DIR"
 fi
 
-printf -v SETUP_RECOVERY_COMMAND 'sudo bash %q' "$APP_DIR/installer/setup.sh"
 printf -v MIGRATE_SUDOERS_RECOVERY_COMMAND 'sudo bash %q' "$APP_DIR/installer/migrate_sudoers.sh"
 
 if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
@@ -87,6 +86,33 @@ if [[ "$UPDATE_LOCK_DIR" != /* ]]; then
     log "ERROR: The update-lock directory must be an absolute path: $UPDATE_LOCK_DIR"
     exit 1
 fi
+SETUP_CONFIG_DIR="${KNXOH_CONFIG_DIR:-/etc/knx_to_openhab}"
+SETUP_BACKUP_DIR="${KNXOH_BACKUP_DIR:-/var/backups/knx_to_openhab}"
+if [[ -f "$INSTALL_DIR/knxoh_paths.py" && ! -L "$INSTALL_DIR/knxoh_paths.py" ]]; then
+    if ! SETUP_PATHS=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_DATA_DIR="$UPDATE_LOCK_DIR" \
+        KNXOH_PATHS_FILE="$PATHS_FILE" PYTHONPATH="$INSTALL_DIR" python3 - <<'PY'
+from knxoh_paths import get_paths
+
+paths = get_paths()
+print(paths.config_dir)
+print(paths.backup_dir)
+PY
+    ); then
+        log "ERROR: Could not resolve configured paths for setup recovery."
+        exit 1
+    fi
+    mapfile -t SETUP_PATH_VALUES <<<"$SETUP_PATHS"
+    if (( ${#SETUP_PATH_VALUES[@]} != 2 )); then
+        log "ERROR: Configured paths for setup recovery are invalid."
+        exit 1
+    fi
+    SETUP_CONFIG_DIR="${KNXOH_CONFIG_DIR:-${SETUP_PATH_VALUES[0]}}"
+    SETUP_BACKUP_DIR="${KNXOH_BACKUP_DIR:-${SETUP_PATH_VALUES[1]}}"
+fi
+printf -v SETUP_RECOVERY_COMMAND \
+    'sudo env KNXOH_INSTALL_DIR=%q KNXOH_CONFIG_DIR=%q KNXOH_DATA_DIR=%q KNXOH_BACKUP_DIR=%q KNXOH_PATHS_FILE=%q bash %q' \
+    "$INSTALL_DIR" "$SETUP_CONFIG_DIR" "$UPDATE_LOCK_DIR" "$SETUP_BACKUP_DIR" \
+    "$PATHS_FILE" "$APP_DIR/installer/setup.sh"
 VENV_REPAIR_HELPER="/usr/local/libexec/knx_to_openhab/repair_release_venv.sh"
 printf -v VENV_RECOVERY_COMMAND \
     'sudo -u knxohui env KNXOH_INSTALL_DIR=%q KNXOH_DATA_DIR=%q KNXOH_PATHS_FILE=%q KNXOH_EXPECTED_RELEASE=%q bash %q' \
@@ -137,8 +163,11 @@ if [[ ! -x "$APP_DIR/venv/bin/python" ]] || \
     log "ERROR: The active release Python environment is missing or unusable."
     if (( LEGACY_INSTALL )); then
         log "Recovery: run $SETUP_RECOVERY_COMMAND from an interactive SSH terminal (for example, ssh -t), then retry."
-    else
+    elif [[ -x "$VENV_REPAIR_HELPER" ]]; then
         log "Recovery: run $VENV_RECOVERY_COMMAND from an interactive SSH terminal (for example, ssh -t), then retry."
+    else
+        log "The stable recovery helper is not installed; setup will install it and repair the active release."
+        log "Recovery: run $SETUP_RECOVERY_COMMAND from an interactive SSH terminal (for example, ssh -t), then retry."
     fi
     exit 1
 fi

@@ -27,7 +27,7 @@
 - A pointer switch between initial helper invocation and lock acquisition must be rejected without creating a venv (`test_repair_revalidates_current_after_lock_acquisition`).
 - When the stable helper is absent, recovery must print a quoted setup bootstrap command with all configured paths (`test_update_missing_stable_helper_recommends_setup_bootstrap`).
 - Setup must install the root-owned helper and launcher and repair the active transactional venv before restarting the Web UI (`test_setup_installs_and_runs_stable_recovery_helpers`); legacy installs skip helper execution.
-- The installed launcher—not only the source-tree script—must fall back when active Python is executable but unusable (`test_installed_update_worker_falls_back_when_active_python_is_broken`).
+- The installed launcher—not only the source-tree script—must fall back when active Python is executable but unusable (`test_update_worker_falls_back_when_active_python_is_broken`).
 - A pre-change updater cannot self-print new recovery instructions; document the one-time administrator bootstrap using `setup.sh` from updated source.
 
 ---
@@ -63,7 +63,7 @@ Resolve paths from the explicit environment plus the stable install's `knxoh_pat
 Run: `pytest tests/test_repair_release_venv.py -q`
 Expected: all helper recovery, rollback, locking, and path-sanitization tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Use commit message: `fix: stabilize active release repair helper`.
 
@@ -81,30 +81,33 @@ Use commit message: `fix: stabilize active release repair helper`.
 - If the stable helper is missing, `update.sh` prints a shell-safe `sudo env ... bash $APP_DIR/installer/setup.sh` bootstrap command carrying `KNXOH_INSTALL_DIR`, `KNXOH_CONFIG_DIR`, `KNXOH_DATA_DIR`, `KNXOH_BACKUP_DIR`, and `KNXOH_PATHS_FILE`.
 - The setup fallback must repair the active venv itself; the user need not manually find or invoke a second script.
 
-- [ ] **Step 1: Write failing setup/bootstrap and installed-launcher regressions**
+- [x] **Step 1: Write failing setup/bootstrap and installed-launcher regressions**
 
 Assert the fallback setup command shell-parses to the expected paths even with spaces; assert setup installs the stable helper and launcher and calls repair before the Web UI restart; and execute a temporary installed copy of `launch_update.sh` against a broken active interpreter to prove fallback. Include a legacy setup assertion that active repair is conditional on `current` being a symlink.
 
-- [ ] **Step 2: Run the new tests and verify they fail**
+- [x] **Step 2: Run the new tests and verify they fail**
 
-Run: `pytest tests/test_privilege_policy.py::test_update_missing_stable_helper_recommends_setup_bootstrap tests/test_privilege_policy.py::test_setup_installs_and_runs_stable_recovery_helpers tests/test_privilege_policy.py::test_installed_update_worker_falls_back_when_active_python_is_broken -q`
+Run: `pytest tests/test_privilege_policy.py::test_update_missing_stable_helper_recommends_setup_bootstrap tests/test_privilege_policy.py::test_setup_installs_and_runs_stable_recovery_helpers tests/test_privilege_policy.py::test_update_worker_falls_back_when_active_python_is_broken -q`
 Expected: FAIL because setup does not install/call the stable repair helper, does not honor a custom paths-file environment variable, and the setup fallback command is not emitted.
 
-- [ ] **Step 3: Install and invoke stable recovery artifacts from setup**
+- [x] **Step 3: Install and invoke stable recovery artifacts from setup**
 
 Make `PATHS_FILE` honor `KNXOH_PATHS_FILE`; install the stable helper and updated launcher with root ownership; call the stable helper as `knxohui` before restarting services when `current` is transactional; make `update.sh` recommend setup if the stable helper is absent; and document the one-time bootstrap needed when an older updater cannot emit the new command.
 
-- [ ] **Step 4: Run focused tests, full core suite, and static checks**
+- [x] **Step 4: Run focused tests, full core suite, and static checks**
 
 Run: `pytest tests/test_privilege_policy.py tests/test_repair_release_venv.py tests/test_launch_web_recovery.py -q`
 Expected: all focused recovery and installer tests pass.
 
-Run: `pytest -q`
-Expected: full core suite passes; report skips explicitly.
+Run: `pytest --ignore=tests/ui -q`
+Expected: core suite passes; report skips explicitly. The project-wide `pytest -q` run also collects browser UI tests; if no external UI server is running, report that separately rather than counting those tests as core coverage.
+
+Run: `pytest tests/ui/test_upload_security.py::TestUploadSecurityUI::test_upload_form_accepts_knxproj -q -s -o addopts=`
+Expected: the test's isolated Flask fixture starts its own server and the upload is accepted.
 
 Run: `black --check . && isort --check-only . && flake8 . && bash -n update.sh uninstall.sh installer/setup.sh installer/launch_update.sh installer/repair_release_venv.sh && git diff --check`
 Expected: no formatting, lint, shell syntax, or whitespace errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Use commit message: `fix: bootstrap active release recovery during setup`.

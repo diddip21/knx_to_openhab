@@ -311,7 +311,12 @@ def test_recovery_command_repairs_active_venv_and_retry_passes_preflight(tmp_pat
         encoding="utf-8",
     )
     active_update = release / "update.sh"
-    shutil.copy2(ROOT / "update.sh", active_update)
+    update_script = (ROOT / "update.sh").read_text(encoding="utf-8")
+    update_script = update_script.replace(
+        'VENV_REPAIR_HELPER="/usr/local/libexec/knx_to_openhab/repair_release_venv.sh"',
+        f'VENV_REPAIR_HELPER="{stable_helper}"',
+    )
+    active_update.write_text(update_script, encoding="utf-8")
     fake_bin = tmp_path / "bin"
     create_fake_python3(fake_bin, stub_python=True)
     fake_sudo = fake_bin / "sudo"
@@ -381,7 +386,7 @@ def test_recovery_command_repairs_active_venv_and_retry_passes_preflight(tmp_pat
         f"KNXOH_PATHS_FILE={installation['paths_file']}",
         f"KNXOH_EXPECTED_RELEASE={installation['release']}",
         "bash",
-        "/usr/local/libexec/knx_to_openhab/repair_release_venv.sh",
+        str(stable_helper),
     ]
 
     repair_result = subprocess.run(
@@ -421,7 +426,12 @@ def test_recovery_command_preserves_custom_paths_under_sudo(tmp_path):
         tmp_path / "stable libexec" / "repair_release_venv.sh",
     )
     active_update = installation["release"] / "update.sh"
-    shutil.copy2(ROOT / "update.sh", active_update)
+    update_script = (ROOT / "update.sh").read_text(encoding="utf-8")
+    update_script = update_script.replace(
+        'VENV_REPAIR_HELPER="/usr/local/libexec/knx_to_openhab/repair_release_venv.sh"',
+        f'VENV_REPAIR_HELPER="{stable_helper}"',
+    )
+    active_update.write_text(update_script, encoding="utf-8")
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     fake_sudo = fake_bin / "sudo"
@@ -463,7 +473,7 @@ def test_recovery_command_preserves_custom_paths_under_sudo(tmp_path):
     )
 
     update_text = active_update.read_text(encoding="utf-8")
-    assert "/usr/local/libexec/knx_to_openhab/repair_release_venv.sh" in update_text
+    assert str(stable_helper) in update_text
 
     update_result = subprocess.run(
         ["bash", str(active_update)],
@@ -492,7 +502,7 @@ def test_recovery_command_preserves_custom_paths_under_sudo(tmp_path):
         f"KNXOH_PATHS_FILE={installation['paths_file']}",
         f"KNXOH_EXPECTED_RELEASE={installation['release']}",
         "bash",
-        "/usr/local/libexec/knx_to_openhab/repair_release_venv.sh",
+        str(stable_helper),
     ]
 
     repair_result = subprocess.run(

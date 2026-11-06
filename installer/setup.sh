@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PATHS_FILE="/etc/knx_to_openhab/paths.env"
+PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
 SERVICE_USER="knxohui"
 
 read_saved_path() {
@@ -295,8 +295,35 @@ sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/launch_backup_cleanup
     /usr/local/libexec/knx_to_openhab/launch_backup_cleanup.sh
 sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/launch_update.sh" \
     /usr/local/libexec/knx_to_openhab/launch_update.sh
+sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/repair_release_venv.sh" \
+    /usr/local/libexec/knx_to_openhab/repair_release_venv.sh
 sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/set_ui_password.py" \
     /usr/local/libexec/knx_to_openhab/set_ui_password.py
+
+if [[ -L "$BASE/current" ]]; then
+    if ! ACTIVE_RELEASE=$(readlink -f -- "$BASE/current"); then
+        echo "The active release link could not be resolved: $BASE/current" >&2
+        exit 1
+    fi
+    case "$ACTIVE_RELEASE" in
+        "$BASE"/releases/*) ;;
+        *)
+            echo "The active release link points outside $BASE/releases: $ACTIVE_RELEASE" >&2
+            exit 1
+            ;;
+    esac
+    if [[ ! -d "$ACTIVE_RELEASE" ]]; then
+        echo "The active release directory is missing: $ACTIVE_RELEASE" >&2
+        exit 1
+    fi
+    echo "Repairing the active release Python environment before restarting the Web UI"
+    sudo -u "$SERVICE_USER" env \
+        "KNXOH_INSTALL_DIR=$BASE" \
+        "KNXOH_DATA_DIR=$DATA_DIR" \
+        "KNXOH_PATHS_FILE=$PATHS_FILE" \
+        "KNXOH_EXPECTED_RELEASE=$ACTIVE_RELEASE" \
+        bash /usr/local/libexec/knx_to_openhab/repair_release_venv.sh
+fi
 
 echo "Installing systemd units and timers"
 sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/knxohui.service" \

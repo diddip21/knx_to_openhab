@@ -125,6 +125,33 @@ before continuing; setup does not need a terminal password prompt. If setup fail
 stopping services, it attempts to restart the services that were active before migration.
 Retry the Web UI update after setup completes.
 
+If an active transactional release has a missing or unusable Python environment,
+the updater prints a recovery command. When the stable repair helper is already
+installed, run that command from an interactive SSH terminal. If it is not yet
+installed, the command runs setup with the configured application, configuration,
+runtime-data, backup, and paths-file locations; setup installs the stable helper
+and launcher, repairs the active release, and only then restarts the Web UI.
+
+An updater installed before this recovery guidance cannot print the new command.
+For that one-time bootstrap, use an updated source checkout (not the old active
+release) and pass the paths shown in the configured `paths.env` file:
+
+```bash
+git clone https://github.com/diddip21/knx_to_openhab.git /tmp/knx_to_openhab-bootstrap
+sudo env \
+  KNXOH_INSTALL_DIR=/opt/knx_to_openhab \
+  KNXOH_CONFIG_DIR=/etc/knx_to_openhab \
+  KNXOH_DATA_DIR=/var/lib/knx_to_openhab \
+  KNXOH_BACKUP_DIR=/var/backups/knx_to_openhab \
+  KNXOH_PATHS_FILE=/etc/knx_to_openhab/paths.env \
+  bash /tmp/knx_to_openhab-bootstrap/installer/setup.sh
+```
+
+Replace these defaults with the values from your paths file if the installation
+uses custom locations, and quote any values containing spaces. Setup refreshes
+the root-owned launcher and repair helper;
+normal Web UI updates do not overwrite those protected files.
+
 The updater checks that `knxohui.service` stays active across three checks after
 restart. If the updated service fails to start or remain active, it restores the
 previous application commit and dependencies, then attempts to restart that

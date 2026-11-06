@@ -85,6 +85,26 @@ def test_updater_runs_in_its_own_systemd_unit_outside_the_web_service_cgroup():
     assert "start-web-update" in updater
 
 
+def test_setup_installs_and_runs_stable_recovery_helpers():
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+
+    assert 'PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"' in setup
+    assert '"$REPO_ROOT/installer/repair_release_venv.sh"' in setup
+    assert "/usr/local/libexec/knx_to_openhab/repair_release_venv.sh" in setup
+    assert '"$REPO_ROOT/installer/launch_update.sh"' in setup
+    assert "/usr/local/libexec/knx_to_openhab/launch_update.sh" in setup
+    assert 'if [[ -L "$BASE/current" ]]; then' in setup
+    helper_install = setup.index("/usr/local/libexec/knx_to_openhab/repair_release_venv.sh")
+    repair_call = setup.index("bash /usr/local/libexec/knx_to_openhab/repair_release_venv.sh")
+    restart = setup.index("sudo systemctl restart knxohui.service")
+    assert helper_install < repair_call < restart
+    assert 'sudo -u "$SERVICE_USER" env' in setup
+    assert '"KNXOH_INSTALL_DIR=$BASE"' in setup
+    assert '"KNXOH_DATA_DIR=$DATA_DIR"' in setup
+    assert '"KNXOH_PATHS_FILE=$PATHS_FILE"' in setup
+    assert '"KNXOH_EXPECTED_RELEASE=$ACTIVE_RELEASE"' in setup
+
+
 def test_installer_runs_provisioner_from_installed_tree():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
 
@@ -230,8 +250,10 @@ def test_web_updater_recovery_instructions_use_active_app_dir():
     update = (ROOT / "update.sh").read_text(encoding="utf-8")
 
     assert (
-        "printf -v SETUP_RECOVERY_COMMAND 'sudo bash %q' \"$APP_DIR/installer/setup.sh\"" in update
+        "'sudo env KNXOH_INSTALL_DIR=%q KNXOH_CONFIG_DIR=%q KNXOH_DATA_DIR=%q "
+        "KNXOH_BACKUP_DIR=%q KNXOH_PATHS_FILE=%q bash %q'" in update
     )
+    assert '"$PATHS_FILE" "$APP_DIR/installer/setup.sh"' in update
     assert (
         "printf -v MIGRATE_SUDOERS_RECOVERY_COMMAND 'sudo bash %q' "
         '"$APP_DIR/installer/migrate_sudoers.sh"'
@@ -293,10 +315,19 @@ def test_update_recovery_command_quotes_install_path_with_spaces(
         (
             line
             for line in result.stdout.splitlines()
-            if "sudo bash" in line and script_name in line
+            if script_name in line and "Recovery: run" in line
         ),
         "",
     )
+    if script_name != "setup.sh":
+        recovery_line = next(
+            (
+                line
+                for line in result.stdout.splitlines()
+                if "sudo bash" in line and script_name in line
+            ),
+            "",
+        )
     assert recovery_line, result.stdout + result.stderr
     if script_name == "setup.sh":
         marker, suffix = "Recovery: run ", " from "
@@ -304,7 +335,21 @@ def test_update_recovery_command_quotes_install_path_with_spaces(
         marker, suffix = "Run ", " as an administrator"
     assert marker in recovery_line, f"recovery command marker {marker!r} missing: {recovery_line}"
     command = recovery_line.split(marker, 1)[1].split(suffix, 1)[0].strip(" '\"")
-    assert shlex.split(command) == ["sudo", "bash", str(expected_script)]
+    if script_name == "setup.sh":
+        expected_command = [
+            "sudo",
+            "env",
+            f"KNXOH_INSTALL_DIR={install_dir}",
+            "KNXOH_CONFIG_DIR=/etc/knx_to_openhab",
+            f"KNXOH_DATA_DIR={tmp_path / 'runtime data'}",
+            "KNXOH_BACKUP_DIR=/var/backups/knx_to_openhab",
+            "KNXOH_PATHS_FILE=/etc/knx_to_openhab/paths.env",
+            "bash",
+            str(expected_script),
+        ]
+    else:
+        expected_command = ["sudo", "bash", str(expected_script)]
+    assert shlex.split(command) == expected_command
 
 
 def test_transactional_update_missing_venv_emits_repair_command(tmp_path):
@@ -336,7 +381,9 @@ def test_transactional_update_missing_venv_emits_repair_command(tmp_path):
             "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
             "INSTALL_DIR": str(install),
             "KNXOH_INSTALL_DIR": str(install),
+            "KNXOH_CONFIG_DIR": str(tmp_path / "configuration"),
             "KNXOH_DATA_DIR": str(tmp_path / "runtime data"),
+            "KNXOH_BACKUP_DIR": str(tmp_path / "backups"),
             "KNXOH_PATHS_FILE": str(tmp_path / "paths file.env"),
             "LOG_FILE": str(tmp_path / "update.log"),
             "RELEASE_TAG": "v1.2.3",
@@ -362,15 +409,14 @@ def test_transactional_update_missing_venv_emits_repair_command(tmp_path):
     command = recovery_line.split("Recovery: run ", 1)[1].split(" from ", 1)[0].strip(" '\"")
     assert shlex.split(command) == [
         "sudo",
-        "-u",
-        "knxohui",
         "env",
         f"KNXOH_INSTALL_DIR={install}",
+        f"KNXOH_CONFIG_DIR={tmp_path / 'configuration'}",
         f"KNXOH_DATA_DIR={tmp_path / 'runtime data'}",
+        f"KNXOH_BACKUP_DIR={tmp_path / 'backups'}",
         f"KNXOH_PATHS_FILE={tmp_path / 'paths file.env'}",
-        f"KNXOH_EXPECTED_RELEASE={active}",
         "bash",
-        "/usr/local/libexec/knx_to_openhab/repair_release_venv.sh",
+        str(active / "installer" / "setup.sh"),
     ]
 
 
@@ -383,7 +429,9 @@ def test_transactional_update_missing_release_fails_closed(tmp_path):
         {
             "INSTALL_DIR": str(install),
             "KNXOH_INSTALL_DIR": str(install),
+            "KNXOH_CONFIG_DIR": str(tmp_path / "configuration"),
             "KNXOH_DATA_DIR": str(tmp_path / "runtime data"),
+            "KNXOH_BACKUP_DIR": str(tmp_path / "backups"),
             "KNXOH_PATHS_FILE": str(tmp_path / "paths file.env"),
             "LOG_FILE": str(tmp_path / "update.log"),
             "RELEASE_TAG": "v1.2.3",
@@ -437,7 +485,9 @@ def test_transactional_update_unusable_venv_emits_repair_command(tmp_path):
             "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
             "INSTALL_DIR": str(install),
             "KNXOH_INSTALL_DIR": str(install),
+            "KNXOH_CONFIG_DIR": str(tmp_path / "configuration"),
             "KNXOH_DATA_DIR": str(tmp_path / "runtime data"),
+            "KNXOH_BACKUP_DIR": str(tmp_path / "backups"),
             "KNXOH_PATHS_FILE": str(tmp_path / "paths file.env"),
             "LOG_FILE": str(tmp_path / "update.log"),
             "RELEASE_TAG": "v1.2.3",
@@ -462,15 +512,83 @@ def test_transactional_update_unusable_venv_emits_repair_command(tmp_path):
     command = recovery_line.split("Recovery: run ", 1)[1].split(" from ", 1)[0].strip(" '\"")
     assert shlex.split(command) == [
         "sudo",
-        "-u",
-        "knxohui",
         "env",
         f"KNXOH_INSTALL_DIR={install}",
+        f"KNXOH_CONFIG_DIR={tmp_path / 'configuration'}",
         f"KNXOH_DATA_DIR={tmp_path / 'runtime data'}",
+        f"KNXOH_BACKUP_DIR={tmp_path / 'backups'}",
         f"KNXOH_PATHS_FILE={tmp_path / 'paths file.env'}",
-        f"KNXOH_EXPECTED_RELEASE={active}",
         "bash",
-        "/usr/local/libexec/knx_to_openhab/repair_release_venv.sh",
+        str(active / "installer" / "setup.sh"),
+    ]
+
+
+def test_update_missing_stable_helper_recommends_setup_bootstrap(tmp_path):
+    install = tmp_path / "install root with spaces"
+    active = install / "releases" / "active release"
+    (active / "installer").mkdir(parents=True)
+    (install / "releases").mkdir(parents=True, exist_ok=True)
+    (install / "current").symlink_to("releases/active release")
+    (active / "installer" / "setup.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+    shutil.copy2(ROOT / "update.sh", active / "update.sh")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_sudo = fake_bin / "sudo"
+    fake_sudo.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1" == "-n" && "$2" == "-l" ]]; then\n'
+        '  echo "NOPASSWD: limited service commands"\n'
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    fake_sudo.chmod(0o755)
+    config_dir = tmp_path / "configuration root"
+    data_dir = tmp_path / "runtime data"
+    backup_dir = tmp_path / "backup storage"
+    paths_file = tmp_path / "custom paths.env"
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+            "INSTALL_DIR": str(install),
+            "KNXOH_INSTALL_DIR": str(install),
+            "KNXOH_CONFIG_DIR": str(config_dir),
+            "KNXOH_DATA_DIR": str(data_dir),
+            "KNXOH_BACKUP_DIR": str(backup_dir),
+            "KNXOH_PATHS_FILE": str(paths_file),
+            "LOG_FILE": str(tmp_path / "update.log"),
+            "RELEASE_TAG": "v1.2.3",
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(active / "update.sh")],
+        cwd=install,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    recovery_line = next(
+        (line for line in result.stdout.splitlines() if "Recovery: run " in line), ""
+    )
+    assert recovery_line, result.stdout + result.stderr
+    command = recovery_line.split("Recovery: run ", 1)[1].split(" from ", 1)[0].strip(" '\"")
+    assert shlex.split(command) == [
+        "sudo",
+        "env",
+        f"KNXOH_INSTALL_DIR={install}",
+        f"KNXOH_CONFIG_DIR={config_dir}",
+        f"KNXOH_DATA_DIR={data_dir}",
+        f"KNXOH_BACKUP_DIR={backup_dir}",
+        f"KNXOH_PATHS_FILE={paths_file}",
+        "bash",
+        str(active / "installer" / "setup.sh"),
     ]
 
 
@@ -509,8 +627,11 @@ def test_update_worker_falls_back_when_active_python_is_broken(tmp_path):
         }
     )
 
+    installed_launcher = tmp_path / "usr-local" / "libexec" / "knx_to_openhab" / "launch_update.sh"
+    installed_launcher.parent.mkdir(parents=True)
+    shutil.copy2(ROOT / "installer" / "launch_update.sh", installed_launcher)
     result = subprocess.run(
-        ["bash", str(ROOT / "installer" / "launch_update.sh")],
+        ["bash", str(installed_launcher)],
         env=environment,
         capture_output=True,
         text=True,
@@ -521,6 +642,10 @@ def test_update_worker_falls_back_when_active_python_is_broken(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
     assert log_file.read_text(encoding="utf-8").splitlines() == ["active", "stable"]
 
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+    assert '"$REPO_ROOT/installer/launch_update.sh"' in setup
+    assert "/usr/local/libexec/knx_to_openhab/launch_update.sh" in setup
+
 
 def test_web_updater_checks_external_credentials_before_backup_or_release_changes():
     update = (ROOT / "update.sh").read_text(encoding="utf-8")
@@ -529,7 +654,8 @@ def test_web_updater_checks_external_credentials_before_backup_or_release_change
     assert "external Web UI config.json or secrets.env is missing" in update
     assert "valid external Argon2id password hash is required" in update
     assert (
-        "printf -v SETUP_RECOVERY_COMMAND 'sudo bash %q' \"$APP_DIR/installer/setup.sh\"" in update
+        "'sudo env KNXOH_INSTALL_DIR=%q KNXOH_CONFIG_DIR=%q KNXOH_DATA_DIR=%q "
+        "KNXOH_BACKUP_DIR=%q KNXOH_PATHS_FILE=%q bash %q'" in update
     )
     assert "interactive SSH terminal" in update
     backup = update.index("Creating and validating pre-update backup")

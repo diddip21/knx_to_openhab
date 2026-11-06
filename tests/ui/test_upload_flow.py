@@ -58,6 +58,7 @@ def test_upload_knx_project(page: Page, base_url, flask_server):
 def test_upload_invalid_file_is_rejected_by_backend(page: Page, base_url, flask_server, tmp_path):
     """Test uploading an invalid file type."""
     page.goto(base_url)
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
     dummy_file = tmp_path / "invalid.txt"
     dummy_file.write_text("not a KNX project", encoding="utf-8")

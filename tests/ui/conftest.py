@@ -40,8 +40,10 @@ def _recent_process_output(output_lines, reader):
 
 def pytest_collection_modifyitems(config, items):
     """Ensure all UI tests in this package are marked with @pytest.mark.ui."""
+    ui_root = Path(__file__).resolve().parent
     for item in items:
-        item.add_marker(pytest.mark.ui)
+        if Path(item.path).resolve().is_relative_to(ui_root):
+            item.add_marker(pytest.mark.ui)
 
 
 @pytest.fixture(autouse=True)

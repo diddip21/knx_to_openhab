@@ -18,8 +18,8 @@ playwright install chromium
 pytest tests/ui/ -v -m ui
 
 # Focused test or module
-pytest tests/ui/test_ui_smoke.py::test_homepage_loads -v
-pytest tests/ui/test_job_lifecycle_e2e.py -v
+pytest tests/ui/test_ui_smoke.py::test_homepage_loads -v -m ui
+pytest tests/ui/test_job_lifecycle_e2e.py -v -m ui
 
 # Run with a visible browser
 pytest tests/ui/ -v -m ui --headed

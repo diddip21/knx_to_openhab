@@ -133,7 +133,9 @@ The root-owned helper hashes the new password with Argon2id, resolves the
 configured secrets path from `paths.env`, preserves other secret values, and
 does not put the password in shell history.
 
-See `WEBUI_INSTALLATION.md` for full documentation.
+For the complete production installation and operations guide, see the
+[Production Guide](../docs/PRODUCTION_GUIDE.md). The [User Guide](../docs/USER_GUIDE.md)
+covers ETS preparation and generator settings.
 
 ## Service user privileges
 
@@ -220,7 +222,8 @@ It also replaces and validates the old policy. If only the least-privilege
 migration is needed, use `sudo bash installer/migrate_sudoers.sh`; that script
 changes only the sudoers file.
 
-> **Note:** For local development without systemd installation, see [DEVELOPMENT.md](../DEVELOPMENT.md)
+> **Note:** For local development without systemd installation, see the
+> [Developer Guide](../docs/DEVELOPER_GUIDE.md).
 
 ## Manual Service Control
 

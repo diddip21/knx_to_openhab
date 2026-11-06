@@ -22,28 +22,29 @@ Target audience: German-speaking smart home users running OpenHAB on Raspberry P
       render_yaml()          → deterministic openHAB 5.2 YAML
       export_output()        → writes files using *.template wrappers
   → openhab/ output directory
-      knx.items, knx.things, knx.sitemap, influxdb.persist
+      items/knx.items, things/knx.things, sitemaps/knx.sitemap,
+      persistence/influxdb.persist; optional yaml/knx.yaml
 ```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `knxproject_to_openhab.py` | Entry point: parses `.knxproj`, builds building hierarchy, calls generator (789 lines) |
-| `ets_to_openhab.py` | Core generator: `gen_building()` produces items/things/sitemap strings, `export_output()` writes files (1058 lines) |
+| `knxproject_to_openhab.py` | Entry point: parses `.knxproj`, builds building hierarchy, calls generator |
+| `ets_to_openhab.py` | Core generator: `gen_building()` produces the model and `export_output()` writes files |
 | `openhab_yaml.py` | Dependency-free openHAB 5.2 YAML renderer and semantic validator |
-| `config.json` | Central config: regex patterns, device detection rules, datapoint mappings, output paths (500 lines) |
+| `config.json` | Central config: regex patterns, device detection rules, datapoint mappings, output paths |
 | `config.py` | Loads `config.json`, normalizes values, detects OpenHAB paths. **Executes on import** — side effects at module level |
 | `utils.py` | Single helper: `get_datapoint_type()` |
 | `ets_helpers.py` | Extracted helpers: `get_co_flags()`, `flags_match()`, `get_dpt_from_dco()` |
 | `completeness.py` | Post-generation validation: checks Things for missing required channels |
 | `*.template` | Output wrappers: `items.template`, `things.template`, `sitemap.template` — use `###items###` placeholders |
-| `web_ui/backend/app.py` | Flask routes, auth, SSE, 20+ endpoints (1071 lines) |
-| `web_ui/backend/jobs.py` | Job queue, staging/deploy, backup/rollback (1233 lines) |
+| `web_ui/backend/app.py` | Flask routes, authentication, SSE, and API endpoints |
+| `web_ui/backend/jobs.py` | Job queue, staging/deploy, backup/rollback |
 | `web_ui/backend/storage.py` | JSON persistence, atomic file writes |
 | `web_ui/backend/updater.py` | Git-based self-update via GitHub API |
 | `web_ui/backend/service_manager.py` | systemd service control |
-| `web_ui/static/app.js` | Frontend SPA: vanilla JS, no framework (1978 lines) |
+| `web_ui/static/app.js` | Frontend SPA: vanilla JS, no framework |
 
 ## Coding Conventions
 
@@ -72,8 +73,8 @@ pytest -m integration
 # With coverage
 pytest --cov=. --cov-report=html
 
-# UI tests (requires Playwright + running server)
-pytest tests/ui -v -o addopts=
+# UI tests (requires Playwright; fixtures start an isolated server)
+pytest tests/ui -v -m ui
 ```
 
 ## Cross-Task Delivery Rules

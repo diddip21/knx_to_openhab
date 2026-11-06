@@ -93,7 +93,7 @@ pytest -m unit
 # UI tests (needs Playwright)
 pip install pytest-playwright
 python -m playwright install chromium
-pytest tests/ui -v -o addopts=
+pytest tests/ui -v -m ui
 ```
 
 See [tests/README.md](tests/README.md) for details.

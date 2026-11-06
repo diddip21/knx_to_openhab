@@ -1,33 +1,59 @@
 # Repository Cleanup Inventory
 
-Audit snapshot: `main` at `edf28d4` (`2026-11-03`), after PR #62. This inventory supports Issue #36 and records evidence for conservative cleanup decisions. Runtime behavior, configuration formats, and generated OpenHAB output are unchanged.
+Audit snapshot: the `dev` working tree based on `6bc8ad5` (`2026-11-06`),
+containing the fetched `origin/dev` and `origin/main` histories. This inventory
+covers tracked repository files; local worktrees and their uncommitted contents
+are outside its scope.
 
-## Removed duplicate data
+## Current findings
 
-At parent `6242f1d`, the three `influxdb.persist` files under `tests/fixtures/expected_output/{Charne,Mini,UploadJson}/` had the same Git blob ID (`e3d8eb24af0209ba14b8cb41d0fc7dd0c33f69ef`), 165 bytes each, and content SHA-256 (`1a497fec562fd54c31af6a080f1978f3450f1a060521d6bf9f3dee65c1b0ec3a`). They are now represented by `tests/fixtures/expected_output/common/influxdb.persist`. Golden comparison falls back to that shared reference, while regeneration and the manual golden generator preserve a project-local file if its persistence output differs. This consolidates 330 duplicate bytes in the current tree and keeps future project-specific output testable.
+- `git ls-files -ci --exclude-standard` reports no tracked files ignored by the
+  current `.gitignore`.
+- An exact-content scan found no duplicate files except the three empty package
+  markers: `tests/__init__.py`, `web_ui/__init__.py`, and
+  `web_ui/backend/__init__.py`. They define separate Python package boundaries
+  and should remain.
+- `tests/fixtures/Charne.knxproj` is the only tracked file larger than 1 MiB
+  (6,043,486 bytes). It is used by UI upload and parsing coverage.
+- Generated OpenHAB output is ignored. Tracked files under `openhab/` are the
+  intentional `icons/classic/*.svg` assets.
+- No tracked runtime source or test fixture was identified as safe to delete.
+- Removed `pytest-dependency` from runtime requirements because no current test
+  or application code uses it. Removed the unused Selenium and Pylint
+  development dependencies; UI tests use Playwright and CI runs Flake8 instead.
+- Removed the duplicate `coverage[toml]` development requirement because
+  `pytest-cov` already installs it.
+- Removed the stale `lark-parser` check from both setup verification scripts;
+  no application source or requirement uses that package. The Windows verifier
+  now checks the existing project virtual environment instead of requiring a
+  separate global Python command.
+- The UI collection hook now marks only tests under `tests/ui/`; previously it
+  marked the entire collected suite as UI and caused the default core selection
+  to deselect every test.
 
-## Reviewed and retained
+## Retained files with verified uses
 
 | Content | Evidence | Decision |
 | --- | --- | --- |
-| `tests/fixtures/Charne.knxproj` (6,043,486 bytes) | Referenced by UI preview, upload, SSE, job lifecycle, settings, and upload-security tests. | Keep; it covers real archive parsing and upload flows. |
-| `tests/Charne.knxproj.json` (713,963 bytes) | Referenced by output validation, business-logic, YAML, and completeness tests and by golden regeneration. | Keep; it is a parsed JSON project fixture, not a duplicate of the binary `.knxproj`. |
-| `tests/upload.knxprojarchive.json` and `tests/fixtures/mini_project.json` | Referenced by integration, output-regression, completeness, and golden tests. | Keep; each covers a distinct input path or minimal project case. |
-| `scripts/generate_golden_files.py` and `scripts/regenerate_golden.py` | The first creates a reference set from a manually verified arbitrary project; the second refreshes the fixed three-project integration suite. Both are documented in the developer and testing guides. | Keep; their scopes differ. |
-| `items.template`, `things.template`, `sitemap.template` | Used as wrappers during output export; placeholders are injected into their bodies. | Keep; they are active output inputs. |
-| `openhab/icons/classic/*.svg` | Explicitly unignored by `.gitignore` and tracked as UI/output assets. | Keep. No generated OpenHAB output files are tracked; only these icons are. |
-| Empty `__init__.py` files in test and web packages | Each establishes a separate Python package boundary. | Keep; identical emptiness does not make the package markers interchangeable. |
+| `tests/fixtures/Charne.knxproj` | Used by UI preview, upload, job lifecycle, and security coverage. | Keep; covers real archive parsing and upload flows. |
+| `tests/Charne.knxproj.json` | Used by output, business-logic, YAML, completeness, and golden-file coverage. | Keep; it is parsed project data, not a duplicate of the binary archive. |
+| `tests/upload.knxprojarchive.json` and `tests/fixtures/mini_project.json` | Used by integration, output-regression, completeness, and golden tests. | Keep; they cover distinct input cases. |
+| `scripts/generate_golden_files.py` and `scripts/regenerate_golden.py` | One creates a reference set for a manually verified project; the other regenerates the fixed integration suite. | Keep; their scopes differ. |
+| `items.template`, `things.template`, `sitemap.template` | Read by `ets_to_openhab.py` during legacy output export. | Keep; active generator inputs. |
+| `openhab/icons/classic/*.svg` | Explicitly retained by `.gitignore` and used as UI/output assets. | Keep. |
 
-At this snapshot, the binary Charne project is the only tracked file larger than 1 MiB. A fresh exact-content scan after PR #62 found no remaining duplicate groups other than the empty package marker files.
+## Consolidated persistence reference
 
-## `.gitignore` correction
+The three identical `influxdb.persist` golden files were consolidated into
+`tests/fixtures/expected_output/common/influxdb.persist`. Golden comparison uses
+that shared reference, while regeneration retains a project-specific file when
+its output differs. This removes duplicate fixture content without preventing
+future project-specific persistence output.
 
-Before this change, `git ls-files -ci --exclude-standard` reported `tests/fixtures/Charne.knxproj` and `tests/Charne.knxproj.json`. Both are intentionally tracked and actively used. The broad `*.knxproj*` rule remains to avoid accidentally adding user ETS projects; explicit exceptions now preserve these two fixtures, as well as the existing `tests/upload.knxprojarchive.json` fixture.
+## Cleanup disposition
 
-## Parallel work considered
-
-PR #61 is closed. PR #60 remains an independent installer/release workstream; this cleanup changes only `.gitignore` and this inventory and does not alter installer or release behavior.
-
-## Follow-up
-
-After the exceptions, `git ls-files -ci --exclude-standard` returns no paths. The re-audit found no additional exact duplicate groups beyond empty package markers, and the Charne project remains the only tracked file over 1 MiB. Keep Issue #36 open until this inventory and the remaining compatibility risk are reviewed; close it after this change is merged and the checks pass.
+The old `docs/superpowers/` execution plans and design notes were internal
+implementation records, not product or deployment documentation. They have
+been removed from the maintained branch. The release builder also excludes
+repository-only agent instructions and this cleanup inventory; it continues to
+include the user, production, developer, and release guides.

@@ -55,6 +55,7 @@ def test_upload_knx_project(page: Page, base_url, flask_server):
     )
 
 
+@pytest.mark.skip(reason="Backend does not validate file type on upload")
 def test_upload_invalid_file(page: Page, base_url):
     """Test uploading an invalid file type."""
     page.goto(base_url)
@@ -63,10 +64,6 @@ def test_upload_invalid_file(page: Page, base_url):
     dummy_file = "test.txt"
     with open(dummy_file, "w") as f:
         f.write("dummy content")
-
-    # Backend currently accepts all files and fails later in the job.
-    # This test expects immediate rejection which is not implemented.
-    pytest.skip("Backend does not validate file type on upload")
 
     try:
         file_input = page.locator("#fileInput")

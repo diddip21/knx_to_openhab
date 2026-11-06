@@ -56,6 +56,11 @@ if [[ ! -x "$INSTALL_DIR/venv/bin/python" ]]; then
     log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' from an interactive SSH terminal (for example, ssh -t), then retry."
     exit 1
 fi
+if [[ ! -x "$INSTALL_DIR/venv/bin/pip" ]]; then
+    log "ERROR: The installed Python package manager is missing; release dependencies cannot be updated safely."
+    log "Recovery: run 'sudo bash $INSTALL_DIR/installer/setup.sh' as an administrator, then retry."
+    exit 1
+fi
 if ! CREDENTIAL_CHECK=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" \
     PYTHONPATH="$INSTALL_DIR" "$INSTALL_DIR/venv/bin/python" - "$PATHS_FILE" <<'PY' 2>&1
 import base64
@@ -205,45 +210,8 @@ if [[ "$CURRENT_COMMIT" == "$REMOTE_COMMIT" ]]; then
     exit 0
 fi
 
-# Check out the exact release selected by the Web UI.
-log "Checking out selected release $RELEASE_TAG..."
-if ! git -c "safe.directory=$INSTALL_DIR" checkout --detach "$RELEASE_TAG"; then
-    log "ERROR: Could not check out release $RELEASE_TAG"
-    log "Attempting to restore from backup..."
-    git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"
-    exit 1
-fi
-
-# Update Python dependencies
-log "Updating Python dependencies..."
-if [[ -f "$INSTALL_DIR/venv/bin/pip" ]]; then
-    "$INSTALL_DIR/venv/bin/pip" install --upgrade pip -q || log "WARNING: pip upgrade failed"
-    if ! "$INSTALL_DIR/venv/bin/pip" install -r requirements.txt -q; then
-        log "ERROR: Failed to install dependencies"
-        log "Attempting to restore from backup..."
-        git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"
-        exit 1
-    fi
-else
-    log "WARNING: Virtual environment not found, skipping dependency update"
-fi
-
-# Update version.json with new commit hash
-log "Updating version.json..."
-NEW_COMMIT=$(git -c "safe.directory=$INSTALL_DIR" rev-parse HEAD)
-if [[ -f "version.json" ]]; then
-    # Use Python to update the JSON file
-    python3 -c "
-import json
-with open('version.json', 'r') as f:
-    data = json.load(f)
-data['commit_hash'] = '$NEW_COMMIT'
-data['build_date'] = '$(date +%Y-%m-%d)'
-with open('version.json', 'w') as f:
-    json.dump(data, f, indent=2)
-" || log "WARNING: Failed to update version.json"
-fi
-
+# Recovery helpers are defined before any operation that can leave the new
+# release partially applied, including dependency installation.
 wait_for_service_active() {
     local attempt consecutive_active=0
     for attempt in {1..15}; do
@@ -284,6 +252,40 @@ restore_previous_release() {
     log "ERROR: The previous version is restored, but the service is still inactive."
     return 1
 }
+
+# Check out the exact release selected by the Web UI.
+log "Checking out selected release $RELEASE_TAG..."
+if ! git -c "safe.directory=$INSTALL_DIR" checkout --detach "$RELEASE_TAG"; then
+    log "ERROR: Could not check out release $RELEASE_TAG"
+    log "Attempting to restore from backup..."
+    git -c "safe.directory=$INSTALL_DIR" reset --hard "$CURRENT_COMMIT"
+    exit 1
+fi
+
+# Update Python dependencies
+log "Updating Python dependencies..."
+"$INSTALL_DIR/venv/bin/pip" install --upgrade pip -q || log "WARNING: pip upgrade failed"
+if ! "$INSTALL_DIR/venv/bin/pip" install -r requirements.txt -q; then
+    log "ERROR: Failed to install dependencies"
+    restore_previous_release || log "ERROR: Automatic recovery failed. Check: sudo systemctl status $SERVICE_NAME"
+    exit 1
+fi
+
+# Update version.json with new commit hash
+log "Updating version.json..."
+NEW_COMMIT=$(git -c "safe.directory=$INSTALL_DIR" rev-parse HEAD)
+if [[ -f "version.json" ]]; then
+    # Use Python to update the JSON file
+    python3 -c "
+import json
+with open('version.json', 'r') as f:
+    data = json.load(f)
+data['commit_hash'] = '$NEW_COMMIT'
+data['build_date'] = '$(date +%Y-%m-%d)'
+with open('version.json', 'w') as f:
+    json.dump(data, f, indent=2)
+" || log "WARNING: Failed to update version.json"
+fi
 
 log "Restarting $SERVICE_NAME..."
 if ! sudo systemctl restart "$SERVICE_NAME"; then

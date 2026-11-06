@@ -5,11 +5,20 @@ INSTALL_DIR="${KNXOH_INSTALL_DIR:-}"
 DATA_DIR="${KNXOH_DATA_DIR:-}"
 PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
 EXPECTED_RELEASE="${KNXOH_EXPECTED_RELEASE:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 fail() {
     printf 'ERROR: %s\n' "$1" >&2
     exit 1
 }
+
+if [[ ! -f "$SCRIPT_DIR/maintenance_lock.sh" ]]; then
+    fail "The maintenance lock helper is missing."
+fi
+source "$SCRIPT_DIR/maintenance_lock.sh"
+if [[ "${KNXOH_SETUP_LOCK_HELD:-0}" != 1 ]] && ! acquire_maintenance_shared_lock; then
+    fail "Setup or uninstall is in progress; retry environment repair later."
+fi
 
 if [[ -z "$INSTALL_DIR" || "$INSTALL_DIR" != /* ]]; then
     fail "The installation directory must be provided as an absolute path."

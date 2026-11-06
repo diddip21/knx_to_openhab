@@ -16,6 +16,16 @@ RELEASE_COMMIT_DATE="${RELEASE_COMMIT_DATE:-}"
 RELEASE_COMMIT_MESSAGE="${RELEASE_COMMIT_MESSAGE:-}"
 RELEASE_AUTHOR="${RELEASE_AUTHOR:-unknown}"
 PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
+MAINTENANCE_LOCK_HELPER="${KNXOH_MAINTENANCE_LOCK_HELPER:-$SCRIPT_DIR/installer/maintenance_lock.sh}"
+if [[ ! -f "$MAINTENANCE_LOCK_HELPER" ]]; then
+    echo "ERROR: The maintenance lock helper is missing: $MAINTENANCE_LOCK_HELPER" >&2
+    exit 1
+fi
+source "$MAINTENANCE_LOCK_HELPER"
+if ! acquire_maintenance_shared_lock; then
+    echo "ERROR: Setup or uninstall is in progress; retry the update later." >&2
+    exit 1
+fi
 
 # Logging function
 log() {

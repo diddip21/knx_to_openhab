@@ -119,6 +119,10 @@ def _make_update_fixture(tmp_path, *, backup_path=None, git_status="", hold_prep
     data_dir.mkdir()
     fake_bin.mkdir()
     shutil.copy2(root / "update.sh", install_dir / "update.sh")
+    shutil.copy2(
+        root / "installer/maintenance_lock.sh",
+        install_dir / "installer/maintenance_lock.sh",
+    )
     shutil.copy2(root / "knxoh_paths.py", install_dir / "knxoh_paths.py")
     shutil.copy2(
         root / "installer/create_update_backup.py",
@@ -186,6 +190,7 @@ def _make_update_fixture(tmp_path, *, backup_path=None, git_status="", hold_prep
             "KNXOH_DATA_DIR": str(data_dir),
             "KNXOH_BACKUP_DIR": str(backup_dir),
             "KNXOH_PATHS_FILE": str(config_dir / "paths.env"),
+            "KNXOH_MAINTENANCE_LOCK_FILE": str(data_dir / "maintenance.lock"),
             "RELEASE_TAG": "v1.2.3",
             "RELEASE_COMMIT_HASH": "a" * 40,
             "LOG_FILE": str(tmp_path / "update.log"),
@@ -196,6 +201,7 @@ def _make_update_fixture(tmp_path, *, backup_path=None, git_status="", hold_prep
             "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
         }
     )
+    (data_dir / "maintenance.lock").touch()
     return install_dir, environment, git_log, prepare_marker, data_dir, backup_dir
 
 

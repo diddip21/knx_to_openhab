@@ -12,6 +12,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 REPAIR_SCRIPT = ROOT / "installer" / "repair_release_venv.sh"
+MAINTENANCE_LOCK_HELPER = ROOT / "installer" / "maintenance_lock.sh"
 
 
 def create_install(tmp_path):
@@ -51,6 +52,8 @@ def create_install(tmp_path):
     assert REPAIR_SCRIPT.is_file(), "active-release virtualenv repair helper is not implemented"
     shutil.copy2(REPAIR_SCRIPT, helper)
     helper.chmod(0o755)
+    shutil.copy2(MAINTENANCE_LOCK_HELPER, release / "installer" / MAINTENANCE_LOCK_HELPER.name)
+    (data / "maintenance.lock").touch()
     return {
         "install": install,
         "release": release,
@@ -64,6 +67,7 @@ def install_stable_helper(installation, destination):
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(REPAIR_SCRIPT, destination)
     destination.chmod(0o755)
+    shutil.copy2(MAINTENANCE_LOCK_HELPER, destination.parent / MAINTENANCE_LOCK_HELPER.name)
     shutil.copy2(ROOT / "knxoh_paths.py", installation["install"] / "knxoh_paths.py")
     return destination
 
@@ -81,6 +85,7 @@ def helper_environment(installation, extra=None):
     environment["KNXOH_DATA_DIR"] = str(installation["data"])
     environment["KNXOH_EXPECTED_RELEASE"] = str(installation["release"])
     environment["KNXOH_PATHS_FILE"] = str(installation["paths_file"])
+    environment["KNXOH_MAINTENANCE_LOCK_FILE"] = str(installation["data"] / "maintenance.lock")
     if extra:
         environment.update(extra)
     return environment
@@ -179,12 +184,28 @@ def test_repair_release_venv_refuses_busy_updater_lock(tmp_path):
 
     with lock_path.open("r+") as lock_file:
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        result = run_helper(installation)
+        result = run_helper(
+            installation,
+            helper_environment(installation, {"KNXOH_SETUP_LOCK_HELD": "1"}),
+        )
 
     assert result.returncode != 0
     assert "updater" in (result.stdout + result.stderr).lower()
     assert not (installation["release"] / "venv").exists()
     assert (installation["install"] / "current").resolve() == installation["release"]
+
+
+def test_repair_release_venv_refuses_to_run_during_setup_maintenance_lock(tmp_path):
+    installation = create_install(tmp_path)
+    lock_path = installation["data"] / "maintenance.lock"
+
+    with lock_path.open("r+") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = run_helper(installation)
+
+    assert result.returncode != 0
+    assert "setup or uninstall is in progress" in (result.stdout + result.stderr).lower()
+    assert not (installation["release"] / "venv").exists()
 
 
 def test_stable_repair_helper_recovers_release_without_local_helper(tmp_path):

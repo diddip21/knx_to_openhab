@@ -8,6 +8,15 @@ fail_startup() {
     exit 1
 }
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ ! -f "$SCRIPT_DIR/maintenance_lock.sh" ]]; then
+    fail_startup "the maintenance lock helper is missing"
+fi
+source "$SCRIPT_DIR/maintenance_lock.sh"
+if ! acquire_maintenance_shared_lock; then
+    fail_startup "setup or uninstall is in progress; retry service startup later"
+fi
+
 INSTALL_DIR="${KNXOH_INSTALL_DIR:-/opt/knx_to_openhab}"
 if [[ "$INSTALL_DIR" != /* ]] || ! INSTALL_DIR=$(cd -P -- "$INSTALL_DIR" && pwd); then
     fail_startup "installation directory must exist and be an absolute path: $INSTALL_DIR"

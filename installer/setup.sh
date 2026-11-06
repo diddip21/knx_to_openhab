@@ -299,6 +299,8 @@ sudo bash "$BASE/installer/migrate_sudoers.sh"
 
 echo "Installing systemd launch helpers"
 sudo install -d -o root -g root -m 0755 /usr/local/libexec/knx_to_openhab
+sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/maintenance_lock.sh" \
+    /usr/local/libexec/knx_to_openhab/maintenance_lock.sh
 sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/launch_web.sh" \
     /usr/local/libexec/knx_to_openhab/launch_web.sh
 sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/launch_backup_cleanup.sh" \

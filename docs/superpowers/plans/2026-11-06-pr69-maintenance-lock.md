@@ -77,21 +77,21 @@ Expected: all tests pass; syntax succeeds.
 - Consumes: Task 1 lock functions.
 - Produces: all service entry points take and retain a shared maintenance lock; repair may skip only the shared lock when setup explicitly passes `KNXOH_SETUP_LOCK_HELD=1`.
 
-- [ ] **Step 1: Add failing service-start and updater-start contention tests**
+- [x] **Step 1: Add failing service-start and updater-start contention tests**
 
 Run real launcher/helper scripts with a temporary exclusive lock held. Assert Web UI, update service, backup cleanup, direct `update.sh`, and standalone repair exit before executing application work. Assert setup-authorized repair still relies on the existing updater lock.
 
-- [ ] **Step 2: Run focused tests and verify they fail against current launchers**
+- [x] **Step 2: Run focused tests and verify they fail against current launchers**
 
 Run: `pytest tests/test_setup_updater_quiescing.py tests/test_repair_release_venv.py -q`
 
 Expected: new contention cases fail because launchers do not consult the maintenance lock.
 
-- [ ] **Step 3: Gate each service entry point with a shared lock**
+- [x] **Step 3: Gate each service entry point with a shared lock**
 
 Source the stable helper before application work, retain the shared descriptor through `exec`, and make contention fail closed. Add setup installation of the helper before installing the launch scripts. Preserve the existing updater-lock behavior in the repair helper.
 
-- [ ] **Step 4: Run focused service and recovery tests**
+- [x] **Step 4: Run focused service and recovery tests**
 
 Run: `pytest tests/test_setup_updater_quiescing.py tests/test_repair_release_venv.py tests/test_run_update_request.py -q`.
 

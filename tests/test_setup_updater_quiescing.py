@@ -1,5 +1,6 @@
 """Regression tests for setup's systemd updater quiescing guard."""
 
+import fcntl
 import os
 import subprocess
 from pathlib import Path
@@ -10,6 +11,24 @@ ROOT = Path(__file__).resolve().parents[1]
 QUIESCE_SCRIPT = ROOT / "installer" / "quiesce_update_service.sh"
 MASK_HELPER = ROOT / "installer" / "setup_update_service_mask.sh"
 UPDATER_UNIT = "knxohui-update.service"
+
+
+def run_under_exclusive_maintenance_lock(tmp_path, command, environment):
+    lock_file = tmp_path / "maintenance.lock"
+    lock_file.touch()
+    environment = os.environ.copy() | environment
+    environment["KNXOH_MAINTENANCE_LOCK_FILE"] = str(lock_file)
+    with lock_file.open("r+") as lock_stream:
+        fcntl.flock(lock_stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = subprocess.run(
+            command,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    return result
 
 
 def run_quiescer(
@@ -287,3 +306,87 @@ def test_setup_holds_updater_mask_across_both_quiescence_checks_and_service_rest
     assert trap_body.index("unmask_update_service_after_setup") < trap_body.index(
         'sudo systemctl start "$unit"'
     )
+
+
+def test_web_launcher_fails_closed_while_setup_holds_exclusive_lock(tmp_path):
+    install = tmp_path / "install"
+    data = tmp_path / "data"
+    executable = install / "current" / "venv" / "bin" / "gunicorn"
+    marker = tmp_path / "web-started"
+    executable.parent.mkdir(parents=True)
+    data.mkdir()
+    executable.write_text(f"#!/bin/bash\n: > {marker}\n", encoding="utf-8")
+    executable.chmod(0o755)
+
+    result = run_under_exclusive_maintenance_lock(
+        tmp_path,
+        ["bash", str(ROOT / "installer" / "launch_web.sh")],
+        {
+            "KNXOH_INSTALL_DIR": str(install),
+            "KNXOH_DATA_DIR": str(data),
+        },
+    )
+
+    assert result.returncode != 0
+    assert "setup or uninstall is in progress" in (result.stdout + result.stderr).lower()
+    assert not marker.exists()
+
+
+def test_update_launcher_fails_closed_while_setup_holds_exclusive_lock(tmp_path):
+    install = tmp_path / "install"
+    python = install / "current" / "venv" / "bin" / "python"
+    worker = install / "current" / "installer" / "run_update_request.py"
+    marker = tmp_path / "update-started"
+    python.parent.mkdir(parents=True)
+    worker.parent.mkdir(parents=True)
+    python.write_text(f"#!/bin/bash\n: > {marker}\n", encoding="utf-8")
+    python.chmod(0o755)
+    worker.write_text("# worker\n", encoding="utf-8")
+
+    result = run_under_exclusive_maintenance_lock(
+        tmp_path,
+        ["bash", str(ROOT / "installer" / "launch_update.sh")],
+        {"KNXOH_INSTALL_DIR": str(install)},
+    )
+
+    assert result.returncode != 0
+    assert "setup or uninstall is in progress" in (result.stdout + result.stderr).lower()
+    assert not marker.exists()
+
+
+def test_backup_cleanup_launcher_fails_closed_while_setup_holds_exclusive_lock(tmp_path):
+    install = tmp_path / "install"
+    cleanup = install / "current" / "installer" / "backup_cleanup.sh"
+    marker = tmp_path / "cleanup-started"
+    cleanup.parent.mkdir(parents=True)
+    cleanup.write_text(f"#!/bin/bash\n: > {marker}\n", encoding="utf-8")
+
+    result = run_under_exclusive_maintenance_lock(
+        tmp_path,
+        ["bash", str(ROOT / "installer" / "launch_backup_cleanup.sh")],
+        {"KNXOH_INSTALL_DIR": str(install)},
+    )
+
+    assert result.returncode != 0
+    assert "setup or uninstall is in progress" in (result.stdout + result.stderr).lower()
+    assert not marker.exists()
+
+
+def test_direct_updater_fails_before_logging_while_setup_holds_exclusive_lock(tmp_path):
+    install = tmp_path / "install"
+    install.mkdir()
+    log_file = tmp_path / "update.log"
+
+    result = run_under_exclusive_maintenance_lock(
+        tmp_path,
+        ["bash", str(ROOT / "update.sh")],
+        {
+            "KNXOH_INSTALL_DIR": str(install),
+            "RELEASE_TAG": "invalid",
+            "LOG_FILE": str(log_file),
+        },
+    )
+
+    assert result.returncode != 0
+    assert "setup or uninstall is in progress" in (result.stdout + result.stderr).lower()
+    assert not log_file.exists()

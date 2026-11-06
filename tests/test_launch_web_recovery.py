@@ -28,8 +28,10 @@ def _launch(install_dir: Path, data_dir: Path) -> subprocess.CompletedProcess[st
         {
             "KNXOH_INSTALL_DIR": str(install_dir),
             "KNXOH_DATA_DIR": str(data_dir),
+            "KNXOH_MAINTENANCE_LOCK_FILE": str(data_dir / "maintenance.lock"),
         }
     )
+    (data_dir / "maintenance.lock").touch()
     return subprocess.run(
         ["bash", str(LAUNCHER)],
         cwd=install_dir,

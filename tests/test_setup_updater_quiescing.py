@@ -8,6 +8,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 QUIESCE_SCRIPT = ROOT / "installer" / "quiesce_update_service.sh"
+MASK_HELPER = ROOT / "installer" / "setup_update_service_mask.sh"
 UPDATER_UNIT = "knxohui-update.service"
 
 
@@ -160,3 +161,129 @@ def test_setup_quiesces_updater_after_web_ui_stop_and_before_mutations():
     assert web_ui_stop < quiesce_call < first_mutation
     assert quiesce_call < setup.index('sudo python3 -m venv "$BASE/venv"')
     assert quiesce_call < setup.index("sudo rsync -a")
+
+
+def run_mask_helper(
+    tmp_path,
+    *,
+    load_state="loaded",
+    mask_fail=False,
+    unmask_fail=False,
+):
+    fake_bin = tmp_path / "mask fake bin"
+    fake_bin.mkdir()
+    log_file = tmp_path / "mask-systemctl.log"
+    fake_sudo = fake_bin / "sudo"
+    fake_sudo.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        '[[ "${1:-}" == systemctl ]] || exit 2\n'
+        "shift\n"
+        'printf \'%s\\n\' "$*" >> "$MASK_TEST_LOG"\n'
+        'case "${1:-}" in\n'
+        '  show) echo "$MASK_TEST_LOAD_STATE" ;;\n'
+        '  mask) [[ "$MASK_TEST_MASK_FAIL" != 1 ]] || exit 8 ;;\n'
+        '  unmask) [[ "$MASK_TEST_UNMASK_FAIL" != 1 ]] || exit 9 ;;\n'
+        "  *) exit 2 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_sudo.chmod(0o755)
+
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+            "MASK_TEST_LOG": str(log_file),
+            "MASK_TEST_LOAD_STATE": load_state,
+            "MASK_TEST_MASK_FAIL": "1" if mask_fail else "0",
+            "MASK_TEST_UNMASK_FAIL": "1" if unmask_fail else "0",
+        }
+    )
+    script = (
+        'source "$1"; '
+        'if mask_update_service_for_setup; then echo "MASK_RESULT=0:$KNXOH_UPDATE_SERVICE_RUNTIME_MASKED"; '
+        'else echo "MASK_RESULT=$?:${KNXOH_UPDATE_SERVICE_RUNTIME_MASKED:-unset}"; fi; '
+        'if unmask_update_service_after_setup; then echo "UNMASK_RESULT=0:$KNXOH_UPDATE_SERVICE_RUNTIME_MASKED"; '
+        'else echo "UNMASK_RESULT=$?:${KNXOH_UPDATE_SERVICE_RUNTIME_MASKED:-unset}"; fi'
+    )
+    result = subprocess.run(
+        ["bash", "-c", script, "mask-test", str(MASK_HELPER)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    events = log_file.read_text(encoding="utf-8").splitlines() if log_file.exists() else []
+    return result, events
+
+
+def test_setup_mask_helper_owns_only_the_runtime_mask_it_creates(tmp_path):
+    result, events = run_mask_helper(tmp_path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "MASK_RESULT=0:1" in result.stdout
+    assert "UNMASK_RESULT=0:0" in result.stdout
+    assert events == [
+        f"show --property=LoadState --value {UPDATER_UNIT}",
+        f"mask --runtime {UPDATER_UNIT}",
+        f"unmask --runtime {UPDATER_UNIT}",
+    ]
+
+
+@pytest.mark.parametrize("load_state", ["masked", "not-found"])
+def test_setup_mask_helper_preserves_preexisting_mask_or_missing_unit(tmp_path, load_state):
+    result, events = run_mask_helper(tmp_path, load_state=load_state)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "MASK_RESULT=0:0" in result.stdout
+    assert "UNMASK_RESULT=0:0" in result.stdout
+    assert events == [f"show --property=LoadState --value {UPDATER_UNIT}"]
+
+
+def test_setup_mask_helper_does_not_claim_mask_when_masking_fails(tmp_path):
+    result, events = run_mask_helper(tmp_path, mask_fail=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "MASK_RESULT=1:0" in result.stdout
+    assert "UNMASK_RESULT=0:0" in result.stdout
+    assert events[-1] == f"mask --runtime {UPDATER_UNIT}"
+    assert not any(event.startswith("unmask ") for event in events)
+
+
+def test_setup_mask_helper_retains_ownership_when_unmasking_fails(tmp_path):
+    result, events = run_mask_helper(tmp_path, unmask_fail=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "MASK_RESULT=0:1" in result.stdout
+    assert "UNMASK_RESULT=1:1" in result.stdout
+    assert events[-1] == f"unmask --runtime {UPDATER_UNIT}"
+
+
+def test_setup_holds_updater_mask_across_both_quiescence_checks_and_service_restart():
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+    initial_web_stop = setup.index("stop_unit_if_active knxohui.service")
+    mask_call = setup.index("mask_update_service_for_setup")
+    first_quiesce = setup.index('sudo bash "$REPO_ROOT/installer/quiesce_update_service.sh"')
+    second_web_stop = setup.index("stop_unit_if_active knxohui.service", initial_web_stop + 1)
+    second_quiesce = setup.index(
+        'sudo bash "$REPO_ROOT/installer/quiesce_update_service.sh"', first_quiesce + 1
+    )
+    first_mutation = setup.index('sudo groupadd -r "$SERVICE_USER"')
+    service_restart = setup.index("sudo systemctl restart knxohui.service")
+    success_unmask = setup.index("unmask_update_service_after_setup", service_restart)
+    completed = setup.index("SETUP_COMPLETED=1", success_unmask)
+
+    assert initial_web_stop < mask_call < first_quiesce
+    assert first_quiesce < second_web_stop < second_quiesce < first_mutation
+    assert service_restart < success_unmask < completed
+
+    trap_body = setup[
+        setup.index("restore_previous_services() {") : setup.index(
+            "trap restore_previous_services EXIT"
+        )
+    ]
+    assert trap_body.index("unmask_update_service_after_setup") < trap_body.index(
+        'sudo systemctl start "$unit"'
+    )

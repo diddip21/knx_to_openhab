@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/setup_update_service_mask.sh"
 PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
 SERVICE_USER="knxohui"
 
@@ -186,6 +187,9 @@ SETUP_COMPLETED=0
 restore_previous_services() {
     local exit_status=$?
     trap - EXIT
+    if ! unmask_update_service_after_setup; then
+        echo "Could not remove the setup-owned updater runtime mask." >&2
+    fi
     if (( exit_status != 0 && SETUP_COMPLETED == 0 && ${#PREVIOUSLY_ACTIVE_UNITS[@]} > 0 )); then
         echo "Setup failed; restoring services that were active before migration." >&2
         sudo systemctl daemon-reload || true
@@ -202,7 +206,11 @@ echo "Stopping the Web UI and backup cleanup during migration"
 stop_unit_if_active knxohui-backup-cleanup.timer
 stop_unit_if_active knxohui-backup-cleanup.service
 stop_unit_if_active knxohui.service
+mask_update_service_for_setup
 echo "Waiting for the updater to finish and cancelling queued update starts"
+sudo bash "$REPO_ROOT/installer/quiesce_update_service.sh"
+echo "Stopping the Web UI again after updater shutdown"
+stop_unit_if_active knxohui.service
 sudo bash "$REPO_ROOT/installer/quiesce_update_service.sh"
 
 if ! getent group "$SERVICE_USER" >/dev/null 2>&1; then
@@ -340,6 +348,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable knxohui.service
 sudo systemctl restart knxohui.service
 sudo systemctl enable --now knxohui-backup-cleanup.timer
+unmask_update_service_after_setup
 SETUP_COMPLETED=1
 
 echo "Installation complete. Web UI: http://127.0.0.1:$PORT"

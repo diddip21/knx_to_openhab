@@ -126,9 +126,12 @@ stopping services, it attempts to restart the services that were active before m
 Retry the Web UI update after setup completes.
 
 Before changing files, setup waits for any running transactional updater to finish
-and cancels queued updater starts. If the updater cannot be confirmed idle within
-15 minutes, setup stops before installation or runtime-data changes; resolve the
-updater issue and run setup again.
+and cancels queued updater starts. It temporarily runtime-masks the updater during
+setup and stops the Web UI again after the updater exits, because the updater's
+health check may restart it. The mask is removed after setup completes (or during
+failure recovery). If the updater cannot be confirmed idle within 15 minutes,
+setup stops before installation or runtime-data changes; resolve the updater
+issue and run setup again.
 
 If an active transactional release has a missing or unusable Python environment,
 the updater prints a recovery command. When the stable repair helper is already

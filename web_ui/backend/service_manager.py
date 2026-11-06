@@ -14,49 +14,14 @@ def get_service_status(service_name: str):
             "last_run_str": None,
         }
     try:
-        # Get service status
-        # First try without sudo
-        proc = subprocess.run(
-            ["systemctl", "is-active", service_name],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        status = proc.stdout.strip()
-
-        # If output is empty or unknown, try with sudo (in case user needs privs to see status)
-        if not status or status == "unknown":
-            proc_sudo = subprocess.run(
-                ["sudo", "systemctl", "is-active", service_name],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            status_sudo = proc_sudo.stdout.strip()
-            if status_sudo and status_sudo != "unknown":
-                status = status_sudo
-                proc = proc_sudo
-            else:
-                # If sudo also failed to find it, keep track of errors for debugging
-                if proc_sudo.stderr:
-                    print(f"Service check failed (sudo): {proc_sudo.stderr}")
-                if proc.stderr:
-                    print(f"Service check failed (non-sudo): {proc.stderr}")
-
-        if not status:
-            status = "unknown"
-
-        is_active = (proc.returncode == 0) and (status == "active")
-
-        # Get service info (to extract uptime/since)
-        # We need ActiveEnterTimestamp for uptime, and StateChangeTimestamp/InactiveEnterTimestamp for last run
+        # Read the state and timestamps together in one request.
         proc_show = subprocess.run(
             [
                 "systemctl",
                 "show",
                 service_name,
-                "-p",
-                "ActiveEnterTimestamp,StateChangeTimestamp,InactiveEnterTimestamp",
+                "--property=LoadState,ActiveState,ActiveEnterTimestamp,"
+                "StateChangeTimestamp,InactiveEnterTimestamp",
             ],
             capture_output=True,
             text=True,
@@ -66,49 +31,19 @@ def get_service_status(service_name: str):
         # Output is like:
         # ActiveEnterTimestamp=Mon 2023-10-23 10:00:00 CEST
         # InactiveEnterTimestamp=...
-        info_lines = proc_show.stdout.splitlines()
         info_dict = {}
-        for line in info_lines:
-            if "=" in line:
-                k, v = line.split("=", 1)
-                info_dict[k.strip()] = v.strip()
+        for line in proc_show.stdout.splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                info_dict[key.strip()] = value.strip()
+
+        status = info_dict.get("ActiveState") or "unknown"
+        if info_dict.get("LoadState") == "not-found":
+            status = "not-found"
+        is_active = proc_show.returncode == 0 and status == "active"
 
         uptime_str = None
         last_run_str = None
-
-        import time
-        from datetime import datetime, timedelta
-
-        # Helper to parse systemd timestamp (simplified)
-        # Systemd format: "Day YYYY-MM-DD HH:MM:SS TZ" or "Mon 2023-..."
-        # We'll try to parse commonly used formats
-        def parse_systemd_time(ts_str):
-            if not ts_str:
-                return None
-            # remove day name if present
-            parts = ts_str.split(" ", 1)
-            if len(parts) > 1 and parts[0] in [
-                "Mon",
-                "Tue",
-                "Wed",
-                "Thu",
-                "Fri",
-                "Sat",
-                "Sun",
-            ]:
-                ts_str = parts[1]
-
-            # Simple approach: try to parse fixed format
-            # Or simplified: just return the string if it looks like a date
-            return ts_str
-
-        def get_duration_str(start_ts_str):
-            if not start_ts_str:
-                return None
-            # This is hard to do accurately without proper timezone handling in python < 3.9 w/o third party libs
-            # We'll return the timestamp string itself as "Starts at ..." or calculate rough diff if possible
-            # For now, let's just return the raw timestamp string as it is informative enough
-            return start_ts_str
 
         # Calculate uptime if active
         if is_active:
@@ -128,7 +63,7 @@ def get_service_status(service_name: str):
         return {
             "active": is_active,
             "status": status,
-            "info": proc_show.stdout,
+            "info": proc_show.stdout or proc_show.stderr,
             "uptime_str": uptime_str,
             "last_run_str": last_run_str,
         }

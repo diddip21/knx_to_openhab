@@ -259,7 +259,8 @@ The Web UI shows **reports** for unknown, partial, and completeness checks so yo
 
 ### "Login/401 in Web UI"
 
-- The Web UI uses a sign-in form and a protected browser session by default.
+- The Web UI uses HTTP Basic authentication by default. Set `auth.mode` to
+  `session` to use the sign-in form and revocable browser sessions.
 - Use the Web UI password you set during installation. Existing user-chosen
   passwords are preserved during migration; the shipped default is replaced.
 - For new installs, open `http://127.0.0.1:8085` locally or connect through an SSH

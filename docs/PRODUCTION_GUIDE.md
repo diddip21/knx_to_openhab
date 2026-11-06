@@ -249,11 +249,30 @@ browser UI supplies the required headers automatically.
 #### `POST /api/upload`
 Upload a KNX project file.
 
-**Request:**
+**Request (default Basic mode, `auth.mode: "basic"`):**
 ```
+Authorization: Basic <base64(username:password)>
+Origin: https://<web-ui-host>
 Content-Type: multipart/form-data
-Cookie: knx_session=…
+File field: "file" (binary)
+```
+The `Origin` must match the Web UI's origin (scheme, host, and port), or an
+HTTPS origin listed in `auth.allowed_origins`. With curl, for example:
+
+```bash
+curl --user '<username>:<password>' \
+  -H 'Origin: https://<web-ui-host>' \
+  -F 'file=@project.knxproj' \
+  'https://<web-ui-host>/api/upload'
+```
+
+For `auth.mode: "session"`, send the session and CSRF cookies and repeat the
+CSRF token in the header:
+
+```
+Cookie: knx_session=…; knx_csrf=<csrf-token>
 X-CSRF-Token: <csrf-token>
+Content-Type: multipart/form-data
 File field: "file" (binary)
 ```
 

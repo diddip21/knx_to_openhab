@@ -3,7 +3,8 @@ set -euo pipefail
 
 INSTALL_DIR="${KNXOH_INSTALL_DIR:-/opt/knx_to_openhab}"
 APP_DIR="$INSTALL_DIR/current"
-if [[ ! -x "$APP_DIR/venv/bin/python" || ! -f "$APP_DIR/installer/run_update_request.py" ]]; then
+if [[ ! -x "$APP_DIR/venv/bin/python" || ! -f "$APP_DIR/installer/run_update_request.py" ]] || \
+    ! "$APP_DIR/venv/bin/python" -c 'import sys' >/dev/null 2>&1; then
     APP_DIR="$INSTALL_DIR"
 fi
 

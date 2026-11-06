@@ -307,6 +307,208 @@ def test_update_recovery_command_quotes_install_path_with_spaces(
     assert shlex.split(command) == ["sudo", "bash", str(expected_script)]
 
 
+def test_transactional_update_missing_venv_emits_repair_command(tmp_path):
+    install = tmp_path / "install with spaces"
+    active = install / "releases" / "active release"
+    (active / "installer").mkdir(parents=True)
+    (install / "releases").mkdir(parents=True, exist_ok=True)
+    (install / "current").symlink_to("releases/active release")
+    active_update = active / "update.sh"
+    shutil.copy2(ROOT / "update.sh", active_update)
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_sudo = fake_bin / "sudo"
+    fake_sudo.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1" == "-n" && "$2" == "-l" ]]; then\n'
+        '  echo "NOPASSWD: limited service commands"\n'
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    fake_sudo.chmod(0o755)
+
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+            "INSTALL_DIR": str(install),
+            "KNXOH_INSTALL_DIR": str(install),
+            "KNXOH_DATA_DIR": str(tmp_path / "runtime data"),
+            "LOG_FILE": str(tmp_path / "update.log"),
+            "RELEASE_TAG": "v1.2.3",
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(active_update)],
+        cwd=install,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    recovery_line = next(
+        (line for line in result.stdout.splitlines() if "Recovery: run " in line), ""
+    )
+    assert recovery_line, result.stdout + result.stderr
+    assert "active release is incomplete" not in result.stdout
+    command = recovery_line.split("Recovery: run ", 1)[1].split(" from ", 1)[0].strip(" '\"")
+    assert shlex.split(command) == [
+        "sudo",
+        "-u",
+        "knxohui",
+        "bash",
+        str(active / "installer" / "repair_release_venv.sh"),
+    ]
+
+
+def test_transactional_update_missing_release_fails_closed(tmp_path):
+    install = tmp_path / "install"
+    (install / "releases").mkdir(parents=True)
+    (install / "current").symlink_to("releases/missing")
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "INSTALL_DIR": str(install),
+            "KNXOH_INSTALL_DIR": str(install),
+            "KNXOH_DATA_DIR": str(tmp_path / "runtime data"),
+            "LOG_FILE": str(tmp_path / "update.log"),
+            "RELEASE_TAG": "v1.2.3",
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "update.sh")],
+        cwd=install,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode != 0
+    assert "Recovery: run " not in result.stdout
+    assert "active release" in result.stdout.lower()
+
+
+def test_transactional_update_unusable_venv_emits_repair_command(tmp_path):
+    install = tmp_path / "install"
+    active = install / "releases" / "active"
+    (active / "installer").mkdir(parents=True)
+    (active / "venv" / "bin").mkdir(parents=True)
+    (install / "releases").mkdir(parents=True, exist_ok=True)
+    (install / "current").symlink_to("releases/active")
+    active_update = active / "update.sh"
+    shutil.copy2(ROOT / "update.sh", active_update)
+    python = active / "venv" / "bin" / "python"
+    python.write_text("#!/bin/sh\nexit 9\n", encoding="utf-8")
+    python.chmod(0o755)
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_sudo = fake_bin / "sudo"
+    fake_sudo.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1" == "-n" && "$2" == "-l" ]]; then\n'
+        '  echo "NOPASSWD: limited service commands"\n'
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    fake_sudo.chmod(0o755)
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+            "INSTALL_DIR": str(install),
+            "KNXOH_INSTALL_DIR": str(install),
+            "KNXOH_DATA_DIR": str(tmp_path / "runtime data"),
+            "LOG_FILE": str(tmp_path / "update.log"),
+            "RELEASE_TAG": "v1.2.3",
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(active_update)],
+        cwd=install,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    recovery_line = next(
+        (line for line in result.stdout.splitlines() if "Recovery: run " in line), ""
+    )
+    assert recovery_line, result.stdout + result.stderr
+    command = recovery_line.split("Recovery: run ", 1)[1].split(" from ", 1)[0].strip(" '\"")
+    assert shlex.split(command) == [
+        "sudo",
+        "-u",
+        "knxohui",
+        "bash",
+        str(active / "installer" / "repair_release_venv.sh"),
+    ]
+
+
+def test_update_worker_falls_back_when_active_python_is_broken(tmp_path):
+    install = tmp_path / "install"
+    active = install / "releases" / "active"
+    (active / "venv" / "bin").mkdir(parents=True)
+    (active / "installer").mkdir(parents=True)
+    (install / "current").symlink_to("releases/active")
+    (active / "installer" / "run_update_request.py").write_text(
+        "# worker marker\n", encoding="utf-8"
+    )
+    (install / "installer").mkdir(parents=True)
+    (install / "installer" / "run_update_request.py").write_text(
+        "# stable worker marker\n", encoding="utf-8"
+    )
+    stable_python = install / "venv" / "bin" / "python"
+    stable_python.parent.mkdir(parents=True)
+    log_file = tmp_path / "worker.log"
+    stable_python.write_text(
+        "#!/bin/sh\n" 'echo stable >> "$LAUNCHER_TEST_LOG"\n' "exit 0\n",
+        encoding="utf-8",
+    )
+    stable_python.chmod(0o755)
+    active_python = active / "venv" / "bin" / "python"
+    active_python.write_text(
+        "#!/bin/sh\n" 'echo active >> "$LAUNCHER_TEST_LOG"\n' "exit 9\n",
+        encoding="utf-8",
+    )
+    active_python.chmod(0o755)
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "KNXOH_INSTALL_DIR": str(install),
+            "LAUNCHER_TEST_LOG": str(log_file),
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "installer" / "launch_update.sh")],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert log_file.read_text(encoding="utf-8").splitlines() == ["active", "stable"]
+
+
 def test_web_updater_checks_external_credentials_before_backup_or_release_changes():
     update = (ROOT / "update.sh").read_text(encoding="utf-8")
 
@@ -327,7 +529,8 @@ def test_update_script_never_elevates_git_or_uses_a_global_safe_directory():
     update = (ROOT / "update.sh").read_text(encoding="utf-8")
 
     assert "sudo git" not in update
-    assert "sudo -u" not in update
+    assert "sudo -u git" not in update
+    assert "sudo -u knxohui bash" in update
     assert "safe.directory='*'" not in update
     assert "git config --global" not in update
     assert 'git -c "safe.directory=$INSTALL_DIR"' in update

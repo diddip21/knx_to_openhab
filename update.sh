@@ -48,7 +48,7 @@ if [[ -L "$CURRENT_LINK" ]]; then
             exit 1
             ;;
     esac
-    if [[ ! -d "$APP_DIR" || ! -x "$APP_DIR/venv/bin/python" ]]; then
+    if [[ ! -d "$APP_DIR" ]]; then
         log "ERROR: The active release is incomplete: $APP_DIR"
         exit 1
     fi
@@ -62,6 +62,8 @@ fi
 
 printf -v SETUP_RECOVERY_COMMAND 'sudo bash %q' "$APP_DIR/installer/setup.sh"
 printf -v MIGRATE_SUDOERS_RECOVERY_COMMAND 'sudo bash %q' "$APP_DIR/installer/migrate_sudoers.sh"
+printf -v VENV_RECOVERY_COMMAND 'sudo -u knxohui bash %q' \
+    "$APP_DIR/installer/repair_release_venv.sh"
 
 if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
     log "ERROR: A valid stable release tag is required. Trigger the update from the Web UI again."
@@ -126,9 +128,16 @@ fi
 # Refuse an in-place update until credentials live in the external config tree.
 # An older checkout may still keep its default or plaintext password in tracked
 # files, so fetching first could replace the code before credentials are migrated.
-if [[ ! -x "$APP_DIR/venv/bin/python" ]]; then
-    log "ERROR: The installed Python environment is missing; credential migration cannot be verified."
-    log "Recovery: run $SETUP_RECOVERY_COMMAND from an interactive SSH terminal (for example, ssh -t), then retry."
+if [[ ! -x "$APP_DIR/venv/bin/python" ]] || \
+    ! PYTHONPATH="$APP_DIR" "$APP_DIR/venv/bin/python" -c \
+        'import knxoh_paths; from web_ui.backend.auth import is_password_hash' \
+        >/dev/null 2>&1; then
+    log "ERROR: The active release Python environment is missing or unusable."
+    if (( LEGACY_INSTALL )); then
+        log "Recovery: run $SETUP_RECOVERY_COMMAND from an interactive SSH terminal (for example, ssh -t), then retry."
+    else
+        log "Recovery: run $VENV_RECOVERY_COMMAND from an interactive SSH terminal (for example, ssh -t), then retry."
+    fi
     exit 1
 fi
 if ! CREDENTIAL_CHECK=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" \

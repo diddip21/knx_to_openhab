@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -8,6 +9,11 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = ROOT / "install.sh"
 KIB_FLOOR = 1024 * 1024
+
+pytestmark = pytest.mark.skipif(
+    os.name != "posix" or shutil.which("bash") is None,
+    reason="installer shell integration tests require a POSIX Bash environment",
+)
 
 
 def make_preflight_environment(

@@ -17,18 +17,18 @@ curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install
 ```
 web_ui/
 ├── backend/
-│   ├── app.py              # Flask routes, auth, SSE (1071 lines)
-│   ├── jobs.py             # Job queue, staging, deploy, backup (1233 lines)
+│   ├── app.py              # Flask routes, authentication and SSE
+│   ├── jobs.py             # Job queue, staging, deploy and backup
 │   ├── storage.py          # JSON persistence, atomic writes
 │   ├── updater.py          # Git-based self-update via GitHub API
 │   ├── service_manager.py  # systemd service control
 │   ├── config.json         # Local development defaults only
 │   └── gunicorn_conf.py    # Production gunicorn config
 ├── templates/
-│   └── index.html          # Single-page application (368 lines)
+│   └── index.html          # Single-page application
 ├── static/
-│   ├── app.js              # Frontend logic, SSE, diff viewer (1978 lines)
-│   └── style.css           # CSS with custom properties (1892 lines)
+│   ├── app.js              # Frontend logic, SSE and diff viewer
+│   └── style.css           # Responsive UI styling
 └── api_schema.json         # API documentation
 ```
 
@@ -137,6 +137,7 @@ Production runtime config in `/etc/knx_to_openhab/config.json`:
   "session_max_age_seconds": 43200,
   "auth": {
     "enabled": true,
+    "mode": "basic",
     "user": "admin"
   },
   "retention": {
@@ -152,9 +153,11 @@ LAN-wide bind. To allow direct LAN access, deliberately set `bind_host` to the
 device's private interface address and restart the service. For HTTPS, keep the
 application on loopback behind a reverse proxy and set `trusted_proxy_hops` to
 the exact number of trusted proxies (usually `1`). The proxy must set
-`X-Forwarded-Proto`; cookies are marked `Secure` when the request is recognized
-as HTTPS. Write API requests require the signed-in session cookie and
-`X-CSRF-Token` header.
+`X-Forwarded-Proto`; session cookies are marked `Secure` when the request is
+recognized as HTTPS. HTTP Basic is the default; set `auth.mode` to `session` to
+keep the sign-in page and revocable sessions. Basic-mode writes accept the
+application's same origin and explicitly allowed HTTPS origins. Session-mode
+writes use the session cookie and `X-CSRF-Token`. Use HTTPS for network access.
 
 ## Troubleshooting
 

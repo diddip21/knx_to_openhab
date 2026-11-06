@@ -32,7 +32,9 @@ show_check_result() {
 # Check 1: Python Version
 echo "1️⃣  Checking Python..."
 
-if command -v python3 &> /dev/null; then
+if [ -x ".venv/bin/python" ]; then
+    PYTHON_CMD=".venv/bin/python"
+elif command -v python3 &> /dev/null; then
     PYTHON_CMD=python3
 elif command -v python &> /dev/null; then
     PYTHON_CMD=python
@@ -68,15 +70,13 @@ if [ -d ".venv" ]; then
     echo ""
     echo "3️⃣  Checking dependencies..."
     
-    # Activate venv
-    source .venv/bin/activate
-    
-    required_packages=("flask" "werkzeug" "xknxproject" "lark-parser")
+    VENV_PYTHON=".venv/bin/python"
+    required_packages=("flask" "werkzeug" "xknxproject")
     all_deps_installed=true
     
     for package in "${required_packages[@]}"; do
-        if pip show "$package" &> /dev/null; then
-            version=$(pip show "$package" | grep "Version:" | awk '{print $2}')
+        if "$VENV_PYTHON" -m pip show "$package" &> /dev/null; then
+            version=$("$VENV_PYTHON" -m pip show "$package" | grep "Version:" | awk '{print $2}')
             show_check_result "$package" "true" "v$version"
         else
             show_check_result "$package" "false" "Not installed"
@@ -95,7 +95,7 @@ echo "4️⃣  Checking project structure..."
 
 required_files=(
     "README.md"
-    "DEVELOPMENT.md"
+    "docs/DEVELOPER_GUIDE.md"
     "requirements.txt"
     "config.json"
     "knxproject_to_openhab.py"

@@ -292,6 +292,7 @@ class TestSettingsSaveConfig:
         _setup_settings_routes(page)
         page.goto(base_url)
         _expand_settings(page)
+        expect(page.locator("#configStatus")).to_contain_text("loaded", timeout=10000)
 
         page.locator("button:has-text('Save Config')").click()
         expect(page.locator("#configStatus")).to_contain_text("saved", timeout=10000)

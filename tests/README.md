@@ -51,10 +51,13 @@ playwright install chromium
 
 ## Running Tests
 
-### All Tests
+### Core Tests (default)
 ```bash
-pytest
+pytest -q
 ```
+
+The default configuration skips the Playwright UI suite. To run the UI tests,
+install Chromium and use the command below.
 
 ### Unit Tests Only
 ```bash
@@ -66,14 +69,14 @@ pytest -m unit -v
 pytest tests/integration -v
 ```
 
-### UI Tests (server must be running!)
+### UI Tests
 ```bash
-# Terminal 1: Start server
-flask --app web_ui.backend.app:app run --debug
-
-# Terminal 2: Run UI tests
-pytest tests/ui/ -v -o addopts=
+playwright install chromium
+pytest tests/ui/ -v -m ui
 ```
+
+The UI fixtures start an isolated Flask server automatically; no production or
+development server needs to be running.
 
 ### Tests with Coverage
 ```bash
@@ -89,7 +92,7 @@ pytest -k "test_login"
 # By marker
 pytest -m unit
 pytest -m integration
-pytest -m ui
+pytest tests/ui/ -m ui
 ```
 
 ## CI/CD Pipeline

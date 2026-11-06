@@ -1,5 +1,4 @@
 import os
-import pty
 import select
 import shutil
 import subprocess
@@ -7,10 +6,18 @@ from pathlib import Path
 
 import pytest
 
+if os.name == "posix":
+    import pty
+else:
+    pty = None  # type: ignore[assignment]
+
 ROOT = Path(__file__).resolve().parents[1]
 UNINSTALLER = ROOT / "uninstall.sh"
 
-pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="Bash is required")
+pytestmark = pytest.mark.skipif(
+    os.name != "posix" or shutil.which("bash") is None,
+    reason="uninstaller shell integration tests require a POSIX Bash environment",
+)
 
 
 def create_fixture(tmp_path):

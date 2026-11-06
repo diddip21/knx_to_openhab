@@ -206,6 +206,123 @@ def flask_server(base_url, ui_server_environment):
     output_reader.join(timeout=1)
 
 
+@pytest.fixture
+def emulator_server(tmp_path):
+    """Start a real Flask instance with every writable output isolated in tmp_path."""
+    project_root = Path(__file__).resolve().parents[2]
+    config_dir = tmp_path / "config"
+    data_dir = tmp_path / "data"
+    backup_dir = tmp_path / "backups"
+    openhab_root = tmp_path / "openhab"
+    for directory in (config_dir, data_dir, backup_dir, openhab_root):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    managed_files = (
+        "items/knx.items",
+        "things/knx.things",
+        "sitemaps/knx.sitemap",
+        "persistence/influxdb.persist",
+        "rules/fenster.rules",
+        "yaml/knx.yaml",
+    )
+    for relative_path in managed_files:
+        target = openhab_root / relative_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("# emulator baseline\n", encoding="utf-8")
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+
+    def posix_path(path):
+        # deploy_policy stores managed paths in POSIX form on every platform.
+        return str(path).replace("\\", "/")
+
+    generator_config = json.loads((project_root / "config.json").read_text(encoding="utf-8"))
+    generator_config["items_path"] = posix_path(openhab_root / "items" / "knx.items")
+    generator_config["things_path"] = posix_path(openhab_root / "things" / "knx.things")
+    generator_config["sitemaps_path"] = posix_path(openhab_root / "sitemaps" / "knx.sitemap")
+    generator_config["influx_path"] = posix_path(openhab_root / "persistence" / "influxdb.persist")
+    generator_config["fenster_path"] = posix_path(openhab_root / "rules" / "fenster.rules")
+    generator_config["yaml_path"] = posix_path(openhab_root / "yaml" / "knx.yaml")
+    generator_config["transform_dir_path"] = posix_path(openhab_root / "transform")
+    (data_dir / "generator.json").write_text(
+        json.dumps(generator_config, ensure_ascii=False), encoding="utf-8"
+    )
+
+    app_config = {
+        "openhab_path": posix_path(openhab_root),
+        "jobs_dir": posix_path(data_dir / "jobs"),
+        "staging_dir": posix_path(data_dir / "staging"),
+        "generated_dir": posix_path(data_dir / "generated"),
+        "backups_dir": posix_path(backup_dir),
+        "sessions_file": posix_path(data_dir / "sessions.sqlite3"),
+        "bind_host": "127.0.0.1",
+        "port": port,
+        "trusted_proxy_hops": 0,
+        "auth": {"enabled": False, "user": "admin"},
+        "retention": {"days": 14, "max_backups": 50, "max_backups_size_mb": 500},
+        "general": {"auto_place_unknown": False},
+    }
+    (config_dir / "config.json").write_text(
+        json.dumps(app_config, ensure_ascii=False), encoding="utf-8"
+    )
+
+    env = os.environ.copy()
+    env.pop("FLASK_ENV", None)
+    env.update(
+        {
+            "KNXOH_INSTALL_DIR": str(project_root),
+            "KNXOH_CONFIG_DIR": str(config_dir),
+            "KNXOH_DATA_DIR": str(data_dir),
+            "KNXOH_BACKUP_DIR": str(backup_dir),
+            "KNXOH_PATHS_FILE": str(tmp_path / "missing-paths.env"),
+        }
+    )
+    server_process = subprocess.Popen(
+        [sys.executable, "-m", "web_ui.backend"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    server_output, output_reader = _capture_process_output(server_process)
+    base_url = f"http://127.0.0.1:{port}"
+    try:
+        for _ in range(60):
+            if server_process.poll() is not None:
+                output = _recent_process_output(server_output, output_reader) or "No output"
+                raise RuntimeError(
+                    f"Emulator Flask server crashed (exit {server_process.returncode}).\n{output}"
+                )
+            try:
+                response = requests.get(f"{base_url}/api/status", timeout=1)
+                if response.status_code == 200:
+                    break
+            except requests.exceptions.RequestException:
+                time.sleep(0.5)
+        else:
+            output = _recent_process_output(server_output, output_reader) or "No output"
+            raise RuntimeError(f"Emulator Flask server did not start.\n{output}")
+
+        yield {
+            "base_url": base_url,
+            "openhab_root": openhab_root,
+            "data_dir": data_dir,
+            "backup_dir": backup_dir,
+            "generator_config": data_dir / "generator.json",
+        }
+    finally:
+        server_process.terminate()
+        try:
+            server_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            server_process.kill()
+            server_process.wait()
+        output_reader.join(timeout=1)
+
+
 @pytest.fixture(scope="session")
 def auth_preview_server(tmp_path_factory):
     """Run a separate authenticated instance for the login/dashboard screenshots."""

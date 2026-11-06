@@ -8,7 +8,7 @@ yielding members.
 
 ## Approaches Considered
 
-- **Bounded two-pass streaming (chosen):** first stream-decompress the gzip source in fixed chunks, count all raw tar bytes, and inspect tar headers for oversized PAX/GNU extended records; then reopen the original gzip in streaming tar mode for safe extraction. This costs one extra decompression pass, but removes the decompressed temporary file and pre-rejects oversized metadata.
+- **Bounded two-pass streaming (chosen):** first parse the gzip source with `tarfile` in streaming mode through a `TarInfo` subclass that checks extended-header sizes before the standard-library parser reads their bodies, while counting all raw tar bytes; then reopen the original gzip in streaming tar mode for safe extraction. This costs one extra decompression pass, but removes the decompressed temporary file, pre-rejects oversized metadata, and leaves PAX size overrides and sparse offsets to the standard parser.
 - **Keep the temporary tar and combine its size with extracted files:** simpler parser changes, but forces a stricter effective source-file budget and still consumes temporary disk proportional to the full tar.
 - **Custom full tar extraction parser:** avoids `tarfile` metadata behavior, but duplicates substantial standard-library parsing and safety logic.
 
@@ -16,7 +16,7 @@ yielding members.
 
 - Preserve `_EXPANDED_LIMIT` as the maximum decompressed tar stream and regular-file total.
 - Use fixed-size reads and no full-stream in-memory buffer or decompressed temporary file.
-- Reject PAX/global-PAX/GNU long-name/long-link extended records larger than 1 MiB before `tarfile` parses them.
+- Reject PAX/global-PAX/GNU long-name/long-link extended records larger than 1 MiB before `tarfile` reads their bodies.
 - Validate the gzip trailer/CRC by consuming the complete stream during preflight.
 - Reopen and extract the original gzip archive only after the preflight succeeds.
 - Preserve existing path/type checks, selected-commit verification, and download limits.

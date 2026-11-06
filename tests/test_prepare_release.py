@@ -754,3 +754,72 @@ def test_safe_extract_commit_source_streams_without_decompressed_temp(monkeypatc
 
     assert extracted_root.is_dir()
     assert (extracted_root / "requirements.txt").read_bytes() == b"flask==3.0.0\n"
+
+
+def _make_oversized_metadata_archive(tmp_path, metadata_kind):
+    root_name = f"knx_to_openhab-{_COMMIT[:12]}"
+    metadata = "x" * (1024 * 1024 + 1)
+    archive_path = tmp_path / f"{metadata_kind}.tar.gz"
+    if metadata_kind in {"pax", "global-pax"}:
+        archive_options = (
+            {"pax_headers": {"comment": metadata}} if metadata_kind == "global-pax" else {}
+        )
+        with tarfile.open(
+            archive_path,
+            mode="w:gz",
+            format=tarfile.PAX_FORMAT,
+            **archive_options,
+        ) as archive:
+            root = tarfile.TarInfo(root_name)
+            root.type = tarfile.DIRTYPE
+            if metadata_kind == "pax":
+                root.pax_headers = {"comment": metadata}
+            archive.addfile(root)
+    else:
+        with tarfile.open(archive_path, mode="w:gz", format=tarfile.GNU_FORMAT) as archive:
+            root = tarfile.TarInfo(root_name)
+            root.type = tarfile.DIRTYPE
+            archive.addfile(root)
+            if metadata_kind == "gnu-longname":
+                member = tarfile.TarInfo(f"{root_name}/" + metadata)
+                member.size = 0
+                archive.addfile(member)
+            else:
+                member = tarfile.TarInfo(f"{root_name}/link")
+                member.type = tarfile.SYMTYPE
+                member.linkname = metadata
+                archive.addfile(member)
+    return archive_path
+
+
+@pytest.mark.parametrize("metadata_kind", ["pax", "global-pax"])
+def test_safe_extract_commit_source_rejects_oversized_pax_record(
+    monkeypatch, tmp_path, metadata_kind
+):
+    archive_path = _make_oversized_metadata_archive(tmp_path, metadata_kind)
+    monkeypatch.setattr(prepare_release_module, "_EXPANDED_LIMIT", 2 * 1024 * 1024)
+
+    with pytest.raises(ReleasePreparationError, match="Extended tar metadata exceeds"):
+        prepare_release_module._safe_extract_commit_source(archive_path, tmp_path)
+
+    assert not (tmp_path / "source").exists()
+
+
+def test_safe_extract_commit_source_rejects_oversized_gnu_long_name(monkeypatch, tmp_path):
+    archive_path = _make_oversized_metadata_archive(tmp_path, "gnu-longname")
+    monkeypatch.setattr(prepare_release_module, "_EXPANDED_LIMIT", 2 * 1024 * 1024)
+
+    with pytest.raises(ReleasePreparationError, match="Extended tar metadata exceeds"):
+        prepare_release_module._safe_extract_commit_source(archive_path, tmp_path)
+
+    assert not (tmp_path / "source").exists()
+
+
+def test_safe_extract_commit_source_rejects_oversized_gnu_long_link(monkeypatch, tmp_path):
+    archive_path = _make_oversized_metadata_archive(tmp_path, "gnu-longlink")
+    monkeypatch.setattr(prepare_release_module, "_EXPANDED_LIMIT", 2 * 1024 * 1024)
+
+    with pytest.raises(ReleasePreparationError, match="Extended tar metadata exceeds"):
+        prepare_release_module._safe_extract_commit_source(archive_path, tmp_path)
+
+    assert not (tmp_path / "source").exists()

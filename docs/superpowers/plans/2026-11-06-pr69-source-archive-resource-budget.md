@@ -4,7 +4,7 @@
 
 **Goal:** Bound source archive disk and parser memory use without reducing the existing 1-GiB extracted-source limit.
 
-**Architecture:** Preflight the compressed tar in bounded streaming passes without writing a decompressed copy. First enforce total decompressed size and gzip integrity; then make the preflight tar-block-aware to reject oversized PAX/GNU extended records before `tarfile` parses them. Extract by reopening the original gzip in streaming mode.
+**Architecture:** Preflight the compressed tar in bounded streaming passes without writing a decompressed copy. During preflight, use `tarfile` streaming mode with a `TarInfo` subclass that rejects oversized PAX/GNU extended records before their bodies are read; drain the gzip stream to enforce total decompressed size and validate integrity. Extract by reopening the original gzip in streaming mode.
 
 **Tech Stack:** Python 3.12+, gzip, tarfile, pytest.
 
@@ -14,7 +14,7 @@
 
 - Keep dependencies unchanged and `_EXPANDED_LIMIT` at 1 GiB.
 - Do not store a decompressed archive or materialize the full stream in memory.
-- Bound PAX/global-PAX/GNU long-name/long-link records to 1 MiB.
+- Bound PAX/global-PAX/GNU long-name/long-link records to 1 MiB before their bodies are read.
 - Preserve safe extraction, commit verification, and gzip integrity checks.
 
 ## Review Focus
@@ -71,21 +71,21 @@ Commit: `fix: stream source archive preflight without temp tar`.
 - Consumes: Task 1's bounded source-archive preflight.
 - Produces: a tar-block scanner that rejects PAX, global PAX, GNU long-name, or GNU long-link records above 1 MiB before normal `tarfile` parsing.
 
-- [ ] **Step 1: Add oversized PAX and GNU long-name regressions**
+- [x] **Step 1: Add oversized PAX and GNU long-name regressions**
 
 Create valid compressed tar fixtures with each metadata record larger than 1 MiB but below `_EXPANDED_LIMIT`; assert extraction raises `ReleasePreparationError` before yielding any member.
 
-- [ ] **Step 2: Run the new tests and verify current behavior accepts the records**
+- [x] **Step 2: Run the new tests and verify current behavior accepts the records**
 
 Run: `pytest tests/test_prepare_release.py::test_safe_extract_commit_source_rejects_oversized_pax_record tests/test_prepare_release.py::test_safe_extract_commit_source_rejects_oversized_gnu_long_name -q`
 
 Expected: FAIL because the current standard-library parser accepts/materializes these in-limit records.
 
-- [ ] **Step 3: Scan tar headers during preflight and enforce the 1-MiB metadata cap**
+- [x] **Step 3: Guard extended-header sizes during preflight**
 
-Use fixed-size 512-byte header reads, validate headers with `tarfile.TarInfo.frombuf`, skip member data in bounded chunks, and inspect only the header type/size for the four metadata types. Continue counting/draining the gzip stream through EOF so CRC/trailer validation remains complete.
+Use a `TarInfo` subclass to check PAX/global-PAX/GNU long-name/long-link metadata sizes before calling the standard parser methods that read their bodies. Run tarfile in streaming mode over a bounded gzip reader; drain all remaining decompressed bytes through EOF so total size and CRC/trailer validation remain complete. This keeps PAX size overrides and sparse offsets aligned according to the standard parser.
 
-- [ ] **Step 4: Run all release-preparation tests and static checks**
+- [x] **Step 4: Run all release-preparation tests and static checks**
 
 Run: `pytest tests/test_prepare_release.py -q`
 
@@ -93,6 +93,6 @@ Run: `black --check installer/prepare_release.py tests/test_prepare_release.py &
 
 Expected: all tests and checks pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit: `fix: bound source tar extended metadata records`.

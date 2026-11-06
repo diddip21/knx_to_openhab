@@ -31,6 +31,7 @@ _REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _SHA256_LINE = re.compile(r"^([0-9a-f]{64})  ([A-Za-z0-9_.+-]+)$")
 _DOWNLOAD_LIMIT = 256 * 1024 * 1024
 _EXPANDED_LIMIT = 1024 * 1024 * 1024
+_TAR_METADATA_LIMIT = 1024 * 1024
 _GITHUB_API_RESPONSE_LIMIT = 16 * 1024 * 1024
 _DOWNLOAD_HOSTS = {
     "api.github.com",
@@ -45,6 +46,43 @@ _ARCHIVE_STREAM_LIMIT = _EXPANDED_LIMIT + _DOWNLOAD_LIMIT
 
 class ReleasePreparationError(ValueError):
     """Raised when a release asset cannot be trusted or staged safely."""
+
+
+class _ExpandedLimitReader:
+    """Count decompressed archive bytes while keeping reads bounded."""
+
+    def __init__(self, source):
+        self._source = source
+        self.expanded_size = 0
+
+    def read(self, size=-1):
+        if size is None or size < 0:
+            size = _CHUNK_SIZE
+        if size == 0:
+            return b""
+
+        read_size = min(size, _CHUNK_SIZE, _EXPANDED_LIMIT - self.expanded_size + 1)
+        chunk = self._source.read(read_size)
+        self.expanded_size += len(chunk)
+        if self.expanded_size > _EXPANDED_LIMIT:
+            raise ReleasePreparationError("Expanded commit source exceeds the size limit")
+        return chunk
+
+
+class _BoundedMetadataTarInfo(tarfile.TarInfo):
+    """Reject large extended headers before the stdlib parser reads their bodies."""
+
+    def _check_extended_header_size(self):
+        if self.size < 0 or self.size > _TAR_METADATA_LIMIT:
+            raise ReleasePreparationError("Extended tar metadata exceeds the size limit")
+
+    def _proc_pax(self, archive):
+        self._check_extended_header_size()
+        return super()._proc_pax(archive)
+
+    def _proc_gnulong(self, archive):
+        self._check_extended_header_size()
+        return super()._proc_gnulong(archive)
 
 
 def _validate_download_url(url: str, allowed_hosts: set[str] | frozenset[str]) -> None:
@@ -253,17 +291,21 @@ def _fetch_commit_file_manifest(
 
 
 def _preflight_source_archive(source_archive: Path) -> None:
-    expanded_size = 0
     try:
         with gzip.open(source_archive, mode="rb") as compressed_archive:
-            while True:
-                read_size = min(_CHUNK_SIZE, _EXPANDED_LIMIT - expanded_size + 1)
-                chunk = compressed_archive.read(read_size)
-                if not chunk:
-                    break
-                expanded_size += len(chunk)
-                if expanded_size > _EXPANDED_LIMIT:
-                    raise ReleasePreparationError("Expanded commit source exceeds the size limit")
+            bounded_archive = _ExpandedLimitReader(compressed_archive)
+            with tarfile.open(
+                fileobj=bounded_archive,
+                mode="r|",
+                tarinfo=_BoundedMetadataTarInfo,
+            ) as archive:
+                for _member in archive:
+                    pass
+
+            # Tar readers stop at the end-of-archive markers. Drain remaining
+            # bytes to enforce the total limit and validate the gzip trailer/CRC.
+            while bounded_archive.read(_CHUNK_SIZE):
+                pass
     except (OSError, EOFError, tarfile.TarError, zlib.error) as error:
         raise ReleasePreparationError(
             f"Could not extract commit source archive: {error}"

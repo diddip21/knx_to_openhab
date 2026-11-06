@@ -183,8 +183,12 @@ def test_complete_webapp_journey_in_isolated_emulator(page: Page, emulator_serve
     ) as deploy_response:
         page.once("dialog", lambda dialog: dialog.accept())
         page.locator(".job-item").get_by_role("button", name="Deploy").click()
-    assert deploy_response.value.status == 200
-    assert deploy_response.value.json()["success"] is True
+    deploy_result = deploy_response.value.json()
+    assert deploy_response.value.status == 200, (
+        f"Deploy failed: {deploy_result}\n"
+        f"Isolated Flask server output:\n{''.join(emulator_server['server_output'])}"
+    )
+    assert deploy_result["success"] is True, deploy_result
 
     items_file = emulator_server["openhab_root"] / "items" / "knx.items"
     things_file = emulator_server["openhab_root"] / "things" / "knx.things"

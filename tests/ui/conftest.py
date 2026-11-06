@@ -312,6 +312,7 @@ def emulator_server(tmp_path):
             "data_dir": data_dir,
             "backup_dir": backup_dir,
             "generator_config": data_dir / "generator.json",
+            "server_output": server_output,
         }
     finally:
         server_process.terminate()

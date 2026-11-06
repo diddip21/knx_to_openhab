@@ -740,3 +740,17 @@ def test_safe_extract_commit_source_rejects_truncated_gzip(tmp_path):
 
     with pytest.raises(ReleasePreparationError, match="Could not extract commit source archive"):
         prepare_release_module._safe_extract_commit_source(truncated_archive, tmp_path)
+
+
+def test_safe_extract_commit_source_streams_without_decompressed_temp(monkeypatch, tmp_path):
+    source_archive, _ = _make_archive(tmp_path)
+
+    def reject_decompressed_temp(*args, **kwargs):
+        pytest.fail("source extraction must not stage a decompressed temporary tar")
+
+    monkeypatch.setattr(prepare_release_module.tempfile, "TemporaryFile", reject_decompressed_temp)
+
+    extracted_root = prepare_release_module._safe_extract_commit_source(source_archive, tmp_path)
+
+    assert extracted_root.is_dir()
+    assert (extracted_root / "requirements.txt").read_bytes() == b"flask==3.0.0\n"

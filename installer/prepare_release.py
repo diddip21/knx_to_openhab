@@ -252,7 +252,27 @@ def _fetch_commit_file_manifest(
     return manifest
 
 
+def _preflight_source_archive(source_archive: Path) -> None:
+    expanded_size = 0
+    try:
+        with gzip.open(source_archive, mode="rb") as compressed_archive:
+            while True:
+                read_size = min(_CHUNK_SIZE, _EXPANDED_LIMIT - expanded_size + 1)
+                chunk = compressed_archive.read(read_size)
+                if not chunk:
+                    break
+                expanded_size += len(chunk)
+                if expanded_size > _EXPANDED_LIMIT:
+                    raise ReleasePreparationError("Expanded commit source exceeds the size limit")
+    except (OSError, EOFError, tarfile.TarError, zlib.error) as error:
+        raise ReleasePreparationError(
+            f"Could not extract commit source archive: {error}"
+        ) from error
+
+
 def _safe_extract_commit_source(source_archive: Path, scratch_dir: Path) -> Path:
+    _preflight_source_archive(source_archive)
+
     source_dir = scratch_dir / "source"
     if source_dir.exists() or source_dir.is_symlink():
         raise ReleasePreparationError("Commit source staging path already exists")
@@ -261,86 +281,68 @@ def _safe_extract_commit_source(source_archive: Path, scratch_dir: Path) -> Path
     root_seen = False
     seen: set[str] = set()
     expanded_size = 0
-    archive_size = 0
     try:
-        with tempfile.TemporaryFile(mode="w+b", dir=scratch_dir) as raw_archive:
-            with gzip.open(source_archive, mode="rb") as compressed_archive:
-                while True:
-                    read_size = min(_CHUNK_SIZE, _EXPANDED_LIMIT - archive_size + 1)
-                    chunk = compressed_archive.read(read_size)
-                    if not chunk:
-                        break
-                    archive_size += len(chunk)
-                    if archive_size > _EXPANDED_LIMIT:
+        with tarfile.open(source_archive, mode="r|gz") as archive:
+            for member in archive:
+                raw_name = member.name
+                path = PurePosixPath(raw_name)
+                normalized_name = raw_name.rstrip("/")
+                if (
+                    not raw_name
+                    or "\\" in raw_name
+                    or path.is_absolute()
+                    or ".." in path.parts
+                    or path.as_posix() != normalized_name
+                    or not path.parts
+                ):
+                    raise ReleasePreparationError(
+                        f"Unsafe commit source archive path: {raw_name!r}"
+                    )
+                if root_name is None:
+                    root_name = path.parts[0]
+                elif path.parts[0] != root_name:
+                    raise ReleasePreparationError("Commit source archive has multiple roots")
+                if normalized_name in seen:
+                    raise ReleasePreparationError(
+                        f"Duplicate commit source archive path: {raw_name}"
+                    )
+                seen.add(normalized_name)
+                target = source_dir.joinpath(*path.parts)
+                try:
+                    target.relative_to(source_dir)
+                except ValueError as error:
+                    raise ReleasePreparationError(
+                        f"Commit source path escapes staging: {raw_name}"
+                    ) from error
+
+                if len(path.parts) == 1:
+                    if not member.isdir():
+                        raise ReleasePreparationError("Commit source root must be a directory")
+                    root_seen = True
+                    target.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    continue
+                if member.isfile():
+                    expanded_size += member.size
+                    if member.size < 0 or expanded_size > _EXPANDED_LIMIT:
                         raise ReleasePreparationError(
                             "Expanded commit source exceeds the size limit"
                         )
-                    raw_archive.write(chunk)
-
-            raw_archive.seek(0)
-            with tarfile.open(fileobj=raw_archive, mode="r:") as archive:
-                for member in archive:
-                    raw_name = member.name
-                    path = PurePosixPath(raw_name)
-                    normalized_name = raw_name.rstrip("/")
-                    if (
-                        not raw_name
-                        or "\\" in raw_name
-                        or path.is_absolute()
-                        or ".." in path.parts
-                        or path.as_posix() != normalized_name
-                        or not path.parts
-                    ):
-                        raise ReleasePreparationError(
-                            f"Unsafe commit source archive path: {raw_name!r}"
-                        )
-                    if root_name is None:
-                        root_name = path.parts[0]
-                    elif path.parts[0] != root_name:
-                        raise ReleasePreparationError("Commit source archive has multiple roots")
-                    if normalized_name in seen:
-                        raise ReleasePreparationError(
-                            f"Duplicate commit source archive path: {raw_name}"
-                        )
-                    seen.add(normalized_name)
-                    target = source_dir.joinpath(*path.parts)
-                    try:
-                        target.relative_to(source_dir)
-                    except ValueError as error:
-                        raise ReleasePreparationError(
-                            f"Commit source path escapes staging: {raw_name}"
-                        ) from error
-
-                    if len(path.parts) == 1:
-                        if not member.isdir():
-                            raise ReleasePreparationError("Commit source root must be a directory")
-                        root_seen = True
-                        target.mkdir(mode=0o700, parents=True, exist_ok=True)
-                        continue
-                    if member.isfile():
-                        expanded_size += member.size
-                        if member.size < 0 or expanded_size > _EXPANDED_LIMIT:
-                            raise ReleasePreparationError(
-                                "Expanded commit source exceeds the size limit"
-                            )
-                    if member.isdir():
-                        target.mkdir(mode=0o700, parents=True, exist_ok=True)
-                        continue
-                    if not member.isfile():
-                        continue
-                    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                    if target.exists() or target.is_symlink():
-                        raise ReleasePreparationError(
-                            f"Commit source file collides with an existing path: {raw_name}"
-                        )
-                    source = archive.extractfile(member)
-                    if source is None:
-                        raise ReleasePreparationError(
-                            f"Could not read commit source file: {raw_name}"
-                        )
-                    with source, target.open("xb") as output:
-                        shutil.copyfileobj(source, output, _CHUNK_SIZE)
-                    target.chmod(0o755 if member.mode & 0o111 else 0o644)
+                if member.isdir():
+                    target.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    continue
+                if not member.isfile():
+                    continue
+                target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                if target.exists() or target.is_symlink():
+                    raise ReleasePreparationError(
+                        f"Commit source file collides with an existing path: {raw_name}"
+                    )
+                source = archive.extractfile(member)
+                if source is None:
+                    raise ReleasePreparationError(f"Could not read commit source file: {raw_name}")
+                with source, target.open("xb") as output:
+                    shutil.copyfileobj(source, output, _CHUNK_SIZE)
+                target.chmod(0o755 if member.mode & 0o111 else 0o644)
 
         if root_name is None or not root_seen:
             raise ReleasePreparationError("Commit source archive is missing its root directory")

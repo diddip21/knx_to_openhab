@@ -224,6 +224,9 @@ def emulator_server(tmp_path):
         "persistence/influxdb.persist",
         "rules/fenster.rules",
         "yaml/knx.yaml",
+        "unknown_report.json",
+        "partial_report.json",
+        "completeness_report.json",
     )
     for relative_path in managed_files:
         target = openhab_root / relative_path

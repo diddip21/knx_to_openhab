@@ -109,6 +109,9 @@ def test_updater_retries_yaml_provisioning_when_git_is_already_current(tmp_path)
     fake_python = install_dir / "venv" / "bin" / "python"
     fake_python.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
     fake_python.chmod(0o755)
+    fake_pip = install_dir / "venv" / "bin" / "pip"
+    fake_pip.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    fake_pip.chmod(0o755)
 
     fake_git = bin_dir / "git"
     fake_git.write_text(
@@ -407,6 +410,8 @@ def test_update_restores_previous_release_after_update_failure(tmp_path, failure
     pip.write_text(
         "#!/bin/bash\n"
         'printf \'%s\\n\' "$*" >> "$UPDATE_TEST_STATE/pip-calls"\n'
+        'if [[ "$1" == "install" && "$2" == "-r" ]]; then cat "$3" >> '
+        '"$UPDATE_TEST_STATE/pip-requirements"; fi\n'
         'if [[ "$*" == *"install -r"* ]] && grep -q new-dependency "$3" && '
         '[[ "$UPDATE_TEST_FAIL_STAGE" == "dependencies" ]]; then exit 1; fi\n'
         "exit 0\n",
@@ -477,8 +482,9 @@ def test_update_restores_previous_release_after_update_failure(tmp_path, failure
         assert "The updated service did not become active." in log
     else:
         assert "Failed to install dependencies" in log
-        assert "new-dependency" in (state / "pip-calls").read_text(encoding="utf-8")
-        assert "old-dependency" in (state / "pip-calls").read_text(encoding="utf-8")
+        installed_requirements = (state / "pip-requirements").read_text(encoding="utf-8")
+        assert "new-dependency" in installed_requirements
+        assert "old-dependency" in installed_requirements
     assert "Previous version restored and service is active." in log
 
 

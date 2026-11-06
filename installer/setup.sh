@@ -202,6 +202,8 @@ echo "Stopping the Web UI and backup cleanup during migration"
 stop_unit_if_active knxohui-backup-cleanup.timer
 stop_unit_if_active knxohui-backup-cleanup.service
 stop_unit_if_active knxohui.service
+echo "Waiting for the updater to finish and cancelling queued update starts"
+sudo bash "$REPO_ROOT/installer/quiesce_update_service.sh"
 
 if ! getent group "$SERVICE_USER" >/dev/null 2>&1; then
     sudo groupadd -r "$SERVICE_USER"

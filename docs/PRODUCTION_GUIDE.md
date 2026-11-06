@@ -125,6 +125,11 @@ before continuing; setup does not need a terminal password prompt. If setup fail
 stopping services, it attempts to restart the services that were active before migration.
 Retry the Web UI update after setup completes.
 
+Before changing files, setup waits for any running transactional updater to finish
+and cancels queued updater starts. If the updater cannot be confirmed idle within
+15 minutes, setup stops before installation or runtime-data changes; resolve the
+updater issue and run setup again.
+
 If an active transactional release has a missing or unusable Python environment,
 the updater prints a recovery command. When the stable repair helper is already
 installed, run that command from an interactive SSH terminal. If it is not yet
@@ -623,4 +628,3 @@ For issues or feature requests:
 **Version:** 1.0  
 **Last Updated:** 2025-11-22  
 **License:** Same as knx_to_openhab project
-

@@ -231,6 +231,14 @@ sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/launch_update.sh" \
     /usr/local/libexec/knx_to_openhab/launch_update.sh
 sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/repair_release_venv.sh" \
     /usr/local/libexec/knx_to_openhab/repair_release_venv.sh
+sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/quiesce_systemd_unit.sh" \
+    /usr/local/libexec/knx_to_openhab/quiesce_systemd_unit.sh
+sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/uninstall_unit_files.sh" \
+    /usr/local/libexec/knx_to_openhab/uninstall_unit_files.sh
+sudo install -d -o root -g root -m 0755 /etc/tmpfiles.d
+sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/knx_to_openhab-lock.conf" \
+    /etc/tmpfiles.d/knx_to_openhab.conf
+sudo systemd-tmpfiles --create /etc/tmpfiles.d/knx_to_openhab.conf
 echo "Acquiring exclusive maintenance lock and rechecking systemd state"
 acquire_setup_maintenance_lock quiesce_setup_services
 

@@ -5,6 +5,9 @@ export LC_ALL=C
 
 SERVICE_USER="knxohui"
 PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
+KNXOH_MAINTENANCE_LOCK_FILE="${KNXOH_MAINTENANCE_LOCK_FILE:-/run/lock/knx_to_openhab/maintenance.lock}"
+MAINTENANCE_LOCK_HOLDER_PID=""
+MAINTENANCE_LOCK_COMMAND_PID=""
 PURGE=0
 YES=0
 
@@ -228,11 +231,13 @@ FIXED_FILES=(
     /etc/sudoers.d/knxohui
     /usr/local/sbin/knxohui-service-update
 )
+TMPFILES_CONFIG="/etc/tmpfiles.d/knx_to_openhab.conf"
 
 has_uninstall_artifacts=0
 [[ -e "$INSTALL_DIR" ]] && has_uninstall_artifacts=1
 [[ -e "$PATHS_FILE" ]] && has_uninstall_artifacts=1
-for path in /usr/local/libexec/knx_to_openhab "${UNIT_FILES[@]}" "${FIXED_FILES[@]}"; do
+for path in /usr/local/libexec/knx_to_openhab "$TMPFILES_CONFIG" \
+    "${UNIT_FILES[@]}" "${FIXED_FILES[@]}"; do
     [[ ! -e "$path" && ! -L "$path" ]] || has_uninstall_artifacts=1
 done
 if (( ! has_uninstall_artifacts )); then
@@ -252,6 +257,7 @@ show_target() {
 printf 'Diese Deinstallation entfernt folgende Anwendungskomponenten:\n'
 show_target "$INSTALL_DIR"
 show_target /usr/local/libexec/knx_to_openhab
+show_target "$TMPFILES_CONFIG"
 for path in "${UNIT_FILES[@]}" "${FIXED_FILES[@]}"; do show_target "$path"; done
 printf '  systemd-Dienste: %s\n' "${UNITS[*]}"
 if ((PURGE)); then
@@ -288,69 +294,133 @@ validate_separate_paths
 validate_application_directory
 validate_user_data_directories
 
-stop_unit_before_removal() {
-    local unit="$1" load_state active_state attempt pending_jobs
-    local job_id job_unit job_type job_state has_pending_job has_pending_start
-    if ! load_state=$(sudo systemctl show --property=LoadState --value "$unit"); then
-        fail "Could not inspect $unit load state; no files were removed."
-    fi
-    if [[ "$load_state" == not-found ]]; then
-        return 0
-    fi
-    [[ -n "$load_state" ]] || fail "Unknown $unit load state; no files were removed."
+if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+    UNINSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+else
+    UNINSTALLER_DIR=""
+fi
+STABLE_HELPER_DIR="/usr/local/libexec/knx_to_openhab"
+MAINTENANCE_LOCK_HELPER="$STABLE_HELPER_DIR/maintenance_lock.sh"
+QUIESCE_SYSTEMD_HELPER="$STABLE_HELPER_DIR/quiesce_systemd_unit.sh"
+UNIT_REMOVAL_HELPER="$STABLE_HELPER_DIR/uninstall_unit_files.sh"
+if [[ -n "$UNINSTALLER_DIR" ]]; then
+    [[ -f "$MAINTENANCE_LOCK_HELPER" ]] || \
+        MAINTENANCE_LOCK_HELPER="$UNINSTALLER_DIR/installer/maintenance_lock.sh"
+    [[ -f "$QUIESCE_SYSTEMD_HELPER" ]] || \
+        QUIESCE_SYSTEMD_HELPER="$UNINSTALLER_DIR/installer/quiesce_systemd_unit.sh"
+    [[ -f "$UNIT_REMOVAL_HELPER" ]] || \
+        UNIT_REMOVAL_HELPER="$UNINSTALLER_DIR/installer/uninstall_unit_files.sh"
+fi
+for helper in "$MAINTENANCE_LOCK_HELPER" "$QUIESCE_SYSTEMD_HELPER" "$UNIT_REMOVAL_HELPER"; do
+    [[ -f "$helper" && ! -L "$helper" ]] || \
+        fail "Required uninstall coordination helper is missing: $helper. Run the current setup first."
+done
+source "$MAINTENANCE_LOCK_HELPER"
+source "$UNIT_REMOVAL_HELPER"
 
-    if ! active_state=$(sudo systemctl show --property=ActiveState --value "$unit"); then
-        fail "Could not inspect $unit state; no files were removed."
+if [[ -L "$KNXOH_MAINTENANCE_LOCK_FILE" || \
+    ( -e "$KNXOH_MAINTENANCE_LOCK_FILE" && ! -f "$KNXOH_MAINTENANCE_LOCK_FILE" ) ]]; then
+    fail "Maintenance lock path is missing or unsafe: $KNXOH_MAINTENANCE_LOCK_FILE"
+fi
+if [[ ! -e "$KNXOH_MAINTENANCE_LOCK_FILE" ]]; then
+    [[ "$KNXOH_MAINTENANCE_LOCK_FILE" == /run/lock/knx_to_openhab/maintenance.lock ]] || \
+        fail "Custom maintenance lock file does not exist: $KNXOH_MAINTENANCE_LOCK_FILE"
+    LOCK_GROUP="$SERVICE_USER"
+    if ! getent group "$LOCK_GROUP" >/dev/null 2>&1; then
+        LOCK_GROUP=root
+    fi
+    sudo env "KNXOH_MAINTENANCE_LOCK_FILE=$KNXOH_MAINTENANCE_LOCK_FILE" \
+        bash -c 'source "$1"; ensure_maintenance_lock "$2"' \
+        _ "$MAINTENANCE_LOCK_HELPER" "$LOCK_GROUP"
+fi
+
+quiesce_uninstall_units() {
+    sudo bash "$QUIESCE_SYSTEMD_HELPER" knxohui-backup-cleanup.timer || return
+    sudo bash "$QUIESCE_SYSTEMD_HELPER" knxohui-backup-cleanup.service || return
+    sudo bash "$QUIESCE_SYSTEMD_HELPER" knxohui.service || return
+    sudo bash "$QUIESCE_SYSTEMD_HELPER" knxohui-update.service || return
+    sudo bash "$QUIESCE_SYSTEMD_HELPER" knxohui-backup-cleanup.timer || return
+    sudo bash "$QUIESCE_SYSTEMD_HELPER" knxohui-backup-cleanup.service || return
+    sudo bash "$QUIESCE_SYSTEMD_HELPER" knxohui.service
+}
+
+release_uninstall_maintenance_lock() {
+    local exit_status=$?
+    trap - EXIT
+    if [[ "$MAINTENANCE_LOCK_COMMAND_PID" =~ ^[0-9]+$ ]]; then
+        sudo kill -TERM "$MAINTENANCE_LOCK_COMMAND_PID" >/dev/null 2>&1 || true
+    fi
+    if [[ -n "$MAINTENANCE_LOCK_HOLDER_PID" ]]; then
+        kill -TERM "$MAINTENANCE_LOCK_HOLDER_PID" >/dev/null 2>&1 || true
+        wait "$MAINTENANCE_LOCK_HOLDER_PID" 2>/dev/null || true
+        MAINTENANCE_LOCK_HOLDER_PID=""
+    fi
+    MAINTENANCE_LOCK_COMMAND_PID=""
+    exit "$exit_status"
+}
+
+acquire_uninstall_maintenance_lock() {
+    local timeout_seconds="${KNXOH_UNINSTALL_MAINTENANCE_TIMEOUT_SECONDS:-900}"
+    local start_seconds=$SECONDS lock_status read_status ready_fd ready_message command_pid
+    if [[ ! "$timeout_seconds" =~ ^[0-9]+$ ]]; then
+        fail "The uninstall maintenance timeout must be a non-negative integer."
     fi
 
-    case "$active_state" in
-        active|activating|deactivating|reloading|inactive|failed|dead)
-            if ! sudo systemctl stop "$unit"; then
-                fail "Could not stop $unit; no files were removed."
-            fi
-            ;;
-        not-found) return 0 ;;
-        *) fail "Unknown $unit state '$active_state'; no files were removed." ;;
-    esac
-
-    for ((attempt = 0; attempt < 30; attempt++)); do
-        if ! active_state=$(sudo systemctl show --property=ActiveState --value "$unit"); then
-            fail "Could not recheck $unit state; no files were removed."
+    while :; do
+        quiesce_uninstall_units || fail "Could not quiesce systemd services; no files were removed."
+        coproc UNINSTALL_LOCK_HOLDER {
+            exec sudo flock --exclusive --nonblock --conflict-exit-code 75 --no-fork \
+                "$KNXOH_MAINTENANCE_LOCK_FILE" \
+                bash -c 'printf "LOCKED %s\\n" "$$"; exec sleep infinity'
+        }
+        MAINTENANCE_LOCK_HOLDER_PID=$UNINSTALL_LOCK_HOLDER_PID
+        ready_fd="${UNINSTALL_LOCK_HOLDER[0]}"
+        if IFS= read -r -t 2 ready_message <&"$ready_fd"; then
+            read_status=0
+        else
+            read_status=$?
         fi
-        case "$active_state" in
-            inactive|failed|dead|not-found) ;;
-            active|activating|deactivating|reloading)
-                sleep 1
-                continue
-                ;;
-            *) fail "Unknown $unit state '$active_state'; no files were removed." ;;
-        esac
-
-        if ! pending_jobs=$(sudo systemctl list-jobs --no-legend --no-pager "$unit"); then
-            fail "Could not inspect pending jobs for $unit; no files were removed."
+        if (( read_status == 0 )) && [[ "$ready_message" =~ ^LOCKED\ ([0-9]+)$ ]]; then
+            command_pid="${BASH_REMATCH[1]}"
+            MAINTENANCE_LOCK_COMMAND_PID="$command_pid"
+            exec {ready_fd}<&-
+            if quiesce_uninstall_units; then
+                return 0
+            fi
+            sudo kill -TERM "$MAINTENANCE_LOCK_COMMAND_PID" >/dev/null 2>&1 || true
+            kill -TERM "$MAINTENANCE_LOCK_HOLDER_PID" >/dev/null 2>&1 || true
+            wait "$MAINTENANCE_LOCK_HOLDER_PID" 2>/dev/null || true
+            MAINTENANCE_LOCK_HOLDER_PID=""
+            MAINTENANCE_LOCK_COMMAND_PID=""
+            fail "Systemd services did not remain quiescent after acquiring the uninstall lock."
         fi
-        has_pending_job=0
-        has_pending_start=0
-        while read -r job_id job_unit job_type job_state; do
-            if [[ "$job_unit" == "$unit" ]]; then
-                has_pending_job=1
-                [[ "$job_type" == stop ]] || has_pending_start=1
-            fi
-        done <<< "$pending_jobs"
-        if (( has_pending_start )); then
-            if ! sudo systemctl stop "$unit"; then
-                fail "Could not cancel a pending start for $unit; no files were removed."
-            fi
-        elif (( ! has_pending_job )); then
-            return 0
+        exec {ready_fd}<&-
+        if (( read_status > 128 )); then
+            kill -TERM "$MAINTENANCE_LOCK_HOLDER_PID" >/dev/null 2>&1 || true
+            wait "$MAINTENANCE_LOCK_HOLDER_PID" 2>/dev/null || true
+            MAINTENANCE_LOCK_HOLDER_PID=""
+            fail "Timed out waiting for the uninstall lock holder to confirm exclusive ownership."
+        fi
+        if wait "$MAINTENANCE_LOCK_HOLDER_PID"; then
+            lock_status=0
+        else
+            lock_status=$?
+        fi
+        MAINTENANCE_LOCK_HOLDER_PID=""
+        if (( lock_status != 75 )); then
+            fail "Could not acquire the uninstall maintenance lock (flock status $lock_status)."
+        fi
+        if (( SECONDS - start_seconds >= timeout_seconds )); then
+            fail "Timed out waiting for the uninstall maintenance lock."
         fi
         sleep 1
     done
-    fail "Timed out waiting for $unit to stop; no files were removed."
 }
 
+trap release_uninstall_maintenance_lock EXIT
+acquire_uninstall_maintenance_lock
+
 for unit in "${UNITS[@]}"; do
-    stop_unit_before_removal "$unit"
     if sudo systemctl is-enabled --quiet "$unit"; then
         sudo systemctl disable "$unit"
     else
@@ -362,7 +432,13 @@ for unit in "${UNITS[@]}"; do
     fi
 done
 
-sudo rm -f -- "${UNIT_FILES[@]}" "${FIXED_FILES[@]}"
+for unit_file in "${UNIT_FILES[@]}"; do
+    remove_unit_file_preserving_mask "$unit_file" || \
+        fail "Could not safely remove systemd unit file: $unit_file"
+done
+remove_unit_file_preserving_mask "$TMPFILES_CONFIG" || \
+    fail "Could not safely remove systemd tmpfiles configuration: $TMPFILES_CONFIG"
+sudo rm -f -- "${FIXED_FILES[@]}"
 sudo rm -rf -- /usr/local/libexec/knx_to_openhab
 sudo systemctl daemon-reload
 sudo rm --one-file-system -rf -- "$INSTALL_DIR"

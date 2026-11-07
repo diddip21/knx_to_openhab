@@ -9,6 +9,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK_HELPER = ROOT / "installer" / "maintenance_lock.sh"
+TMPFILES_CONFIG = ROOT / "installer" / "knx_to_openhab-lock.conf"
 
 
 def run_lock_script(lock_file, body):
@@ -77,3 +78,17 @@ def test_shared_lock_descriptor_remains_held_across_exec(tmp_path):
     )
 
     assert result.returncode == 1
+
+
+def test_systemd_tmpfiles_recreates_the_lock_before_services_start():
+    contents = TMPFILES_CONFIG.read_text(encoding="utf-8").splitlines()
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+
+    assert contents == [
+        "d /run/lock/knx_to_openhab 0750 root knxohui -",
+        "f /run/lock/knx_to_openhab/maintenance.lock 0660 root knxohui -",
+    ]
+    config_install = setup.index("/etc/tmpfiles.d/knx_to_openhab.conf")
+    tmpfiles_create = setup.index("systemd-tmpfiles --create", config_install)
+    service_start = setup.index("sudo systemctl restart knxohui.service")
+    assert config_install < tmpfiles_create < service_start

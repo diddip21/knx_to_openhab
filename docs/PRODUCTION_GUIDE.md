@@ -175,6 +175,13 @@ curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/uninsta
 ```
 This will stop services, remove the installation directory, remove the service user, and clean up logs/backups.
 
+The uninstaller waits for systemd jobs to settle, then takes the same exclusive
+maintenance lock used by setup and service launchers before disabling services
+or removing files. It checks the Web UI again after updater shutdown and preserves
+administrator-created unit-mask symlinks. If it reports that the coordination
+helpers are missing, run the current setup once to install them, then retry
+uninstallation.
+
 ---
 
 ## Usage

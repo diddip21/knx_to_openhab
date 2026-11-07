@@ -143,28 +143,32 @@ Expected: all focused tests pass and Bash syntax checks succeed.
 
 **Files:**
 - Modify: `uninstall.sh`
+- Modify: `installer/setup.sh`
+- Create: `installer/uninstall_unit_files.sh`
+- Create: `installer/knx_to_openhab-lock.conf`
 - Modify: `tests/test_uninstall_modes.py`
+- Modify: `tests/test_maintenance_lock.py`
 - Modify: `docs/PRODUCTION_GUIDE.md`
 
 **Interfaces:**
 - Consumes: Task 1 lock helper and Task 3 generic quiescence helper.
 - Produces: uninstall holds exclusive maintenance ownership through disable/removal, re-stops the Web UI after updater shutdown, rechecks state/jobs before deletion, and retains administrator-owned mask symlinks.
 
-- [ ] **Step 1: Add race, lock, not-found, and mask-preservation regressions**
+- [x] **Step 1: Add race, lock, not-found, and mask-preservation regressions**
 
 Cover updater-triggered Web UI restart, queued starts after the initial stop, a not-found updater with retained activity, uninstall under lock contention, and persistent mask symlinks in each managed unit location.
 
-- [ ] **Step 2: Run new uninstall tests and verify current behavior fails**
+- [x] **Step 2: Run new uninstall tests and verify current behavior fails**
 
 Run: `pytest tests/test_uninstall_modes.py -q`.
 
 Expected: failures show UI restart/mask-removal races.
 
-- [ ] **Step 3: Implement uninstall coordination and mask preservation**
+- [x] **Step 3: Implement uninstall coordination and mask preservation**
 
 Stop and quiesce services, retry until exclusive maintenance ownership is held, perform a final state/job check, then disable/remove files. Do not remove `/dev/null` unit-mask symlinks owned by the administrator.
 
-- [ ] **Step 4: Run uninstall and full maintenance-focused suites**
+- [x] **Step 4: Run uninstall and full maintenance-focused suites**
 
 Run: `pytest tests/test_uninstall_modes.py tests/test_setup_updater_quiescing.py tests/test_maintenance_lock.py -q`; `bash -n uninstall.sh`.
 

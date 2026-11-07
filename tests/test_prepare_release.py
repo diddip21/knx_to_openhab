@@ -170,6 +170,75 @@ def test_verifies_checksum_extracts_release_and_writes_metadata(tmp_path):
     assert (release_dir / "update.sh").stat().st_mode & 0o111
 
 
+def test_safe_extract_does_not_cache_every_tar_member(monkeypatch, tmp_path):
+    extra_members = []
+    for index in range(128):
+        member = tarfile.TarInfo(f"{_ROOT}/many/{index}.txt")
+        extra_members.append((member, b""))
+    archive_path, _checksum_path = _make_archive(tmp_path, extra_members)
+    cached_member_counts = []
+    original_next = tarfile.TarFile.next
+
+    def track_member_cache(archive):
+        member = original_next(archive)
+        cached_member_counts.append(len(archive.members))
+        return member
+
+    monkeypatch.setattr(tarfile.TarFile, "next", track_member_cache)
+    app_dir = tmp_path / "app"
+
+    prepare_release_module._safe_extract(archive_path, app_dir, _ROOT)
+
+    assert max(cached_member_counts) <= 1
+    assert (app_dir / "many" / "127.txt").is_file()
+
+
+def test_source_archive_preflight_does_not_cache_every_tar_member(monkeypatch, tmp_path):
+    source_archive, _checksum_path = _make_archive(tmp_path)
+    cached_member_counts = []
+    original_next = tarfile.TarFile.next
+
+    def track_member_cache(archive):
+        member = original_next(archive)
+        cached_member_counts.append(len(archive.members))
+        return member
+
+    monkeypatch.setattr(tarfile.TarFile, "next", track_member_cache)
+
+    prepare_release_module._preflight_source_archive(source_archive)
+
+    assert max(cached_member_counts) <= 1
+
+
+def test_safe_extract_commit_source_does_not_cache_every_tar_member(monkeypatch, tmp_path):
+    archive_path = tmp_path / "source.tar.gz"
+    root_name = f"knx_to_openhab-{_COMMIT[:12]}"
+    with tarfile.open(archive_path, mode="w:gz") as archive:
+        root = tarfile.TarInfo(root_name)
+        root.type = tarfile.DIRTYPE
+        archive.addfile(root)
+        for index in range(32):
+            payload = str(index).encode()
+            member = tarfile.TarInfo(f"{root_name}/{index}.txt")
+            member.size = len(payload)
+            archive.addfile(member, io.BytesIO(payload))
+    monkeypatch.setattr(prepare_release_module, "_preflight_source_archive", lambda _path: None)
+    cached_member_counts = []
+    original_next = tarfile.TarFile.next
+
+    def track_member_cache(archive):
+        member = original_next(archive)
+        cached_member_counts.append(len(archive.members))
+        return member
+
+    monkeypatch.setattr(tarfile.TarFile, "next", track_member_cache)
+
+    extracted_root = prepare_release_module._safe_extract_commit_source(archive_path, tmp_path)
+
+    assert max(cached_member_counts) <= 1
+    assert (extracted_root / "31.txt").read_bytes() == b"31"
+
+
 def test_rejects_a_checksum_mismatch_without_leaving_extracted_files(tmp_path):
     archive_path, checksum_path = _make_archive(tmp_path)
     checksum_path.write_text(f"{'0' * 64}  {archive_path.name}\n", encoding="ascii")
@@ -199,6 +268,18 @@ def test_rejects_unsafe_archive_paths(tmp_path, name):
         _verify(archive_path, checksum_path, destination)
 
     assert not (tmp_path / "outside.txt").exists()
+
+
+def test_rejects_nul_byte_in_release_archive_path(tmp_path):
+    member = tarfile.TarInfo(f"{_ROOT}/safe.txt")
+    member.pax_headers = {"path": f"{_ROOT}/bad\0name"}
+    archive_path, checksum_path = _make_archive(tmp_path, [(member, b"x")])
+    destination = tmp_path / "stage"
+
+    with pytest.raises(ReleasePreparationError, match="Unsafe release archive path"):
+        _verify(archive_path, checksum_path, destination)
+
+    assert list(destination.iterdir()) == []
 
 
 def test_rejects_symbolic_links_in_release_archives(tmp_path):
@@ -266,6 +347,16 @@ def test_prepare_release_accepts_archive_rebuilt_from_selected_commit(monkeypatc
     requested_urls = _mock_prepare_downloads(
         monkeypatch, archive_path, checksum_path, source_archive, manifest
     )
+    original_verify_and_extract = prepare_release_module.verify_and_extract
+
+    def verify_after_scratch_cleanup(archive, checksum, destination, **metadata):
+        assert archive.exists()
+        assert checksum.exists()
+        assert not (archive.parent / "source").exists()
+        assert not (archive.parent / "rebuilt").exists()
+        return original_verify_and_extract(archive, checksum, destination, **metadata)
+
+    monkeypatch.setattr(prepare_release_module, "verify_and_extract", verify_after_scratch_cleanup)
     destination = tmp_path / "stage"
 
     release_dir = prepare_release(
@@ -313,6 +404,68 @@ def test_prepare_release_accepts_archive_recompressed_with_different_gzip_level(
     )
 
     assert release_dir == tmp_path / "stage" / _ROOT
+
+
+def test_commit_source_archive_is_removed_before_rebuilding(monkeypatch, tmp_path):
+    archive_path = tmp_path / "published.tar.gz"
+    archive_path.write_bytes(b"published archive")
+    scratch_dir = tmp_path / "scratch"
+    scratch_dir.mkdir()
+    source_archive = scratch_dir / "commit-source.tar.gz"
+    source_root = scratch_dir / "source" / "root"
+    source_root.mkdir(parents=True)
+    manifest = [(PurePosixPath("source.py"), 0o100644, "a" * 40)]
+    monkeypatch.setattr(
+        prepare_release_module,
+        "_fetch_commit_file_manifest",
+        lambda _repository, _commit_hash: manifest,
+    )
+
+    def fake_download(_url, destination):
+        destination.write_bytes(b"downloaded source archive")
+
+    monkeypatch.setattr(prepare_release_module, "_download", fake_download)
+    monkeypatch.setattr(
+        prepare_release_module,
+        "_safe_extract_commit_source",
+        lambda _source_archive, _scratch_dir: source_root,
+    )
+    monkeypatch.setattr(prepare_release_module, "_verify_commit_source_files", lambda *_args: None)
+
+    class SelectedBuilder:
+        @staticmethod
+        def is_excluded_release_path(_relative_path):
+            return False
+
+        @staticmethod
+        def build_release(_source_root, _version, output_dir, *, tracked_files):
+            assert tracked_files == [(PurePosixPath("source.py"), 0o100644)]
+            assert not source_archive.exists()
+            output_dir.mkdir()
+            rebuilt_archive = output_dir / "rebuilt.tar.gz"
+            rebuilt_archive.write_bytes(b"rebuilt archive")
+            return rebuilt_archive, output_dir / "rebuilt.tar.gz.sha256"
+
+    monkeypatch.setattr(
+        prepare_release_module,
+        "_load_selected_release_builder",
+        lambda *_args: SelectedBuilder,
+    )
+    monkeypatch.setattr(
+        prepare_release_module,
+        "_decompressed_archive_digest",
+        lambda _path: "same-archive-digest",
+    )
+
+    prepare_release_module._verify_release_matches_commit(
+        archive_path,
+        repository="diddip21/knx_to_openhab",
+        commit_hash=_COMMIT,
+        version=_VERSION,
+        scratch_dir=scratch_dir,
+    )
+
+    assert not source_archive.exists()
 
 
 def test_prepare_release_rejects_asset_replacement_even_with_matching_checksum(
@@ -756,6 +909,87 @@ def test_safe_extract_commit_source_streams_without_decompressed_temp(monkeypatc
     assert (extracted_root / "requirements.txt").read_bytes() == b"flask==3.0.0\n"
 
 
+@pytest.mark.parametrize(
+    ("pax_headers", "payload"),
+    [
+        ({"GNU.sparse.size": "1"}, b"X"),
+        ({"GNU.sparse.map": "0,1", "GNU.sparse.size": "1"}, b"X"),
+        (
+            {
+                "GNU.sparse.major": "1",
+                "GNU.sparse.minor": "0",
+                "GNU.sparse.realsize": "1",
+            },
+            b"1\n0\n1\nX",
+        ),
+    ],
+    ids=("pax-sparse-0.0", "pax-sparse-0.1", "pax-sparse-1.0"),
+)
+def test_safe_extract_commit_source_rejects_sparse_members(tmp_path, pax_headers, payload):
+    archive_path = tmp_path / "sparse.tar.gz"
+    root_name = f"knx_to_openhab-{_COMMIT[:12]}"
+    with tarfile.open(archive_path, mode="w:gz", format=tarfile.PAX_FORMAT) as archive:
+        root = tarfile.TarInfo(root_name)
+        root.type = tarfile.DIRTYPE
+        archive.addfile(root)
+        member = tarfile.TarInfo(f"{root_name}/sparse.bin")
+        member.size = len(payload)
+        member.pax_headers = pax_headers
+        archive.addfile(member, io.BytesIO(payload))
+
+    with pytest.raises(ReleasePreparationError, match="Sparse tar members are not supported"):
+        prepare_release_module._safe_extract_commit_source(archive_path, tmp_path)
+
+    assert not (tmp_path / "source").exists()
+
+
+def test_safe_extract_commit_source_rejects_old_gnu_sparse_member(tmp_path):
+    archive_path = tmp_path / "old-gnu-sparse.tar.gz"
+    raw_archive = io.BytesIO()
+    root_name = f"knx_to_openhab-{_COMMIT[:12]}"
+    with tarfile.open(fileobj=raw_archive, mode="w", format=tarfile.GNU_FORMAT) as archive:
+        root = tarfile.TarInfo(root_name)
+        root.type = tarfile.DIRTYPE
+        archive.addfile(root)
+        member = tarfile.TarInfo(f"{root_name}/sparse.bin")
+        member.size = 1
+        archive.addfile(member, io.BytesIO(b"X"))
+
+    archive_bytes = bytearray(raw_archive.getvalue())
+    sparse_header = bytearray(archive_bytes[tarfile.BLOCKSIZE : 2 * tarfile.BLOCKSIZE])
+    sparse_header[156:157] = tarfile.GNUTYPE_SPARSE
+    sparse_header[386:398] = b"00000000000\0"
+    sparse_header[398:410] = b"00000000001\0"
+    sparse_header[482:483] = b"\0"
+    sparse_header[483:495] = b"00000000001\0"
+    sparse_header[148:156] = b"        "
+    checksum = tarfile.calc_chksums(sparse_header)[0]
+    sparse_header[148:156] = f"{checksum:06o}\0 ".encode("ascii")
+    archive_bytes[tarfile.BLOCKSIZE : 2 * tarfile.BLOCKSIZE] = sparse_header
+    archive_path.write_bytes(gzip.compress(archive_bytes))
+
+    with pytest.raises(ReleasePreparationError, match="Sparse tar members are not supported"):
+        prepare_release_module._safe_extract_commit_source(archive_path, tmp_path)
+
+    assert not (tmp_path / "source").exists()
+
+
+def test_safe_extract_commit_source_rejects_nul_byte_in_pax_path(tmp_path):
+    archive_path = tmp_path / "nul-path.tar.gz"
+    root_name = f"knx_to_openhab-{_COMMIT[:12]}"
+    with tarfile.open(archive_path, mode="w:gz", format=tarfile.PAX_FORMAT) as archive:
+        root = tarfile.TarInfo(root_name)
+        root.type = tarfile.DIRTYPE
+        archive.addfile(root)
+        member = tarfile.TarInfo(f"{root_name}/safe.txt")
+        member.pax_headers = {"path": f"{root_name}/bad\0name"}
+        member.size = 1
+        archive.addfile(member, io.BytesIO(b"x"))
+
+    with pytest.raises(ReleasePreparationError, match="Unsafe commit source archive path"):
+        prepare_release_module._safe_extract_commit_source(archive_path, tmp_path)
+
+
 def _make_oversized_metadata_archive(tmp_path, metadata_kind):
     root_name = f"knx_to_openhab-{_COMMIT[:12]}"
     metadata = "x" * (1024 * 1024 + 1)
@@ -792,6 +1026,20 @@ def _make_oversized_metadata_archive(tmp_path, metadata_kind):
     return archive_path
 
 
+def _make_extended_header_chain_archive(tmp_path, header_type, payload, *, count=1100):
+    archive_path = tmp_path / "deep-extended-headers.tar.gz"
+    with tarfile.open(archive_path, mode="w:gz", format=tarfile.PAX_FORMAT) as archive:
+        for index in range(count):
+            header = tarfile.TarInfo(f"extended-{index}")
+            header.type = header_type
+            header.size = len(payload)
+            archive.addfile(header, io.BytesIO(payload))
+        root = tarfile.TarInfo("knx_to_openhab-root")
+        root.type = tarfile.DIRTYPE
+        archive.addfile(root)
+    return archive_path
+
+
 @pytest.mark.parametrize("metadata_kind", ["pax", "global-pax"])
 def test_safe_extract_commit_source_rejects_oversized_pax_record(
     monkeypatch, tmp_path, metadata_kind
@@ -803,6 +1051,148 @@ def test_safe_extract_commit_source_rejects_oversized_pax_record(
         prepare_release_module._safe_extract_commit_source(archive_path, tmp_path)
 
     assert not (tmp_path / "source").exists()
+
+
+def test_preflight_rejects_cumulative_global_pax_metadata(monkeypatch, tmp_path):
+    def make_pax_record(key, value):
+        body = f" {key}={value}\n".encode("ascii")
+        record_length = len(body) + 1
+        while True:
+            record = str(record_length).encode("ascii") + body
+            if len(record) == record_length:
+                return record
+            record_length = len(record)
+
+    archive_path = tmp_path / "many-global-pax.tar.gz"
+    with tarfile.open(archive_path, mode="w:gz", format=tarfile.PAX_FORMAT) as archive:
+        for index in range(2):
+            payload = make_pax_record(f"comment{index}", "x" * 80)
+            assert len(payload) < 128
+            global_header = tarfile.TarInfo(f"global-{index}")
+            global_header.type = tarfile.XGLTYPE
+            global_header.size = len(payload)
+            archive.addfile(global_header, io.BytesIO(payload))
+        root = tarfile.TarInfo(f"knx_to_openhab-{_COMMIT[:12]}")
+        root.type = tarfile.DIRTYPE
+        archive.addfile(root)
+
+    monkeypatch.setattr(prepare_release_module, "_TAR_METADATA_LIMIT", 128)
+
+    with pytest.raises(ReleasePreparationError, match="Cumulative global PAX metadata exceeds"):
+        prepare_release_module._preflight_source_archive(archive_path)
+
+
+@pytest.mark.parametrize(
+    ("header_type", "payload"),
+    [
+        (tarfile.XHDTYPE, b"13 comment=x\n"),
+        (tarfile.XGLTYPE, b"13 comment=x\n"),
+        (tarfile.GNUTYPE_LONGNAME, b"long-name\0"),
+        (tarfile.GNUTYPE_LONGLINK, b"link-target\0"),
+    ],
+    ids=("local-pax", "global-pax", "gnu-longname", "gnu-longlink"),
+)
+def test_preflight_rejects_excessive_consecutive_extended_headers(tmp_path, header_type, payload):
+    archive_path = _make_extended_header_chain_archive(tmp_path, header_type, payload)
+
+    with pytest.raises(ReleasePreparationError, match="Extended tar header chain exceeds") as error:
+        prepare_release_module._safe_extract_commit_source(archive_path, tmp_path)
+
+    assert error.value.__cause__ is None
+    assert not (tmp_path / "source").exists()
+
+
+def test_preflight_normalizes_recursion_error_if_guard_is_not_reached(monkeypatch, tmp_path):
+    archive_path = _make_extended_header_chain_archive(tmp_path, tarfile.XHDTYPE, b"13 comment=x\n")
+    monkeypatch.setattr(prepare_release_module, "_TAR_EXTENDED_HEADER_CHAIN_LIMIT", 1200)
+
+    with pytest.raises(ReleasePreparationError, match="Extended tar header chain exceeds") as error:
+        prepare_release_module._preflight_source_archive(archive_path)
+
+    assert isinstance(error.value.__cause__, RecursionError)
+
+
+def test_preflight_rejects_cumulative_local_pax_metadata(monkeypatch, tmp_path):
+    def make_pax_record(key, value):
+        body = f" {key}={value}\n".encode("ascii")
+        record_length = len(body) + 1
+        while True:
+            record = str(record_length).encode("ascii") + body
+            if len(record) == record_length:
+                return record
+            record_length = len(record)
+
+    archive_path = tmp_path / "many-local-pax.tar.gz"
+    with tarfile.open(archive_path, mode="w:gz", format=tarfile.PAX_FORMAT) as archive:
+        for index in range(2):
+            payload = make_pax_record(f"comment{index}", "x" * 80)
+            assert len(payload) < 128
+            local_header = tarfile.TarInfo(f"local-{index}")
+            local_header.type = tarfile.XHDTYPE
+            local_header.size = len(payload)
+            archive.addfile(local_header, io.BytesIO(payload))
+        root = tarfile.TarInfo(f"knx_to_openhab-{_COMMIT[:12]}")
+        root.type = tarfile.DIRTYPE
+        archive.addfile(root)
+
+    monkeypatch.setattr(prepare_release_module, "_TAR_METADATA_LIMIT", 128)
+
+    with pytest.raises(ReleasePreparationError, match="Cumulative local PAX metadata exceeds"):
+        prepare_release_module._preflight_source_archive(archive_path)
+
+
+@pytest.mark.parametrize("budget", ["member_count", "path_bytes"])
+def test_preflight_rejects_archive_member_budget_exhaustion(monkeypatch, tmp_path, budget):
+    archive_path = tmp_path / f"member-budget-{budget}.tar.gz"
+    with tarfile.open(archive_path, mode="w:gz") as archive:
+        root = tarfile.TarInfo("root")
+        root.type = tarfile.DIRTYPE
+        archive.addfile(root)
+        member = tarfile.TarInfo("root/file.txt")
+        archive.addfile(member)
+
+    if budget == "member_count":
+        monkeypatch.setattr(prepare_release_module, "_ARCHIVE_MEMBER_LIMIT", 1, raising=False)
+        expected_error = "Archive contains too many members"
+    else:
+        monkeypatch.setattr(prepare_release_module, "_ARCHIVE_PATH_BYTES_LIMIT", 3, raising=False)
+        expected_error = "Archive member paths exceed the size limit"
+
+    with pytest.raises(ReleasePreparationError, match=expected_error):
+        prepare_release_module._preflight_source_archive(archive_path)
+
+
+def test_release_extraction_rejects_member_count_budget_exhaustion(monkeypatch, tmp_path):
+    archive_path, _checksum_path = _make_archive(tmp_path)
+    monkeypatch.setattr(prepare_release_module, "_ARCHIVE_MEMBER_LIMIT", 1, raising=False)
+
+    with pytest.raises(ReleasePreparationError, match="Archive contains too many members"):
+        prepare_release_module._safe_extract(archive_path, tmp_path / "staged", _ROOT)
+
+
+@pytest.mark.parametrize("malformation", ["checksum", "size"])
+def test_preflight_rejects_malformed_header_after_valid_member(tmp_path, malformation):
+    archive_path = tmp_path / f"malformed-{malformation}.tar.gz"
+    with tarfile.open(archive_path, mode="w:gz") as archive:
+        root = tarfile.TarInfo("knx_to_openhab-root")
+        root.type = tarfile.DIRTYPE
+        archive.addfile(root)
+
+    expanded = bytearray(gzip.decompress(archive_path.read_bytes()))
+    malformed_header = bytearray(tarfile.BLOCKSIZE)
+    malformed_header[:4] = b"evil"
+    malformed_header[100:108] = b"0000644\0"
+    malformed_header[156:157] = tarfile.REGTYPE
+    if malformation == "size":
+        malformed_header[124:136] = b"not-octal\0\0\0"
+        malformed_header[148:156] = b"        "
+        checksum = tarfile.calc_chksums(malformed_header)[0]
+        malformed_header[148:156] = f"{checksum:06o}\0 ".encode("ascii")
+    expanded[tarfile.BLOCKSIZE : 2 * tarfile.BLOCKSIZE] = malformed_header
+    archive_path.write_bytes(gzip.compress(expanded))
+
+    with pytest.raises(ReleasePreparationError, match="Malformed tar header"):
+        prepare_release_module._preflight_source_archive(archive_path)
 
 
 def test_safe_extract_commit_source_rejects_oversized_gnu_long_name(monkeypatch, tmp_path):

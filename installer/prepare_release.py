@@ -32,6 +32,9 @@ _SHA256_LINE = re.compile(r"^([0-9a-f]{64})  ([A-Za-z0-9_.+-]+)$")
 _DOWNLOAD_LIMIT = 256 * 1024 * 1024
 _EXPANDED_LIMIT = 1024 * 1024 * 1024
 _TAR_METADATA_LIMIT = 1024 * 1024
+_TAR_EXTENDED_HEADER_CHAIN_LIMIT = 64
+_ARCHIVE_MEMBER_LIMIT = 100_000
+_ARCHIVE_PATH_BYTES_LIMIT = 16 * 1024 * 1024
 _GITHUB_API_RESPONSE_LIMIT = 16 * 1024 * 1024
 _DOWNLOAD_HOSTS = {
     "api.github.com",
@@ -72,17 +75,104 @@ class _ExpandedLimitReader:
 class _BoundedMetadataTarInfo(tarfile.TarInfo):
     """Reject large extended headers before the stdlib parser reads their bodies."""
 
+    @classmethod
+    def _fromtarfile(cls, archive, *, dircheck=True):
+        try:
+            return super()._fromtarfile(archive, dircheck=dircheck)
+        except tarfile.EOFHeaderError:
+            # A zero block is the normal tar end marker.
+            raise
+        except tarfile.HeaderError as error:
+            # TarFile.next() treats header errors after the first member as EOF.
+            # Convert them to an error it cannot silently suppress.
+            raise ReleasePreparationError(f"Malformed tar header: {error}") from error
+
+    @staticmethod
+    def _reject_sparse_member():
+        raise ReleasePreparationError("Sparse tar members are not supported")
+
     def _check_extended_header_size(self):
         if self.size < 0 or self.size > _TAR_METADATA_LIMIT:
             raise ReleasePreparationError("Extended tar metadata exceeds the size limit")
 
+    @staticmethod
+    def _enter_extended_header_chain(archive):
+        depth = getattr(archive, "_knxoh_extended_header_depth", 0)
+        if depth >= _TAR_EXTENDED_HEADER_CHAIN_LIMIT:
+            raise ReleasePreparationError("Extended tar header chain exceeds the depth limit")
+        archive._knxoh_extended_header_depth = depth + 1
+
+    @staticmethod
+    def _leave_extended_header_chain(archive):
+        depth = archive._knxoh_extended_header_depth - 1
+        if depth:
+            archive._knxoh_extended_header_depth = depth
+        else:
+            del archive._knxoh_extended_header_depth
+
     def _proc_pax(self, archive):
         self._check_extended_header_size()
-        return super()._proc_pax(archive)
+        self._enter_extended_header_chain(archive)
+        try:
+            if self.type == tarfile.XGLTYPE:
+                cumulative_size = getattr(archive, "_knxoh_global_pax_metadata_size", 0) + self.size
+                if cumulative_size > _TAR_METADATA_LIMIT:
+                    raise ReleasePreparationError(
+                        "Cumulative global PAX metadata exceeds the size limit"
+                    )
+                archive._knxoh_global_pax_metadata_size = cumulative_size
+            if self.type not in (tarfile.XHDTYPE, tarfile.SOLARIS_XHDTYPE):
+                return super()._proc_pax(archive)
+
+            local_depth = getattr(archive, "_knxoh_local_pax_depth", 0)
+            cumulative_size = getattr(archive, "_knxoh_local_pax_metadata_size", 0) + self.size
+            if cumulative_size > _TAR_METADATA_LIMIT:
+                raise ReleasePreparationError(
+                    "Cumulative local PAX metadata exceeds the size limit"
+                )
+            archive._knxoh_local_pax_depth = local_depth + 1
+            archive._knxoh_local_pax_metadata_size = cumulative_size
+            try:
+                return super()._proc_pax(archive)
+            finally:
+                archive._knxoh_local_pax_depth -= 1
+                if archive._knxoh_local_pax_depth == 0:
+                    del archive._knxoh_local_pax_depth
+                    del archive._knxoh_local_pax_metadata_size
+        finally:
+            self._leave_extended_header_chain(archive)
 
     def _proc_gnulong(self, archive):
         self._check_extended_header_size()
-        return super()._proc_gnulong(archive)
+        self._enter_extended_header_chain(archive)
+        try:
+            return super()._proc_gnulong(archive)
+        finally:
+            self._leave_extended_header_chain(archive)
+
+    def _proc_sparse(self, archive):
+        self._reject_sparse_member()
+
+    def _proc_gnusparse_00(self, next_member, raw_headers):
+        self._reject_sparse_member()
+
+    def _proc_gnusparse_01(self, next_member, pax_headers):
+        self._reject_sparse_member()
+
+    def _proc_gnusparse_10(self, next_member, pax_headers, archive):
+        self._reject_sparse_member()
+
+
+def _check_archive_member_budget(
+    member_name: str, member_count: int, path_bytes: int
+) -> tuple[int, int]:
+    member_count += 1
+    path_bytes += len(member_name.encode("utf-8", "surrogatepass"))
+    if member_count > _ARCHIVE_MEMBER_LIMIT:
+        raise ReleasePreparationError("Archive contains too many members")
+    if path_bytes > _ARCHIVE_PATH_BYTES_LIMIT:
+        raise ReleasePreparationError("Archive member paths exceed the size limit")
+    return member_count, path_bytes
 
 
 def _validate_download_url(url: str, allowed_hosts: set[str] | frozenset[str]) -> None:
@@ -291,6 +381,8 @@ def _fetch_commit_file_manifest(
 
 
 def _preflight_source_archive(source_archive: Path) -> None:
+    member_count = 0
+    path_bytes = 0
     try:
         with gzip.open(source_archive, mode="rb") as compressed_archive:
             bounded_archive = _ExpandedLimitReader(compressed_archive)
@@ -299,13 +391,20 @@ def _preflight_source_archive(source_archive: Path) -> None:
                 mode="r|",
                 tarinfo=_BoundedMetadataTarInfo,
             ) as archive:
-                for _member in archive:
-                    pass
+                for member in archive:
+                    archive.members.clear()
+                    member_count, path_bytes = _check_archive_member_budget(
+                        member.name, member_count, path_bytes
+                    )
 
             # Tar readers stop at the end-of-archive markers. Drain remaining
             # bytes to enforce the total limit and validate the gzip trailer/CRC.
             while bounded_archive.read(_CHUNK_SIZE):
                 pass
+    except RecursionError as error:
+        raise ReleasePreparationError(
+            "Extended tar header chain exceeds the depth limit"
+        ) from error
     except (OSError, EOFError, tarfile.TarError, zlib.error) as error:
         raise ReleasePreparationError(
             f"Could not extract commit source archive: {error}"
@@ -323,14 +422,25 @@ def _safe_extract_commit_source(source_archive: Path, scratch_dir: Path) -> Path
     root_seen = False
     seen: set[str] = set()
     expanded_size = 0
+    member_count = 0
+    path_bytes = 0
     try:
-        with tarfile.open(source_archive, mode="r|gz") as archive:
+        with tarfile.open(
+            source_archive,
+            mode="r|gz",
+            tarinfo=_BoundedMetadataTarInfo,
+        ) as archive:
             for member in archive:
+                archive.members.clear()
                 raw_name = member.name
+                member_count, path_bytes = _check_archive_member_budget(
+                    raw_name, member_count, path_bytes
+                )
                 path = PurePosixPath(raw_name)
                 normalized_name = raw_name.rstrip("/")
                 if (
                     not raw_name
+                    or "\0" in raw_name
                     or "\\" in raw_name
                     or path.is_absolute()
                     or ".." in path.parts
@@ -519,6 +629,7 @@ def _verify_release_matches_commit(
     source_url = f"https://api.github.com/repos/{repository}/tarball/{commit_hash}"
     _download(source_url, source_archive)
     source_root = _safe_extract_commit_source(source_archive, scratch_dir)
+    source_archive.unlink()
     _verify_commit_source_files(source_root, manifest)
     selected_builder = _load_selected_release_builder(source_root, manifest, commit_hash)
 
@@ -550,6 +661,14 @@ def _verify_release_matches_commit(
         raise ReleasePreparationError(
             "Release archive does not match the selected commit's deterministic build"
         )
+
+    for scratch_tree in (scratch_dir / "source", scratch_dir / "rebuilt"):
+        try:
+            shutil.rmtree(scratch_tree)
+        except OSError as error:
+            raise ReleasePreparationError(
+                f"Could not remove verified release scratch tree: {scratch_tree}"
+            ) from error
 
 
 def _verify_checksum(archive_path: Path, checksum_path: Path, expected_name: str) -> None:
@@ -583,13 +702,23 @@ def _safe_extract(archive_path: Path, app_dir: Path, root_name: str) -> None:
     seen: set[str] = set()
     expanded_size = 0
     root_seen = False
+    member_count = 0
+    path_bytes = 0
     try:
-        with tarfile.open(archive_path, mode="r:gz") as archive:
+        with tarfile.open(archive_path, mode="r|gz") as archive:
             for member in archive:
+                # Python 3.12 caches TarInfo objects even in stream mode.
+                # This extraction is sequential, so retaining prior entries
+                # only grows memory with the archive's member count.
+                archive.members.clear()
                 raw_name = member.name
+                member_count, path_bytes = _check_archive_member_budget(
+                    raw_name, member_count, path_bytes
+                )
                 path = PurePosixPath(raw_name)
                 if (
                     not raw_name
+                    or "\0" in raw_name
                     or "\\" in raw_name
                     or path.is_absolute()
                     or ".." in path.parts

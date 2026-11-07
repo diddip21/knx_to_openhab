@@ -119,10 +119,13 @@ def _make_update_fixture(tmp_path, *, backup_path=None, git_status="", hold_prep
     data_dir.mkdir()
     fake_bin.mkdir()
     shutil.copy2(root / "update.sh", install_dir / "update.sh")
-    shutil.copy2(
-        root / "installer/maintenance_lock.sh",
-        install_dir / "installer/maintenance_lock.sh",
+    maintenance_helper = install_dir / "installer/maintenance_lock.sh"
+    maintenance_helper.write_text(
+        (root / "installer/maintenance_lock.sh").read_text(encoding="utf-8")
+        + "\n_validate_maintenance_lock_ancestors() { return 0; }\n",
+        encoding="utf-8",
     )
+    maintenance_helper.chmod(0o755)
     shutil.copy2(root / "knxoh_paths.py", install_dir / "knxoh_paths.py")
     shutil.copy2(
         root / "installer/create_update_backup.py",
@@ -136,13 +139,17 @@ def _make_update_fixture(tmp_path, *, backup_path=None, git_status="", hold_prep
     (data_dir / "generator.json").write_text('{"general": {}}', encoding="utf-8")
     (config_dir / "config.json").write_text('{"auth": {"enabled": false}}', encoding="utf-8")
     (config_dir / "secrets.env").write_text("", encoding="utf-8")
-    (config_dir / "paths.env").write_text("KNXOH_CONFIG_DIR=test\n", encoding="utf-8")
+    (config_dir / "paths.env").write_text(
+        f"KNXOH_CONFIG_DIR=test\nKNXOH_MAINTENANCE_LOCK_FILE={data_dir / 'maintenance.lock'}\n",
+        encoding="utf-8",
+    )
     real_python = sys.executable
     (install_dir / "venv/bin/python").write_text(
         f'#!/bin/sh\nexec {shlex.quote(real_python)} "$@"\n',
         encoding="utf-8",
     )
     (install_dir / "venv/bin/python").chmod(0o755)
+    _write_executable(install_dir / "venv/bin/gunicorn", "#!/bin/sh\nexit 0\n")
     git_log = tmp_path / "git.log"
     prepare_marker = tmp_path / "prepare.started"
     git_script = [
@@ -225,6 +232,50 @@ def test_update_stops_before_release_preparation_when_snapshot_creation_fails(tm
     assert "Could not create and validate the pre-update backup" in result.stdout
     assert "status --porcelain" in git_log.read_text(encoding="utf-8")
     assert not prepare_marker.exists()
+
+
+def test_update_rejects_conflicting_maintenance_lock_override(tmp_path):
+    install_dir, environment, _git_log, prepare_marker, data_dir, _backup_dir = (
+        _make_update_fixture(tmp_path)
+    )
+    environment["KNXOH_MAINTENANCE_LOCK_FILE"] = str(data_dir / "other-lock" / "maintenance.lock")
+
+    result = subprocess.run(
+        ["bash", str(install_dir / "update.sh")],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "conflicts with the persisted" in result.stderr
+    assert not prepare_marker.exists()
+
+
+def test_update_ignores_environment_selected_lock_helper(tmp_path):
+    install_dir, environment, _git_log, prepare_marker, _data_dir, _backup_dir = (
+        _make_update_fixture(tmp_path)
+    )
+    sentinel = tmp_path / "untrusted-helper-used"
+    helper_override = tmp_path / "untrusted-maintenance-helper.sh"
+    helper_override.write_text(
+        f"touch {shlex.quote(str(sentinel))}\n" "acquire_maintenance_shared_lock() { return 0; }\n",
+        encoding="utf-8",
+    )
+    environment["KNXOH_MAINTENANCE_LOCK_HELPER"] = str(helper_override)
+
+    subprocess.run(
+        ["bash", str(install_dir / "update.sh")],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+
+    assert not sentinel.exists()
 
 
 def test_release_preparation_failure_keeps_legacy_install_and_runtime_data(tmp_path):

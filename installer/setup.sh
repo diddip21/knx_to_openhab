@@ -3,10 +3,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-KNXOH_MAINTENANCE_LOCK_FILE="${KNXOH_MAINTENANCE_LOCK_FILE:-/run/lock/knx_to_openhab/maintenance.lock}"
-source "$SCRIPT_DIR/setup_maintenance.sh"
 PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
+export KNXOH_PATHS_FILE="$PATHS_FILE"
 SERVICE_USER="knxohui"
+source "$SCRIPT_DIR/maintenance_lock.sh"
+if ! resolve_maintenance_lock_path "$PATHS_FILE" allow-initial; then
+    exit 2
+fi
 
 read_saved_path() {
     python3 - "$PATHS_FILE" "$1" "$2" <<'PY'
@@ -32,9 +35,47 @@ print(fallback)
 PY
 }
 
+SAVED_MAINTENANCE_LOCK_FILE="$(read_saved_path KNXOH_MAINTENANCE_LOCK_FILE "")"
+DEFAULT_MAINTENANCE_LOCK_FILE="/run/lock/knx_to_openhab/maintenance.lock"
+if [[ -n "${KNXOH_MAINTENANCE_LOCK_FILE:-}" && \
+    -z "$SAVED_MAINTENANCE_LOCK_FILE" && -f "$PATHS_FILE" && \
+    "$KNXOH_MAINTENANCE_LOCK_FILE" != "$DEFAULT_MAINTENANCE_LOCK_FILE" ]]; then
+    echo "ERROR: A custom maintenance lock cannot be selected while migrating a legacy paths.env. Run setup once with the default lock path first." >&2
+    exit 2
+fi
+if [[ -n "${KNXOH_MAINTENANCE_LOCK_FILE:-}" && \
+    -n "$SAVED_MAINTENANCE_LOCK_FILE" && \
+    "$KNXOH_MAINTENANCE_LOCK_FILE" != "$SAVED_MAINTENANCE_LOCK_FILE" ]]; then
+    echo "ERROR: The configured maintenance lock path cannot change during setup." >&2
+    exit 2
+fi
+KNXOH_MAINTENANCE_LOCK_FILE="${KNXOH_MAINTENANCE_LOCK_FILE:-${SAVED_MAINTENANCE_LOCK_FILE:-$DEFAULT_MAINTENANCE_LOCK_FILE}}"
+if ! python3 - "$KNXOH_MAINTENANCE_LOCK_FILE" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if (
+    not path.is_absolute()
+    or path.name in {"", ".", ".."}
+    or path.parent == Path("/")
+    or any(part in {".", ".."} for part in path.parts)
+    or any(ord(character) < 32 or ord(character) == 127 for character in str(path))
+):
+    raise SystemExit(1)
+PY
+then
+    echo "ERROR: The maintenance lock path must be a safe absolute file path." >&2
+    exit 2
+fi
+export KNXOH_MAINTENANCE_LOCK_FILE
+source "$SCRIPT_DIR/setup_maintenance.sh"
+source "$SCRIPT_DIR/setup_systemd_unit.sh"
+
 BASE="${KNXOH_INSTALL_DIR:-$(read_saved_path KNXOH_INSTALL_DIR /opt/knx_to_openhab)}"
 CONFIG_DIR="${KNXOH_CONFIG_DIR:-$(read_saved_path KNXOH_CONFIG_DIR /etc/knx_to_openhab)}"
-DATA_DIR="${KNXOH_DATA_DIR:-$(read_saved_path KNXOH_DATA_DIR /var/lib/knx_to_openhab)}"
+SAVED_DATA_DIR="$(read_saved_path KNXOH_DATA_DIR /var/lib/knx_to_openhab)"
+DATA_DIR="${KNXOH_DATA_DIR:-$SAVED_DATA_DIR}"
 BACKUP_DIR="${KNXOH_BACKUP_DIR:-$(read_saved_path KNXOH_BACKUP_DIR /var/backups/knx_to_openhab)}"
 
 NORMALIZED_PATHS=$(python3 - "$BASE" "$CONFIG_DIR" "$DATA_DIR" "$BACKUP_DIR" <<'PY'
@@ -72,6 +113,24 @@ BASE="${NORMALIZED_PATH_LIST[0]}"
 CONFIG_DIR="${NORMALIZED_PATH_LIST[1]}"
 DATA_DIR="${NORMALIZED_PATH_LIST[2]}"
 BACKUP_DIR="${NORMALIZED_PATH_LIST[3]}"
+SAVED_DATA_DIR="$(python3 - "$SAVED_DATA_DIR" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1]).expanduser()
+if not path.is_absolute():
+    raise SystemExit("The previously configured runtime-data path is not absolute")
+path = path.resolve()
+if path == Path(path.anchor) or str(path) in {"/etc", "/var", "/usr", "/opt", "/home", "/root", "/tmp"}:
+    raise SystemExit(f"Refusing an unsafe previously configured runtime-data path: {path}")
+print(path)
+PY
+)" || exit 2
+
+if ! validate_maintenance_lock_location \
+    "$SERVICE_USER" "$BASE" "$CONFIG_DIR" "$DATA_DIR" "$BACKUP_DIR"; then
+    exit 2
+fi
 
 echo "Using application directory: $BASE"
 echo "Using configuration directory: $CONFIG_DIR"
@@ -202,6 +261,7 @@ quiesce_setup_services() {
 restore_previous_services() {
     local exit_status=$?
     trap - EXIT
+    release_setup_updater_locks || echo "Could not release setup updater locks." >&2
     if ! release_maintenance_lock; then
         echo "Could not release the setup maintenance lock." >&2
     fi
@@ -219,6 +279,21 @@ restore_previous_services() {
 trap restore_previous_services EXIT
 echo "Stopping services and waiting for the updater to finish"
 quiesce_setup_services
+echo "Acquiring exclusive maintenance lock and rechecking systemd state"
+acquire_setup_maintenance_lock quiesce_setup_services
+
+UPDATER_LOCK_PATHS=("$SAVED_DATA_DIR/updater.lock")
+if [[ "$DATA_DIR" != "$SAVED_DATA_DIR" ]]; then
+    UPDATER_LOCK_PATHS+=("$DATA_DIR/updater.lock")
+fi
+for updater_data_dir in "$SAVED_DATA_DIR" "$DATA_DIR"; do
+    if [[ ! -d "$updater_data_dir" ]]; then
+        sudo install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$updater_data_dir"
+    fi
+done
+echo "Acquiring legacy updater locks for the saved and selected runtime-data paths"
+acquire_setup_updater_locks "$SERVICE_USER" "${UPDATER_LOCK_PATHS[@]}"
+
 echo "Installing lock-aware stable service launch helpers"
 sudo install -d -o root -g root -m 0755 /usr/local/libexec/knx_to_openhab
 sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/maintenance_lock.sh" \
@@ -231,16 +306,19 @@ sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/launch_update.sh" \
     /usr/local/libexec/knx_to_openhab/launch_update.sh
 sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/repair_release_venv.sh" \
     /usr/local/libexec/knx_to_openhab/repair_release_venv.sh
+sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/hold_updater_locks.sh" \
+    /usr/local/libexec/knx_to_openhab/hold_updater_locks.sh
 sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/quiesce_systemd_unit.sh" \
     /usr/local/libexec/knx_to_openhab/quiesce_systemd_unit.sh
 sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/uninstall_unit_files.sh" \
     /usr/local/libexec/knx_to_openhab/uninstall_unit_files.sh
 sudo install -d -o root -g root -m 0755 /etc/tmpfiles.d
-sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/knx_to_openhab-lock.conf" \
-    /etc/tmpfiles.d/knx_to_openhab.conf
+sudo python3 "$REPO_ROOT/installer/write_maintenance_lock_tmpfiles.py" \
+    "$KNXOH_MAINTENANCE_LOCK_FILE" /etc/tmpfiles.d/knx_to_openhab.conf \
+    "$BASE" "$CONFIG_DIR" "$DATA_DIR" "$BACKUP_DIR"
 sudo systemd-tmpfiles --create /etc/tmpfiles.d/knx_to_openhab.conf
-echo "Acquiring exclusive maintenance lock and rechecking systemd state"
-acquire_setup_maintenance_lock quiesce_setup_services
+echo "Rechecking service quiescence after replacing legacy launch helpers"
+quiesce_setup_services
 
 sudo mkdir -p "$BASE"
 sudo chown "$SERVICE_USER":"$SERVICE_USER" "$BASE"
@@ -250,7 +328,7 @@ sudo "$BASE/venv/bin/pip" install --upgrade pip
 sudo "$BASE/venv/bin/pip" install -r "$REPO_ROOT/requirements.txt"
 
 echo "Installing application files while preserving runtime configuration"
-sudo rsync -a --exclude .git --exclude /config.json \
+sudo rsync -a --exclude .git --exclude /venv --exclude /config.json \
     --exclude web_ui/backend/config.json "$REPO_ROOT/" "$BASE/"
 if [[ ! -f "$BASE/config.json" ]]; then
     sudo install -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0640 \
@@ -272,7 +350,8 @@ sudo "$BASE/venv/bin/python" "$BASE/installer/migrate_runtime_data.py" \
     --data-dir "$DATA_DIR" \
     --backup-dir "$BACKUP_DIR" \
     --install-dir "$BASE" \
-    --paths-file "$PATHS_FILE"
+    --paths-file "$PATHS_FILE" \
+    --maintenance-lock-file "$KNXOH_MAINTENANCE_LOCK_FILE"
 
 echo "Checking the Web UI network binding"
 sudo "$BASE/venv/bin/python" "$BASE/installer/configure_bind.py" \
@@ -347,24 +426,26 @@ if [[ -L "$BASE/current" ]]; then
         "KNXOH_PATHS_FILE=$PATHS_FILE" \
         "KNXOH_EXPECTED_RELEASE=$ACTIVE_RELEASE" \
         "KNXOH_SETUP_LOCK_HELD=1" \
+        "KNXOH_SETUP_UPDATER_LOCK_HELD=1" \
         bash /usr/local/libexec/knx_to_openhab/repair_release_venv.sh
 fi
 
 echo "Installing systemd units and timers"
-sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/knxohui.service" \
-    /etc/systemd/system/knxohui.service
-sudo bash "$REPO_ROOT/installer/install_update_unit.sh" \
-    "$REPO_ROOT/installer/knxohui-update.service" \
-    /etc/systemd/system/knxohui-update.service
-sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/knxohui-backup-cleanup.service" \
-    /etc/systemd/system/knxohui-backup-cleanup.service
-sudo install -o root -g root -m 0644 "$REPO_ROOT/installer/knxohui-backup-cleanup.timer" \
-    /etc/systemd/system/knxohui-backup-cleanup.timer
+install_setup_systemd_unit "$REPO_ROOT/installer/knxohui.service" \
+    /etc/systemd/system/knxohui.service knxohui.service "$PATHS_FILE"
+install_setup_systemd_unit "$REPO_ROOT/installer/knxohui-update.service" \
+    /etc/systemd/system/knxohui-update.service knxohui-update.service "$PATHS_FILE"
+install_setup_systemd_unit "$REPO_ROOT/installer/knxohui-backup-cleanup.service" \
+    /etc/systemd/system/knxohui-backup-cleanup.service knxohui-backup-cleanup.service "$PATHS_FILE"
+install_setup_systemd_unit "$REPO_ROOT/installer/knxohui-backup-cleanup.timer" \
+    /etc/systemd/system/knxohui-backup-cleanup.timer knxohui-backup-cleanup.timer "$PATHS_FILE"
 sudo systemctl daemon-reload
+setup_systemctl_if_unmasked knxohui.service enable
+setup_systemctl_if_unmasked knxohui-backup-cleanup.timer enable
+release_setup_updater_locks
 release_maintenance_lock
-sudo systemctl enable knxohui.service
-sudo systemctl restart knxohui.service
-sudo systemctl enable --now knxohui-backup-cleanup.timer
+setup_systemctl_if_unmasked knxohui.service restart
+setup_systemctl_if_unmasked knxohui-backup-cleanup.timer start
 SETUP_COMPLETED=1
 
 echo "Installation complete. Web UI: http://127.0.0.1:$PORT"

@@ -5,9 +5,12 @@ export LC_ALL=C
 
 SERVICE_USER="knxohui"
 PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
-KNXOH_MAINTENANCE_LOCK_FILE="${KNXOH_MAINTENANCE_LOCK_FILE:-/run/lock/knx_to_openhab/maintenance.lock}"
+export KNXOH_PATHS_FILE="$PATHS_FILE"
+DEFAULT_MAINTENANCE_LOCK_FILE="/run/lock/knx_to_openhab/maintenance.lock"
 MAINTENANCE_LOCK_HOLDER_PID=""
 MAINTENANCE_LOCK_COMMAND_PID=""
+UPDATER_LOCK_HOLDER_PID=""
+UPDATER_LOCK_COMMAND_PID=""
 PURGE=0
 YES=0
 
@@ -83,7 +86,7 @@ if [[ -e "$PATHS_FILE" || -L "$PATHS_FILE" ]]; then
         key="${trimmed%%=*}"
         value="${trimmed#*=}"
         case "$key" in
-            KNXOH_INSTALL_DIR|KNXOH_CONFIG_DIR|KNXOH_DATA_DIR|KNXOH_BACKUP_DIR) ;;
+            KNXOH_INSTALL_DIR|KNXOH_CONFIG_DIR|KNXOH_DATA_DIR|KNXOH_BACKUP_DIR|KNXOH_MAINTENANCE_LOCK_FILE) ;;
             *) continue ;;
         esac
         [[ ! -v "SAVED_PATHS[$key]" ]] || fail "Duplicate path entry in $PATHS_FILE: $key"
@@ -102,6 +105,23 @@ select_path() {
         printf '%s' "$fallback"
     fi
 }
+
+SAVED_MAINTENANCE_LOCK_FILE="${SAVED_PATHS[KNXOH_MAINTENANCE_LOCK_FILE]:-}"
+if [[ -n "${KNXOH_MAINTENANCE_LOCK_FILE:-}" && \
+    -n "$SAVED_MAINTENANCE_LOCK_FILE" && \
+    "$KNXOH_MAINTENANCE_LOCK_FILE" != "$SAVED_MAINTENANCE_LOCK_FILE" ]]; then
+    fail "The configured maintenance lock path cannot change during uninstall."
+fi
+KNXOH_MAINTENANCE_LOCK_FILE="$(select_path KNXOH_MAINTENANCE_LOCK_FILE "$DEFAULT_MAINTENANCE_LOCK_FILE")"
+if [[ "$KNXOH_MAINTENANCE_LOCK_FILE" != /* || "$KNXOH_MAINTENANCE_LOCK_FILE" == / || \
+    "$KNXOH_MAINTENANCE_LOCK_FILE" == */ || "$KNXOH_MAINTENANCE_LOCK_FILE" == *$'\n'* || \
+    "$KNXOH_MAINTENANCE_LOCK_FILE" == *$'\r'* ]]; then
+    fail "The maintenance lock path is not a safe absolute file path."
+fi
+case "/$KNXOH_MAINTENANCE_LOCK_FILE/" in
+    */./*|*/../*) fail "The maintenance lock path has an unsafe component." ;;
+esac
+export KNXOH_MAINTENANCE_LOCK_FILE
 
 INSTALL_DIR="$(select_path KNXOH_INSTALL_DIR /opt/knx_to_openhab)"
 CONFIG_DIR="$(select_path KNXOH_CONFIG_DIR /etc/knx_to_openhab)"
@@ -303,6 +323,7 @@ STABLE_HELPER_DIR="/usr/local/libexec/knx_to_openhab"
 MAINTENANCE_LOCK_HELPER="$STABLE_HELPER_DIR/maintenance_lock.sh"
 QUIESCE_SYSTEMD_HELPER="$STABLE_HELPER_DIR/quiesce_systemd_unit.sh"
 UNIT_REMOVAL_HELPER="$STABLE_HELPER_DIR/uninstall_unit_files.sh"
+UPDATER_LOCK_HOLDER="$STABLE_HELPER_DIR/hold_updater_locks.sh"
 if [[ -n "$UNINSTALLER_DIR" ]]; then
     [[ -f "$MAINTENANCE_LOCK_HELPER" ]] || \
         MAINTENANCE_LOCK_HELPER="$UNINSTALLER_DIR/installer/maintenance_lock.sh"
@@ -310,20 +331,31 @@ if [[ -n "$UNINSTALLER_DIR" ]]; then
         QUIESCE_SYSTEMD_HELPER="$UNINSTALLER_DIR/installer/quiesce_systemd_unit.sh"
     [[ -f "$UNIT_REMOVAL_HELPER" ]] || \
         UNIT_REMOVAL_HELPER="$UNINSTALLER_DIR/installer/uninstall_unit_files.sh"
+    [[ -f "$UPDATER_LOCK_HOLDER" ]] || \
+        UPDATER_LOCK_HOLDER="$UNINSTALLER_DIR/installer/hold_updater_locks.sh"
 fi
-for helper in "$MAINTENANCE_LOCK_HELPER" "$QUIESCE_SYSTEMD_HELPER" "$UNIT_REMOVAL_HELPER"; do
+for helper in "$MAINTENANCE_LOCK_HELPER" "$QUIESCE_SYSTEMD_HELPER" \
+    "$UNIT_REMOVAL_HELPER" "$UPDATER_LOCK_HOLDER"; do
     [[ -f "$helper" && ! -L "$helper" ]] || \
         fail "Required uninstall coordination helper is missing: $helper. Run the current setup first."
 done
 source "$MAINTENANCE_LOCK_HELPER"
 source "$UNIT_REMOVAL_HELPER"
 
+resolve_maintenance_lock_path "$PATHS_FILE" || \
+    fail "The configured maintenance lock path could not be resolved safely."
+
+if ! validate_maintenance_lock_location \
+    "$SERVICE_USER" "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR" "$BACKUP_DIR"; then
+    fail "The configured maintenance lock path is unsafe."
+fi
+
 if [[ -L "$KNXOH_MAINTENANCE_LOCK_FILE" || \
     ( -e "$KNXOH_MAINTENANCE_LOCK_FILE" && ! -f "$KNXOH_MAINTENANCE_LOCK_FILE" ) ]]; then
     fail "Maintenance lock path is missing or unsafe: $KNXOH_MAINTENANCE_LOCK_FILE"
 fi
 if [[ ! -e "$KNXOH_MAINTENANCE_LOCK_FILE" ]]; then
-    [[ "$KNXOH_MAINTENANCE_LOCK_FILE" == /run/lock/knx_to_openhab/maintenance.lock ]] || \
+    [[ "$KNXOH_MAINTENANCE_LOCK_FILE" == "$DEFAULT_MAINTENANCE_LOCK_FILE" ]] || \
         fail "Custom maintenance lock file does not exist: $KNXOH_MAINTENANCE_LOCK_FILE"
     LOCK_GROUP="$SERVICE_USER"
     if ! getent group "$LOCK_GROUP" >/dev/null 2>&1; then
@@ -347,6 +379,15 @@ quiesce_uninstall_units() {
 release_uninstall_maintenance_lock() {
     local exit_status=$?
     trap - EXIT
+    if [[ "$UPDATER_LOCK_COMMAND_PID" =~ ^[0-9]+$ ]]; then
+        sudo kill -TERM "$UPDATER_LOCK_COMMAND_PID" >/dev/null 2>&1 || true
+    fi
+    if [[ "$UPDATER_LOCK_HOLDER_PID" =~ ^[0-9]+$ ]]; then
+        kill -TERM "$UPDATER_LOCK_HOLDER_PID" >/dev/null 2>&1 || true
+        wait "$UPDATER_LOCK_HOLDER_PID" 2>/dev/null || true
+        UPDATER_LOCK_HOLDER_PID=""
+    fi
+    UPDATER_LOCK_COMMAND_PID=""
     if [[ "$MAINTENANCE_LOCK_COMMAND_PID" =~ ^[0-9]+$ ]]; then
         sudo kill -TERM "$MAINTENANCE_LOCK_COMMAND_PID" >/dev/null 2>&1 || true
     fi
@@ -357,6 +398,57 @@ release_uninstall_maintenance_lock() {
     fi
     MAINTENANCE_LOCK_COMMAND_PID=""
     exit "$exit_status"
+}
+
+acquire_uninstall_updater_lock() {
+    local timeout_seconds="${KNXOH_UNINSTALL_UPDATER_TIMEOUT_SECONDS:-900}"
+    local start_seconds=$SECONDS lock_status read_status ready_fd ready_message command_pid
+
+    if [[ ! -d "$DATA_DIR" ]]; then
+        return 0
+    fi
+    if [[ ! "$timeout_seconds" =~ ^[0-9]+$ ]]; then
+        fail "The uninstall updater-lock timeout must be a non-negative integer."
+    fi
+
+    while :; do
+        coproc UNINSTALL_UPDATER_LOCK_HOLDER {
+            exec sudo -u "$SERVICE_USER" bash "$UPDATER_LOCK_HOLDER" "$DATA_DIR/updater.lock"
+        }
+        UPDATER_LOCK_HOLDER_PID=$UNINSTALL_UPDATER_LOCK_HOLDER_PID
+        ready_fd="${UNINSTALL_UPDATER_LOCK_HOLDER[0]}"
+        if IFS= read -r -t 2 ready_message <&"$ready_fd"; then
+            read_status=0
+        else
+            read_status=$?
+        fi
+        if (( read_status == 0 )) && [[ "$ready_message" =~ ^LOCKED\ ([0-9]+)$ ]]; then
+            command_pid="${BASH_REMATCH[1]}"
+            UPDATER_LOCK_COMMAND_PID="$command_pid"
+            exec {ready_fd}<&-
+            return 0
+        fi
+        exec {ready_fd}<&-
+        if (( read_status > 128 )); then
+            kill -TERM "$UPDATER_LOCK_HOLDER_PID" >/dev/null 2>&1 || true
+            wait "$UPDATER_LOCK_HOLDER_PID" 2>/dev/null || true
+            UPDATER_LOCK_HOLDER_PID=""
+            fail "Timed out waiting for the uninstall updater-lock holder to confirm ownership."
+        fi
+        if wait "$UPDATER_LOCK_HOLDER_PID"; then
+            lock_status=0
+        else
+            lock_status=$?
+        fi
+        UPDATER_LOCK_HOLDER_PID=""
+        if (( lock_status != 75 )); then
+            fail "Could not acquire the uninstall updater lock (flock status $lock_status)."
+        fi
+        if (( SECONDS - start_seconds >= timeout_seconds )); then
+            fail "Timed out waiting for the uninstall updater lock."
+        fi
+        sleep 1
+    done
 }
 
 acquire_uninstall_maintenance_lock() {
@@ -419,6 +511,20 @@ acquire_uninstall_maintenance_lock() {
 
 trap release_uninstall_maintenance_lock EXIT
 acquire_uninstall_maintenance_lock
+acquire_uninstall_updater_lock
+
+if (( PURGE )) && [[ "$KNXOH_MAINTENANCE_LOCK_FILE" == "$DEFAULT_MAINTENANCE_LOCK_FILE" ]]; then
+    DEFAULT_LOCK_PARENT="$(dirname -- "$DEFAULT_MAINTENANCE_LOCK_FILE")"
+    command -v mountpoint >/dev/null 2>&1 || \
+        fail "Cannot safely purge the default maintenance lock without mountpoint."
+    if mountpoint -q -- "$DEFAULT_LOCK_PARENT"; then
+        fail "Refusing to purge the default maintenance lock parent because it is a mount point: $DEFAULT_LOCK_PARENT"
+    else
+        mountpoint_status=$?
+    fi
+    (( mountpoint_status == 32 )) || \
+        fail "Could not determine whether the default maintenance lock parent is a mount point: $DEFAULT_LOCK_PARENT"
+fi
 
 for unit in "${UNITS[@]}"; do
     if sudo systemctl is-enabled --quiet "$unit"; then
@@ -445,6 +551,9 @@ sudo rm --one-file-system -rf -- "$INSTALL_DIR"
 
 if ((PURGE)); then
     sudo rm --one-file-system -rf -- "$CONFIG_DIR" "$DATA_DIR" "$BACKUP_DIR"
+    if [[ "$KNXOH_MAINTENANCE_LOCK_FILE" == "$DEFAULT_MAINTENANCE_LOCK_FILE" ]]; then
+        sudo rm --one-file-system -rf -- "$(dirname -- "$DEFAULT_MAINTENANCE_LOCK_FILE")"
+    fi
     if command -v getent >/dev/null 2>&1 && getent passwd "$SERVICE_USER" >/dev/null; then
         sudo userdel -- "$SERVICE_USER"
     fi

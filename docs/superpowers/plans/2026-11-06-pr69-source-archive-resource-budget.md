@@ -15,6 +15,7 @@
 - Keep dependencies unchanged and `_EXPANDED_LIMIT` at 1 GiB.
 - Do not store a decompressed archive or materialize the full stream in memory.
 - Bound PAX/global-PAX/GNU long-name/long-link records to 1 MiB before their bodies are read.
+- Bound cumulative pending local PAX headers, consecutive nested extended-header depth (64), archive member count (100,000), and cumulative UTF-8 path bytes (16 MiB).
 - Preserve safe extraction, commit verification, and gzip integrity checks.
 
 ## Review Focus
@@ -24,6 +25,7 @@
 - `tarfile` never receives an oversized PAX or GNU long-name body — test each extended-header type over 1 MiB.
 - Ordinary PAX metadata and regular member data continue to extract correctly — run the full release-preparation test file.
 - Malformed tar headers fail closed rather than causing unbounded skipping — test a bad header/size encoding if scanner behavior requires it.
+- Consecutive local/global PAX and GNU long-name/link chains are rejected before `RecursionError` — exercise all four types.
 
 ---
 
@@ -96,3 +98,33 @@ Expected: all tests and checks pass.
 - [x] **Step 5: Commit**
 
 Commit: `fix: bound source tar extended metadata records`.
+
+### Review follow-up: cumulative global PAX metadata
+
+- RED: two individually valid 93-byte global PAX records passed a 128-byte cumulative metadata budget.
+- GREEN: `_BoundedMetadataTarInfo` counts global PAX record bodies before `tarfile` reads them, and source extraction uses the same bounded parser as preflight.
+- Verification: `pytest tests/test_prepare_release.py -q` → 41 passed.
+
+### Review follow-up: malformed tar headers
+
+- RED: after a valid root member, both an invalid checksum and an invalid octal size field were silently accepted because `TarFile.next()` treated the resulting `HeaderError` as end-of-archive.
+- GREEN: `_BoundedMetadataTarInfo._fromtarfile()` propagates malformed/truncated header errors as `ReleasePreparationError` while preserving zero-block end markers.
+- Verification: `pytest tests/test_prepare_release.py -q` → 43 passed.
+
+### Review follow-up: scratch disk peak before final extraction
+
+- RED: the integration regression observed `source/` still present when `verify_and_extract()` began.
+- GREEN: after a successful deterministic digest comparison, `_verify_release_matches_commit()` removes both `source/` and `rebuilt/`; cleanup errors abort before final extraction.
+- Verification: `pytest tests/test_prepare_release.py -q` → 43 passed.
+
+### Review follow-up: cumulative local metadata and entry budgets
+
+- RED: two individually valid 93-byte local PAX records passed a 128-byte pending-metadata budget; independent regressions also showed no preflight member/path budget and no limit during release extraction.
+- GREEN: `_BoundedMetadataTarInfo` bounds nested local PAX body bytes before reads; preflight and both extraction paths cap yielded members at 100,000 and cumulative UTF-8 member-path bytes at 16 MiB.
+- Verification: `pytest tests/test_prepare_release.py -q` → 47 passed.
+
+### Review follow-up: cap nested extended-header recursion
+
+- RED: chains of 1,100 tiny local/global PAX or GNU long-name/link headers escaped byte budgets and raised an uncaught `RecursionError` during preflight.
+- GREEN: the shared `TarInfo` hooks cap nested extended-header depth at 64 for PAX and GNU long headers; preflight also normalizes any residual `RecursionError` into `ReleasePreparationError`.
+- Verification: `pytest tests/test_prepare_release.py -q` → 52 passed.

@@ -68,10 +68,10 @@ def _fixture(tmp_path):
     return source_root, template_root, config_dir, data_dir, backup_dir, legacy_jobs, legacy_backups
 
 
-def _run_migration(paths):
+def _run_migration(paths, maintenance_lock_file=None):
     source_root, template_root, config_dir, data_dir, backup_dir, *_ = paths
     paths_file = config_dir.parent / "paths.env"
-    return migrate_runtime_data(
+    arguments = (
         source_root,
         template_root,
         config_dir,
@@ -80,6 +80,21 @@ def _run_migration(paths):
         source_root,
         paths_file,
     )
+    if maintenance_lock_file is not None:
+        return migrate_runtime_data(*arguments, maintenance_lock_file=maintenance_lock_file)
+    return migrate_runtime_data(*arguments)
+
+
+def test_migration_persists_a_custom_maintenance_lock_path(tmp_path):
+    paths = _fixture(tmp_path)
+    config_dir = paths[2]
+    lock_file = tmp_path / "run locks" / "maintenance.lock"
+
+    result = _run_migration(paths, maintenance_lock_file=lock_file)
+
+    path_file = config_dir.parent / "paths.env"
+    assert result["KNXOH_MAINTENANCE_LOCK_FILE"] == lock_file
+    assert f'KNXOH_MAINTENANCE_LOCK_FILE="{lock_file}"' in path_file.read_text(encoding="utf-8")
 
 
 def test_migration_preserves_runtime_config_and_data_outside_install(monkeypatch, tmp_path):

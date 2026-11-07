@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 QUIESCE_SCRIPT = ROOT / "installer" / "quiesce_update_service.sh"
 QUIESCE_UNIT_SCRIPT = ROOT / "installer" / "quiesce_systemd_unit.sh"
 SETUP_MAINTENANCE_SCRIPT = ROOT / "installer" / "setup_maintenance.sh"
-INSTALL_UPDATE_UNIT_SCRIPT = ROOT / "installer" / "install_update_unit.sh"
+SETUP_SYSTEMD_UNIT_HELPER = ROOT / "installer" / "setup_systemd_unit.sh"
+UPDATER_LOCK_HOLDER_SCRIPT = ROOT / "installer" / "hold_updater_locks.sh"
 UPDATER_UNIT = "knxohui-update.service"
 
 
@@ -32,6 +33,103 @@ def run_under_exclusive_maintenance_lock(tmp_path, command, environment):
             timeout=10,
         )
     return result
+
+
+def test_updater_lock_holder_retains_multiple_locks_until_stopped(tmp_path):
+    lock_files = [tmp_path / "old-data" / "updater.lock", tmp_path / "new-data" / "updater.lock"]
+    for lock_file in lock_files:
+        lock_file.parent.mkdir()
+
+    process = subprocess.Popen(
+        ["bash", str(UPDATER_LOCK_HOLDER_SCRIPT), *(str(path) for path in lock_files)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        readiness = process.stdout.readline().strip()
+        assert readiness.startswith("LOCKED ")
+        for lock_file in lock_files:
+            with lock_file.open("a") as probe:
+                with pytest.raises(BlockingIOError):
+                    fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    finally:
+        process.terminate()
+        _stdout, _stderr = process.communicate(timeout=5)
+
+    for lock_file in lock_files:
+        with lock_file.open("a") as probe:
+            fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def test_updater_lock_holder_releases_partial_locks_when_one_is_busy(tmp_path):
+    first_lock = tmp_path / "first-updater.lock"
+    busy_lock = tmp_path / "busy-updater.lock"
+    first_lock.touch()
+    busy_lock.touch()
+
+    with busy_lock.open("a") as holder:
+        fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = subprocess.run(
+            ["bash", str(UPDATER_LOCK_HOLDER_SCRIPT), str(first_lock), str(busy_lock)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+
+    assert result.returncode == 75
+    with first_lock.open("a") as probe:
+        fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def test_setup_updater_guard_holds_old_and_selected_data_locks(tmp_path):
+    lock_files = [
+        tmp_path / "previous-data" / "updater.lock",
+        tmp_path / "selected-data" / "updater.lock",
+    ]
+    for lock_file in lock_files:
+        lock_file.parent.mkdir()
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_sudo = fake_bin / "sudo"
+    fake_sudo.write_text(
+        '#!/usr/bin/env bash\n[[ "${1:-}" != -u ]] || shift 2\nexec "$@"\n',
+        encoding="utf-8",
+    )
+    fake_sudo.chmod(0o755)
+    environment = os.environ.copy()
+    environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+    process = subprocess.Popen(
+        [
+            "bash",
+            "-c",
+            'source "$1"; acquire_setup_updater_locks knxohui "$2" "$3" || exit $?; '
+            "echo LOCKS_HELD; IFS= read -r _; release_setup_updater_locks",
+            "setup-updater-lock-test",
+            str(SETUP_MAINTENANCE_SCRIPT),
+            str(lock_files[0]),
+            str(lock_files[1]),
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=environment,
+    )
+    try:
+        assert process.stdout.readline().strip() == "LOCKS_HELD"
+        for lock_file in lock_files:
+            with lock_file.open("a") as probe:
+                with pytest.raises(BlockingIOError):
+                    fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    finally:
+        stdout, stderr = process.communicate(input="release\n", timeout=10)
+
+    assert process.returncode == 0, stdout + stderr
+    for lock_file in lock_files:
+        with lock_file.open("a") as probe:
+            fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
 def run_quiescer(
@@ -267,17 +365,31 @@ def test_setup_quiesces_updater_after_web_ui_stop_and_before_mutations():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
 
     lock_setup = setup.index("acquire_setup_maintenance_lock")
+    stable_helper_install = setup.index(
+        "sudo install -d -o root -g root -m 0755 /usr/local/libexec"
+    )
+    tmpfiles_write = setup.index("write_maintenance_lock_tmpfiles.py")
+    tmpfiles_create = setup.index("systemd-tmpfiles --create")
     first_app_mutation = setup.index('sudo mkdir -p "$BASE"')
     rsync_mutation = setup.index("sudo rsync -a")
     stop_services = setup.index('sudo bash "$REPO_ROOT/installer/quiesce_systemd_unit.sh"')
     updater_quiescence = setup.index('sudo bash "$REPO_ROOT/installer/quiesce_update_service.sh"')
-    release_for_restart = setup.index(
-        "release_maintenance_lock", setup.index("sudo systemctl daemon-reload")
+    unit_installation = setup.index(
+        'install_setup_systemd_unit "$REPO_ROOT/installer/knxohui.service"'
     )
-    restart = setup.index("sudo systemctl restart knxohui.service")
+    daemon_reload = setup.index("sudo systemctl daemon-reload", unit_installation)
+    service_enable = setup.index("setup_systemctl_if_unmasked knxohui.service enable")
+    timer_enable = setup.index("setup_systemctl_if_unmasked knxohui-backup-cleanup.timer enable")
+    release_for_restart = setup.index("release_maintenance_lock", daemon_reload)
+    restart = setup.index("setup_systemctl_if_unmasked knxohui.service restart")
+    timer_start = setup.index("setup_systemctl_if_unmasked knxohui-backup-cleanup.timer start")
 
     assert stop_services < updater_quiescence < lock_setup < first_app_mutation < rsync_mutation
+    assert lock_setup < stable_helper_install < tmpfiles_write < tmpfiles_create
+    assert rsync_mutation < unit_installation < daemon_reload
+    assert daemon_reload < service_enable < timer_enable < release_for_restart
     assert release_for_restart < restart
+    assert release_for_restart < timer_start
 
     trap_body = setup[
         setup.index("restore_previous_services() {") : setup.index(
@@ -289,6 +401,52 @@ def test_setup_quiesces_updater_after_web_ui_stop_and_before_mutations():
     )
     assert "mask_update_service_for_setup" not in setup
     assert "unmask_update_service_after_setup" not in setup
+
+
+def test_setup_requiesces_units_after_replacing_legacy_launch_helpers():
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+
+    lock_acquisition = setup.index("acquire_setup_maintenance_lock quiesce_setup_services")
+    helpers_installed = setup.index(
+        'sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/launch_update.sh"'
+    )
+    tmpfiles_created = setup.index("systemd-tmpfiles --create")
+    final_quiescence = setup.index("quiesce_setup_services", tmpfiles_created)
+    first_app_mutation = setup.index('sudo mkdir -p "$BASE"')
+
+    assert lock_acquisition < helpers_installed < tmpfiles_created < final_quiescence
+    assert final_quiescence < first_app_mutation
+
+
+def test_setup_holds_saved_and_selected_updater_locks_before_mutations():
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+
+    maintenance_acquisition = setup.index("acquire_setup_maintenance_lock quiesce_setup_services")
+    updater_acquisition = setup.index("acquire_setup_updater_locks")
+    helper_installation = setup.index(
+        'sudo install -o root -g root -m 0755 "$REPO_ROOT/installer/maintenance_lock.sh"'
+    )
+    first_app_mutation = setup.index('sudo mkdir -p "$BASE"')
+    lock_release = setup.index("release_setup_updater_locks", first_app_mutation)
+    service_restart = setup.index("setup_systemctl_if_unmasked knxohui.service restart")
+
+    assert maintenance_acquisition < updater_acquisition < helper_installation
+    assert helper_installation < first_app_mutation < lock_release < service_restart
+    assert '"$SAVED_DATA_DIR/updater.lock"' in setup
+    assert '"$DATA_DIR/updater.lock"' in setup
+    assert 'SAVED_DATA_DIR="$(read_saved_path KNXOH_DATA_DIR /var/lib/knx_to_openhab)"' in setup
+    assert '"KNXOH_SETUP_UPDATER_LOCK_HELD=1"' in setup
+
+
+def test_setup_resolves_lock_path_before_system_account_mutations():
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+
+    resolver = setup.index('resolve_maintenance_lock_path "$PATHS_FILE" allow-initial')
+    group_creation = setup.index('sudo groupadd -r "$SERVICE_USER"')
+    user_creation = setup.index('sudo useradd -r -g "$SERVICE_USER"')
+
+    assert resolver < group_creation
+    assert resolver < user_creation
 
 
 @pytest.mark.parametrize(
@@ -313,6 +471,18 @@ def test_generic_quiescer_handles_active_and_queued_units(
     assert expected_event in events
     expected_job_checks = 3 if expected_event.startswith("cancel ") else 2
     assert sum(event.startswith("list-jobs ") for event in events) == expected_job_checks
+
+
+def test_unit_quiescer_stops_active_runtime_masked_unit(tmp_path):
+    result, events = run_unit_quiescer(
+        tmp_path,
+        load_state="masked",
+        active_state="active",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "stop example.service" in events
+    assert events[-1] == "list-jobs --no-legend --no-pager example.service"
 
 
 def test_generic_quiescer_fails_closed_when_stop_or_job_cancellation_fails(tmp_path):
@@ -355,7 +525,8 @@ def test_setup_maintenance_retries_quiescence_after_shared_lock_wins_race(tmp_pa
             [
                 "bash",
                 "-c",
-                'source "$1"; quiesce() { echo quiesced >> "$SETUP_QUIESCE_LOG"; }; '
+                'source "$1"; _validate_maintenance_lock_ancestors() { return 0; }; '
+                'quiesce() { echo quiesced >> "$SETUP_QUIESCE_LOG"; }; '
                 "acquire_setup_maintenance_lock quiesce && release_maintenance_lock",
                 "maintenance-test",
                 str(SETUP_MAINTENANCE_SCRIPT),
@@ -415,7 +586,15 @@ def test_update_unit_installer_preserves_a_systemd_mask(tmp_path):
     )
 
     result = subprocess.run(
-        ["bash", str(INSTALL_UPDATE_UNIT_SCRIPT), str(unit_source), str(destination)],
+        [
+            "bash",
+            "-c",
+            'source "$1"; install_setup_systemd_unit "$2" "$3" knxohui-update.service',
+            "unit-install-test",
+            str(SETUP_SYSTEMD_UNIT_HELPER),
+            str(unit_source),
+            str(destination),
+        ],
         env=environment,
         capture_output=True,
         text=True,
@@ -457,7 +636,15 @@ def test_update_unit_installer_replaces_an_unmasked_unit(tmp_path):
     )
 
     result = subprocess.run(
-        ["bash", str(INSTALL_UPDATE_UNIT_SCRIPT), str(unit_source), str(destination)],
+        [
+            "bash",
+            "-c",
+            'source "$1"; install_setup_systemd_unit "$2" "$3" knxohui-update.service',
+            "unit-install-test",
+            str(SETUP_SYSTEMD_UNIT_HELPER),
+            str(unit_source),
+            str(destination),
+        ],
         env=environment,
         capture_output=True,
         text=True,

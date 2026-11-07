@@ -25,6 +25,9 @@
 - Unit fragment is not-found but an old process/job remains → verify retained state/jobs before proceeding.
 - Setup fails after acquiring the lock or while restoring services → release lock before service restoration.
 - Existing persistent unit mask is present → preserve the mask rather than replacing/removing it.
+- A runtime environment specifies a different maintenance lock from `paths.env` → reject before acquiring any lock or mutating files.
+- No lock is persisted yet and a runtime tool specifies a custom path → reject; only setup's initial-install flow may accept it.
+- A valid persisted custom path contains spaces or shell metacharacters → parse it as data and use that exact path without evaluation.
 
 ---
 
@@ -137,7 +140,7 @@ Run: `pytest tests/test_setup_updater_quiescing.py tests/test_installer_guardrai
 
 Expected: all focused tests pass and Bash syntax checks succeed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit** (`f3a19fc`)
 
 ### Task 4: Protect uninstall and preserve administrator masks
 
@@ -174,10 +177,115 @@ Run: `pytest tests/test_uninstall_modes.py tests/test_setup_updater_quiescing.py
 
 Expected: all tests pass and Bash syntax succeeds.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit** (`acf9252`)
 
 ### Task 5: Full verification and fresh review
 
-- [ ] Run the full core suite, formatting/lint checks, relevant integration tests, Bash syntax checks, and `git diff --check`.
-- [ ] Generate the full diff from the previous review base and request a fresh read-only review.
-- [ ] Resolve Important findings with regression-first follow-ups; document any Minor disposition. Do not push or merge.
+- [x] Run the full core suite, formatting/lint checks, relevant integration tests, Bash syntax checks, and `git diff --check`.
+- [x] Generate the full diff from the previous review base and request a fresh read-only review.
+- [x] Resolve Important findings with regression-first follow-ups; document any Minor disposition. Do not push or merge.
+
+### Task 6: Fence legacy updater-lock holders
+
+**Files:**
+- Create: `installer/hold_updater_locks.sh` — acquire multiple exclusive updater locks in one holder process and report a readiness marker.
+- Modify: `installer/setup.sh`, `installer/setup_maintenance.sh`, `installer/repair_release_venv.sh`, `uninstall.sh`.
+- Modify: `tests/test_setup_updater_quiescing.py`, `tests/test_repair_release_venv.py`, `tests/test_uninstall_modes.py`.
+- Modify: this design/plan and `.superpowers/sdd/2026-11-06-pr69-maintenance-lock/progress.md`.
+
+**Interfaces:**
+- Setup consumes the previously saved and selected `DATA_DIR` values and holds their distinct `updater.lock` files in addition to the exclusive maintenance lock.
+- Uninstall consumes the configured `DATA_DIR/updater.lock` in addition to the maintenance lock.
+- Setup recovery consumes `KNXOH_SETUP_UPDATER_LOCK_HELD=1` only when the setup parent retains the lock holder; standalone recovery keeps its current nonblocking acquisition behavior.
+
+- [x] **Step 1: Add regressions for lock-holder contention, setup path migration, uninstall fencing, and repair inheritance**
+
+Verify a real updater-lock holder returns a distinct contention status for an already-held lock, Setup requests both persisted and selected `DATA_DIR` locks before the first app mutation, Uninstall holds the configured updater lock before removing files, and setup recovery skips only the duplicate updater-lock acquisition when the parent explicitly holds it.
+
+- [x] **Step 2: Run the regressions and verify they fail before implementation**
+
+Run focused tests in `tests/test_setup_updater_quiescing.py`, `tests/test_uninstall_modes.py`, and `tests/test_repair_release_venv.py`.
+
+Expected: missing lock-holder integration or setup inheritance assertions fail.
+
+- [x] **Step 3: Implement reusable updater-lock holder and integrate setup/uninstall**
+
+Create `installer/hold_updater_locks.sh`; run it as the service account with a readiness marker, hold distinct saved/selected updater locks throughout setup mutations, and hold the configured updater lock through uninstall mutations. Preserve standalone recovery's existing nonblocking lock acquisition; bypass it only for setup's explicit `KNXOH_SETUP_UPDATER_LOCK_HELD=1` context.
+
+- [x] **Step 4: Run focused setup, uninstall, repair, and lock suites**
+
+Run: `pytest tests/test_setup_updater_quiescing.py tests/test_uninstall_modes.py tests/test_repair_release_venv.py tests/test_maintenance_lock.py -q`.
+
+Expected: all focused tests pass and Bash syntax succeeds.
+
+- [x] **Step 5: Run full core suite, lint, syntax, and diff checks**
+
+Run: `pytest --ignore=tests/ui -q`, Black, isort, Flake8, Bash syntax checks, and `git diff --check`.
+
+Expected: all applicable checks pass.
+
+### Task 7: Reject untrusted maintenance-lock ancestors
+
+**Files:**
+- Modify: `installer/maintenance_lock.sh`, `installer/write_maintenance_lock_tmpfiles.py`.
+- Modify: `tests/test_maintenance_lock.py`, `tests/test_launch_web_recovery.py`, `tests/test_repair_release_venv.py`, `tests/test_update_backup.py`, `tests/test_setup_updater_quiescing.py`, `tests/test_privilege_policy.py`.
+- Modify: this design/plan and `.superpowers/sdd/2026-11-06-pr69-maintenance-lock/progress.md`.
+
+- [x] Add RED regressions proving validation, runtime acquisition, and tmpfiles generation reject a private lock directory beneath an untrusted writable ancestor.
+- [x] Apply the same trust check to every existing ancestor during validation, tmpfiles generation, and runtime lock acquisition; allow only root-owned sticky writable ancestors.
+- [x] Isolate unrelated temporary-path lock tests with test-only validator overrides and run affected suites as root and an unprivileged user.
+- [x] Run full core tests, lint, syntax, and diff checks after all review follow-ups.
+
+### Task 8: Resolve one persisted maintenance-lock path at runtime
+
+**Files:**
+- Modify: `installer/maintenance_lock.sh`, `installer/setup.sh`, `installer/setup_maintenance.sh`, `installer/repair_release_venv.sh`, `update.sh`, `uninstall.sh`.
+- Modify: `tests/test_maintenance_lock.py`, `tests/test_setup_updater_quiescing.py`, `tests/test_launch_web_recovery.py`, `tests/test_repair_release_venv.py`, `tests/test_update_backup.py`, `tests/test_uninstall_modes.py`, `tests/test_privilege_policy.py`.
+- Modify: this design/plan and `.superpowers/sdd/2026-11-06-pr69-maintenance-lock/progress.md`.
+
+**Contract:**
+- `resolve_maintenance_lock_path PATHS_FILE [allow-initial]` parses the saved key as data, rejects duplicate/malformed target-key entries or values and conflicting environment overrides, then exports the resolved path.
+- Runtime callers use strict mode: persisted path wins, an explicit override must match, and an unpersisted custom override is refused. The default path remains valid before initial setup.
+- Setup alone invokes `allow-initial` so an administrator-selected custom path can be used before its first persistence.
+- `update.sh` and recovery ignore `KNXOH_MAINTENANCE_LOCK_HELPER`; use the fixed stable helper, falling back only to a fixed package-local helper path. Service launchers inherit strict resolution through `acquire_maintenance_shared_lock()`.
+
+- [x] **Step 1: Add resolver and integration regressions**
+
+Add tests named `test_runtime_lock_path_uses_saved_custom_path_when_environment_is_unset`, `test_runtime_lock_path_rejects_conflicting_override`, `test_runtime_lock_path_rejects_unpersisted_custom_override`, `test_update_ignores_environment_selected_lock_helper`, and script-level checks that update, repair, and uninstall use the same resolved file. Include quoted paths with spaces and duplicate/malformed saved keys.
+
+- [x] **Step 2: Run the new regressions and verify they fail before implementation**
+
+Run the new focused tests in `tests/test_maintenance_lock.py`, `tests/test_update_backup.py`, `tests/test_repair_release_venv.py`, and `tests/test_uninstall_modes.py`.
+
+Expected: recovery selects the default rather than a saved custom path, conflicting update overrides are accepted, and the helper environment override remains effective.
+
+- [x] **Step 3: Implement `resolve_maintenance_lock_path(paths_file, policy)`**
+
+In `installer/maintenance_lock.sh`, parse the persisted key as data with Python `shlex`, reject duplicate/malformed values, compare the captured environment override, select the default or persisted path, and export the result. Strict policy rejects an unpersisted custom path; only `allow-initial` accepts one. Call strict resolution before runtime shared/exclusive acquisition; have setup's maintenance wrapper request `allow-initial` explicitly.
+
+- [x] **Step 4: Integrate the resolver and fixed helper selection**
+
+Have update, repair, and uninstall resolve before lock acquisition. Remove `KNXOH_MAINTENANCE_LOCK_HELPER` selection and use a fixed stable helper path plus fixed package-local fallback. Keep setup's existing saved-path immutability checks and persist an initial custom value before service starts.
+
+- [x] **Step 5: Run the focused integration groups**
+
+Run: `pytest tests/test_maintenance_lock.py tests/test_setup_updater_quiescing.py tests/test_launch_web_recovery.py tests/test_repair_release_venv.py tests/test_update_backup.py tests/test_uninstall_modes.py tests/test_privilege_policy.py -q`.
+
+Expected: all paths agree on one lock inode, strict runtime conflicts fail before side effects, and setup initial custom-path compatibility remains intact.
+
+- [x] **Step 6: Run full core tests, lint, syntax, and diff checks, then request a fresh review**
+
+### Task 9: Close out the remaining review findings
+
+**Files:**
+- Modify: `installer/write_maintenance_lock_tmpfiles.py`, `uninstall.sh`.
+- Modify: `tests/test_maintenance_lock.py`, `tests/test_setup_unit_masks.py`, `tests/test_setup_updater_quiescing.py`, `tests/test_uninstall_modes.py`.
+- Modify: this design/plan and `.superpowers/sdd/2026-11-06-pr69-maintenance-lock/progress.md`.
+
+- [x] Disposition runtime masks with tests proving masked regular unit fragments are not overwritten or started and active masked units are quiesced.
+- [x] Add a RED regression showing tmpfiles generation accepts a missing service group when the lock parent is absent; require the group before emitting the rule.
+- [x] Add a RED regression that purging a default-lock installation removes its dedicated `/run/lock/knx_to_openhab` directory before deleting the service group, while normal uninstall and custom lock parents remain untouched.
+- [x] Remove the default lock parent safely while the exclusive maintenance-lock inode is still held; do not unlink/recreate the lock between unlock and process exit.
+- [x] Add a RED regression proving purge fails closed before destructive actions when the default lock parent is a mountpoint; use `mountpoint`'s documented status to fail closed when inspection is unavailable.
+- [x] Refuse default-parent mountpoints before disabling units or deleting files; custom parents are not inspected or removed.
+- [x] Run focused lock, setup-mask, and uninstall groups (`105 passed`), then full verification (`1171 passed, 15 skipped`) and a fresh read-only review.

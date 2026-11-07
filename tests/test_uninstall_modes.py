@@ -1,4 +1,5 @@
 import fcntl
+import grp
 import os
 import pty
 import select
@@ -53,14 +54,20 @@ def create_fixture(tmp_path):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     sudo_log = tmp_path / "sudo.log"
-    maintenance_lock = tmp_path / "maintenance.lock"
+    maintenance_lock = root / "maintenance-lock" / "maintenance.lock"
+    maintenance_lock.parent.mkdir(mode=0o750)
+    maintenance_lock.parent.chmod(0o750)
     maintenance_lock.touch()
     maintenance_lock.chmod(0o666)
+    with paths_file.open("a", encoding="utf-8") as paths_stream:
+        paths_stream.write(f'KNXOH_MAINTENANCE_LOCK_FILE="{maintenance_lock}"\n')
     lock_check_log = tmp_path / "lock-check.log"
+    updater_lock_check_log = tmp_path / "updater-lock-check.log"
     fake_sudo = fake_bin / "sudo"
     fake_sudo.write_text(
         """#!/usr/bin/env bash
 set -u
+if [[ "${1:-}" == -u ]]; then shift 2; fi
 printf '%s\\0' "$@" >> "$SUDO_LOG"
 printf '\\0' >> "$SUDO_LOG"
 case "${1:-}" in
@@ -155,6 +162,16 @@ case "${1:-}" in
               && printf 'unlocked\n' >> "$LOCK_CHECK_LOG" \
               || printf 'held\n' >> "$LOCK_CHECK_LOG"
           fi
+          if [[ "${FAKE_CHECK_UPDATER_LOCK_ON_RM:-0}" == 1 ]]; then
+            flock --exclusive --nonblock "$RUNTIME_DATA_DIR/updater.lock" -c true \
+              && printf 'unlocked\n' >> "$UPDATER_LOCK_CHECK_LOG" \
+              || printf 'held\n' >> "$UPDATER_LOCK_CHECK_LOG"
+          fi
+          if [[ -n "${FAKE_CHECK_LOCK_ON_RM_TARGET:-}" && "$target" == "$FAKE_CHECK_LOCK_ON_RM_TARGET" ]]; then
+            flock --shared --nonblock "$KNXOH_MAINTENANCE_LOCK_FILE" -c true \\
+              && printf 'unlocked\\n' >> "$LOCK_CHECK_LOG" \\
+              || printf 'held\\n' >> "$LOCK_CHECK_LOG"
+          fi
           /bin/rm "${options[@]}" -- "$target"
           ;;
       esac
@@ -191,6 +208,8 @@ exit 0
             "SAFE_ROOT": str(root),
             "SUDO_LOG": str(sudo_log),
             "LOCK_CHECK_LOG": str(lock_check_log),
+            "UPDATER_LOCK_CHECK_LOG": str(updater_lock_check_log),
+            "RUNTIME_DATA_DIR": str(data),
             "KNXOH_MAINTENANCE_LOCK_FILE": str(maintenance_lock),
             "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
         }
@@ -291,6 +310,200 @@ def test_uninstall_holds_exclusive_maintenance_lock_while_removing_files(tmp_pat
     assert set(lock_check_log.read_text(encoding="utf-8").splitlines()) == {"held"}
 
 
+def test_uninstall_holds_legacy_updater_lock_while_removing_files(tmp_path):
+    environment, app, _config, _data, _backups, _paths_file, _sudo_log = create_fixture(tmp_path)
+    environment["FAKE_CHECK_UPDATER_LOCK_ON_RM"] = "1"
+
+    result = run_uninstaller(environment, ["--yes"])
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not app.exists()
+    assert Path(environment["UPDATER_LOCK_CHECK_LOG"]).read_text(encoding="utf-8").splitlines() == [
+        "held"
+    ]
+
+
+def test_uninstall_rejects_maintenance_lock_inside_runtime_data_before_sudo(tmp_path):
+    environment, _app, _config, data, _backups, paths_file, sudo_log = create_fixture(tmp_path)
+    lock_file = data / "maintenance.lock"
+    lock_file.touch()
+    lock_file.chmod(0o666)
+    saved_line = f'KNXOH_MAINTENANCE_LOCK_FILE="{environment["KNXOH_MAINTENANCE_LOCK_FILE"]}"'
+    paths_file.write_text(
+        paths_file.read_text(encoding="utf-8").replace(
+            saved_line, f'KNXOH_MAINTENANCE_LOCK_FILE="{lock_file}"'
+        ),
+        encoding="utf-8",
+    )
+    environment["KNXOH_MAINTENANCE_LOCK_FILE"] = str(lock_file)
+
+    result = run_uninstaller(environment, ["--yes"])
+
+    assert result.returncode == 2
+    assert "dedicated" in result.stderr
+    assert not sudo_log.exists()
+    assert data.is_dir()
+
+
+def test_uninstall_uses_the_custom_lock_path_from_paths_file(tmp_path):
+    environment, app, _, _, _, paths_file, sudo_log = create_fixture(tmp_path)
+    custom_lock = tmp_path / "custom run" / "maintenance.lock"
+    custom_lock.parent.mkdir(mode=0o750)
+    custom_lock.parent.chmod(0o750)
+    custom_lock.touch()
+    custom_lock.chmod(0o666)
+    saved_line = f'KNXOH_MAINTENANCE_LOCK_FILE="{environment["KNXOH_MAINTENANCE_LOCK_FILE"]}"'
+    paths_file.write_text(
+        paths_file.read_text(encoding="utf-8").replace(
+            saved_line, f'KNXOH_MAINTENANCE_LOCK_FILE="{custom_lock}"'
+        ),
+        encoding="utf-8",
+    )
+    environment.pop("KNXOH_MAINTENANCE_LOCK_FILE")
+    environment["FAKE_CHECK_LOCK_ON_RM"] = "1"
+
+    result = run_uninstaller(environment, ["--yes"])
+
+    assert result.returncode == 0, result.stderr
+    assert not app.exists()
+    assert set(Path(environment["LOCK_CHECK_LOG"]).read_text(encoding="utf-8").splitlines()) == {
+        "held"
+    }
+    calls = sudo_arguments(sudo_log)
+    assert str(custom_lock) in calls
+
+
+def test_uninstall_rejects_unpersisted_custom_maintenance_lock(tmp_path):
+    environment, app, _config, _data, _backups, paths_file, sudo_log = create_fixture(tmp_path)
+    paths_file.write_text(
+        "\n".join(
+            line
+            for line in paths_file.read_text(encoding="utf-8").splitlines()
+            if not line.startswith("KNXOH_MAINTENANCE_LOCK_FILE=")
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = run_uninstaller(environment, ["--yes"])
+
+    assert result.returncode != 0
+    assert "not persisted" in (result.stdout + result.stderr)
+    assert app.exists()
+    assert not sudo_log.exists()
+
+
+@pytest.mark.skipif(
+    os.geteuid() != 0, reason="default-lock purge requires root-owned ancestor checks"
+)
+@pytest.mark.parametrize("lock_parent_is_mountpoint", [False, True], ids=["ordinary", "mountpoint"])
+def test_purge_handles_default_lock_parent_safely(tmp_path, lock_parent_is_mountpoint):
+    environment, app, _config, _data, _backups, paths_file, sudo_log = create_fixture(tmp_path)
+    safe_root = Path(environment["SAFE_ROOT"])
+    default_parent = safe_root / "default-maintenance-lock"
+    default_parent.mkdir(mode=0o750)
+    default_parent.chmod(0o750)
+    try:
+        service_gid = grp.getgrnam("knxohui").gr_gid
+    except KeyError:
+        service_gid = 0
+    os.chown(default_parent, 0, service_gid)
+    default_lock = default_parent / "maintenance.lock"
+    default_lock.touch(mode=0o660)
+    default_lock.chmod(0o660)
+    os.chown(default_lock, 0, service_gid)
+
+    paths_file.write_text(
+        "\n".join(
+            line
+            for line in paths_file.read_text(encoding="utf-8").splitlines()
+            if not line.startswith("KNXOH_MAINTENANCE_LOCK_FILE=")
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    environment.pop("KNXOH_MAINTENANCE_LOCK_FILE", None)
+    environment["FAKE_CHECK_LOCK_ON_RM_TARGET"] = str(default_parent)
+    environment["FAKE_SERVICE_ACCOUNT"] = "1"
+    if lock_parent_is_mountpoint:
+        fake_mountpoint = Path(environment["PATH"].split(os.pathsep)[0]) / "mountpoint"
+        fake_mountpoint.write_text(
+            "#!/usr/bin/env bash\n"
+            '[[ "${1:-}" == "-q" && "${2:-}" == "--" ]] || exit 64\n'
+            '[[ "${3:-}" == "${FAKE_MOUNTPOINT_PATH:-}" ]] && exit 0\n'
+            "exit 32\n",
+            encoding="utf-8",
+        )
+        fake_mountpoint.chmod(0o755)
+        environment["FAKE_MOUNTPOINT_PATH"] = str(default_parent)
+
+    sandbox = tmp_path / "uninstaller-copy"
+    installer_dir = sandbox / "installer"
+    installer_dir.mkdir(parents=True)
+    for helper in (
+        QUIESCE_HELPER,
+        REMOVE_UNIT_HELPER,
+        ROOT / "installer" / "hold_updater_locks.sh",
+    ):
+        shutil.copy2(helper, installer_dir / helper.name)
+    maintenance_helper = installer_dir / "maintenance_lock.sh"
+    maintenance_helper.write_text(
+        MAINTENANCE_HELPER.read_text(encoding="utf-8").replace(
+            "/run/lock/knx_to_openhab/maintenance.lock", str(default_lock)
+        ),
+        encoding="utf-8",
+    )
+    maintenance_helper.chmod(0o755)
+    copied_uninstaller = sandbox / "uninstall.sh"
+    copied_uninstaller.write_text(
+        UNINSTALLER.read_text(encoding="utf-8")
+        .replace("/run/lock/knx_to_openhab/maintenance.lock", str(default_lock))
+        .replace(
+            'STABLE_HELPER_DIR="/usr/local/libexec/knx_to_openhab"',
+            'STABLE_HELPER_DIR="$UNINSTALLER_DIR/stable"',
+        ),
+        encoding="utf-8",
+    )
+    copied_uninstaller.chmod(0o755)
+
+    result = subprocess.run(
+        ["bash", str(copied_uninstaller), "--purge", "--yes"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+
+    invocations = sudo_invocations(sudo_log)
+    if lock_parent_is_mountpoint:
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert "mount point" in (result.stdout + result.stderr).lower()
+        assert default_parent.is_dir()
+        assert app.is_dir()
+        assert not any(
+            invocation[0] == "rm" and str(default_parent) in invocation
+            for invocation in invocations
+        )
+        assert "groupdel" not in sudo_arguments(sudo_log)
+        return
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not default_parent.exists()
+    assert Path(environment["LOCK_CHECK_LOG"]).read_text(encoding="utf-8").splitlines() == ["held"]
+    lock_parent_removal = next(
+        index
+        for index, invocation in enumerate(invocations)
+        if invocation[0] == "rm" and str(default_parent) in invocation
+    )
+    group_removal = next(
+        index
+        for index, invocation in enumerate(invocations)
+        if invocation[:2] == ["groupdel", "--"]
+    )
+    assert lock_parent_removal < group_removal
+
+
 def test_uninstall_releases_exclusive_lock_after_a_post_acquisition_failure(tmp_path):
     environment, app, _, _, _, _, _ = create_fixture(tmp_path)
     environment["FAKE_ENABLE_INSPECTION_FAIL"] = "1"
@@ -311,11 +524,13 @@ def test_uninstall_releases_exclusive_lock_after_a_post_acquisition_failure(tmp_
 def test_purge_removes_custom_paths_and_service_account_and_can_repeat(tmp_path):
     environment, app, config, data, backups, _, sudo_log = create_fixture(tmp_path)
     environment["FAKE_SERVICE_ACCOUNT"] = "1"
+    custom_lock_parent = Path(environment["KNXOH_MAINTENANCE_LOCK_FILE"]).parent
 
     result = run_uninstaller(environment, ["--purge", "--yes"])
 
     assert result.returncode == 0, result.stderr
     assert all(not path.exists() for path in (app, config, data, backups))
+    assert custom_lock_parent.is_dir()
     calls = sudo_arguments(sudo_log)
     assert "userdel" in calls
     assert "groupdel" in calls

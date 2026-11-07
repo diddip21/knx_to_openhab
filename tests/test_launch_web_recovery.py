@@ -3,6 +3,7 @@
 import fcntl
 import os
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -23,17 +24,33 @@ def _make_app(app_dir: Path) -> Path:
 
 
 def _launch(install_dir: Path, data_dir: Path) -> subprocess.CompletedProcess[str]:
+    paths_file = data_dir / "paths.env"
+    lock_file = data_dir / "maintenance.lock"
+    paths_file.write_text(
+        f"KNXOH_MAINTENANCE_LOCK_FILE={shlex.quote(str(lock_file))}\n", encoding="utf-8"
+    )
     environment = os.environ.copy()
     environment.update(
         {
             "KNXOH_INSTALL_DIR": str(install_dir),
             "KNXOH_DATA_DIR": str(data_dir),
-            "KNXOH_MAINTENANCE_LOCK_FILE": str(data_dir / "maintenance.lock"),
+            "KNXOH_PATHS_FILE": str(paths_file),
+            "KNXOH_MAINTENANCE_LOCK_FILE": str(lock_file),
         }
     )
-    (data_dir / "maintenance.lock").touch()
+    lock_file.touch()
+    test_launcher_dir = install_dir / ".test-lock-aware-launcher"
+    test_launcher_dir.mkdir(exist_ok=True)
+    test_launcher = test_launcher_dir / "launch_web.sh"
+    shutil.copy2(LAUNCHER, test_launcher)
+    test_lock_helper = test_launcher_dir / "maintenance_lock.sh"
+    test_lock_helper.write_text(
+        (ROOT / "installer" / "maintenance_lock.sh").read_text(encoding="utf-8")
+        + "\n_validate_maintenance_lock_ancestors() { return 0; }\n",
+        encoding="utf-8",
+    )
     return subprocess.run(
-        ["bash", str(LAUNCHER)],
+        ["bash", str(test_launcher)],
         cwd=install_dir,
         env=environment,
         capture_output=True,

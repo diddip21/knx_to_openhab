@@ -198,6 +198,7 @@ def migrate_runtime_data(
     backup_dir: Path,
     install_dir: Path,
     paths_file: Path,
+    maintenance_lock_file: Path = Path("/run/lock/knx_to_openhab/maintenance.lock"),
 ) -> dict[str, Path]:
     source_root = source_root.resolve()
     template_root = template_root.resolve()
@@ -205,6 +206,10 @@ def migrate_runtime_data(
     data_dir = data_dir.resolve()
     backup_dir = backup_dir.resolve()
     install_dir = install_dir.resolve()
+    if not maintenance_lock_file.is_absolute() or any(
+        part in (".", "..") for part in maintenance_lock_file.parts
+    ):
+        raise ValueError("The maintenance lock file must be a safe absolute path")
 
     app_config_target = config_dir / "config.json"
     generator_config_target = data_dir / "generator.json"
@@ -339,6 +344,7 @@ def migrate_runtime_data(
         "KNXOH_CONFIG_DIR": config_dir,
         "KNXOH_DATA_DIR": data_dir,
         "KNXOH_BACKUP_DIR": backup_dir,
+        "KNXOH_MAINTENANCE_LOCK_FILE": maintenance_lock_file,
     }
     _write_paths_file(paths_file, values)
 
@@ -394,6 +400,11 @@ def main() -> None:
     parser.add_argument("--backup-dir", type=Path, required=True)
     parser.add_argument("--install-dir", type=Path, required=True)
     parser.add_argument("--paths-file", type=Path, default=Path("/etc/knx_to_openhab/paths.env"))
+    parser.add_argument(
+        "--maintenance-lock-file",
+        type=Path,
+        default=Path("/run/lock/knx_to_openhab/maintenance.lock"),
+    )
     args = parser.parse_args()
     migrate_runtime_data(
         args.source_root,
@@ -403,6 +414,7 @@ def main() -> None:
         args.backup_dir,
         args.install_dir,
         args.paths_file,
+        args.maintenance_lock_file,
     )
 
 

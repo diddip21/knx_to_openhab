@@ -42,6 +42,7 @@ def create_install(tmp_path):
                 f"KNXOH_CONFIG_DIR={shlex.quote(str(config))}",
                 f"KNXOH_DATA_DIR={shlex.quote(str(data))}",
                 f"KNXOH_BACKUP_DIR={shlex.quote(str(backups))}",
+                f"KNXOH_MAINTENANCE_LOCK_FILE={shlex.quote(str(data / 'maintenance.lock'))}",
             )
         )
         + "\n",
@@ -52,14 +53,17 @@ def create_install(tmp_path):
     assert REPAIR_SCRIPT.is_file(), "active-release virtualenv repair helper is not implemented"
     shutil.copy2(REPAIR_SCRIPT, helper)
     helper.chmod(0o755)
-    shutil.copy2(MAINTENANCE_LOCK_HELPER, release / "installer" / MAINTENANCE_LOCK_HELPER.name)
+    _copy_test_maintenance_lock_helper(release / "installer" / MAINTENANCE_LOCK_HELPER.name)
     (data / "maintenance.lock").touch()
+    fake_bin = tmp_path / "helper-fake-bin"
+    create_fake_python3(fake_bin)
     return {
         "install": install,
         "release": release,
         "data": data,
         "paths_file": paths_file,
         "helper": helper,
+        "fake_bin": fake_bin,
     }
 
 
@@ -67,9 +71,19 @@ def install_stable_helper(installation, destination):
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(REPAIR_SCRIPT, destination)
     destination.chmod(0o755)
-    shutil.copy2(MAINTENANCE_LOCK_HELPER, destination.parent / MAINTENANCE_LOCK_HELPER.name)
+    _copy_test_maintenance_lock_helper(destination.parent / MAINTENANCE_LOCK_HELPER.name)
     shutil.copy2(ROOT / "knxoh_paths.py", installation["install"] / "knxoh_paths.py")
     return destination
+
+
+def _copy_test_maintenance_lock_helper(destination):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        MAINTENANCE_LOCK_HELPER.read_text(encoding="utf-8")
+        + "\n_validate_maintenance_lock_ancestors() { return 0; }\n",
+        encoding="utf-8",
+    )
+    destination.chmod(0o755)
 
 
 def helper_environment(installation, extra=None):
@@ -86,6 +100,8 @@ def helper_environment(installation, extra=None):
     environment["KNXOH_EXPECTED_RELEASE"] = str(installation["release"])
     environment["KNXOH_PATHS_FILE"] = str(installation["paths_file"])
     environment["KNXOH_MAINTENANCE_LOCK_FILE"] = str(installation["data"] / "maintenance.lock")
+    environment["PATH"] = f"{installation['fake_bin']}{os.pathsep}{os.environ['PATH']}"
+    environment["REPAIR_TEST_REAL_PYTHON"] = sys.executable
     if extra:
         environment.update(extra)
     return environment
@@ -111,6 +127,17 @@ def create_fake_python3(fake_bin, *, stub_python=False):
         'if [[ "${1:-}" == "-m" && "${2:-}" == "venv" ]]; then\n'
         '  "$REPAIR_TEST_REAL_PYTHON" "$@" || exit $?\n'
         '  target="$3"\n'
+        '  target_site="$("$target/bin/python" -c "import sysconfig; print(sysconfig.get_paths()[\'purelib\'])")"\n'
+        "  for module in flask gunicorn requests xknxproject yaml; do\n"
+        '    printf "# test dependency\\n" > "$target_site/$module.py"\n'
+        "  done\n"
+        '  mkdir -p "$target_site/argon2"\n'
+        '  printf "# test dependency\\n" > "$target_site/argon2/__init__.py"\n'
+        "  cat > \"$target/bin/gunicorn\" <<'GUNICORN'\n"
+        "#!/bin/sh\n"
+        "exit 0\n"
+        "GUNICORN\n"
+        '  chmod 755 "$target/bin/gunicorn"\n'
         "  cat > \"$target/bin/pip\" <<'PIP'\n"
         "#!/bin/bash\n"
         'if [[ "${REPAIR_TEST_PIP_FAIL:-0}" == "1" && "${1:-}" == "install" ]]; then\n'
@@ -137,6 +164,64 @@ def create_fake_python3(fake_bin, *, stub_python=False):
     )
     wrapper.chmod(0o755)
     return wrapper
+
+
+def create_existing_venv(installation):
+    venv = installation["release"] / "venv"
+    subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True, timeout=60)
+    return venv
+
+
+def test_repair_rebuilds_venv_when_runtime_dependency_is_missing(tmp_path):
+    installation = create_install(tmp_path)
+    venv = create_existing_venv(installation)
+    marker = venv / "preexisting-venv-marker"
+    marker.write_text("preserve if rebuild fails", encoding="utf-8")
+    fake_bin = tmp_path / "bin"
+    create_fake_python3(fake_bin)
+    environment = helper_environment(
+        installation,
+        {
+            "PATH": (
+                f"{fake_bin}{os.pathsep}{installation['fake_bin']}"
+                f"{os.pathsep}{os.environ['PATH']}"
+            ),
+            "REPAIR_TEST_REAL_PYTHON": sys.executable,
+            "REPAIR_TEST_PIP_FAIL": "1",
+        },
+    )
+
+    result = run_helper(installation, environment)
+
+    assert result.returncode != 0
+    assert "could not install" in (result.stdout + result.stderr).lower()
+    assert marker.read_text(encoding="utf-8") == "preserve if rebuild fails"
+
+
+def test_repair_does_not_accept_venv_without_gunicorn_entrypoint(tmp_path):
+    installation = create_install(tmp_path)
+    venv = installation["release"] / "venv"
+    (venv / "bin").mkdir(parents=True)
+    (venv / "bin" / "python").symlink_to(sys.executable)
+    marker = venv / "preexisting-venv-marker"
+    marker.write_text("preserve if rebuild fails", encoding="utf-8")
+    fake_bin = tmp_path / "bin"
+    create_fake_python3(fake_bin)
+    environment = helper_environment(
+        installation,
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+            "REPAIR_TEST_REAL_PYTHON": sys.executable,
+            "REPAIR_TEST_PIP_FAIL": "1",
+        },
+    )
+
+    result = run_helper(installation, environment)
+
+    assert result.returncode != 0
+    assert "could not install" in (result.stdout + result.stderr).lower()
+    assert marker.read_text(encoding="utf-8") == "preserve if rebuild fails"
+    assert not (venv / "bin" / "gunicorn").exists()
 
 
 def test_repair_release_venv_creates_environment_at_active_final_path(tmp_path):
@@ -177,6 +262,26 @@ def test_repair_release_venv_rejects_stale_or_unsafe_release(tmp_path, target_ki
     assert current.resolve() == target.resolve()
 
 
+def test_repair_rejects_environment_overrides_that_conflict_with_saved_paths(tmp_path):
+    configured = create_install(tmp_path / "configured")
+    overridden = create_install(tmp_path / "overridden")
+    environment = helper_environment(
+        configured,
+        {
+            "KNXOH_INSTALL_DIR": str(overridden["install"]),
+            "KNXOH_DATA_DIR": str(overridden["data"]),
+            "KNXOH_EXPECTED_RELEASE": str(overridden["release"]),
+        },
+    )
+
+    result = run_helper(configured, environment)
+
+    assert result.returncode != 0
+    assert "do not match the configured paths file" in (result.stdout + result.stderr)
+    assert not (overridden["release"] / "venv").exists()
+    assert (configured["install"] / "current").resolve() == configured["release"]
+
+
 def test_repair_release_venv_refuses_busy_updater_lock(tmp_path):
     installation = create_install(tmp_path)
     lock_path = installation["data"] / "updater.lock"
@@ -192,6 +297,73 @@ def test_repair_release_venv_refuses_busy_updater_lock(tmp_path):
     assert result.returncode != 0
     assert "updater" in (result.stdout + result.stderr).lower()
     assert not (installation["release"] / "venv").exists()
+    assert (installation["install"] / "current").resolve() == installation["release"]
+
+
+def test_repair_uses_saved_custom_lock_path_when_environment_is_unset(tmp_path):
+    installation = create_install(tmp_path)
+    saved_lock = installation["data"] / "maintenance locks" / "maintenance.lock"
+    saved_lock.parent.mkdir()
+    saved_lock.touch()
+    paths_file = installation["paths_file"]
+    contents = paths_file.read_text(encoding="utf-8")
+    default_line = (
+        f"KNXOH_MAINTENANCE_LOCK_FILE={shlex.quote(str(installation['data'] / 'maintenance.lock'))}"
+    )
+    paths_file.write_text(
+        contents.replace(
+            default_line, f"KNXOH_MAINTENANCE_LOCK_FILE={shlex.quote(str(saved_lock))}"
+        ),
+        encoding="utf-8",
+    )
+    environment = helper_environment(installation)
+    environment.pop("KNXOH_MAINTENANCE_LOCK_FILE")
+
+    with saved_lock.open("r+") as holder:
+        fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = run_helper(installation, environment)
+
+    assert result.returncode != 0
+    output = (result.stdout + result.stderr).lower()
+    assert "setup or uninstall is in progress" in output
+    assert "maintenance lock file is missing or unsafe" not in output
+    assert not (installation["release"] / "venv").exists()
+
+
+def test_repair_rejects_conflicting_maintenance_lock_override(tmp_path):
+    installation = create_install(tmp_path)
+    environment = helper_environment(
+        installation,
+        {"KNXOH_MAINTENANCE_LOCK_FILE": str(installation["data"] / "other.lock")},
+    )
+
+    result = run_helper(installation, environment)
+
+    assert result.returncode != 0
+    assert "conflicts with the persisted" in (result.stdout + result.stderr)
+    assert not (installation["release"] / "venv").exists()
+
+
+def test_repair_release_venv_accepts_setup_inherited_updater_lock(tmp_path):
+    installation = create_install(tmp_path)
+    lock_path = installation["data"] / "updater.lock"
+    lock_path.touch()
+
+    with lock_path.open("r+") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = run_helper(
+            installation,
+            helper_environment(
+                installation,
+                {
+                    "KNXOH_SETUP_LOCK_HELD": "1",
+                    "KNXOH_SETUP_UPDATER_LOCK_HELD": "1",
+                },
+            ),
+        )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (installation["release"] / "venv/bin/gunicorn").is_file()
     assert (installation["install"] / "current").resolve() == installation["release"]
 
 
@@ -356,7 +528,8 @@ def test_recovery_command_repairs_active_venv_and_retry_passes_preflight(tmp_pat
         "    fi\n"
         '    args+=("$arg")\n'
         "  done\n"
-        "  exec env -u KNXOH_INSTALL_DIR -u KNXOH_DATA_DIR -u KNXOH_PATHS_FILE "
+        "  exec env -u KNXOH_INSTALL_DIR -u KNXOH_DATA_DIR "
+        "-u KNXOH_MAINTENANCE_LOCK_FILE -u KNXOH_PATHS_FILE "
         '-u KNXOH_EXPECTED_RELEASE "${args[@]}"\n'
         "fi\n"
         "exit 1\n",
@@ -404,6 +577,7 @@ def test_recovery_command_repairs_active_venv_and_retry_passes_preflight(tmp_pat
         "env",
         f"KNXOH_INSTALL_DIR={installation['install']}",
         f"KNXOH_DATA_DIR={installation['data']}",
+        f"KNXOH_MAINTENANCE_LOCK_FILE={installation['data'] / 'maintenance.lock'}",
         f"KNXOH_PATHS_FILE={installation['paths_file']}",
         f"KNXOH_EXPECTED_RELEASE={installation['release']}",
         "bash",
@@ -471,7 +645,8 @@ def test_recovery_command_preserves_custom_paths_under_sudo(tmp_path):
         "    fi\n"
         '    args+=("$arg")\n'
         "  done\n"
-        "  exec env -u KNXOH_INSTALL_DIR -u KNXOH_DATA_DIR -u KNXOH_PATHS_FILE "
+        "  exec env -u KNXOH_INSTALL_DIR -u KNXOH_DATA_DIR "
+        "-u KNXOH_MAINTENANCE_LOCK_FILE -u KNXOH_PATHS_FILE "
         '-u KNXOH_EXPECTED_RELEASE "${args[@]}"\n'
         "fi\n"
         "exit 1\n",
@@ -481,7 +656,10 @@ def test_recovery_command_preserves_custom_paths_under_sudo(tmp_path):
     environment = helper_environment(
         installation,
         {
-            "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+            "PATH": (
+                f"{fake_bin}{os.pathsep}{installation['fake_bin']}"
+                f"{os.pathsep}{os.environ['PATH']}"
+            ),
             "KNXOH_INSTALL_DIR": str(installation["install"]),
             "KNXOH_DATA_DIR": str(installation["data"]),
             "KNXOH_CONFIG_DIR": str(tmp_path / "configuration"),
@@ -520,6 +698,7 @@ def test_recovery_command_preserves_custom_paths_under_sudo(tmp_path):
         "env",
         f"KNXOH_INSTALL_DIR={installation['install']}",
         f"KNXOH_DATA_DIR={installation['data']}",
+        f"KNXOH_MAINTENANCE_LOCK_FILE={installation['data'] / 'maintenance.lock'}",
         f"KNXOH_PATHS_FILE={installation['paths_file']}",
         f"KNXOH_EXPECTED_RELEASE={installation['release']}",
         "bash",

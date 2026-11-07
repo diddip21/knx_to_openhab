@@ -23,12 +23,26 @@ def _prepare_maintenance_lock(lock_file: Path) -> str:
     return str(lock_file)
 
 
+def _persist_maintenance_lock_path(paths_file: Path, lock_file: str) -> None:
+    paths_file.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        lines = paths_file.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        lines = []
+    lines = [line for line in lines if not line.startswith("KNXOH_MAINTENANCE_LOCK_FILE=")]
+    lines.append(f"KNXOH_MAINTENANCE_LOCK_FILE={shlex.quote(lock_file)}")
+    paths_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _copy_maintenance_lock_helper(installer_dir: Path) -> None:
     installer_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(
-        ROOT / "installer" / "maintenance_lock.sh",
-        installer_dir / "maintenance_lock.sh",
+    helper = installer_dir / "maintenance_lock.sh"
+    helper.write_text(
+        (ROOT / "installer" / "maintenance_lock.sh").read_text(encoding="utf-8")
+        + "\n_validate_maintenance_lock_ancestors() { return 0; }\n",
+        encoding="utf-8",
     )
+    helper.chmod(0o755)
 
 
 def test_sudoers_policy_only_allows_named_service_actions():
@@ -110,7 +124,7 @@ def test_setup_installs_and_runs_stable_recovery_helpers():
     assert 'if [[ -L "$BASE/current" ]]; then' in setup
     helper_install = setup.index("/usr/local/libexec/knx_to_openhab/repair_release_venv.sh")
     repair_call = setup.index("bash /usr/local/libexec/knx_to_openhab/repair_release_venv.sh")
-    restart = setup.index("sudo systemctl restart knxohui.service")
+    restart = setup.index("setup_systemctl_if_unmasked knxohui.service restart")
     assert helper_install < repair_call < restart
     assert 'sudo -u "$SERVICE_USER" env' in setup
     assert '"KNXOH_INSTALL_DIR=$BASE"' in setup
@@ -199,12 +213,16 @@ def test_transactional_update_no_op_does_not_backup_or_provision(tmp_path):
     fake_python = release_dir / "venv" / "bin" / "python"
     fake_python.write_text(f'#!/bin/sh\nexec {real_python} "$@"\n', encoding="utf-8")
     fake_python.chmod(0o755)
+    gunicorn = release_dir / "venv" / "bin" / "gunicorn"
+    gunicorn.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gunicorn.chmod(0o755)
     (install_dir / "current").symlink_to("releases/1.4.0")
 
     updater = install_dir / "update.sh"
     updater.write_text((ROOT / "update.sh").read_text(encoding="utf-8"), encoding="utf-8")
     _copy_maintenance_lock_helper(install_dir / "installer")
     maintenance_lock_file = _prepare_maintenance_lock(tmp_path / "maintenance.lock")
+    _persist_maintenance_lock_path(paths_file, maintenance_lock_file)
 
     provision_marker = tmp_path / "provision-attempted"
     fake_sudo = bin_dir / "sudo"
@@ -268,7 +286,8 @@ def test_web_updater_recovery_instructions_use_active_app_dir():
 
     assert (
         "'sudo env KNXOH_INSTALL_DIR=%q KNXOH_CONFIG_DIR=%q KNXOH_DATA_DIR=%q "
-        "KNXOH_BACKUP_DIR=%q KNXOH_PATHS_FILE=%q bash %q'" in update
+        "KNXOH_BACKUP_DIR=%q KNXOH_MAINTENANCE_LOCK_FILE=%q "
+        "KNXOH_PATHS_FILE=%q bash %q'" in update
     )
     assert '"$PATHS_FILE" "$APP_DIR/installer/setup.sh"' in update
     assert (
@@ -306,12 +325,15 @@ def test_update_recovery_command_quotes_install_path_with_spaces(
     fake_sudo.chmod(0o755)
     expected_script = install_dir / "installer" / script_name
     maintenance_lock_file = _prepare_maintenance_lock(tmp_path / "maintenance.lock")
+    paths_file = tmp_path / "paths.env"
+    _persist_maintenance_lock_path(paths_file, maintenance_lock_file)
     environment = os.environ.copy()
     environment.update(
         {
             "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
             "KNXOH_INSTALL_DIR": str(install_dir),
             "KNXOH_DATA_DIR": str(tmp_path / "runtime data"),
+            "KNXOH_PATHS_FILE": str(paths_file),
             "KNXOH_MAINTENANCE_LOCK_FILE": maintenance_lock_file,
             "LOG_FILE": str(tmp_path / "update.log"),
             "RELEASE_TAG": "v1.2.3",
@@ -362,7 +384,8 @@ def test_update_recovery_command_quotes_install_path_with_spaces(
             "KNXOH_CONFIG_DIR=/etc/knx_to_openhab",
             f"KNXOH_DATA_DIR={tmp_path / 'runtime data'}",
             "KNXOH_BACKUP_DIR=/var/backups/knx_to_openhab",
-            "KNXOH_PATHS_FILE=/etc/knx_to_openhab/paths.env",
+            f"KNXOH_MAINTENANCE_LOCK_FILE={maintenance_lock_file}",
+            f"KNXOH_PATHS_FILE={paths_file}",
             "bash",
             str(expected_script),
         ]
@@ -381,6 +404,8 @@ def test_transactional_update_missing_venv_emits_repair_command(tmp_path):
     shutil.copy2(ROOT / "update.sh", active_update)
     _copy_maintenance_lock_helper(active / "installer")
     maintenance_lock_file = _prepare_maintenance_lock(tmp_path / "maintenance.lock")
+    paths_file = tmp_path / "paths file.env"
+    _persist_maintenance_lock_path(paths_file, maintenance_lock_file)
 
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -405,7 +430,7 @@ def test_transactional_update_missing_venv_emits_repair_command(tmp_path):
             "KNXOH_CONFIG_DIR": str(tmp_path / "configuration"),
             "KNXOH_DATA_DIR": str(tmp_path / "runtime data"),
             "KNXOH_BACKUP_DIR": str(tmp_path / "backups"),
-            "KNXOH_PATHS_FILE": str(tmp_path / "paths file.env"),
+            "KNXOH_PATHS_FILE": str(paths_file),
             "KNXOH_MAINTENANCE_LOCK_FILE": maintenance_lock_file,
             "LOG_FILE": str(tmp_path / "update.log"),
             "RELEASE_TAG": "v1.2.3",
@@ -436,6 +461,7 @@ def test_transactional_update_missing_venv_emits_repair_command(tmp_path):
         f"KNXOH_CONFIG_DIR={tmp_path / 'configuration'}",
         f"KNXOH_DATA_DIR={tmp_path / 'runtime data'}",
         f"KNXOH_BACKUP_DIR={tmp_path / 'backups'}",
+        f"KNXOH_MAINTENANCE_LOCK_FILE={maintenance_lock_file}",
         f"KNXOH_PATHS_FILE={tmp_path / 'paths file.env'}",
         "bash",
         str(active / "installer" / "setup.sh"),
@@ -447,6 +473,8 @@ def test_transactional_update_missing_release_fails_closed(tmp_path):
     (install / "releases").mkdir(parents=True)
     (install / "current").symlink_to("releases/missing")
     maintenance_lock_file = _prepare_maintenance_lock(tmp_path / "maintenance.lock")
+    paths_file = tmp_path / "paths file.env"
+    _persist_maintenance_lock_path(paths_file, maintenance_lock_file)
     environment = os.environ.copy()
     environment.update(
         {
@@ -455,7 +483,7 @@ def test_transactional_update_missing_release_fails_closed(tmp_path):
             "KNXOH_CONFIG_DIR": str(tmp_path / "configuration"),
             "KNXOH_DATA_DIR": str(tmp_path / "runtime data"),
             "KNXOH_BACKUP_DIR": str(tmp_path / "backups"),
-            "KNXOH_PATHS_FILE": str(tmp_path / "paths file.env"),
+            "KNXOH_PATHS_FILE": str(paths_file),
             "KNXOH_MAINTENANCE_LOCK_FILE": maintenance_lock_file,
             "LOG_FILE": str(tmp_path / "update.log"),
             "RELEASE_TAG": "v1.2.3",
@@ -488,6 +516,8 @@ def test_transactional_update_unusable_venv_emits_repair_command(tmp_path):
     shutil.copy2(ROOT / "update.sh", active_update)
     _copy_maintenance_lock_helper(active / "installer")
     maintenance_lock_file = _prepare_maintenance_lock(tmp_path / "maintenance.lock")
+    paths_file = tmp_path / "paths file.env"
+    _persist_maintenance_lock_path(paths_file, maintenance_lock_file)
     python = active / "venv" / "bin" / "python"
     python.write_text("#!/bin/sh\nexit 9\n", encoding="utf-8")
     python.chmod(0o755)
@@ -514,7 +544,7 @@ def test_transactional_update_unusable_venv_emits_repair_command(tmp_path):
             "KNXOH_CONFIG_DIR": str(tmp_path / "configuration"),
             "KNXOH_DATA_DIR": str(tmp_path / "runtime data"),
             "KNXOH_BACKUP_DIR": str(tmp_path / "backups"),
-            "KNXOH_PATHS_FILE": str(tmp_path / "paths file.env"),
+            "KNXOH_PATHS_FILE": str(paths_file),
             "KNXOH_MAINTENANCE_LOCK_FILE": maintenance_lock_file,
             "LOG_FILE": str(tmp_path / "update.log"),
             "RELEASE_TAG": "v1.2.3",
@@ -544,10 +574,73 @@ def test_transactional_update_unusable_venv_emits_repair_command(tmp_path):
         f"KNXOH_CONFIG_DIR={tmp_path / 'configuration'}",
         f"KNXOH_DATA_DIR={tmp_path / 'runtime data'}",
         f"KNXOH_BACKUP_DIR={tmp_path / 'backups'}",
+        f"KNXOH_MAINTENANCE_LOCK_FILE={maintenance_lock_file}",
         f"KNXOH_PATHS_FILE={tmp_path / 'paths file.env'}",
         "bash",
         str(active / "installer" / "setup.sh"),
     ]
+
+
+def test_transactional_update_missing_gunicorn_emits_repair_command(tmp_path):
+    install = tmp_path / "install"
+    active = install / "releases" / "active"
+    (active / "installer").mkdir(parents=True)
+    (active / "venv" / "bin").mkdir(parents=True)
+    (install / "releases").mkdir(parents=True, exist_ok=True)
+    (install / "current").symlink_to("releases/active")
+    active_update = active / "update.sh"
+    shutil.copy2(ROOT / "update.sh", active_update)
+    _copy_maintenance_lock_helper(active / "installer")
+    python = active / "venv" / "bin" / "python"
+    python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    python.chmod(0o755)
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_sudo = fake_bin / "sudo"
+    fake_sudo.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1" == "-n" && "$2" == "-l" ]]; then\n'
+        '  echo "NOPASSWD: limited service commands"\n'
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    fake_sudo.chmod(0o755)
+    lock_file = _prepare_maintenance_lock(tmp_path / "maintenance.lock")
+    paths_file = tmp_path / "paths.env"
+    _persist_maintenance_lock_path(paths_file, lock_file)
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+            "INSTALL_DIR": str(install),
+            "KNXOH_INSTALL_DIR": str(install),
+            "KNXOH_CONFIG_DIR": str(tmp_path / "configuration"),
+            "KNXOH_DATA_DIR": str(tmp_path / "runtime data"),
+            "KNXOH_BACKUP_DIR": str(tmp_path / "backups"),
+            "KNXOH_PATHS_FILE": str(paths_file),
+            "KNXOH_MAINTENANCE_LOCK_FILE": lock_file,
+            "LOG_FILE": str(tmp_path / "update.log"),
+            "RELEASE_TAG": "v1.2.3",
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(active_update)],
+        cwd=install,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "active release Python environment is missing or unusable" in result.stdout
+    assert "Recovery: run " in result.stdout
+    assert "Creating and validating pre-update backup" not in result.stdout
 
 
 def test_update_missing_stable_helper_recommends_setup_bootstrap(tmp_path):
@@ -577,6 +670,7 @@ def test_update_missing_stable_helper_recommends_setup_bootstrap(tmp_path):
     backup_dir = tmp_path / "backup storage"
     paths_file = tmp_path / "custom paths.env"
     maintenance_lock_file = _prepare_maintenance_lock(tmp_path / "maintenance.lock")
+    _persist_maintenance_lock_path(paths_file, maintenance_lock_file)
     environment = os.environ.copy()
     environment.update(
         {
@@ -616,6 +710,7 @@ def test_update_missing_stable_helper_recommends_setup_bootstrap(tmp_path):
         f"KNXOH_CONFIG_DIR={config_dir}",
         f"KNXOH_DATA_DIR={data_dir}",
         f"KNXOH_BACKUP_DIR={backup_dir}",
+        f"KNXOH_MAINTENANCE_LOCK_FILE={maintenance_lock_file}",
         f"KNXOH_PATHS_FILE={paths_file}",
         "bash",
         str(active / "installer" / "setup.sh"),
@@ -651,9 +746,12 @@ def test_update_worker_falls_back_when_active_python_is_broken(tmp_path):
     active_python.chmod(0o755)
     environment = os.environ.copy()
     maintenance_lock_file = _prepare_maintenance_lock(tmp_path / "maintenance.lock")
+    paths_file = tmp_path / "paths.env"
+    _persist_maintenance_lock_path(paths_file, maintenance_lock_file)
     environment.update(
         {
             "KNXOH_INSTALL_DIR": str(install),
+            "KNXOH_PATHS_FILE": str(paths_file),
             "KNXOH_MAINTENANCE_LOCK_FILE": maintenance_lock_file,
             "LAUNCHER_TEST_LOG": str(log_file),
         }
@@ -662,10 +760,7 @@ def test_update_worker_falls_back_when_active_python_is_broken(tmp_path):
     installed_launcher = tmp_path / "usr-local" / "libexec" / "knx_to_openhab" / "launch_update.sh"
     installed_launcher.parent.mkdir(parents=True)
     shutil.copy2(ROOT / "installer" / "launch_update.sh", installed_launcher)
-    shutil.copy2(
-        ROOT / "installer" / "maintenance_lock.sh",
-        installed_launcher.parent / "maintenance_lock.sh",
-    )
+    _copy_maintenance_lock_helper(installed_launcher.parent)
     result = subprocess.run(
         ["bash", str(installed_launcher)],
         env=environment,
@@ -691,7 +786,8 @@ def test_web_updater_checks_external_credentials_before_backup_or_release_change
     assert "valid external Argon2id password hash is required" in update
     assert (
         "'sudo env KNXOH_INSTALL_DIR=%q KNXOH_CONFIG_DIR=%q KNXOH_DATA_DIR=%q "
-        "KNXOH_BACKUP_DIR=%q KNXOH_PATHS_FILE=%q bash %q'" in update
+        "KNXOH_BACKUP_DIR=%q KNXOH_MAINTENANCE_LOCK_FILE=%q "
+        "KNXOH_PATHS_FILE=%q bash %q'" in update
     )
     assert "interactive SSH terminal" in update
     backup = update.index("Creating and validating pre-update backup")
@@ -1126,6 +1222,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
     (data_dir / "jobs/user.json").write_text("preserved", encoding="utf-8")
     paths_file.write_text("", encoding="utf-8")
     maintenance_lock_file = _prepare_maintenance_lock(tmp_path / "maintenance.lock")
+    _persist_maintenance_lock_path(paths_file, maintenance_lock_file)
 
     shutil.copy2(ROOT / ".gitignore", install / ".gitignore")
     (install / "requirements.txt").write_text("legacy-dependency\n", encoding="utf-8")
@@ -1273,7 +1370,7 @@ def test_transactional_update_rolls_back_or_prunes_releases_after_health_check(
             target = active_app / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(install / relative, target)
-        for executable in ("python", "pip"):
+        for executable in ("python", "pip", "gunicorn"):
             target = active_app / "venv/bin" / executable
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(install / "venv/bin" / executable, target)

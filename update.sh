@@ -16,9 +16,13 @@ RELEASE_COMMIT_DATE="${RELEASE_COMMIT_DATE:-}"
 RELEASE_COMMIT_MESSAGE="${RELEASE_COMMIT_MESSAGE:-}"
 RELEASE_AUTHOR="${RELEASE_AUTHOR:-unknown}"
 PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
-MAINTENANCE_LOCK_HELPER="${KNXOH_MAINTENANCE_LOCK_HELPER:-$SCRIPT_DIR/installer/maintenance_lock.sh}"
+export KNXOH_PATHS_FILE="$PATHS_FILE"
+MAINTENANCE_LOCK_HELPER="/usr/local/libexec/knx_to_openhab/maintenance_lock.sh"
 if [[ ! -f "$MAINTENANCE_LOCK_HELPER" ]]; then
-    echo "ERROR: The maintenance lock helper is missing: $MAINTENANCE_LOCK_HELPER" >&2
+    MAINTENANCE_LOCK_HELPER="$SCRIPT_DIR/installer/maintenance_lock.sh"
+fi
+if [[ ! -f "$MAINTENANCE_LOCK_HELPER" || -L "$MAINTENANCE_LOCK_HELPER" ]]; then
+    echo "ERROR: The maintenance lock helper is missing or unsafe: $MAINTENANCE_LOCK_HELPER" >&2
     exit 1
 fi
 source "$MAINTENANCE_LOCK_HELPER"
@@ -120,13 +124,15 @@ PY
     SETUP_BACKUP_DIR="${KNXOH_BACKUP_DIR:-${SETUP_PATH_VALUES[1]}}"
 fi
 printf -v SETUP_RECOVERY_COMMAND \
-    'sudo env KNXOH_INSTALL_DIR=%q KNXOH_CONFIG_DIR=%q KNXOH_DATA_DIR=%q KNXOH_BACKUP_DIR=%q KNXOH_PATHS_FILE=%q bash %q' \
+    'sudo env KNXOH_INSTALL_DIR=%q KNXOH_CONFIG_DIR=%q KNXOH_DATA_DIR=%q KNXOH_BACKUP_DIR=%q KNXOH_MAINTENANCE_LOCK_FILE=%q KNXOH_PATHS_FILE=%q bash %q' \
     "$INSTALL_DIR" "$SETUP_CONFIG_DIR" "$UPDATE_LOCK_DIR" "$SETUP_BACKUP_DIR" \
+    "$KNXOH_MAINTENANCE_LOCK_FILE" \
     "$PATHS_FILE" "$APP_DIR/installer/setup.sh"
 VENV_REPAIR_HELPER="/usr/local/libexec/knx_to_openhab/repair_release_venv.sh"
 printf -v VENV_RECOVERY_COMMAND \
-    'sudo -u knxohui env KNXOH_INSTALL_DIR=%q KNXOH_DATA_DIR=%q KNXOH_PATHS_FILE=%q KNXOH_EXPECTED_RELEASE=%q bash %q' \
-    "$INSTALL_DIR" "$UPDATE_LOCK_DIR" "$PATHS_FILE" "$APP_DIR" "$VENV_REPAIR_HELPER"
+    'sudo -u knxohui env KNXOH_INSTALL_DIR=%q KNXOH_DATA_DIR=%q KNXOH_MAINTENANCE_LOCK_FILE=%q KNXOH_PATHS_FILE=%q KNXOH_EXPECTED_RELEASE=%q bash %q' \
+    "$INSTALL_DIR" "$UPDATE_LOCK_DIR" "$KNXOH_MAINTENANCE_LOCK_FILE" \
+    "$PATHS_FILE" "$APP_DIR" "$VENV_REPAIR_HELPER"
 if ! command -v flock >/dev/null 2>&1; then
     log "ERROR: The 'flock' utility is required to prevent concurrent updates."
     exit 1
@@ -166,10 +172,12 @@ fi
 # Refuse an in-place update until credentials live in the external config tree.
 # An older checkout may still keep its default or plaintext password in tracked
 # files, so fetching first could replace the code before credentials are migrated.
-if [[ ! -x "$APP_DIR/venv/bin/python" ]] || \
+if [[ ! -x "$APP_DIR/venv/bin/python" || ! -x "$APP_DIR/venv/bin/gunicorn" ]] || \
+    ! PYTHONPATH="$APP_DIR" "$APP_DIR/venv/bin/python" -m pip check >/dev/null 2>&1 || \
     ! PYTHONPATH="$APP_DIR" "$APP_DIR/venv/bin/python" -c \
-        'import knxoh_paths; from web_ui.backend.auth import is_password_hash' \
-        >/dev/null 2>&1; then
+        'import argon2, flask, gunicorn, knxoh_paths, requests, xknxproject, yaml; from web_ui.backend.auth import is_password_hash' \
+        >/dev/null 2>&1 || \
+    ! "$APP_DIR/venv/bin/gunicorn" --version >/dev/null 2>&1; then
     log "ERROR: The active release Python environment is missing or unusable."
     if (( LEGACY_INSTALL )); then
         log "Recovery: run $SETUP_RECOVERY_COMMAND from an interactive SSH terminal (for example, ssh -t), then retry."

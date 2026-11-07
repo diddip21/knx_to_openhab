@@ -16,6 +16,9 @@ if [[ ! -f "$SCRIPT_DIR/maintenance_lock.sh" ]]; then
     fail "The maintenance lock helper is missing."
 fi
 source "$SCRIPT_DIR/maintenance_lock.sh"
+if ! resolve_maintenance_lock_path "$PATHS_FILE"; then
+    fail "The configured maintenance lock path could not be resolved safely."
+fi
 if [[ "${KNXOH_SETUP_LOCK_HELD:-0}" != 1 ]] && ! acquire_maintenance_shared_lock; then
     fail "Setup or uninstall is in progress; retry environment repair later."
 fi
@@ -36,21 +39,48 @@ if [[ ! -f "$INSTALL_DIR/knxoh_paths.py" || -L "$INSTALL_DIR/knxoh_paths.py" ]];
     fail "The stable installation is missing its path helper."
 fi
 
-if ! RESOLVED_PATHS=$(KNXOH_INSTALL_DIR="$INSTALL_DIR" \
-    KNXOH_DATA_DIR="$DATA_DIR" KNXOH_PATHS_FILE="$PATHS_FILE" \
-    PYTHONPATH="$INSTALL_DIR" python3 - <<'PY'
+if ! CONFIGURED_PATHS=$(python3 - "$PATHS_FILE" "$INSTALL_DIR" "$DATA_DIR" <<'PY'
+import shlex
 import sys
+from pathlib import Path
 
-from knxoh_paths import get_paths
+paths_file = Path(sys.argv[1])
+supplied = {
+    "KNXOH_INSTALL_DIR": Path(sys.argv[2]).expanduser(),
+    "KNXOH_DATA_DIR": Path(sys.argv[3]).expanduser(),
+}
+saved = {}
+for line in paths_file.read_text(encoding="utf-8").splitlines():
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or "=" not in stripped:
+        continue
+    name, raw_value = stripped.split("=", 1)
+    if name not in supplied:
+        continue
+    if name in saved:
+        raise SystemExit(f"duplicate {name} entry")
+    try:
+        values = shlex.split(raw_value, posix=True)
+    except ValueError as error:
+        raise SystemExit(f"invalid {name} entry: {error}") from error
+    if len(values) != 1:
+        raise SystemExit(f"invalid {name} entry")
+    path = Path(values[0]).expanduser()
+    if not path.is_absolute():
+        raise SystemExit(f"{name} is not absolute")
+    saved[name] = path.resolve()
 
-paths = get_paths()
-print(paths.install_dir)
-print(paths.data_dir)
+if set(saved) != set(supplied):
+    raise SystemExit("the paths file does not contain both required paths")
+for name, path in supplied.items():
+    if not path.is_absolute() or path.resolve() != saved[name]:
+        raise SystemExit(f"supplied {name} does not match the paths file")
+    print(saved[name])
 PY
 ); then
-    fail "Could not resolve the installed application and runtime-data paths."
+    fail "The supplied install/data paths do not match the configured paths file."
 fi
-mapfile -t PATH_VALUES <<<"$RESOLVED_PATHS"
+mapfile -t PATH_VALUES <<<"$CONFIGURED_PATHS"
 if (( ${#PATH_VALUES[@]} != 2 )); then
     fail "The installed application and runtime-data paths are invalid."
 fi
@@ -68,11 +98,17 @@ UPDATE_LOCK_FILE="$DATA_DIR/updater.lock"
 if [[ -L "$UPDATE_LOCK_FILE" || ( -e "$UPDATE_LOCK_FILE" && ! -f "$UPDATE_LOCK_FILE" ) ]]; then
     fail "The updater lock path is not a regular file: $UPDATE_LOCK_FILE"
 fi
-if ! exec 9>>"$UPDATE_LOCK_FILE"; then
-    fail "Could not open the updater lock: $UPDATE_LOCK_FILE"
-fi
-if ! flock -n 9; then
-    fail "An updater is running; retry environment repair after it finishes."
+if [[ "${KNXOH_SETUP_UPDATER_LOCK_HELD:-0}" == 1 ]]; then
+    if [[ ! -f "$UPDATE_LOCK_FILE" || -L "$UPDATE_LOCK_FILE" ]]; then
+        fail "Setup claims the updater lock, but the configured lock file is missing or unsafe."
+    fi
+else
+    if ! exec 9>>"$UPDATE_LOCK_FILE"; then
+        fail "Could not open the updater lock: $UPDATE_LOCK_FILE"
+    fi
+    if ! flock -n 9; then
+        fail "An updater is running; retry environment repair after it finishes."
+    fi
 fi
 
 if [[ ! -L "$CURRENT_LINK" ]]; then
@@ -100,19 +136,30 @@ if [[ "$CURRENT_RELEASE" != "$EXPECTED_RELEASE" ]]; then
 fi
 APP_DIR="$CURRENT_RELEASE"
 
+VENV_DIR="$APP_DIR/venv"
+venv_is_usable() {
+    local candidate="$1"
+    [[ -x "$candidate/bin/python" && -x "$candidate/bin/gunicorn" ]] || return 1
+    if ! PYTHONPATH="$APP_DIR" "$candidate/bin/python" -m pip check >/dev/null 2>&1; then
+        return 1
+    fi
+    if ! PYTHONPATH="$APP_DIR" "$candidate/bin/python" -c \
+        'import argon2, flask, gunicorn, knxoh_paths, requests, xknxproject, yaml; from web_ui.backend.auth import is_password_hash' \
+        >/dev/null 2>&1; then
+        return 1
+    fi
+    "$candidate/bin/gunicorn" --version >/dev/null 2>&1
+}
+
 REQUIREMENTS_FILE="$APP_DIR/requirements.txt"
 if [[ ! -f "$REQUIREMENTS_FILE" || -L "$REQUIREMENTS_FILE" ]]; then
     fail "The active release requirements file is missing or unsafe."
 fi
 
-VENV_DIR="$APP_DIR/venv"
 if [[ -L "$VENV_DIR" || ( -e "$VENV_DIR" && ! -d "$VENV_DIR" ) ]]; then
     fail "The active release venv path is not a regular directory."
 fi
-if [[ -x "$VENV_DIR/bin/python" ]] && \
-    PYTHONPATH="$APP_DIR" "$VENV_DIR/bin/python" -c \
-        'import knxoh_paths; from web_ui.backend.auth import is_password_hash' \
-        >/dev/null 2>&1; then
+if venv_is_usable "$VENV_DIR"; then
     printf 'The active release Python environment is already usable.\n'
     exit 0
 fi
@@ -171,8 +218,12 @@ if ! "$VENV_DIR/bin/pip" check; then
     fail "The repaired Python environment has inconsistent dependencies."
 fi
 if ! PYTHONPATH="$APP_DIR" "$VENV_DIR/bin/python" -c \
-    'import knxoh_paths; from web_ui.backend.auth import is_password_hash'; then
+    'import argon2, flask, gunicorn, knxoh_paths, requests, xknxproject, yaml; from web_ui.backend.auth import is_password_hash'; then
     fail "The repaired Python environment cannot import required release modules."
+fi
+if [[ ! -x "$VENV_DIR/bin/gunicorn" ]] || \
+    ! "$VENV_DIR/bin/gunicorn" --version >/dev/null 2>&1; then
+    fail "The repaired Python environment has no runnable gunicorn entry point."
 fi
 
 printf 'Repaired the Python environment for active release %s.\n' "$APP_DIR"

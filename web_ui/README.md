@@ -5,8 +5,10 @@ Lightweight Flask web interface for `knxproject_to_openhab.py`. Upload KNX proje
 ## Quick Start
 
 ```bash
-# On Raspberry Pi / DietPi (production)
-curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install.sh | bash
+# On Raspberry Pi / DietPi, from a dev checkout (release installer needs a published stable Release)
+git clone --branch dev https://github.com/diddip21/knx_to_openhab.git
+cd knx_to_openhab
+sudo bash installer/setup.sh
 
 # Default access on the Pi: http://127.0.0.1:8085
 # Remote access: use an SSH tunnel or explicitly configure a LAN bind / HTTPS proxy.
@@ -17,18 +19,18 @@ curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install
 ```
 web_ui/
 ├── backend/
-│   ├── app.py              # Flask routes, auth, SSE (1071 lines)
-│   ├── jobs.py             # Job queue, staging, deploy, backup (1233 lines)
+│   ├── app.py              # Flask routes, auth, SSE
+│   ├── jobs.py             # Job queue, staging, deploy, backup
 │   ├── storage.py          # JSON persistence, atomic writes
 │   ├── updater.py          # Git-based self-update via GitHub API
 │   ├── service_manager.py  # systemd service control
 │   ├── config.json         # Local development defaults only
 │   └── gunicorn_conf.py    # Production gunicorn config
 ├── templates/
-│   └── index.html          # Single-page application (368 lines)
+│   └── index.html          # Single-page application
 ├── static/
-│   ├── app.js              # Frontend logic, SSE, diff viewer (1978 lines)
-│   └── style.css           # CSS with custom properties (1892 lines)
+│   ├── app.js              # Frontend logic, SSE, diff viewer
+│   └── style.css           # CSS with custom properties
 └── api_schema.json         # API documentation
 ```
 
@@ -42,7 +44,7 @@ python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-# Start local browser tests without production credentials
+# Start a manual development server without production credentials
 export FLASK_ENV=testing
 flask --app web_ui.backend.app:app run --debug
 # → http://localhost:5000

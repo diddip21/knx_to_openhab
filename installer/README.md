@@ -4,7 +4,7 @@ This directory contains installation and maintenance scripts for the web UI.
 
 ## Files
 
-- **`setup.sh`** — Main installer script (run once as sudo)
+- **`setup.sh`** — Main setup/repair script (run as sudo from a checkout)
 - **`backup_cleanup.sh`** — Backup retention enforcement script
 - **`knxohui.service`** — systemd unit for Flask web server
 - **`knxohui-backup-cleanup.service`** — systemd unit for cleanup oneshot
@@ -170,6 +170,9 @@ published release. The version omits the `v` tag prefix. Explicit SemVer
 prereleases such as `1.3.0-rc.1` can be selected this way; they are never
 chosen by the default stable channel. If GitHub has no matching release, the
 installer stops instead of falling back to `main`.
+At the dev audit on 2026-11-08, no remote tags were published, so `--install`
+and `--update` cannot yet select a release. The checkout-based `setup.sh`
+command above remains available for development and evaluation.
 
 ### Installer preflight checks
 
@@ -220,7 +223,7 @@ It also replaces and validates the old policy. If only the least-privilege
 migration is needed, use `sudo bash installer/migrate_sudoers.sh`; that script
 changes only the sudoers file.
 
-> **Note:** For local development without systemd installation, see [DEVELOPMENT.md](../DEVELOPMENT.md)
+> **Note:** For local development without systemd installation, see the [Developer Guide](../docs/DEVELOPER_GUIDE.md).
 
 ## Manual Service Control
 

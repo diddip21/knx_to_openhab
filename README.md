@@ -36,13 +36,23 @@ Includes a **Web UI** for browser-based management and a **CLI** for automated w
 
 Best for fresh installs of Raspberry Pi OS (Lite) or DietPi.
 
-**Prereqs (apt):** `python3-venv python3-tk build-essential`
+**Prereqs:** Linux with systemd, `sudo`, Git, curl, Python 3.11+, a working `python3-venv`, enough disk space, and network access to GitHub. The installer checks these before package changes (`install.sh:425-562`). Python 3.12/3.13 are used in CI; `python3-tk` is only needed for the CLI file picker.
+
+The top-level installer selects a published stable GitHub Release. At the dev audit on 2026-11-08, `git ls-remote --tags origin` returned no tags, so a stable release cannot currently be selected. For a checkout of `dev`, run the setup script on the target host:
+
+```bash
+git clone --branch dev https://github.com/diddip21/knx_to_openhab.git
+cd knx_to_openhab
+sudo bash installer/setup.sh
+```
+
+Once a stable release is published, the release installer is available with:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install.sh | bash
 ```
 
-This will:
+On a published release this will:
 1. Install system dependencies (Python, git, etc.)
 2. Clone the repository to `/opt/knx_to_openhab`
 3. Set up the **knxohui** systemd service (Web UI on port 8085)
@@ -58,7 +68,13 @@ pip install -r requirements.txt
 python knxproject_to_openhab.py --file_path "MyHouse.knxproj"
 ```
 
-Output files are written to the `openhab/` directory (configurable in `config.json`).
+For an existing JSON dump, add `--readDump`:
+
+```bash
+python knxproject_to_openhab.py --file_path "project.knxproj.json" --readDump
+```
+
+Output files are written to the `openhab/` directory by default. Paths and format are configured in `config.json`; an installed service stores generator settings in `/var/lib/knx_to_openhab/generator.json` (`knxoh_paths.py:79-80`).
 
 ### Option 3: Local Development
 
@@ -72,6 +88,8 @@ export FLASK_ENV=testing
 flask --app web_ui.backend.app:app run --debug
 # → http://localhost:5000
 ```
+
+Use `pip install -r requirements-dev.txt` for tests. The development server is separate from the production `knxohui.service` on port 8085.
 
 ---
 
@@ -99,18 +117,27 @@ For each KNX project, the generator produces:
 | `knx.things` | Thing definitions with KNX bridge and channel mappings |
 | `knx.sitemap` | Sitemap with floor/room hierarchy and labeled widgets |
 | `influxdb.persist` | InfluxDB persistence rules for items tagged with `influx` |
+| `fenster.rules` | Window-contact notification rule (text in both model formats) |
 
-The three legacy model files are mutually exclusive with `yaml/knx.yaml`. Persistence remains textual because openHAB 5.2 does not expose persistence as a YAML top-level entity. See the [YAML migration guide](docs/USER_GUIDE.md#openhab-52-yaml-output).
+The three legacy model files are mutually exclusive with `yaml/knx.yaml`. Persistence remains textual because openHAB 5.2 does not expose persistence as a YAML top-level entity. See the [YAML migration guide](docs/USER_GUIDE.md#model-format-and-live-gateway-ip).
 
 ### Reports & Auto-Placement
 
 The UI surfaces reports for anything that couldn't be fully placed:
 
 - **`unknown_report.json`** — Group addresses with no matching floor/room (generated even when auto-place is disabled)
-- **`partial_report.json`** — Incomplete multi-address components (e.g., dimmer missing status GA)
-- **`completeness_report.json`** — Generated Things missing required channels per device type
+- **`partial_report.json`** — Incomplete multi-address components, when present
+- **`completeness_report.json`** — Web job report for generated Things missing required channels
 
-Enable auto-placement in **Settings → Auto-place unknown addresses** or set `general.auto_place_unknown = true` in `config.json`.
+The Web UI starts with `general.auto_place_unknown = false` (`web_ui/backend/storage.py:31`). The checked-in CLI generator config has it set to `true` (`config.json:480`). Set the value explicitly for the workflow you use.
+
+## Configuration
+
+The generator reads `output_format` (`legacy` or `yaml`), the output path keys `items_path`, `things_path`, `sitemaps_path`, `yaml_path`, `influx_path`, `fenster_path`, `sitemap_label`, and the groups `general`, `regexpattern`, `defines`, `datapoint_mappings`, `datapoint_types`, and `devices` from `config.json`. `transform_dir_path` is currently only normalized by `config.py`; no output use was found. Web service settings, including `bind_host`, `port`, `auth`, and `retention`, are separate (`web_ui/backend/config.json` locally, `/etc/knx_to_openhab/config.json` when installed). See the [user guide](docs/USER_GUIDE.md#configuration-configjson) and [audit](docs/AUDIT_dev.md) for the verified key map.
+
+## Update
+
+For a published release, use `bash install.sh --update` from the installation checkout, or use the Web UI update action. `--repair` reruns setup without fetching a release (`install.sh:221-228`). Both release update paths need a published release; the developer checkout can be updated with Git and `sudo bash installer/setup.sh` after reviewing changes. See the [production guide](docs/PRODUCTION_GUIDE.md).
 
 ---
 
@@ -128,9 +155,18 @@ Enable auto-placement in **Settings → Auto-place unknown addresses** or set `g
 
 ## Uninstallation
 
+On the Linux host, run from an interactive terminal:
+
 ```bash
-curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/uninstall.sh | bash
+cd /opt/knx_to_openhab
+bash uninstall.sh
 ```
+
+This removes the application and service units but preserves external configuration, jobs, and backups. For full removal, use `bash uninstall.sh --purge` and type `PURGE` at its prompt (`uninstall.sh:13-22,266-316`). A non-interactive invocation requires `--yes`.
+
+## Tests and troubleshooting
+
+On Linux with development dependencies installed, run the CI core command `pytest -q --cov=. --cov-report=xml -m "not ui" --ignore=tests/ui`; run browser tests with `pytest tests/ui/ -v -m ui` after `python -m playwright install chromium`. The UI fixtures start an isolated server. On Windows, `pytest -q` currently stops while collecting `tests/test_uninstall_modes.py` because `termios` is Unix-only; see [testing guidance](tests/README.md) and the [audit](docs/AUDIT_dev.md). For service issues, check `sudo systemctl status knxohui.service` and `sudo journalctl -u knxohui.service -n 100 --no-pager`.
 
 ---
 

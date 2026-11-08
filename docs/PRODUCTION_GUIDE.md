@@ -45,7 +45,15 @@ A lightweight, browser-based web interface to execute the KNX-to-OpenHAB generat
 
 ### Step 1: One-Command Installer
 
-Run the following command to install or update the application:
+The top-level installer selects a published GitHub Release. The dev audit on 2026-11-08 found no remote tags (`git ls-remote --tags origin` returned no entries), so the release installer cannot currently select a stable version. To evaluate this `dev` checkout on the target host, use:
+
+```bash
+git clone --branch dev https://github.com/diddip21/knx_to_openhab.git
+cd knx_to_openhab
+sudo bash installer/setup.sh
+```
+
+After a stable Release has been published, the supported release installer can be run with:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/install.sh | bash
@@ -132,11 +140,15 @@ version. Check recovery with `sudo systemctl status knxohui.service` and
 `sudo journalctl -u knxohui.service -n 100 --no-pager`.
 
 ### Uninstallation
-To completely remove the application, use the uninstaller script:
+
+Run the uninstaller from an interactive terminal on the Linux host:
+
 ```bash
-curl -sSL https://raw.githubusercontent.com/diddip21/knx_to_openhab/main/uninstall.sh | bash
+cd /opt/knx_to_openhab
+bash uninstall.sh
 ```
-This will stop services, remove the installation directory, remove the service user, and clean up logs/backups.
+
+This stops services and removes the installation and managed service files. It preserves the external configuration, runtime data, backups, and service account (`uninstall.sh:13-19,313-316`). To remove those too, use `bash uninstall.sh --purge` and type `PURGE` at the prompt. A non-interactive run requires `--yes` (`uninstall.sh:266-274`).
 
 ---
 

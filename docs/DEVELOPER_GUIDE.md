@@ -263,7 +263,7 @@ file. Restart the Flask server after changing local development config.
 
 ## Running Tests
 
-The test suite is split into **core tests** (default) and optional **UI tests**.
+The test suite contains core and browser tests. `pytest.ini` discovers both; use an explicit selection for core tests.
 
 ### Prerequisites
 
@@ -279,13 +279,15 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 ```
 
-### Core Tests (default)
+### Core Tests
 
-The default pytest config **ignores UI tests** (`tests/ui`) so CI stays fast and reliable.
+CI selects core tests with the following command (`.github/workflows/ci.yml:50`):
 
 ```bash
-pytest -q
+pytest -q --cov=. --cov-report=xml -m "not ui" --ignore=tests/ui
 ```
+
+On Windows, the Unix-only `tests/test_uninstall_modes.py` currently fails during collection because `termios` is unavailable; run this full command on Linux. On Windows, `pytest tests/integration/test_output_validation.py tests/test_openhab_yaml.py -q -o addopts=` verifies the generator's legacy and YAML outputs.
 
 **Run integration-only:**
 ```bash
@@ -294,14 +296,11 @@ pytest tests/integration -v
 
 ### UI Tests (optional)
 
-UI tests use Playwright and start a local Flask server on **8081** with auth disabled.
+UI tests use Playwright. The main fixture starts its own Flask subprocess at `UI_BASE_URL` (default `http://127.0.0.1:8085`; `tests/ui/conftest.py:63-65,135-195`). A separately running server is not required, but port 8085 must be free. The authenticated screenshot fixture uses a temporary port (`tests/ui/conftest.py:207-274`).
 
 ```bash
-pip install pytest-playwright
 python -m playwright install chromium
-
-# Override pytest.ini addopts to include UI tests
-pytest tests/ui -v -o addopts=
+pytest tests/ui -v -m ui
 ```
 
 ### Running Everything + Coverage

@@ -1,6 +1,6 @@
 # Audit von `dev` vor der Bereinigung
 
-Stand: 2026-11-08, `origin/dev` bei `42d380b159e86bf075318846b6457de854b4c8c0`. Arbeitsbranch: `cleanup/dev-audit`. Das lokale `dev` enthält sechs zusätzliche, nicht nach `origin/dev` übertragene Commits; sie gehören nicht zu diesem Audit oder einem PR nach `dev`. Diese Datei ist **nur Phase 1 und 2**. Bis zur Maintainer-Freigabe wurden keine Dateien gelöscht und weder Generator noch Konfiguration verändert.
+Stand: 2026-11-08, `origin/dev` bei `42d380b159e86bf075318846b6457de854b4c8c0`. Arbeitsbranch: `cleanup/dev-audit`. Das lokale `dev` enthält sechs zusätzliche, nicht nach `origin/dev` übertragene Commits; sie gehören nicht zu diesem Audit oder einem PR nach `dev`. Die Inventur und Dateientscheidungen unten dokumentieren den **unveränderten Ausgangsstand (Phase 1 und 2)**. Bis zur Maintainer-Freigabe wurden keine Dateien gelöscht und weder Generator noch Konfiguration verändert.
 
 ## Methode und Grenzen
 
@@ -72,7 +72,7 @@ Die Web-Laufzeitkonfiguration ist getrennt: `web_ui/backend/config.json:2-19` un
 2. `AGENTS.md:32-45` und `web_ui/README.md:20-21` nennen veraltete Zeilenzahlen; etwa `app.py` umfasst auf diesem Stand mehr als 1.500 statt 1.071 Zeilen. Flüchtige Zähler entfernen.
 3. `AGENTS.md:53` beschreibt nur `E203/W503`; `.flake8:3,7-17` ignoriert zusätzlich `E501` und mehrere Dateien-spezifische F-Codes. Exakt dokumentieren oder Ignore-Liste gezielt abbauen.
 4. `AGENTS.md:65`, `.github/copilot-instructions.md:49`, `docs/DEVELOPER_GUIDE.md:282-287`, `tests/README.md:54-57` behaupten, `pytest -q` schließe UI-Tests aus. `pytest.ini:5-17,22-35` setzt keinen Ausschluss; CI verwendet ausdrücklich `-m 'not ui' --ignore=tests/ui` (`.github/workflows/ci.yml:50`). Befehle und Aussage angleichen.
-5. `docs/DEVELOPER_GUIDE.md:300-304`, `AGENTS.md:76` und `CONTRIBUTING.md:94-96` verlangen für UI-Tests einen separat gestarteten Server oder `-o addopts=`. `tests/ui/conftest.py:221-274` startet einen isolierten Server; CI ruft UI-Tests ohne `-o addopts=` auf (`ci.yml:137`). Anleitung aktualisieren.
+5. `docs/DEVELOPER_GUIDE.md:300-304`, `AGENTS.md:76` und `CONTRIBUTING.md:94-96` verlangen für UI-Tests einen separat gestarteten Server oder `-o addopts=`. `tests/ui/conftest.py:63-65,135-195` startet einen eigenen Flask-Prozess auf Port 8085 (oder `UI_BASE_URL`); CI ruft UI-Tests ohne `-o addopts=` auf (`ci.yml:137`). Anleitung aktualisieren.
 6. `docs/USER_GUIDE.md:96-98` nennt `false` als allgemeinen Auto-Place-Default. CLI-Generator verwendet `true` (`config.json:480`), Web-UI `false` (`web_ui/backend/storage.py:31`). Beide Fälle angeben.
 7. `docs/USER_GUIDE.md:35-37` nennt `.json` bei `--file_path` ohne unmittelbare Einschränkung; `knxproject_to_openhab.py:761-775` erkennt JSON automatisch nur nach dem Dateidialog, bei explizitem Pfad ist `--readDump` erforderlich. Beispiel ergänzen.
 8. `README.md:95-103` listet YAML, Legacy und Persistence, aber keine `fenster.rules`; `ets_to_openhab.py:1095-1124` erzeugt sie. Dateiliste und Bedingtheit der Reports präzisieren (`README.md:109-111`; `ets_to_openhab.py:942-945`; `jobs.py:1044`).
@@ -104,6 +104,22 @@ Auf Windows/Python 3.12.14: `pytest -q` stoppt schon bei der Sammlung, weil `tes
 Ein erneuter isort-Lauf mit `python -X utf8 -m isort --check-only .` endete ohne Codepage-Warnungen mit Exitcode 0 (`Skipped 1 files`). Die Skip-Stellen umfassen Bash-abhängige Testmodule (`tests/test_installer_modes.py:12`, `tests/test_release_selection.py:11`), ausdrücklich POSIX-spezifische Fälle (`tests/test_deploy_policy.py:71-129`) und bedingte Generierungs-/Syntaxfälle (`tests/test_output_syntax_validation.py:313-525`). Vier `tests/test_output_config.py:276-297` überspringen ihre Tests ausdrücklich als komplexe Import-Fehlerfälle; diese Tests sind Kandidaten zur Nachbesserung, nicht zum Löschen. `git ls-files -ci --exclude-standard` lieferte keinen Treffer. Exakte SHA-256-Duplikate beschränken sich auf drei leere `__init__.py`-Paketdateien. Das größte versionierte Objekt ist die aktiv referenzierte `tests/fixtures/Charne.knxproj` mit 6.043.486 Byte (`tests/ui/test_upload_flow.py:9`; `docs/REPO_CLEANUP_INVENTORY.md:13-14`). JSON-Dumps, Mini-Fixture und Goldens werden in `tests/integration/test_output_validation.py:28,183-193` verwendet. Im Repository liegen keine versionierten `*.bak`, `*.old`, `*_copy`, `__pycache__` oder generierten `openhab/items|things|sitemaps`-Dateien. `.gitignore` deckt jedoch `.mypy_cache`, `.coverage*`, `htmlcov`, `private_persistence` (`ets_to_openhab.py:1068-1082`) und generische `*.bak`/`*.old` nicht ab.
 
 Verfügbare Regex-Prüfung aller Textdateien und dekodierbaren ETS-ZIP-Inhalte auf gängige Token-/Key-Muster, E-Mail-Adressen und IPv4-Adressen: kein Treffer für die geprüften Token-/Private-Key-Muster; ein privater IPv4-Wert im realen `tests/fixtures/Charne.knxproj`, keine globale IPv4 und keine E-Mail in dieser Datei. Das ist ein möglicher Bezug zu einer echten Anlage. `tests/Charne.knxproj.json:4` nennt ein konkretes Projekt; die Goldens enthalten davon abgeleitete Item-Namen (`tests/fixtures/expected_output/Charne/knx.items:1`). In Tests kommen absichtlich synthetische Adressen vor, darunter `1.2.3.4` (`tests/test_web_ui_job_endpoints.py:225`). Ein professioneller Secret-Scanner und eine Freigabe/Anonymisierung der ETS-Daten sind noch nötig. Werte werden im Audit absichtlich nicht wiederholt.
+
+## Verifikation nach der dokumentarischen Bereinigung
+
+Geändert wurden ausschließlich Markdown-Dateien und `.gitignore`. `git diff --name-only origin/dev -- '*.py' '*.sh' '*.template' config.json web_ui/backend/config.json web_ui/backend/config_schema.json tests/fixtures/expected_output` liefert keinen Pfad. `scripts/regenerate_golden.py` erzeugte die drei Fälle Charne, UploadJson und Mini erneut; `git diff` der versionierten Goldens blieb leer. Das belegt bytegleiche Beispielausgaben für diese Fälle gegenüber `origin/dev`, nicht eine allgemeine Aussage über alle ETS-Projekte.
+
+| Prüfung nach den Doku-Änderungen | Ergebnis |
+| --- | --- |
+| `pytest tests/integration/test_output_validation.py tests/test_openhab_yaml.py -q -o addopts=` | 32 bestanden, 2 übersprungen; identisch mit dem Ausgangsstand |
+| `pytest -q --maxfail=1` | Abbruch bei `tests/test_uninstall_modes.py:2`, weil Windows `termios` fehlt; gleicher Ausgangsfehler |
+| `black --check .` | Exit 0, 112 Dateien unverändert |
+| `python -X utf8 -m isort --check-only .` | Exit 0, 1 Datei übersprungen |
+| `flake8 .` | Exit 0 |
+| `git diff --check` | Exit 0, nur Git-Hinweis auf künftige LF→CRLF-Normalisierung |
+| Relative Markdown-Ziele einschließlich Anker | 36 geprüft, 0 defekt (lokales Prüfskript) |
+
+Der vollständige CI-Kernbefehl, UI-Tests mit Chromium, `bash -n`, `shellcheck` und ein Docker-Build sind auf diesem Windows-Host nicht abschließend ausführbar. Der breite Windows-Teillauf und UI-Smoke-Fehler des Ausgangsstands stehen oben. Der Prüfhost bietet weder `bash`, `shellcheck`, Docker noch `run_secret_scanning`; der Regex-Scan ersetzt die geforderte Spezialprüfung nicht.
 
 ## Vorschlag für Phase 3 nach Freigabe
 

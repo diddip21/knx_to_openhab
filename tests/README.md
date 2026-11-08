@@ -46,34 +46,34 @@ pip install -r requirements-dev.txt
 
 ### For UI Tests
 ```bash
-playwright install chromium
+python -m playwright install chromium
 ```
 
 ## Running Tests
 
-### All Tests
+### Core Tests (CI command, Linux)
 ```bash
-pytest
+pytest -q --cov=. --cov-report=xml -m "not ui" --ignore=tests/ui
 ```
 
-### Unit Tests Only
+### Root-Level Tests
 ```bash
-pytest -m unit -v
+pytest -q --ignore=tests/ui --ignore=tests/integration
 ```
+
+The `unit` and `integration` markers are declared in `pytest.ini` but no current tests use them (`rg -l '@pytest.mark.unit|@pytest.mark.integration' tests` returned no files). Select directories instead.
 
 ### Integration Tests Only
 ```bash
 pytest tests/integration -v
 ```
 
-### UI Tests (server must be running!)
+### UI Tests
 ```bash
-# Terminal 1: Start server
-flask --app web_ui.backend.app:app run --debug
-
-# Terminal 2: Run UI tests
-pytest tests/ui/ -v -o addopts=
+pytest tests/ui/ -v -m ui
 ```
+
+The main UI fixture starts an isolated Flask subprocess on port 8085 by default (`tests/ui/conftest.py:63-65,135-195`). Keep that port free or set `UI_BASE_URL` and the matching fixture configuration. Authenticated screenshot tests use a temporary port (`tests/ui/conftest.py:207-274`).
 
 ### Tests with Coverage
 ```bash
@@ -86,21 +86,19 @@ pytest --cov=. --cov-report=html
 # Filter by name
 pytest -k "test_login"
 
-# By marker
-pytest -m unit
-pytest -m integration
-pytest -m ui
+# By marker (UI tests are marked)
+pytest tests/ui -m ui
 ```
 
 ## CI/CD Pipeline
 
 Tests run automatically on every push via GitHub Actions:
 
-- **Lint:** Black + isort + flake8
+- **Lint:** Black + isort + flake8 + mypy
 - **Core Tests:** Python 3.12 + 3.13 matrix on ubuntu-latest
 - **UI Tests:** Playwright with Chromium (depends on core tests passing)
 
-Status: [![CI Tests](https://github.com/diddip21/knx_to_openhab/workflows/CI%20Tests/badge.svg)](https://github.com/diddip21/knx_to_openhab/actions)
+Status: [GitHub Actions](https://github.com/diddip21/knx_to_openhab/actions/workflows/ci.yml)
 
 ## Golden File Testing
 

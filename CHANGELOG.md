@@ -12,3 +12,7 @@ Notable changes to KNX to OpenHAB are documented here in the [Keep a Changelog](
 ### Changed
 
 - Documentation now distinguishes CLI and Web UI defaults, the actual test commands, and safe uninstallation behavior.
+
+### Removed
+
+- Twelve superseded internal planning and design drafts after maintainer approval and an internal reference check; no runtime code or tests depended on them.

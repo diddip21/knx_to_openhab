@@ -1,10 +1,10 @@
-# Audit von `dev` vor der Bereinigung
+# Audit und Bereinigung von `dev`
 
-Stand: 2026-11-08, `origin/dev` bei `42d380b159e86bf075318846b6457de854b4c8c0`. Arbeitsbranch: `cleanup/dev-audit`. Das lokale `dev` enthält sechs zusätzliche, nicht nach `origin/dev` übertragene Commits; sie gehören nicht zu diesem Audit oder einem PR nach `dev`. Die Inventur und Dateientscheidungen unten dokumentieren den **unveränderten Ausgangsstand (Phase 1 und 2)**. Bis zur Maintainer-Freigabe wurden keine Dateien gelöscht und weder Generator noch Konfiguration verändert.
+Stand: 2026-11-08, Auditbasis `origin/dev` bei `42d380b159e86bf075318846b6457de854b4c8c0`. Arbeitsbranch: `cleanup/dev-audit`. Das lokale `dev` enthält sechs zusätzliche, nicht nach `origin/dev` übertragene Commits; sie gehören nicht zu diesem Audit oder PR. Die Inventur-Tabelle dokumentiert den Ausgangsstand mit 232 versionierten Pfaden. Nach Maintainer-Freigabe wurden zwölf historische Plan-/Spec-Dateien entfernt; Generator und Konfiguration sind unverändert.
 
 ## Methode und Grenzen
 
-`git ls-tree -r --name-only origin/dev` und `git ls-files` ergeben 232 versionierte Dateien. Der Dateibestand ist in der Tabelle unten vollständig und einzeln erfasst. Referenzen wurden mit `rg`, AST-Importanalyse, Skript-/Workflow-Aufrufsuche und gezielten Quelltextprüfungen untersucht. Statische Suche beweist keine Abwesenheit externer Aufrufer; insbesondere veröffentlichte Links und PR-Beschreibungen sind außerhalb des Git-Baums. Dateien mit diesem Restzweifel bleiben vorerst erhalten. `vulture`, `ruff`, `gitleaks`, `trufflehog`, `shellcheck`, `bash` und Docker sind auf dem Prüfhost nicht verfügbar. Der verlangte Befehl `run_secret_scanning` wird durch keine verfügbare Schnittstelle angeboten; das unten beschriebene Musterscanning ist kein gleichwertiger Ersatz. Linux-/systemd-Installation wurde hier nicht ausgeführt.
+`git ls-tree -r --name-only origin/dev` und `git ls-files` ergeben 232 versionierte Dateien im Audit-Ausgangsstand. Der Dateibestand ist in der Tabelle unten vollständig und einzeln erfasst. Referenzen wurden mit `rg`, AST-Importanalyse, Skript-/Workflow-Aufrufsuche und gezielten Quelltextprüfungen untersucht. Interne Treffer auf die zwölf historischen Pläne/Specs bestanden nur aus den jeweils gegenseitigen Plan-/Design-Verweisen und der Audit-Tabelle; Produktcode, Tests, Installer und Workflows nutzten sie nicht. Nach Maintainer-Freigabe wurden alle zwölf entfernt. Mögliche externe Links wurden nicht geprüft. `vulture`, `ruff`, `gitleaks`, `trufflehog`, `shellcheck`, `bash` und Docker sind auf dem Prüfhost nicht verfügbar. Der verlangte Befehl `run_secret_scanning` wird durch keine verfügbare Schnittstelle angeboten; das unten beschriebene Musterscanning ist kein gleichwertiger Ersatz. Linux-/systemd-Installation wurde hier nicht ausgeführt.
 
 ## Tatsächlicher Datenfluss
 
@@ -94,7 +94,7 @@ Die Prüfung aller Markdown-Links auf relative Zielpfade fand 24 Ziele und genau
 6. Falsche Architekturzuordnung von YAML/Export (`AGENTS.md:20-25`, `ets_to_openhab.py:1034-1065`).
 7. Testcontainer weicht von CI und pytest-Plugins ab (`Dockerfile.test:4,24-35`, `pytest.ini:25-35`).
 8. Defekter Entwickler-Link (`installer/README.md:223`).
-9. Historische Implementierungspläne gelangen in Quell-Releases (`docs/superpowers/**`, `scripts/build_release.py:77-92`).
+9. Historische Implementierungspläne gelangten in Quell-Releases (`scripts/build_release.py:77-92`); die freigegebenen zwölf Plan-/Spec-Dateien wurden in dieser Bereinigung entfernt.
 10. Nicht dokumentierte Ignore-Lücken und isoliert gefundene unbenutzte Symbole/Imports (`.gitignore`, `.flake8:7-17`, `auth.py:80`).
 
 ## Tests, Hygiene und Sicherheit vor Bereinigung
@@ -105,9 +105,9 @@ Ein erneuter isort-Lauf mit `python -X utf8 -m isort --check-only .` endete ohne
 
 Verfügbare Regex-Prüfung aller Textdateien und dekodierbaren ETS-ZIP-Inhalte auf gängige Token-/Key-Muster, E-Mail-Adressen und IPv4-Adressen: kein Treffer für die geprüften Token-/Private-Key-Muster; ein privater IPv4-Wert im realen `tests/fixtures/Charne.knxproj`, keine globale IPv4 und keine E-Mail in dieser Datei. Das ist ein möglicher Bezug zu einer echten Anlage. `tests/Charne.knxproj.json:4` nennt ein konkretes Projekt; die Goldens enthalten davon abgeleitete Item-Namen (`tests/fixtures/expected_output/Charne/knx.items:1`). In Tests kommen absichtlich synthetische Adressen vor, darunter `1.2.3.4` (`tests/test_web_ui_job_endpoints.py:225`). Ein professioneller Secret-Scanner und eine Freigabe/Anonymisierung der ETS-Daten sind noch nötig. Werte werden im Audit absichtlich nicht wiederholt.
 
-## Verifikation nach der dokumentarischen Bereinigung
+## Verifikation nach der Bereinigung
 
-Geändert wurden ausschließlich Markdown-Dateien und `.gitignore`. `git diff --name-only origin/dev -- '*.py' '*.sh' '*.template' config.json web_ui/backend/config.json web_ui/backend/config_schema.json tests/fixtures/expected_output` liefert keinen Pfad. `scripts/regenerate_golden.py` erzeugte die drei Fälle Charne, UploadJson und Mini erneut; `git diff` der versionierten Goldens blieb leer. Das belegt bytegleiche Beispielausgaben für diese Fälle gegenüber `origin/dev`, nicht eine allgemeine Aussage über alle ETS-Projekte.
+Geändert wurden Markdown-Dateien und `.gitignore`; zwölf freigegebene historische Plan-/Spec-Dateien wurden gelöscht. `git diff --name-only origin/dev -- '*.py' '*.sh' '*.template' config.json web_ui/backend/config.json web_ui/backend/config_schema.json tests/fixtures/expected_output` liefert keinen Pfad. `scripts/regenerate_golden.py` erzeugte die drei Fälle Charne, UploadJson und Mini erneut; `git diff` der versionierten Goldens blieb leer. Das belegt bytegleiche Beispielausgaben für diese Fälle gegenüber `origin/dev`, nicht eine allgemeine Aussage über alle ETS-Projekte.
 
 | Prüfung nach den Doku-Änderungen | Ergebnis |
 | --- | --- |
@@ -117,28 +117,28 @@ Geändert wurden ausschließlich Markdown-Dateien und `.gitignore`. `git diff --
 | `python -X utf8 -m isort --check-only .` | Exit 0, 1 Datei übersprungen |
 | `flake8 .` | Exit 0 |
 | `git diff --check` | Exit 0, nur Git-Hinweis auf künftige LF→CRLF-Normalisierung |
-| Relative Markdown-Ziele einschließlich Anker | 36 geprüft, 0 defekt (lokales Prüfskript) |
+| Relative Markdown-Ziele einschließlich Anker nach den Dokumentationsänderungen | 36 geprüft, 0 defekt (lokales Prüfskript) |
+| GitHub CI auf PR-Head `f4399b6` | Lint, Python 3.12/3.13 Core und Playwright erfolgreich; vor den Plan-/Spec-Löschungen |
 
 Der vollständige CI-Kernbefehl, UI-Tests mit Chromium, `bash -n`, `shellcheck` und ein Docker-Build sind auf diesem Windows-Host nicht abschließend ausführbar. Der breite Windows-Teillauf und UI-Smoke-Fehler des Ausgangsstands stehen oben. Der Prüfhost bietet weder `bash`, `shellcheck`, Docker noch `run_secret_scanning`; der Regex-Scan ersetzt die geforderte Spezialprüfung nicht.
 
-## Vorschlag für Phase 3 nach Freigabe
+## Phase 3: Bereinigung und verbleibende Arbeiten
 
 - Doku zuerst präzise korrigieren: README, CONTRIBUTING, AGENTS, Guides, Testanleitung und toten Link; Sprache der bestehenden englischen Doku beibehalten. Ausgabe-/Generatorcode nicht verändern.
 - `.gitignore` gezielt um lokale Artefakte ergänzen; bereits versionierte Fixtures ausdrücklich erhalten.
 - Niedrigrisiko-Codehygiene nur mit fokussierter Prüfung: die sieben isolierten F401/F841-Funde und ggf. die nur definierte Klasse `AuthRateLimiter`. Testcontainer und Requirements separat behandeln; die CI-Befehle vor Änderung als Referenz nehmen.
-- Historische Pläne und alte Inventur nur nach Entscheidung über Archivwert entfernen/zusammenführen. Für jede Entfernung Suche erneut durchführen und Referenzen im gleichen Commit korrigieren.
+- Die zwölf historischen Plan-/Spec-Dateien wurden mit Maintainer-Freigabe entfernt. Der interne Verweissuchlauf außerhalb der Dateien fand ausschließlich die Audit-Tabelle; sie wurde aktualisiert. Externe PR-Links bleiben ungeprüft.
 - Vor/Nach-Ausgabe über die drei Golden-Fälle vergleichen; anschließend Kern-, relevante UI-, Lint-, Shell- und Link-Prüfungen sowie `git diff --check`. Keine Konvertierungsänderung und keine neuen Pakete.
 
 ## Rückfragen an Maintainer
 
 1. Darf die `Charne`-ETS-Datei samt abgeleiteter Goldens öffentlich verbleiben, oder sollen diese Daten in einer gesonderten Folgearbeit anonymisiert/ersetzt werden? Ohne Ersatz brechen reale Upload- und Ausgabe-Tests; daher keine Löschung in diesem Cleanup.
-2. Sollen `docs/superpowers/plans` und `docs/superpowers/specs` als historische Entwurfsakten im Repo bleiben? Sie werden nicht vom Produkt genutzt, sind aber untereinander und möglicherweise aus externen PRs verlinkt.
-3. Wird `transform_dir_path` von externen Installationen als Konfigurationsvertrag genutzt? Im Repo ist außer der Normalisierung kein Ausgabeverbrauch nachweisbar.
-4. Soll `Dockerfile.test` als unterstützter ARM-Testweg gepflegt werden? Dann müssen Python-/pytest-Umgebung mit CI abgeglichen werden.
+2. Wird `transform_dir_path` von externen Installationen als Konfigurationsvertrag genutzt? Im Repo ist außer der Normalisierung kein Ausgabeverbrauch nachweisbar.
+3. Soll `Dockerfile.test` als unterstützter ARM-Testweg gepflegt werden? Dann müssen Python-/pytest-Umgebung mit CI abgeglichen werden.
 
 ## Vollständige Dateientscheidung
 
-Die Spalte „Referenziert von“ nennt einen belegten internen Pfad oder den Discovery-Mechanismus. „Behalten“ bedeutet bei zweifelhaften, von außen eventuell referenzierten Artefakten ausdrücklich **keine** Bestätigung ihrer dauerhaften Notwendigkeit. Die Tabelle bewertet jeden der 232 versionierten Pfade einzeln. Ein Urteil „Löschen“ ist ein Vorschlag und **keine** bereits durchgeführte Aktion.
+Die Spalte „Referenziert von“ nennt einen belegten internen Pfad oder den Discovery-Mechanismus. „Behalten“ bedeutet bei zweifelhaften, von außen eventuell referenzierten Artefakten ausdrücklich **keine** Bestätigung ihrer dauerhaften Notwendigkeit. Die Tabelle bewertet jeden der 232 versionierten Pfade des Audit-Ausgangsstands einzeln. „Löschen“ kennzeichnet ausgeführte Löschungen in diesem PR; die Tabelle bleibt damit eine vollständige Bewertung der Basis.
 
 | Pfad | Zweck | Referenziert von | Urteil | Beleg | Risiko |
 | --- | --- | --- | --- | --- | --- |
@@ -188,18 +188,18 @@ Die Spalte „Referenziert von“ nennt einen belegten internen Pfad oder den Di
 | `docs/screenshots/knx-gateway-live-ip-settings.png` | PR-UI-Beleg | docs/screenshots/knx-gateway-live-ip.md:9 | BEHALTEN | docs/screenshots/knx-gateway-live-ip.md:9 | mittel |
 | `docs/screenshots/knx-gateway-live-ip.md` | PR-UI-Beleg | docs/USER_GUIDE.md:142 | BEHALTEN | docs/USER_GUIDE.md:142 | mittel |
 | `docs/screenshots/services-after-package-refresh.png` | PR-UI-Beleg | kein interner Link; externer PR-Bezug ungeprüft | BEHALTEN | .github/PULL_REQUEST_TEMPLATE.md:25 | mittel |
-| `docs/superpowers/plans/2026-10-31-gateway-review-followup.md` | historischer Entwurf | nur interne Plan/Spec-Paare | ZUSAMMENFÜHREN | docs/superpowers/plans/2026-10-31-gateway-review-followup.md:1 | mittel |
-| `docs/superpowers/plans/2026-10-31-live-gateway-main-yaml-integration.md` | historischer Entwurf | nur interne Plan/Spec-Paare | ZUSAMMENFÜHREN | docs/superpowers/plans/2026-10-31-live-gateway-main-yaml-integration.md:1 | mittel |
-| `docs/superpowers/plans/2026-11-02-cookie-less-http-basic-auth.md` | historischer Entwurf | nur interne Plan/Spec-Paare | ZUSAMMENFÜHREN | docs/superpowers/plans/2026-11-02-cookie-less-http-basic-auth.md:1 | mittel |
-| `docs/superpowers/plans/2026-11-02-login-csrf-origin-fallback.md` | historischer Entwurf | nur interne Plan/Spec-Paare | ZUSAMMENFÜHREN | docs/superpowers/plans/2026-11-02-login-csrf-origin-fallback.md:1 | mittel |
-| `docs/superpowers/plans/2026-11-03-issue-25-installer-preflight.md` | historischer Entwurf | nur interne Plan/Spec-Paare | ZUSAMMENFÜHREN | docs/superpowers/plans/2026-11-03-issue-25-installer-preflight.md:1 | mittel |
-| `docs/superpowers/plans/2026-11-03-pr-template-and-dev-branch.md` | historischer Entwurf | nur interne Plan/Spec-Paare | ZUSAMMENFÜHREN | docs/superpowers/plans/2026-11-03-pr-template-and-dev-branch.md:1 | mittel |
-| `docs/superpowers/specs/2026-10-31-gateway-review-followup-design.md` | historischer Entwurf | nur interne Plan/Spec-Paare | ZUSAMMENFÜHREN | docs/superpowers/specs/2026-10-31-gateway-review-followup-design.md:1 | mittel |
-| `docs/superpowers/specs/2026-10-31-live-gateway-main-yaml-integration-design.md` | historischer Entwurf | nur interne Plan/Spec-Paare | ZUSAMMENFÜHREN | docs/superpowers/specs/2026-10-31-live-gateway-main-yaml-integration-design.md:1 | mittel |
-| `docs/superpowers/specs/2026-11-02-cookie-less-http-basic-auth-design.md` | historischer Entwurf | nur interne Plan/Spec-Paare | ZUSAMMENFÜHREN | docs/superpowers/specs/2026-11-02-cookie-less-http-basic-auth-design.md:1 | mittel |
-| `docs/superpowers/specs/2026-11-02-login-csrf-origin-fallback-design.md` | historischer Entwurf | nur interne Plan/Spec-Paare | ZUSAMMENFÜHREN | docs/superpowers/specs/2026-11-02-login-csrf-origin-fallback-design.md:1 | mittel |
-| `docs/superpowers/specs/2026-11-03-issue-25-installer-preflight-design.md` | historischer Entwurf | nur interne Plan/Spec-Paare | ZUSAMMENFÜHREN | docs/superpowers/specs/2026-11-03-issue-25-installer-preflight-design.md:1 | mittel |
-| `docs/superpowers/specs/2026-11-03-pr-template-and-dev-branch-design.md` | historischer Entwurf | nur interne Plan/Spec-Paare | ZUSAMMENFÜHREN | docs/superpowers/specs/2026-11-03-pr-template-and-dev-branch-design.md:1 | mittel |
+| `docs/superpowers/plans/2026-10-31-gateway-review-followup.md` | historischer Review-Plan | interne Plan/Spec-Paare; keine Produkt-, Test- oder Workflow-Nutzung gefunden | LÖSCHEN | Suchlauf vor Entfernung; Maintainer-Freigabe | mittel |
+| `docs/superpowers/plans/2026-10-31-live-gateway-main-yaml-integration.md` | historischer Integrationsplan | interne Plan/Spec-Paare; keine Produkt-, Test- oder Workflow-Nutzung gefunden | LÖSCHEN | Suchlauf vor Entfernung; Maintainer-Freigabe | mittel |
+| `docs/superpowers/plans/2026-11-02-cookie-less-http-basic-auth.md` | historischer Auth-Plan | interne Plan/Spec-Paare; keine Produkt-, Test- oder Workflow-Nutzung gefunden | LÖSCHEN | Suchlauf vor Entfernung; Maintainer-Freigabe | mittel |
+| `docs/superpowers/plans/2026-11-02-login-csrf-origin-fallback.md` | historischer CSRF-Plan | interne Plan/Spec-Paare; keine Produkt-, Test- oder Workflow-Nutzung gefunden | LÖSCHEN | Suchlauf vor Entfernung; Maintainer-Freigabe | mittel |
+| `docs/superpowers/plans/2026-11-03-issue-25-installer-preflight.md` | historischer Installer-Plan | interne Plan/Spec-Paare; keine Produkt-, Test- oder Workflow-Nutzung gefunden | LÖSCHEN | Suchlauf vor Entfernung; Maintainer-Freigabe | mittel |
+| `docs/superpowers/plans/2026-11-03-pr-template-and-dev-branch.md` | historischer Branch-Plan | interne Plan/Spec-Paare; keine Produkt-, Test- oder Workflow-Nutzung gefunden | LÖSCHEN | Suchlauf vor Entfernung; Maintainer-Freigabe | mittel |
+| `docs/superpowers/specs/2026-10-31-gateway-review-followup-design.md` | historischer Gateway-Entwurf | interne Plan/Spec-Paare; keine Produkt-, Test- oder Workflow-Nutzung gefunden | LÖSCHEN | Suchlauf vor Entfernung; Maintainer-Freigabe | mittel |
+| `docs/superpowers/specs/2026-10-31-live-gateway-main-yaml-integration-design.md` | historischer YAML-Entwurf | interne Plan/Spec-Paare; keine Produkt-, Test- oder Workflow-Nutzung gefunden | LÖSCHEN | Suchlauf vor Entfernung; Maintainer-Freigabe | mittel |
+| `docs/superpowers/specs/2026-11-02-cookie-less-http-basic-auth-design.md` | historischer Auth-Entwurf | interne Plan/Spec-Paare; keine Produkt-, Test- oder Workflow-Nutzung gefunden | LÖSCHEN | Suchlauf vor Entfernung; Maintainer-Freigabe | mittel |
+| `docs/superpowers/specs/2026-11-02-login-csrf-origin-fallback-design.md` | historischer CSRF-Entwurf | interne Plan/Spec-Paare; keine Produkt-, Test- oder Workflow-Nutzung gefunden | LÖSCHEN | Suchlauf vor Entfernung; Maintainer-Freigabe | mittel |
+| `docs/superpowers/specs/2026-11-03-issue-25-installer-preflight-design.md` | historischer Installer-Entwurf | interne Plan/Spec-Paare; keine Produkt-, Test- oder Workflow-Nutzung gefunden | LÖSCHEN | Suchlauf vor Entfernung; Maintainer-Freigabe | mittel |
+| `docs/superpowers/specs/2026-11-03-pr-template-and-dev-branch-design.md` | historischer Branch-Entwurf | interne Plan/Spec-Paare; keine Produkt-, Test- oder Workflow-Nutzung gefunden | LÖSCHEN | Suchlauf vor Entfernung; Maintainer-Freigabe | mittel |
 | `ets_helpers.py` | Python-Modul | ets_to_openhab.py:10 | BEHALTEN | ets_to_openhab.py:10 | mittel |
 | `ets_to_openhab.py` | Python-Modul | knxproject_to_openhab.py:14 | BEHALTEN | knxproject_to_openhab.py:14 | mittel |
 | `fix_permissions.sh` | Reparaturrechte | docs/PRODUCTION_GUIDE.md:457 | BEHALTEN | docs/PRODUCTION_GUIDE.md:457 | hoch |

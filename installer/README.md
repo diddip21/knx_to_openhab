@@ -19,7 +19,7 @@ sudo apt-get install -y rsync
 sudo bash installer/setup.sh
 ```
 
-`setup.sh` uses `rsync` but does not install operating-system packages. The root `install.sh` installs `rsync` for release-based installs (`install.sh:536-548`).
+`setup.sh` uses `rsync` but does not install operating-system packages. The root `install.sh` installs `rsync` for release-based installs.
 
 This will:
 1. Install the application under `/opt/knx_to_openhab` by default
@@ -79,7 +79,7 @@ preserving its other settings:
 
 ```json
 {
-  "login_csrf_allowed_origins": ["https://mcrelay.greiner-wue.de"]
+  "login_csrf_allowed_origins": ["https://relay.example.com"]
 }
 ```
 
@@ -104,7 +104,7 @@ existing `auth` object (preserve its other fields):
 "auth": {
   "enabled": true,
   "mode": "basic",
-  "allowed_origins": ["https://mcrelay.greiner-wue.de"]
+  "allowed_origins": ["https://relay.example.com"]
 }
 ```
 
@@ -137,7 +137,7 @@ The root-owned helper hashes the new password with Argon2id, resolves the
 configured secrets path from `paths.env`, preserves other secret values, and
 does not put the password in shell history.
 
-See `WEBUI_INSTALLATION.md` for full documentation.
+See the [Production Guide](../docs/PRODUCTION_GUIDE.md) for full installation documentation.
 
 ## Service user privileges
 
@@ -174,9 +174,11 @@ published release. The version omits the `v` tag prefix. Explicit SemVer
 prereleases such as `1.3.0-rc.1` can be selected this way; they are never
 chosen by the default stable channel. If GitHub has no matching release, the
 installer stops instead of falling back to `main`.
-At the dev audit on 2026-11-08, no remote tags were published, so `--install`
-and `--update` cannot yet select a release. The checkout-based `setup.sh`
-command above remains available for development and evaluation.
+<!-- no-release-note -->
+Until the first stable release is published, `--install` and `--update` cannot
+select a release. The checkout-based `setup.sh` command above remains available
+for development and evaluation.
+<!-- /no-release-note -->
 
 ### Installer preflight checks
 

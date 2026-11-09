@@ -73,7 +73,7 @@ pytest tests/integration -v
 pytest tests/ui/ -v -m ui
 ```
 
-The main UI fixture starts an isolated Flask subprocess on port 8085 by default (`tests/ui/conftest.py:63-65,135-195`). Keep that port free or set `UI_BASE_URL` and the matching fixture configuration. Authenticated screenshot tests use a temporary port (`tests/ui/conftest.py:207-274`).
+The main UI fixture starts an isolated Flask subprocess on port 8085 by default. Keep that port free or set `UI_BASE_URL` and the matching fixture configuration. Authenticated screenshot tests use a temporary port.
 
 ### Tests with Coverage
 ```bash

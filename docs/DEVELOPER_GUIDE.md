@@ -281,7 +281,7 @@ pip install -r requirements-dev.txt
 
 ### Core Tests
 
-CI selects core tests with the following command (`.github/workflows/ci.yml:50`):
+CI selects core tests with the following command:
 
 ```bash
 pytest -q --cov=. --cov-report=xml -m "not ui" --ignore=tests/ui
@@ -296,7 +296,7 @@ pytest tests/integration -v
 
 ### UI Tests (optional)
 
-UI tests use Playwright. The main fixture starts its own Flask subprocess at `UI_BASE_URL` (default `http://127.0.0.1:8085`; `tests/ui/conftest.py:63-65,135-195`). A separately running server is not required, but port 8085 must be free. The authenticated screenshot fixture uses a temporary port (`tests/ui/conftest.py:207-274`).
+UI tests use Playwright. The main fixture starts its own Flask subprocess at `UI_BASE_URL` (default `http://127.0.0.1:8085`). A separately running server is not required, but port 8085 must be free. The authenticated screenshot fixture uses a temporary port.
 
 ```bash
 python -m playwright install chromium

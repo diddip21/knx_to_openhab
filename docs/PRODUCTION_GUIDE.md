@@ -45,7 +45,10 @@ A lightweight, browser-based web interface to execute the KNX-to-OpenHAB generat
 
 ### Step 1: One-Command Installer
 
-The top-level installer selects a published GitHub Release. The dev audit on 2026-11-08 found no remote tags (`git ls-remote --tags origin` returned no entries), so the release installer cannot currently select a stable version. To evaluate this `dev` checkout on the target host, use:
+The top-level installer selects the latest published stable GitHub Release.
+
+<!-- no-release-note -->
+Until the first stable release is published, use this checkout-based setup on the target host:
 
 ```bash
 git clone --branch dev https://github.com/diddip21/knx_to_openhab.git
@@ -55,7 +58,8 @@ sudo apt-get install -y rsync
 sudo bash installer/setup.sh
 ```
 
-The direct setup command requires `rsync` (`installer/setup.sh:221`). The release wrapper installs it as a system dependency (`install.sh:536-548`); a direct checkout does not run that dependency step.
+The direct setup command requires `rsync`. The release wrapper installs it as a system dependency; a direct checkout does not run that dependency step.
+<!-- /no-release-note -->
 
 After a stable Release has been published, the supported release installer can be run with:
 
@@ -152,7 +156,7 @@ cd /opt/knx_to_openhab
 bash uninstall.sh
 ```
 
-This stops services and removes the installation and managed service files. It preserves the external configuration, runtime data, backups, and service account (`uninstall.sh:13-19,313-316`). To remove those too, use `bash uninstall.sh --purge` and type `PURGE` at the prompt. A non-interactive run requires `--yes` (`uninstall.sh:266-274`).
+This stops services and removes the installation and managed service files. It preserves the external configuration, runtime data, backups, and service account. To remove those too, use `bash uninstall.sh --purge` and type `PURGE` at the prompt. A non-interactive run requires `--yes`.
 
 ---
 
@@ -611,5 +615,5 @@ For issues or feature requests:
 
 **Version:** 1.0  
 **Last Updated:** 2025-11-22  
-**License:** Same as knx_to_openhab project
+**License:** [MIT License](../LICENSE.txt)
 

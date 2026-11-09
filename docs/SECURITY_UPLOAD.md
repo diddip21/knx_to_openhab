@@ -25,7 +25,7 @@ Allowed extensions:
 
 **Protection against:** Disk exhaustion, denial of service
 
-- **Maximum upload size:** 100 MB (configurable via `max_upload_size_bytes` in the Web UI runtime config, `/etc/knx_to_openhab/config.json` when installed; `app.py:139`)
+- **Maximum upload size:** 100 MB (configurable via `max_upload_size_bytes` in the Web UI runtime config, `/etc/knx_to_openhab/config.json` when installed)
 - **Enforced at two levels:**
   1. Flask `MAX_CONTENT_LENGTH` configuration
   2. Application-level validation before processing

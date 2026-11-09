@@ -80,7 +80,7 @@ Die Web-Laufzeitkonfiguration ist getrennt: `web_ui/backend/config.json:2-19` un
 10. `installer/README.md:223` verlinkt `../DEVELOPMENT.md`, das nicht existiert. Auf `../docs/DEVELOPER_GUIDE.md` verweisen.
 11. `docs/SECURITY_UPLOAD.md:28` behauptet, `max_upload_size_bytes` liege in `config.json`; `app.py:139` liest die Web-Konfiguration, die `storage.py:33-35` lädt. `docs/SECURITY_UPLOAD.md:69-81` nennt diese später richtig. Widerspruch beheben.
 12. `CHANGELOG.md:5-7` enthält nur `[Unreleased]`; `VERSION:1` lautet `0.1.0`. `git ls-remote --tags origin` lieferte keinen Tag. Damit ist noch keine datierte Veröffentlichung belegbar; die Audit-Änderung gehört zunächst unter `[Unreleased]`. Datierte Notizen erst bei einem tatsächlichen Tag gemäß `docs/RELEASING.md:15-18` anlegen.
-13. `docs/REPO_CLEANUP_INVENTORY.md:3,29-33` ist als historischer `main`-Schnappschuss formuliert und enthält mittlerweile veraltete PR-/Issue-Stände. Als Archiv kennzeichnen oder in diesen Audit integrieren; keine alten Status als aktuellen Stand darstellen.
+13. `docs/REPO_CLEANUP_INVENTORY.md` ist ein historischer `main`-Schnappschuss mit alten PR-/Issue-Ständen. Dieser PR kennzeichnet ihn als Archiv und setzt das Urteil auf `BEHALTEN (archiviert)`.
 14. Der neue Checkout-basierte Dev-Setup-Aufruf übersprang die Installation von `rsync`, obwohl `installer/setup.sh:221` es voraussetzt. `install.sh:539-548` installiert es nur im Release-Installer. Review-Hinweis in PR #76 bestätigt; README und beide Installationsanleitungen nennen jetzt `apt-get install rsync` vor direktem Setup.
 
 Die Prüfung aller Markdown-Links auf relative Zielpfade fand 24 Ziele und genau den fehlenden Link unter Punkt 10. Externe HTTP-Links und Anker wurden dabei nicht online geprüft.
@@ -140,7 +140,7 @@ Die Beibehaltung der Charne-ETS-Fixture und ihrer abgeleiteten Goldens wurde vom
 
 ## Vollständige Dateientscheidung
 
-Die Spalte „Referenziert von“ nennt einen belegten internen Pfad oder den Discovery-Mechanismus. „Behalten“ bedeutet bei zweifelhaften, von außen eventuell referenzierten Artefakten ausdrücklich **keine** Bestätigung ihrer dauerhaften Notwendigkeit. Die Tabelle bewertet jeden der 232 versionierten Pfade des Audit-Ausgangsstands einzeln. „Löschen“ kennzeichnet ausgeführte Löschungen in diesem PR; die Tabelle bleibt damit eine vollständige Bewertung der Basis.
+Die Spalte „Referenziert von“ nennt einen belegten internen Pfad oder den Discovery-Mechanismus. „Behalten“ bedeutet bei zweifelhaften, von außen eventuell referenzierten Artefakten ausdrücklich **keine** Bestätigung ihrer dauerhaften Notwendigkeit. Die Tabelle bewertet jeden der 232 versionierten Pfade des Audit-Ausgangsstands einzeln. „Löschen“ kennzeichnet ausgeführte Löschungen in diesem PR; die Tabelle bleibt damit eine vollständige Bewertung der Basis. Die Volltabelle bleibt im Repository, weil der ursprüngliche Auftrag ausdrücklich eine Einzelentscheidung zu jedem Pfad in `docs/AUDIT_dev.md` verlangte.
 
 | Pfad | Zweck | Referenziert von | Urteil | Beleg | Risiko |
 | --- | --- | --- | --- | --- | --- |
@@ -163,7 +163,7 @@ Die Spalte „Referenziert von“ nennt einen belegten internen Pfad oder den Di
 | `docs/DEVELOPER_GUIDE.md` | Entwicklerdoku | README.md:29 | AKTUALISIEREN | README.md:29 | niedrig |
 | `docs/PRODUCTION_GUIDE.md` | Betriebsdoku | README.md:28 | AKTUALISIEREN | README.md:28 | mittel |
 | `docs/RELEASING.md` | Release-Anleitung | kein interner Link; Release-Anleitung | BEHALTEN | docs/RELEASING.md:1-24 | niedrig |
-| `docs/REPO_CLEANUP_INVENTORY.md` | Historischer Audit | docs/REPO_CLEANUP_INVENTORY.md:3 | ZUSAMMENFÜHREN | docs/REPO_CLEANUP_INVENTORY.md:3 | mittel |
+| `docs/REPO_CLEANUP_INVENTORY.md` | Historischer Audit | README/Developer discovery; Archivbanner in Datei | BEHALTEN (archiviert) | docs/REPO_CLEANUP_INVENTORY.md kennzeichnet Snapshot auf `main` und historischen PR-Status | mittel |
 | `docs/SECURITY_UPLOAD.md` | Upload-Sicherheitsdoku | kein interner Link; Sicherheitsdoku | AKTUALISIEREN | docs/SECURITY_UPLOAD.md:1-5 | niedrig |
 | `docs/USER_GUIDE.md` | Anwenderdoku | README.md:27 | AKTUALISIEREN | README.md:27 | niedrig |
 | `docs/images/ui-home.png` | README-UI-Bild | README.md:119-125 | BEHALTEN | README.md:119-125 | niedrig |

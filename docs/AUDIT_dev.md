@@ -81,6 +81,7 @@ Die Web-Laufzeitkonfiguration ist getrennt: `web_ui/backend/config.json:2-19` un
 11. `docs/SECURITY_UPLOAD.md:28` behauptet, `max_upload_size_bytes` liege in `config.json`; `app.py:139` liest die Web-Konfiguration, die `storage.py:33-35` lädt. `docs/SECURITY_UPLOAD.md:69-81` nennt diese später richtig. Widerspruch beheben.
 12. `CHANGELOG.md:5-7` enthält nur `[Unreleased]`; `VERSION:1` lautet `0.1.0`. `git ls-remote --tags origin` lieferte keinen Tag. Damit ist noch keine datierte Veröffentlichung belegbar; die Audit-Änderung gehört zunächst unter `[Unreleased]`. Datierte Notizen erst bei einem tatsächlichen Tag gemäß `docs/RELEASING.md:15-18` anlegen.
 13. `docs/REPO_CLEANUP_INVENTORY.md:3,29-33` ist als historischer `main`-Schnappschuss formuliert und enthält mittlerweile veraltete PR-/Issue-Stände. Als Archiv kennzeichnen oder in diesen Audit integrieren; keine alten Status als aktuellen Stand darstellen.
+14. Der neue Checkout-basierte Dev-Setup-Aufruf übersprang die Installation von `rsync`, obwohl `installer/setup.sh:221` es voraussetzt. `install.sh:539-548` installiert es nur im Release-Installer. Review-Hinweis in PR #76 bestätigt; README und beide Installationsanleitungen nennen jetzt `apt-get install rsync` vor direktem Setup.
 
 Die Prüfung aller Markdown-Links auf relative Zielpfade fand 24 Ziele und genau den fehlenden Link unter Punkt 10. Externe HTTP-Links und Anker wurden dabei nicht online geprüft.
 

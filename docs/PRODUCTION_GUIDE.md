@@ -50,8 +50,12 @@ The top-level installer selects a published GitHub Release. The dev audit on 202
 ```bash
 git clone --branch dev https://github.com/diddip21/knx_to_openhab.git
 cd knx_to_openhab
+sudo apt-get update
+sudo apt-get install -y rsync
 sudo bash installer/setup.sh
 ```
+
+The direct setup command requires `rsync` (`installer/setup.sh:221`). The release wrapper installs it as a system dependency (`install.sh:536-548`); a direct checkout does not run that dependency step.
 
 After a stable Release has been published, the supported release installer can be run with:
 

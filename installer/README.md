@@ -14,8 +14,12 @@ This directory contains installation and maintenance scripts for the web UI.
 
 ```bash
 # Run from the repository root.
+sudo apt-get update
+sudo apt-get install -y rsync
 sudo bash installer/setup.sh
 ```
+
+`setup.sh` uses `rsync` but does not install operating-system packages. The root `install.sh` installs `rsync` for release-based installs (`install.sh:536-548`).
 
 This will:
 1. Install the application under `/opt/knx_to_openhab` by default

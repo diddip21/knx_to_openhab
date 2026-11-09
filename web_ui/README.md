@@ -5,9 +5,11 @@ Lightweight Flask web interface for `knxproject_to_openhab.py`. Upload KNX proje
 ## Quick Start
 
 ```bash
-# On Raspberry Pi / DietPi, from a dev checkout (release installer needs a published stable Release)
+# On Raspberry Pi / DietPi, from a dev checkout
 git clone --branch dev https://github.com/diddip21/knx_to_openhab.git
 cd knx_to_openhab
+sudo apt-get update
+sudo apt-get install -y rsync
 sudo bash installer/setup.sh
 
 # Default access on the Pi: http://127.0.0.1:8085
@@ -36,19 +38,9 @@ web_ui/
 
 ## Local Development
 
-```bash
-# Clone and set up
-git clone https://github.com/diddip21/knx_to_openhab.git
-cd knx_to_openhab
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-
-# Start a manual development server without production credentials
-export FLASK_ENV=testing
-flask --app web_ui.backend.app:app run --debug
-# → http://localhost:5000
-```
+For a consistent setup and start command, use the repository scripts documented
+in the [Developer Guide](../docs/DEVELOPER_GUIDE.md#quick-start). The development
+server listens on `http://localhost:5000` on Linux/macOS and Windows.
 
 ## API Endpoints
 

@@ -1,6 +1,6 @@
 # Changelog
 
-Notable changes to KNX to OpenHAB are documented here in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. `VERSION` is currently `0.1.0`; no release tag had been published at the dev audit on 2026-11-08.
+Notable changes to KNX to OpenHAB are documented here in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. Release versions are maintained in `VERSION` and published as Git tags.
 
 ## [Unreleased]
 

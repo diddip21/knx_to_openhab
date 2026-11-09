@@ -36,9 +36,12 @@ Includes a **Web UI** for browser-based management and a **CLI** for automated w
 
 Best for fresh installs of Raspberry Pi OS (Lite) or DietPi.
 
-**Prereqs:** Linux with systemd, `sudo`, Git, curl, Python 3.11+, a working `python3-venv`, enough disk space, and network access to GitHub. The installer checks these before package changes (`install.sh:425-562`). Python 3.12/3.13 are used in CI; `python3-tk` is only needed for the CLI file picker.
+**Prereqs:** Linux with systemd, `sudo`, Git, curl, Python 3.11+, a working `python3-venv`, enough disk space, and network access to GitHub. The installer checks these before package changes. Python 3.12/3.13 are used in CI; `python3-tk` is only needed for the CLI file picker.
 
-The top-level installer selects a published stable GitHub Release. At the dev audit on 2026-11-08, `git ls-remote --tags origin` returned no tags, so a stable release cannot currently be selected. For a checkout of `dev`, run the setup script on the target host:
+The top-level installer selects the latest published stable GitHub Release.
+
+<!-- no-release-note -->
+Until the first stable release is published, use this checkout-based setup on the target host:
 
 ```bash
 git clone --branch dev https://github.com/diddip21/knx_to_openhab.git
@@ -48,7 +51,8 @@ sudo apt-get install -y rsync
 sudo bash installer/setup.sh
 ```
 
-The release installer installs `rsync` as a system dependency (`install.sh:536-548`); a direct checkout setup does not install system packages, and requires `rsync` before it runs (`installer/setup.sh:221`).
+The release installer installs `rsync` as a system dependency. A direct checkout setup does not install system packages and requires `rsync` beforehand.
+<!-- /no-release-note -->
 
 Once a stable release is published, the release installer is available with:
 
@@ -78,22 +82,27 @@ For an existing JSON dump, add `--readDump`:
 python knxproject_to_openhab.py --file_path "project.knxproj.json" --readDump
 ```
 
-Output files are written to the `openhab/` directory by default. Paths and format are configured in `config.json`; an installed service stores generator settings in `/var/lib/knx_to_openhab/generator.json` (`knxoh_paths.py:79-80`).
+Output files are written to the `openhab/` directory by default. Paths and format are configured in `config.json`; an installed service stores generator settings in `/var/lib/knx_to_openhab/generator.json`.
 
 ### Option 3: Local Development
 
 ```bash
 git clone https://github.com/diddip21/knx_to_openhab.git
 cd knx_to_openhab
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-export FLASK_ENV=testing
-flask --app web_ui.backend.app:app run --debug
-# → http://localhost:5000
+
+# Linux / macOS
+chmod +x scripts/dev-setup.sh scripts/dev-run.sh
+./scripts/dev-setup.sh
+./scripts/dev-run.sh
 ```
 
-Use `pip install -r requirements-dev.txt` for tests. The development server is separate from the production `knxohui.service` on port 8085.
+```powershell
+# Windows PowerShell
+.\scripts\dev-setup.ps1
+.\scripts\dev-run.ps1
+```
+
+The development server listens on `http://localhost:5000` and is separate from the production `knxohui.service` on port 8085. Install `requirements-dev.txt` in the virtual environment to run tests. See the [Developer Guide](docs/DEVELOPER_GUIDE.md) for setup details.
 
 ---
 
@@ -133,7 +142,7 @@ The UI surfaces reports for anything that couldn't be fully placed:
 - **`partial_report.json`** — Incomplete multi-address components, when present
 - **`completeness_report.json`** — Web job report for generated Things missing required channels
 
-The Web UI starts with `general.auto_place_unknown = false` (`web_ui/backend/storage.py:31`). The checked-in CLI generator config has it set to `true` (`config.json:480`). Set the value explicitly for the workflow you use.
+The Web UI starts with `general.auto_place_unknown = false` (`web_ui/backend/storage.py`). The checked-in CLI generator config has it set to `true` (`config.json`). Set the value explicitly for the workflow you use.
 
 ## Configuration
 
@@ -141,7 +150,7 @@ The generator reads `output_format` (`legacy` or `yaml`), the output path keys `
 
 ## Update
 
-For a published release, use `bash install.sh --update` from the installation checkout, or use the Web UI update action. `--repair` reruns setup without fetching a release (`install.sh:221-228`). Both release update paths need a published release; the developer checkout can be updated with Git and `sudo bash installer/setup.sh` after reviewing changes. See the [production guide](docs/PRODUCTION_GUIDE.md).
+For a published release, use `bash install.sh --update` from the installation checkout, or use the Web UI update action. `--repair` reruns setup without fetching a release. Release install and update require a published release; a developer checkout can be updated with Git and `sudo bash installer/setup.sh` after reviewing changes. See the [production guide](docs/PRODUCTION_GUIDE.md).
 
 ---
 
@@ -166,7 +175,7 @@ cd /opt/knx_to_openhab
 bash uninstall.sh
 ```
 
-This removes the application and service units but preserves external configuration, jobs, and backups. For full removal, use `bash uninstall.sh --purge` and type `PURGE` at its prompt (`uninstall.sh:13-22,266-316`). A non-interactive invocation requires `--yes`.
+This removes the application and service units but preserves external configuration, jobs, and backups. For full removal, use `bash uninstall.sh --purge` and type `PURGE` at its prompt. A non-interactive invocation requires `--yes`.
 
 ## Tests and troubleshooting
 
@@ -176,4 +185,4 @@ On Linux with development dependencies installed, run the CI core command `pytes
 
 ## License
 
-This project is open-source.
+This project is licensed under the [MIT License](LICENSE.txt).

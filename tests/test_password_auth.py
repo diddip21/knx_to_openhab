@@ -289,9 +289,7 @@ def test_login_rejects_invalid_signed_token_without_cookie(monkeypatch, tmp_path
 
 def test_malformed_configured_login_origin_does_not_authorize_fallback(monkeypatch, tmp_path):
     _enable_test_auth(monkeypatch, tmp_path)
-    app_module.cfg["login_csrf_allowed_origins"] = [
-        "https://relay.example.com/unexpected-path"
-    ]
+    app_module.cfg["login_csrf_allowed_origins"] = ["https://relay.example.com/unexpected-path"]
     client = app_module.app.test_client()
     csrf_token = _csrf_cookie(client)
     client.delete_cookie("knx_login_csrf")

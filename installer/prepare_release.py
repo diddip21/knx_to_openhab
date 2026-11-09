@@ -18,6 +18,7 @@ import zlib
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 from types import ModuleType
+from typing import Any, BinaryIO, cast
 from urllib.error import URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -387,12 +388,12 @@ def _preflight_source_archive(source_archive: Path) -> None:
         with gzip.open(source_archive, mode="rb") as compressed_archive:
             bounded_archive = _ExpandedLimitReader(compressed_archive)
             with tarfile.open(
-                fileobj=bounded_archive,
+                fileobj=cast(BinaryIO, bounded_archive),
                 mode="r|",
                 tarinfo=_BoundedMetadataTarInfo,
             ) as archive:
                 for member in archive:
-                    archive.members.clear()
+                    cast(Any, archive).members.clear()
                     member_count, path_bytes = _check_archive_member_budget(
                         member.name, member_count, path_bytes
                     )
@@ -431,7 +432,7 @@ def _safe_extract_commit_source(source_archive: Path, scratch_dir: Path) -> Path
             tarinfo=_BoundedMetadataTarInfo,
         ) as archive:
             for member in archive:
-                archive.members.clear()
+                cast(Any, archive).members.clear()
                 raw_name = member.name
                 member_count, path_bytes = _check_archive_member_budget(
                     raw_name, member_count, path_bytes
@@ -710,7 +711,7 @@ def _safe_extract(archive_path: Path, app_dir: Path, root_name: str) -> None:
                 # Python 3.12 caches TarInfo objects even in stream mode.
                 # This extraction is sequential, so retaining prior entries
                 # only grows memory with the archive's member count.
-                archive.members.clear()
+                cast(Any, archive).members.clear()
                 raw_name = member.name
                 member_count, path_bytes = _check_archive_member_budget(
                     raw_name, member_count, path_bytes

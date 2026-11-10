@@ -27,7 +27,7 @@ def load_config(project_root=None):
         "trusted_proxy_hops": 0,
         "login_csrf_allowed_origins": [],
         "session_max_age_seconds": 43200,
-        "auth": {"enabled": True, "user": "admin", "mode": "session", "allowed_origins": []},
+        "auth": {"enabled": True, "user": "admin", "mode": "basic", "allowed_origins": []},
         "retention": {"days": 14, "max_backups": 50, "max_backups_size_mb": 500},
         "general": {"auto_place_unknown": False},
     }
@@ -51,7 +51,7 @@ def load_config(project_root=None):
         )
 
     auth = config["auth"]
-    auth.setdefault("mode", "session")
+    auth.setdefault("mode", "basic")
     auth.setdefault("allowed_origins", [])
     if auth["mode"] not in ("session", "basic"):
         raise ValueError("Web UI configuration field 'auth.mode' must be 'session' or 'basic'")

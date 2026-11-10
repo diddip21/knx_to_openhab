@@ -4,6 +4,101 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
+if ! python3 - "$PATHS_FILE" <<'PY'
+import shlex
+import stat
+import sys
+from pathlib import Path
+
+raw_path = sys.argv[1]
+path = Path(raw_path)
+managed_header = "# Managed by installer/setup.sh; do not edit by hand."
+legacy_keys = {
+    "KNXOH_INSTALL_DIR",
+    "KNXOH_CONFIG_DIR",
+    "KNXOH_DATA_DIR",
+    "KNXOH_BACKUP_DIR",
+    "KNXOH_MAINTENANCE_LOCK_FILE",
+}
+
+
+def reject(reason):
+    print(f"ERROR: {reason}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+if (
+    not path.is_absolute()
+    or path.parent == Path("/")
+    or any(part in {".", ".."} for part in raw_path.split("/"))
+    or any(ord(character) < 32 or ord(character) == 127 for character in raw_path)
+):
+    reject("KNXOH_PATHS_FILE must be a dedicated absolute registry file")
+
+# Root-owned, non-writable parents prevent an unprivileged process from swapping
+# a validated registry for a symlink before the later atomic replacement/chown.
+protected_parent = False
+for parent in path.parents:
+    try:
+        metadata = parent.lstat()
+    except FileNotFoundError:
+        continue
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        reject("The paths registry must not have symlinked or non-directory parents")
+    if metadata.st_uid != 0:
+        reject(f"The paths registry has an untrusted writable ancestor: {parent}")
+    mode = stat.S_IMODE(metadata.st_mode)
+    writable = mode & (stat.S_IWGRP | stat.S_IWOTH)
+    sticky = mode & stat.S_ISVTX
+    if writable and not (sticky and protected_parent):
+        reject(f"The paths registry has an untrusted writable ancestor: {parent}")
+    if not writable:
+        protected_parent = True
+
+if path.is_symlink():
+    reject("The paths registry must not be a symlink")
+try:
+    registry_metadata = path.lstat()
+except FileNotFoundError:
+    registry_metadata = None
+if registry_metadata is not None:
+    if not stat.S_ISREG(registry_metadata.st_mode):
+        reject("The existing paths registry is not a regular file")
+    if registry_metadata.st_uid != 0 or registry_metadata.st_mode & (
+        stat.S_IWGRP | stat.S_IWOTH
+    ):
+        reject("The existing paths registry is an untrusted registry file")
+    try:
+        with path.open(encoding="utf-8") as registry:
+            header = registry.readline().rstrip("\r\n")
+    except (OSError, UnicodeError) as error:
+        reject(f"The existing paths registry cannot be validated: {error}")
+    if header != managed_header:
+        # Older setup versions wrote the same path assignments without a marker.
+        # Accept only that known data format; never treat an arbitrary file as a
+        # registry simply because the administrator supplied its path.
+        try:
+            with path.open(encoding="utf-8") as registry:
+                seen = set()
+                for raw_line in registry:
+                    line = raw_line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    name, separator, value = line.partition("=")
+                    if not separator or name not in legacy_keys or name in seen:
+                        reject("The existing paths registry is not a recognized legacy registry")
+                    parsed = shlex.split(value, posix=True)
+                    if len(parsed) != 1 or not Path(parsed[0]).is_absolute():
+                        reject("The existing paths registry is not a recognized legacy registry")
+                    seen.add(name)
+        except (OSError, UnicodeError, ValueError) as error:
+            reject(f"The existing paths registry is not a recognized legacy registry: {error}")
+        if not {"KNXOH_INSTALL_DIR", "KNXOH_CONFIG_DIR"}.issubset(seen):
+            reject("The existing paths registry is not a recognized legacy registry")
+PY
+then
+    exit 2
+fi
 export KNXOH_PATHS_FILE="$PATHS_FILE"
 SERVICE_USER="knxohui"
 source "$SCRIPT_DIR/maintenance_lock.sh"

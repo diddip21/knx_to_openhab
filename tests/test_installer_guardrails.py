@@ -1,10 +1,175 @@
 import os
+import pwd
 import subprocess
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+PATHS_FILE_HEADER = "# Managed by installer/setup.sh; do not edit by hand.\n"
+
+
+@pytest.mark.parametrize(
+    ("registry_name", "contents"),
+    [
+        ("config.json", '{"sentinel": "keep this file"}\n'),
+        ("paths.env", '# locally maintained file\nKNXOH_INSTALL_DIR="/opt/other-app"\n'),
+    ],
+)
+def test_setup_rejects_unmanaged_paths_registry_before_privileged_steps(
+    tmp_path, registry_name, contents
+):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    sudo_log = tmp_path / "sudo.log"
+    fake_sudo = fake_bin / "sudo"
+    fake_sudo.write_text(
+        '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$SETUP_SUDO_LOG"\nexit 1\n',
+        encoding="utf-8",
+    )
+    fake_sudo.chmod(0o755)
+    fake_getent = fake_bin / "getent"
+    fake_getent.write_text(
+        "#!/usr/bin/env bash\n" '[[ "$1" == group && "$2" == knxohui ]] && echo "knxohui:x:997:"\n',
+        encoding="utf-8",
+    )
+    fake_getent.chmod(0o755)
+    fake_id = fake_bin / "id"
+    fake_id.write_text(
+        "#!/usr/bin/env bash\n"
+        '[[ "$1" == -u && "$2" == knxohui ]] && { echo 997; exit 0; }\n'
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    fake_id.chmod(0o755)
+
+    registry = tmp_path / registry_name
+    registry.write_text(contents, encoding="utf-8")
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+            "SETUP_SUDO_LOG": str(sudo_log),
+            "KNXOH_PATHS_FILE": str(registry),
+            "KNXOH_INSTALL_DIR": str(tmp_path / "install"),
+            "KNXOH_CONFIG_DIR": str(tmp_path / "config"),
+            "KNXOH_DATA_DIR": str(tmp_path / "data"),
+            "KNXOH_BACKUP_DIR": str(tmp_path / "backups"),
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "installer" / "setup.sh")],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 2
+    assert "registry" in result.stderr.lower()
+    assert registry.read_text(encoding="utf-8") == contents
+    assert not sudo_log.exists()
+
+
+def test_setup_rejects_paths_registry_under_untrusted_writable_parent(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    sudo_log = tmp_path / "sudo.log"
+    fake_sudo = fake_bin / "sudo"
+    fake_sudo.write_text(
+        '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$SETUP_SUDO_LOG"\nexit 1\n',
+        encoding="utf-8",
+    )
+    fake_sudo.chmod(0o755)
+    unsafe_parent = tmp_path / "shared"
+    unsafe_parent.mkdir()
+    unsafe_parent.chmod(0o777)
+    registry = unsafe_parent / "paths.env"
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+            "SETUP_SUDO_LOG": str(sudo_log),
+            "KNXOH_PATHS_FILE": str(registry),
+            "KNXOH_INSTALL_DIR": str(tmp_path / "install"),
+            "KNXOH_CONFIG_DIR": str(tmp_path / "config"),
+            "KNXOH_DATA_DIR": str(tmp_path / "data"),
+            "KNXOH_BACKUP_DIR": str(tmp_path / "backups"),
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "installer" / "setup.sh")],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 2
+    assert "untrusted writable ancestor" in result.stderr.lower()
+    assert not registry.exists()
+    assert not sudo_log.exists()
+
+
+@pytest.mark.parametrize(
+    ("owner", "mode"),
+    [("root", 0o666), ("nobody", 0o644)],
+)
+def test_setup_rejects_mutable_paths_registry_file_before_privileged_steps(tmp_path, owner, mode):
+    if owner == "nobody" and os.geteuid() != 0:
+        pytest.skip("changing registry ownership requires root")
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    sudo_log = tmp_path / "sudo.log"
+    fake_sudo = fake_bin / "sudo"
+    fake_sudo.write_text(
+        '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$SETUP_SUDO_LOG"\nexit 1\n',
+        encoding="utf-8",
+    )
+    fake_sudo.chmod(0o755)
+    registry = tmp_path / "paths.env"
+    registry.write_text(
+        PATHS_FILE_HEADER
+        + f'KNXOH_INSTALL_DIR="{tmp_path}/install"\n'
+        + f'KNXOH_CONFIG_DIR="{tmp_path}/config"\n'
+        + f'KNXOH_DATA_DIR="{tmp_path}/data"\n'
+        + f'KNXOH_BACKUP_DIR="{tmp_path}/backups"\n',
+        encoding="utf-8",
+    )
+    registry.chmod(mode)
+    if owner == "nobody":
+        nobody = pwd.getpwnam("nobody")
+        os.chown(registry, nobody.pw_uid, nobody.pw_gid)
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+            "SETUP_SUDO_LOG": str(sudo_log),
+            "KNXOH_PATHS_FILE": str(registry),
+            "KNXOH_INSTALL_DIR": str(tmp_path / "install"),
+            "KNXOH_CONFIG_DIR": str(tmp_path / "config"),
+            "KNXOH_DATA_DIR": str(tmp_path / "data"),
+            "KNXOH_BACKUP_DIR": str(tmp_path / "backups"),
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "installer" / "setup.sh")],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 2
+    assert "untrusted registry file" in result.stderr.lower()
+    assert not sudo_log.exists()
 
 
 @pytest.mark.parametrize("system_path", ["/etc", "/usr", "/var", "/home"])
@@ -109,9 +274,9 @@ def test_setup_uses_a_saved_custom_maintenance_lock_path(tmp_path):
     )
     (fake_bin / "id").chmod(0o755)
     lock_file = tmp_path / "run locks" / "maintenance.lock"
-    paths_file = tmp_path / "paths.env"
+    paths_file = tmp_path / "paths file.env"
     paths_file.write_text(
-        f'KNXOH_INSTALL_DIR="{tmp_path}/install"\n'
+        PATHS_FILE_HEADER + f'KNXOH_INSTALL_DIR="{tmp_path}/install"\n'
         f'KNXOH_CONFIG_DIR="{tmp_path}/config"\n'
         f'KNXOH_DATA_DIR="{tmp_path}/data"\n'
         f'KNXOH_BACKUP_DIR="{tmp_path}/backups"\n'
@@ -217,7 +382,7 @@ def test_setup_rejects_unsafe_maintenance_lock_parent_before_privileged_steps(tm
     )
     paths_file = tmp_path / "paths.env"
     paths_file.write_text(
-        f'KNXOH_INSTALL_DIR="{install_dir}"\n'
+        PATHS_FILE_HEADER + f'KNXOH_INSTALL_DIR="{install_dir}"\n'
         f'KNXOH_CONFIG_DIR="{config_dir}"\n'
         f'KNXOH_DATA_DIR="{data_dir}"\n'
         f'KNXOH_BACKUP_DIR="{backup_dir}"\n'

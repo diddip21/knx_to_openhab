@@ -47,7 +47,17 @@ jobs:
 
       - name: Run core tests
         run: |
-          pytest -q --cov=. --cov-report=xml -m "not ui" --ignore=tests/ui
+          # The maintenance-lock policy requires root-owned ancestors. The core suite
+          # uses pytest temporary paths for lock fixtures, so run it as root rather
+          # than weakening that production guard for the unprivileged runner.
+          sudo -n env "PATH=$PATH" "$(command -v pytest)" \
+            -q --cov=. --cov-report=xml -m "not ui" --ignore=tests/ui
+
+      - name: Run unprivileged filesystem tests
+        run: |
+          pytest -q \
+            tests/test_openhab_yaml.py::test_write_yaml_updates_preprovisioned_file_without_writable_parent \
+            tests/test_openhab_yaml.py::test_write_yaml_refuses_hard_linked_target_without_writable_parent
 
   lint:
     name: Lint (format + typecheck)

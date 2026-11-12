@@ -89,7 +89,7 @@ Die Prüfung aller Markdown-Links auf relative Zielpfade fand 24 Ziele und genau
 
 ## Top 10 nach Priorität
 
-1. Die Regex-Prüfung fand eine private IPv4-Adresse in der Charne-ETS-Testdatei. Der Maintainer bewertet die Testdaten als nicht aussagekräftig für Außenstehende und akzeptiert ihre Beibehaltung. Ein Spezial-Secret-Scanner war nicht verfügbar.
+1. Ein früherer Regex-Scan meldete eine private IPv4-Adresse in Charne; die Nachprüfung am 2026-11-12 reproduzierte sie im extrahierten Archiv nicht. Separat zeigen bestehende Issue-40-Screenshots private LAN- und KNX-Adressdaten. Die Charne-Fixture wurde vom Maintainer akzeptiert; die Screenshots sind nicht geändert und ihre externen PR-Verwendungen ungeprüft. Ein Spezial-Secret-Scanner war nicht verfügbar.
 2. Falsche Deinstallationsaussage und nicht ausführbarer Pipe-Befehl (`docs/PRODUCTION_GUIDE.md:134-139`, `uninstall.sh:271-274`).
 3. Widersprüchlicher Auto-Place-Default (`config.json:480`, `storage.py:31`, `docs/USER_GUIDE.md:97`).
 4. Falsche pytest-Standardanleitung (`pytest.ini:5-35`, `docs/DEVELOPER_GUIDE.md:282-287`).
@@ -106,7 +106,7 @@ Auf Windows/Python 3.12.14: `pytest -q` stoppt schon bei der Sammlung, weil `tes
 
 Ein erneuter isort-Lauf mit `python -X utf8 -m isort --check-only .` endete ohne Codepage-Warnungen mit Exitcode 0 (`Skipped 1 files`). Die Skip-Stellen umfassen Bash-abhängige Testmodule (`tests/test_installer_modes.py:12`, `tests/test_release_selection.py:11`), ausdrücklich POSIX-spezifische Fälle (`tests/test_deploy_policy.py:71-129`) und bedingte Generierungs-/Syntaxfälle (`tests/test_output_syntax_validation.py:313-525`). Vier `tests/test_output_config.py:276-297` überspringen ihre Tests ausdrücklich als komplexe Import-Fehlerfälle; diese Tests sind Kandidaten zur Nachbesserung, nicht zum Löschen. `git ls-files -ci --exclude-standard` lieferte keinen Treffer. Exakte SHA-256-Duplikate beschränken sich auf drei leere `__init__.py`-Paketdateien. Das größte versionierte Objekt ist die aktiv referenzierte `tests/fixtures/Charne.knxproj` mit 6.043.486 Byte (`tests/ui/test_upload_flow.py:9`; `docs/REPO_CLEANUP_INVENTORY.md:13-14`). JSON-Dumps, Mini-Fixture und Goldens werden in `tests/integration/test_output_validation.py:28,183-193` verwendet. Im Repository liegen keine versionierten `*.bak`, `*.old`, `*_copy`, `__pycache__` oder generierten `openhab/items|things|sitemaps`-Dateien. `.gitignore` deckt jedoch `.mypy_cache`, `.coverage*`, `htmlcov`, `private_persistence` (`ets_to_openhab.py:1068-1082`) und generische `*.bak`/`*.old` nicht ab.
 
-Verfügbare Regex-Prüfung aller Textdateien und dekodierbaren ETS-ZIP-Inhalte auf gängige Token-/Key-Muster, E-Mail-Adressen und IPv4-Adressen: kein Treffer für die geprüften Token-/Private-Key-Muster; ein privater IPv4-Wert im realen `tests/fixtures/Charne.knxproj`, keine globale IPv4 und keine E-Mail in dieser Datei. `tests/Charne.knxproj.json:4` nennt ein konkretes Projekt; die Goldens enthalten davon abgeleitete Item-Namen (`tests/fixtures/expected_output/Charne/knx.items:1`). In Tests kommen absichtlich synthetische Adressen vor, darunter `1.2.3.4` (`tests/test_web_ui_job_endpoints.py:225`). Der Maintainer hat die Beibehaltung der Charne-Fixture akzeptiert, weil Außenstehende nach seiner Einschätzung aus den Testdaten keine nutzbaren Anlageninformationen gewinnen. Der private IPv4-Wert bleibt ein dokumentiertes Restrisiko; ein professioneller Secret-Scanner war auf dem Host nicht verfügbar. Werte werden im Audit absichtlich nicht wiederholt.
+Ein früherer Regex-Scan über Textdateien und dekodierbare ETS-ZIP-Inhalte prüfte gängige Token-/Key-Muster, E-Mail-Adressen und IPv4-Adressen: keine erkannten Token-/Private-Key-Muster; er meldete eine private IPv4-Adresse im Charne-Archiv. Bei der Nachprüfung am 2026-11-12 ließ sich dieser IPv4-Treffer im extrahierten Archiv nicht reproduzieren; er ist unbestätigt und darf nicht als bereinigt gelten. `tests/Charne.knxproj.json:4` nennt ein konkretes Projekt; die Goldens enthalten davon abgeleitete Item-Namen (`tests/fixtures/expected_output/Charne/knx.items:1`). Separat bestätigte eine visuelle Prüfung der bereits auf `dev` vorhandenen `docs/screenshots/issue-40-gateway-ip-settings.png` und `docs/screenshots/issue-40-generated-knx-things.png` eine private LAN-Adresse und konkrete KNX-Gruppenadressen; `docs/screenshots/issue-40-gateway-ip.md` enthält ebenfalls eine private IPv4-Adresse. Die externe Verwendung dieser historischen UI-Belege wurde nicht geprüft, und die Dateien wurden nicht geändert. Der Maintainer hat die Beibehaltung der Charne-Fixture akzeptiert, weil Außenstehende nach seiner Einschätzung aus den Testdaten keine nutzbaren Anlageninformationen gewinnen. Ein professioneller Secret-Scanner war auf dem Host nicht verfügbar. Werte werden im Audit absichtlich nicht wiederholt.
 
 ## Verifikation nach der Bereinigung
 
@@ -135,10 +135,11 @@ Der vollständige CI-Kernbefehl, UI-Tests mit Chromium, `bash -n`, `shellcheck` 
 
 ## Rückfragen an Maintainer
 
-Die Beibehaltung der Charne-ETS-Fixture und ihrer abgeleiteten Goldens wurde vom Maintainer akzeptiert. Sie werden für Upload- und Golden-Tests benötigt; der private IPv4-Wert ist ein bewusst akzeptiertes Restrisiko.
+Die Beibehaltung der Charne-ETS-Fixture und ihrer abgeleiteten Goldens wurde vom Maintainer akzeptiert. Sie werden für Upload- und Golden-Tests benötigt. Der frühere IPv4-Treffer im Archiv ist nicht reproduziert. Davon getrennt sollten die Issue-40-Screenshots vor einer erneuten Veröffentlichung mit Dokumentationsadressen und neutralen Gruppenbezeichnungen bereinigt werden; externe PR-Verwendungen sind vor einem Löschen zu prüfen.
 
 1. Wird `transform_dir_path` von externen Installationen als Konfigurationsvertrag genutzt? Im Repo ist außer der Normalisierung kein Ausgabeverbrauch nachweisbar.
 2. Soll `Dockerfile.test` als unterstützter ARM-Testweg gepflegt werden? Dann müssen Python-/pytest-Umgebung mit CI abgeglichen werden.
+3. Soll Python 3.11 offiziell unterstützt werden? Installer und Entwickler-Skripte akzeptieren 3.11+, README und Testcontainer nennen es; CI prüft nur 3.12/3.13. Empfehlung: 3.11 beibehalten und als Folgearbeit in die CI-Matrix aufnehmen.
 
 ## Vollständige Dateientscheidung
 
@@ -178,9 +179,9 @@ Die Spalte „Referenziert von“ nennt einen belegten internen Pfad oder den Di
 | `docs/screenshots/issue-38-generated-yaml.png` | PR-UI-Beleg | docs/screenshots/issue-38-yaml.md:4 | BEHALTEN | docs/screenshots/issue-38-yaml.md:4 | mittel |
 | `docs/screenshots/issue-38-yaml-settings.png` | PR-UI-Beleg | docs/screenshots/issue-38-yaml.md:3 | BEHALTEN | docs/screenshots/issue-38-yaml.md:3 | mittel |
 | `docs/screenshots/issue-38-yaml.md` | PR-UI-Beleg | kein interner Link; externer PR-Bezug ungeprüft | BEHALTEN | .github/PULL_REQUEST_TEMPLATE.md:25 | mittel |
-| `docs/screenshots/issue-40-gateway-ip-settings.png` | PR-UI-Beleg | docs/screenshots/issue-40-gateway-ip.md:9 | BEHALTEN | docs/screenshots/issue-40-gateway-ip.md:9 | mittel |
-| `docs/screenshots/issue-40-gateway-ip.md` | PR-UI-Beleg | kein interner Link; externer PR-Bezug ungeprüft | BEHALTEN | .github/PULL_REQUEST_TEMPLATE.md:25 | mittel |
-| `docs/screenshots/issue-40-generated-knx-things.png` | PR-UI-Beleg | docs/screenshots/issue-40-gateway-ip.md:15 | BEHALTEN | docs/screenshots/issue-40-gateway-ip.md:15 | mittel |
+| `docs/screenshots/issue-40-gateway-ip-settings.png` | PR-UI-Beleg mit privater LAN-Adresse | docs/screenshots/issue-40-gateway-ip.md:9 | BEHALTEN | Vorhandener Screenshot; externe PR-Verwendung ungeprüft, vor Wiederveröffentlichung bereinigen | mittel |
+| `docs/screenshots/issue-40-gateway-ip.md` | PR-UI-Beleg mit privater IPv4-Adresse | kein weiterer interner Link; externer PR-Bezug ungeprüft | BEHALTEN | Vorhandener Issue-Beleg; externe Verwendung vor Entfernen prüfen | mittel |
+| `docs/screenshots/issue-40-generated-knx-things.png` | PR-UI-Beleg mit KNX-Gruppenadressen und privater LAN-Adresse | docs/screenshots/issue-40-gateway-ip.md:15 | BEHALTEN | Vorhandener Screenshot; externe PR-Verwendung ungeprüft, vor Wiederveröffentlichung bereinigen | mittel |
 | `docs/screenshots/issue-41-no-apt-package.png` | PR-UI-Beleg | kein interner Link; externer PR-Bezug ungeprüft | BEHALTEN | .github/PULL_REQUEST_TEMPLATE.md:25 | mittel |
 | `docs/screenshots/issue-41-updates-available.png` | PR-UI-Beleg | kein interner Link; externer PR-Bezug ungeprüft | BEHALTEN | .github/PULL_REQUEST_TEMPLATE.md:25 | mittel |
 | `docs/screenshots/issue-56-language-de.png` | PR-UI-Beleg | kein interner Link; externer PR-Bezug ungeprüft | BEHALTEN | .github/PULL_REQUEST_TEMPLATE.md:25 | mittel |
@@ -255,7 +256,7 @@ Die Spalte „Referenziert von“ nennt einen belegten internen Pfad oder den Di
 | `tests/README.md` | Testanleitung | CONTRIBUTING.md:99 | AKTUALISIEREN | CONTRIBUTING.md:99 | niedrig |
 | `tests/__init__.py` | Kern-/Integrationstest | pytest.ini:5-8; .github/workflows/ci.yml:50 | BEHALTEN | pytest.ini:5-8; .github/workflows/ci.yml:50 | niedrig |
 | `tests/conftest.py` | Kern-/Integrationstest | pytest.ini:5-8; .github/workflows/ci.yml:50 | BEHALTEN | pytest.ini:5-8; .github/workflows/ci.yml:50 | niedrig |
-| `tests/fixtures/Charne.knxproj` | Echtes ETS-Archiv | tests/ui/test_upload_flow.py:9 | BEHALTEN | Maintainer akzeptiert die Beibehaltung; private IPv4 bleibt Restrisiko | hoch |
+| `tests/fixtures/Charne.knxproj` | Echtes ETS-Archiv | tests/ui/test_upload_flow.py:9 | BEHALTEN | Maintainer akzeptiert die Beibehaltung; früherer IPv4-Treffer nicht reproduziert, professioneller Scan ausstehend | hoch |
 | `tests/fixtures/expected_output/Charne/README.md` | Golden-Referenz | tests/integration/test_output_validation.py:28-60 | BEHALTEN | tests/integration/test_output_validation.py:28-60 | mittel |
 | `tests/fixtures/expected_output/Charne/knx.items` | Golden-Referenz | tests/integration/test_output_validation.py:28-60 | BEHALTEN | tests/integration/test_output_validation.py:28-60 | mittel |
 | `tests/fixtures/expected_output/Charne/knx.sitemap` | Golden-Referenz | tests/integration/test_output_validation.py:28-60 | BEHALTEN | tests/integration/test_output_validation.py:28-60 | mittel |

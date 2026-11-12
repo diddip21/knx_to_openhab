@@ -121,6 +121,6 @@
 
 - [x] Run all six focused test files (`151 passed`), the full core suite (`997 passed, 13 skipped`), and the UI suite (`208 passed, 2 skipped`).
 - [x] Run Black, isort, Flake8, mypy, `bash -n` for changed shell scripts, and `git diff --check` after final code changes.
-- [ ] Commit the fixes, request Codex review on the updated PR head, and inspect every new review finding before proceeding.
-- [ ] Reply with tested dispositions for the six open review threads; resolve only findings actually addressed.
-- [ ] Recheck all GitHub checks and PR review threads. Do not merge until all checks are green and no valid review finding is left unresolved.
+- [x] Commit the fixes, request Codex review on the updated PR head, and inspect every new review finding before proceeding.
+- [x] Reply with tested dispositions for the six addressed review threads and resolve those findings.
+- [x] Recheck all GitHub checks and PR review threads. Do not merge until all checks are green and no valid review finding is left unresolved.

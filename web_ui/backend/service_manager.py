@@ -76,9 +76,6 @@ def get_service_status(service_name: str):
         uptime_str = None
         last_run_str = None
 
-        import time
-        from datetime import datetime, timedelta
-
         # Helper to parse systemd timestamp (simplified)
         # Systemd format: "Day YYYY-MM-DD HH:MM:SS TZ" or "Mon 2023-..."
         # We'll try to parse commonly used formats

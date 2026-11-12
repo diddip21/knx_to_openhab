@@ -526,3 +526,49 @@ def test_config_save_refreshes_gateway_undo_availability(page: Page, flask_serve
         page.locator("#tab-devices").screenshot(
             path=str(screenshot_path / "gateway-undo-disabled-after-config-save.png")
         )
+
+
+@pytest.mark.ui
+def test_issue40_documentation_views_use_example_data(page: Page, flask_server):
+    """Capture the real UI with a documentation IP and synthetic KNX addresses."""
+    _stub_settings_routes(page)
+    page.set_viewport_size({"width": 1440, "height": 900})
+    _open_settings(page, flask_server)
+    page.get_by_role("button", name="Devices").click()
+    page.locator("#conf-gateway-ip").fill("192.0.2.45")
+    expect(page.locator("#conf-gateway-ip")).to_have_value("192.0.2.45")
+    expect(page.locator("#tab-devices")).to_be_visible()
+    page.wait_for_timeout(400)  # Let the tab animation finish before capturing documentation.
+
+    screenshot_dir = Path(__file__).resolve().parents[2] / "test-results"
+    if os.getenv("SAVE_UI_SCREENSHOTS") == "1":
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.locator("#settings-section").screenshot(
+            path=str(screenshot_dir / "issue-40-gateway-ip-settings.png")
+        )
+
+    example_things = """Bridge knx:ip:bridge [
+    type="TUNNEL",
+    ipAddress="192.0.2.45",
+    portNumber=3671
+] {
+    Thing device demo [
+        Type switch : i_demo_switch "Demo switch" [ ga="1/1/1" ]
+    ]
+}
+"""
+    page.route(
+        "**/api/file/preview?*",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"content": example_things, "size": len(example_things)}),
+        ),
+    )
+    page.evaluate("previewFile('knx.things')")
+    dialog = page.locator("#filePreviewDialog")
+    expect(dialog).to_be_visible()
+    expect(dialog).to_contain_text('ipAddress="192.0.2.45"')
+    expect(dialog).to_contain_text('ga="1/1/1"')
+    if os.getenv("SAVE_UI_SCREENSHOTS") == "1":
+        page.screenshot(path=str(screenshot_dir / "issue-40-generated-knx-things.png"))

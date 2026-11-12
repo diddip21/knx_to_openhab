@@ -133,6 +133,8 @@ jobs:
           playwright install --with-deps
 
       - name: Run UI tests
+        env:
+          SAVE_UI_SCREENSHOTS: "1"
         run: |
           pytest tests/ui/ -v -m ui --tb=short
 

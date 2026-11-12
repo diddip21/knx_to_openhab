@@ -353,7 +353,7 @@ class Updater:
                 # The child process has its own handle
                 # context manager wouldn't work easily here with Popen specific needs
                 log_fd.close()
-            except Exception as e:
+            except Exception:
                 # If opening log file fails, try running without logging to it (fallback)
                 subprocess.Popen(
                     ["/bin/bash", update_script],

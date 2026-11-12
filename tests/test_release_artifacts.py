@@ -2,7 +2,7 @@ import hashlib
 import os
 import subprocess
 import tarfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -110,6 +110,33 @@ def test_builds_deterministic_archive_and_matching_sha256(tmp_path):
     ):
         assert prefix + excluded not in members
     assert all(not name.startswith("/") and ".." not in Path(name).parts for name in members)
+
+
+def test_build_release_with_commit_manifest_matches_git_index_build(tmp_path):
+    root = _repository(tmp_path)
+    git_entries = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "--stage", "-z"],
+        check=True,
+        capture_output=True,
+    ).stdout
+    tracked_files = []
+    for entry in git_entries.split(b"\0"):
+        if not entry:
+            continue
+        metadata, path_bytes = entry.split(b"\t", 1)
+        mode = int(metadata.split()[0], 8)
+        tracked_files.append((PurePosixPath(os.fsdecode(path_bytes)), mode))
+
+    git_archive, git_checksum = build_release(root, "1.2.3", tmp_path / "git-build")
+    manifest_archive, manifest_checksum = build_release(
+        root,
+        "1.2.3",
+        tmp_path / "manifest-build",
+        tracked_files=tracked_files,
+    )
+
+    assert manifest_archive.read_bytes() == git_archive.read_bytes()
+    assert manifest_checksum.read_bytes() == git_checksum.read_bytes()
 
 
 def test_rejects_build_version_that_differs_from_version_file(tmp_path):

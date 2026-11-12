@@ -2,11 +2,13 @@ import hashlib
 import json
 import logging
 import os
+import shlex
 import subprocess
 import sys
 import tarfile
 import time
 import uuid
+from pathlib import Path
 from threading import Lock
 from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
@@ -62,6 +64,47 @@ from .upload_security import (
     get_zip_validation_options,
     validate_upload_from_path,
 )
+
+
+def _setup_recovery_script(project_root: str, module_file: str | Path) -> Path | None:
+    stable_root = Path(project_root).resolve()
+    try:
+        module_root = Path(module_file).resolve(strict=True).parents[2]
+    except (OSError, RuntimeError, IndexError):
+        return None
+
+    current_link = stable_root / "current"
+    if current_link.is_symlink():
+        releases_root = stable_root / "releases"
+        if releases_root.is_symlink() or not releases_root.is_dir():
+            return None
+        try:
+            releases_root = releases_root.resolve(strict=True)
+            active_root = current_link.resolve(strict=True)
+            active_root.relative_to(releases_root)
+        except (OSError, RuntimeError, ValueError):
+            return None
+        if active_root == releases_root or not active_root.is_dir() or module_root != active_root:
+            return None
+    elif current_link.exists():
+        return None
+    elif module_root == stable_root:
+        active_root = stable_root
+    else:
+        return None
+
+    installer_dir = active_root / "installer"
+    active_setup = installer_dir / "setup.sh"
+    if installer_dir.is_symlink() or not installer_dir.is_dir():
+        return None
+    if active_setup.is_symlink() or not active_setup.is_file():
+        return None
+    try:
+        active_setup.resolve(strict=True).relative_to(active_root)
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return active_setup
+
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +188,7 @@ if FLASK_AVAILABLE:
 
     # Fix openhab_path to be absolute if it's relative and based on project root
 
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    project_root = str(get_paths().install_dir)
     if "openhab_path" in cfg:
         openhab_path = cfg["openhab_path"]
         # If openhab_path is relative (doesn't start with / on Unix or a drive letter on Windows),
@@ -155,7 +198,7 @@ if FLASK_AVAILABLE:
 
     job_mgr = JobManager(cfg)
     # Use project root directory as base path for updater
-    updater = Updater(base_path=project_root)
+    updater = Updater(base_path=str(get_paths(project_root).install_dir))
     service_updates = ServiceUpdates()
 
     # Durable session and CSRF handling -------------------------------------------
@@ -726,7 +769,7 @@ if FLASK_AVAILABLE:
         job_id = latest_job["id"]
 
         # Check configured paths
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        project_root = str(get_paths().install_dir)
         main_config_path = get_paths(project_root).generator_config_file
 
         if main_config_path.exists():
@@ -809,10 +852,8 @@ if FLASK_AVAILABLE:
     @app.route("/api/debug/config", methods=["GET"])
     def debug_config():
         """Debug endpoint to check the current configuration."""
-        import os
-
         # Get the main config (from the main config.json)
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        project_root = str(get_paths().install_dir)
         main_config_path = get_paths(project_root).generator_config_file
 
         main_config = {}
@@ -868,13 +909,24 @@ if FLASK_AVAILABLE:
         """Trigger the self-update process."""
         acfg = cfg.get("auth", {})
         if acfg.get("enabled") and not acfg.get("password_hash"):
+            setup_script = _setup_recovery_script(project_root, __file__)
+            if setup_script is None:
+                recovery_instruction = (
+                    "No safe setup script is available for this installation.\n"
+                    "Restore or reinstall a verified release before retrying."
+                )
+            else:
+                recovery_instruction = (
+                    "Run the following command from an interactive SSH terminal:\n"
+                    f"sudo bash {shlex.quote(str(setup_script))}\n"
+                    "(for example, ssh -t). Setup will ask for a Web UI password; then retry the update."
+                )
             return (
                 jsonify(
                     {
                         "error": (
-                            "A migrated Web UI password hash is required before updating. "
-                            f"Run 'sudo bash {project_root}/installer/setup.sh' from an interactive SSH terminal "
-                            "(for example, ssh -t). Setup will ask for a Web UI password; then retry the update."
+                            "A migrated Web UI password hash is required before updating.\n"
+                            f"{recovery_instruction}"
                         )
                     }
                 ),
@@ -997,7 +1049,7 @@ if FLASK_AVAILABLE:
         # If backup specified, extract file from backup
         if backup_name:
             # Use the configured backup directory from config, with a sensible default
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            project_root = str(get_paths().install_dir)
             backups_dir_config = cfg.get("backups_dir", "var/backups/knx_to_openhab")
             if not os.path.isabs(backups_dir_config):
                 backups_dir = os.path.join(project_root, backups_dir_config)

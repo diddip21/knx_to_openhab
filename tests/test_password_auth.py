@@ -1,5 +1,7 @@
 import base64
 import json
+import shlex
+from pathlib import Path
 from unittest.mock import Mock
 
 import itsdangerous.timed
@@ -712,7 +714,27 @@ def test_status_endpoint_remains_public_during_first_run(monkeypatch, tmp_path):
     assert response.status_code == 200
 
 
-def test_update_requires_migrated_hash_before_starting_update(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    "active_setup_exists", [True, False], ids=["active-release", "missing-active-setup"]
+)
+def test_update_requires_migrated_hash_before_starting_update(
+    monkeypatch, tmp_path, active_setup_exists
+):
+    stable_root = tmp_path / "install with spaces"
+    source_root = stable_root / "releases" / "v2.0.0"
+    (source_root / "installer").mkdir(parents=True)
+    if active_setup_exists:
+        (source_root / "installer" / "setup.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+    stale_setup = stable_root / "installer" / "setup.sh"
+    stale_setup.parent.mkdir(parents=True)
+    stale_setup.write_text("#!/bin/bash\n# stale root checkout\n", encoding="utf-8")
+    module_file = source_root / "web_ui" / "backend" / "app.py"
+    module_file.parent.mkdir(parents=True)
+    module_file.write_text("# test module path\n", encoding="utf-8")
+    (stable_root / "current").symlink_to(source_root)
+    module_file = stable_root / "current" / "web_ui" / "backend" / "app.py"
+    monkeypatch.setattr(app_module, "project_root", str(stable_root))
+    monkeypatch.setattr(app_module, "__file__", str(module_file))
     monkeypatch.setattr(
         app_module,
         "cfg",
@@ -747,6 +769,64 @@ def test_update_requires_migrated_hash_before_starting_update(monkeypatch, tmp_p
 
     assert response.status_code == 409
     assert b"password hash is required" in response.data.lower()
+    error_message = response.get_json()["error"]
+    if active_setup_exists:
+        assert "before updating.\nRun the following command" in error_message
+        assert (
+            f"sudo bash {shlex.quote(str(source_root / 'installer' / 'setup.sh'))}" in error_message
+        )
+        assert str(stale_setup) not in error_message
+    else:
+        assert "no safe setup script is available for this installation" in error_message.lower()
+        assert str(stale_setup) not in error_message
+
+
+def test_setup_recovery_script_falls_back_to_legacy_install_root(tmp_path):
+    legacy_root = tmp_path / "legacy-install"
+    setup_script = legacy_root / "installer" / "setup.sh"
+    app_source = legacy_root / "web_ui" / "backend" / "app.py"
+    setup_script.parent.mkdir(parents=True)
+    app_source.parent.mkdir(parents=True)
+    setup_script.write_text("#!/bin/bash\n", encoding="utf-8")
+    app_source.write_text("# test module path\n", encoding="utf-8")
+
+    result = app_module._setup_recovery_script(str(legacy_root), str(app_source))
+
+    assert result == setup_script
+
+
+@pytest.mark.parametrize("unsafe_layout", ["missing", "installer-symlink", "script-symlink"])
+def test_setup_recovery_script_fails_closed_for_unsafe_active_release(tmp_path, unsafe_layout):
+    stable_root = tmp_path / "install"
+    source_root = stable_root / "releases" / "v2.0.0"
+    external_root = tmp_path / "external"
+    stale_setup = stable_root / "installer" / "setup.sh"
+    stale_setup.parent.mkdir(parents=True)
+    stale_setup.write_text("#!/bin/bash\n# stale setup\n", encoding="utf-8")
+    source_root.mkdir(parents=True)
+    (source_root / "web_ui" / "backend").mkdir(parents=True)
+    module_file = source_root / "web_ui" / "backend" / "app.py"
+    module_file.write_text("# active app module\n", encoding="utf-8")
+    (stable_root / "current").symlink_to(source_root)
+
+    if unsafe_layout == "missing":
+        (source_root / "installer").mkdir()
+    elif unsafe_layout == "installer-symlink":
+        (external_root / "installer").mkdir(parents=True)
+        (external_root / "installer" / "setup.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+        (source_root / "installer").symlink_to(
+            external_root / "installer", target_is_directory=True
+        )
+    else:
+        (source_root / "installer").mkdir()
+        (external_root / "setup.sh").parent.mkdir(parents=True, exist_ok=True)
+        (external_root / "setup.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+        (source_root / "installer" / "setup.sh").symlink_to(external_root / "setup.sh")
+
+    current_module_file = stable_root / "current" / "web_ui" / "backend" / "app.py"
+    result = app_module._setup_recovery_script(str(stable_root), str(current_module_file))
+
+    assert result is None
 
 
 def test_legacy_secret_remains_usable_without_returning_plaintext(tmp_path, monkeypatch):

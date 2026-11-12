@@ -3,23 +3,79 @@ Version management and update functionality for KNX to OpenHAB Generator.
 Uses Git commits for versioning instead of version.json.
 """
 
+import json
 import os
 import re
+import shlex
 import subprocess
 import threading
 import time
+import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 import requests  # type: ignore[import]
 
+from knxoh_paths import get_paths
+from update_request_lock import update_request_lock
+
 _RELEASE_CACHE_TTL_SECONDS = 300
+_UPDATE_WORKER_UNIT = Path("/etc/systemd/system/knxohui-update.service")
+_UPDATE_WORKER_LAUNCHER = Path("/usr/local/libexec/knx_to_openhab/launch_update.sh")
+_WEB_UI_LAUNCHER = Path("/usr/local/libexec/knx_to_openhab/launch_web.sh")
+_SERVICE_UPDATE_HELPER = "/usr/local/sbin/knxohui-service-update"
 
 _SEMVER_PATTERN = re.compile(
     r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
     r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
     r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
 )
+
+
+def _start_update_worker() -> Tuple[bool, str]:
+    try:
+        result = subprocess.run(
+            [
+                "/usr/bin/sudo",
+                "-n",
+                _SERVICE_UPDATE_HELPER,
+                "start-web-update",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        return False, str(error)
+
+    if result.returncode != 0:
+        detail = (result.stderr or "").strip()
+        return False, detail or "Could not start the isolated updater service."
+    return True, ""
+
+
+def _read_update_request_identity(request_path: Path) -> Tuple[str, str]:
+    with request_path.open(encoding="utf-8") as request_file:
+        request = json.load(request_file)
+    if not isinstance(request, dict):
+        raise ValueError("Pending update request has an invalid format.")
+
+    release_tag = request.get("release_tag")
+    request_id = request.get("request_id")
+    if not isinstance(release_tag, str) or not _SEMVER_PATTERN.fullmatch(release_tag):
+        raise ValueError("Pending update request has an invalid release tag.")
+    if not isinstance(request_id, str) or not re.fullmatch(r"[0-9a-f]{32}", request_id):
+        raise ValueError("Pending update request has an invalid identifier.")
+    return release_tag, request_id
+
+
+def _write_update_log_header(log_path: Path, release_tag: str, request_id: str) -> None:
+    with log_path.open("w", encoding="utf-8") as log_file:
+        log_file.write(f"Update queued for {release_tag} (request_id={request_id}).\n")
+        log_file.flush()
+        os.fsync(log_file.fileno())
 
 
 def _parse_semver(tag: str) -> Optional[Tuple[int, int, int, Optional[Tuple[str, ...]]]]:
@@ -117,6 +173,48 @@ class Updater:
             Dictionary with version info (commit_hash, commit_date, branch, repository)
         """
         try:
+            current_link = os.path.join(self.base_path, "current")
+            if os.path.lexists(current_link):
+                version_file = os.path.join(current_link, "version.json")
+                try:
+                    with open(version_file, encoding="utf-8") as source:
+                        metadata = json.load(source)
+                except (OSError, json.JSONDecodeError) as error:
+                    return {
+                        "commit_hash": "unknown",
+                        "commit_short": "unknown",
+                        "commit_date": "unknown",
+                        "commit_message": "Invalid active release metadata",
+                        "branch": self.branch,
+                        "repository": self.repo_url,
+                        "error": str(error),
+                    }
+                commit_hash = metadata.get("commit_hash") if isinstance(metadata, dict) else None
+                release_tag = metadata.get("release_tag") if isinstance(metadata, dict) else None
+                if not isinstance(commit_hash, str) or not re.fullmatch(
+                    r"[0-9a-f]{40}", commit_hash
+                ):
+                    return {
+                        "commit_hash": "unknown",
+                        "commit_short": "unknown",
+                        "commit_date": "unknown",
+                        "commit_message": "Invalid active release metadata",
+                        "branch": self.branch,
+                        "repository": self.repo_url,
+                        "error": "Active release commit hash is invalid",
+                    }
+                version = {
+                    "commit_hash": commit_hash,
+                    "commit_short": commit_hash[:7],
+                    "commit_date": metadata.get("commit_date", "unknown"),
+                    "commit_message": metadata.get("commit_message", "No message"),
+                    "branch": release_tag if isinstance(release_tag, str) else self.branch,
+                    "repository": self.repo_url,
+                }
+                if isinstance(release_tag, str):
+                    version["release_tag"] = release_tag
+                return version
+
             # Get current commit hash
             success, commit_hash = self._run_git_command(["rev-parse", "HEAD"])
             if not success:
@@ -283,88 +381,237 @@ class Updater:
             "branch": remote.get("release_tag", self.branch),
         }
 
+    def _update_worker_setup_error(self) -> Optional[str]:
+        """Return setup guidance when the isolated systemd updater is not ready."""
+        if not _UPDATE_WORKER_UNIT.is_file() or not _UPDATE_WORKER_LAUNCHER.is_file():
+            return self._update_worker_setup_instruction()
+        if not _WEB_UI_LAUNCHER.is_file():
+            return self._update_worker_setup_instruction()
+        try:
+            launcher_contents = _WEB_UI_LAUNCHER.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return self._update_worker_setup_instruction()
+        if "# KNXOH_BOOT_RECOVERY_VERSION=1" not in launcher_contents.splitlines():
+            return self._update_worker_setup_instruction()
+        if not Path(_SERVICE_UPDATE_HELPER).is_file():
+            return self._update_worker_setup_instruction()
+
+        try:
+            permission = subprocess.run(
+                [
+                    "/usr/bin/sudo",
+                    "-n",
+                    "-l",
+                    _SERVICE_UPDATE_HELPER,
+                    "start-web-update",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return self._update_worker_setup_instruction()
+
+        if permission.returncode != 0:
+            return self._update_worker_setup_instruction()
+        return None
+
+    def _update_worker_setup_instruction(self) -> str:
+        setup_script = Path(self.base_path) / "current" / "installer" / "setup.sh"
+        if not setup_script.is_file():
+            setup_script = Path(self.base_path) / "installer" / "setup.sh"
+        command = shlex.join(["sudo", "bash", str(setup_script)])
+        return (
+            "The isolated update worker is not installed or authorized. "
+            f"Run `{command}` once from an administrator terminal, then retry the Web UI update."
+        )
+
     def trigger_update(self) -> Tuple[bool, str]:
         """
-        Trigger the update process by executing update.sh script.
+        Queue the selected release for the independent systemd updater unit.
 
         Returns:
             Tuple of (success, message)
         """
         try:
+            data_dir = get_paths(self.base_path).data_dir
+            with update_request_lock(data_dir, blocking=False) as acquired:
+                if not acquired:
+                    return False, "An update is already in progress. Try again later."
+                return self._trigger_update_locked(data_dir)
+        except Exception as e:
+            return False, f"Failed to start update: {str(e)}"
+
+    def _trigger_update_locked(self, data_dir: Path) -> Tuple[bool, str]:
+        try:
+            request_path = data_dir / "update-request.json"
+            running_path = data_dir / "update-request.running.json"
+            pending_exists = os.path.lexists(request_path)
+            running_exists = os.path.lexists(running_path)
+            if pending_exists and running_exists:
+                return (
+                    False,
+                    "Conflicting update requests: both pending and running request files are present.",
+                )
+            if running_exists:
+                try:
+                    os.replace(running_path, request_path)
+                except OSError as error:
+                    return False, f"Could not recover the interrupted update request: {error}"
+                pending_exists = True
+
+            if pending_exists:
+                try:
+                    release_tag, request_id = _read_update_request_identity(request_path)
+                except (OSError, ValueError) as error:
+                    return False, f"Could not read the pending update request: {error}"
+                setup_error = self._update_worker_setup_error()
+                if setup_error:
+                    return False, setup_error
+                try:
+                    _write_update_log_header(
+                        Path(self.base_path) / "update.log", release_tag, request_id
+                    )
+                except OSError as error:
+                    return False, f"Could not prepare the update log: {error}"
+                started, detail = _start_update_worker()
+                if started:
+                    return (
+                        True,
+                        f"Pending update request for {release_tag} (request_id={request_id}) "
+                        "started. The service will restart automatically.",
+                    )
+                return False, f"An update request is already pending or running: {detail}"
+
             release_ok, release = self.check_github_version()
-            release_tag = release.get("release_tag")
-            if not release_ok or not isinstance(release_tag, str):
+            latest_release_tag = release.get("release_tag")
+            if not release_ok or not isinstance(latest_release_tag, str):
                 return False, release.get("error", "Could not resolve the latest stable release")
 
             current = self.get_current_version()
             current_release_tag = current.get("release_tag")
             if isinstance(current_release_tag, str):
-                release_order = _compare_semver(release_tag, current_release_tag)
+                release_order = _compare_semver(latest_release_tag, current_release_tag)
                 if release_order is not None and release_order < 0:
                     return False, "The installed release is newer than the latest stable release"
 
-            update_script = os.path.join(self.base_path, "update.sh")
+            commit_hash = release.get("commit_hash")
+            commit_date = release.get("commit_date")
+            commit_message = release.get("commit_message", "")
+            author = release.get("author") or "unknown"
+            if not isinstance(commit_hash, str) or not re.fullmatch(r"[0-9a-f]{40}", commit_hash):
+                return False, "Selected release metadata is invalid: commit hash."
+            if not isinstance(commit_date, str) or not commit_date or len(commit_date) > 80:
+                return False, "Selected release metadata is invalid: commit date."
+            try:
+                datetime.fromisoformat(commit_date.replace("Z", "+00:00"))
+            except ValueError:
+                return False, "Selected release metadata is invalid: commit date."
+            if not isinstance(commit_message, str) or len(commit_message) > 500:
+                return False, "Selected release metadata is invalid: commit message."
+            if any(ord(character) < 32 and character not in "\t" for character in commit_message):
+                return (
+                    False,
+                    "Selected release metadata contains control characters: commit message.",
+                )
+            if not isinstance(author, str) or not author or len(author) > 200:
+                return False, "Selected release metadata is invalid: author."
+            if any(ord(character) < 32 and character not in "\t" for character in author):
+                return False, "Selected release metadata contains control characters: author."
+
+            current_link = os.path.join(self.base_path, "current")
+            if os.path.lexists(current_link):
+                update_script = os.path.join(current_link, "update.sh")
+                if not os.path.isfile(update_script):
+                    return False, f"Active release updater not found at {update_script}"
+            else:
+                update_script = os.path.join(self.base_path, "update.sh")
 
             if not os.path.exists(update_script):
                 return False, f"Update script not found at {update_script}"
 
-            # Make script executable (optional, since we run with bash explicitly)
+            setup_error = self._update_worker_setup_error()
+            if setup_error:
+                return False, setup_error
+
+            repository_parts = self.repo_url.rstrip("/").split("/")
+            repository = f"{repository_parts[-2]}/{repository_parts[-1].removesuffix('.git')}"
+            request_id = uuid.uuid4().hex
+            request = {
+                "schema_version": 1,
+                "request_id": request_id,
+                "release_tag": latest_release_tag,
+                "commit_hash": commit_hash,
+                "commit_date": commit_date,
+                "commit_message": commit_message,
+                "author": author,
+                "repository": repository,
+            }
+            data_dir.mkdir(parents=True, exist_ok=True)
+            log_file = Path(self.base_path) / "update.log"
             try:
-                os.chmod(update_script, 0o755)
-            except OSError:
-                # Ignore permission errors (e.g. if file is owned by root but we are knxohui)
-                # We can still execute it via bash if we have read permissions
-                pass
+                _write_update_log_header(log_file, latest_release_tag, request_id)
+            except OSError as error:
+                return False, f"Could not prepare the update log: {error}"
 
-            # Prepare log file
-            log_file = os.path.join(self.base_path, "update.log")
-
-            # Prepare environment with overrides to avoid writing to system logs
-            # and to ensure the update runs from the actual install path.
-            env = os.environ.copy()
-            env["LOG_FILE"] = os.devnull
-            env["INSTALL_DIR"] = self.base_path
-            env["RELEASE_TAG"] = release_tag
-
-            # Write header to log
+            temporary_path = os.path.join(data_dir, f".update-request-{request_id}.tmp")
+            existing_request = False
             try:
-                with open(log_file, "w") as f:
-                    f.write(f"--- Update triggered at {datetime.now()} ---\n")
-            except Exception:
-                pass  # If we can't write, we can't write. Popen might fail too then.
+                with open(temporary_path, "x", encoding="utf-8") as request_file:
+                    json.dump(request, request_file, ensure_ascii=True)
+                    request_file.write("\n")
+                    request_file.flush()
+                    os.fsync(request_file.fileno())
+                os.chmod(temporary_path, 0o600)
+                try:
+                    os.link(temporary_path, request_path)
+                except FileExistsError:
+                    existing_request = True
+            finally:
+                try:
+                    os.unlink(temporary_path)
+                except FileNotFoundError:
+                    pass
 
-            # Execute update script in background
-            # The script will handle git pull, dependency updates, and service restart
-            # We redirect output to the log file
-
-            # We need to keep the file handle open just long enough to pass it to Popen
-            # Popen will duplicate it for the child process
             try:
-                log_fd = open(log_file, "a")
-                subprocess.Popen(
-                    ["/bin/bash", update_script],
-                    cwd=self.base_path,
-                    stdout=log_fd,
-                    stderr=subprocess.STDOUT,
-                    env=env,
-                    start_new_session=True,
-                )
-                # We can close the fd in the parent process now
-                # The child process has its own handle
-                # context manager wouldn't work easily here with Popen specific needs
-                log_fd.close()
-            except Exception as e:
-                # If opening log file fails, try running without logging to it (fallback)
-                subprocess.Popen(
-                    ["/bin/bash", update_script],
-                    cwd=self.base_path,
-                    start_new_session=True,
-                    env=env,
+                directory_fd = os.open(data_dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            except OSError as error:
+                return False, f"Could not persist the pending update request: {error}"
+
+            if existing_request:
+                try:
+                    release_tag, request_id = _read_update_request_identity(request_path)
+                    _write_update_log_header(log_file, release_tag, request_id)
+                except OSError as error:
+                    return (
+                        False,
+                        f"Could not prepare the update log for the pending request: {error}",
+                    )
+                except ValueError as error:
+                    return False, f"Could not read the pending update request: {error}"
+
+            started, detail = _start_update_worker()
+            if not started:
+                if existing_request:
+                    return False, f"An update request is already pending or running: {detail}"
+                return False, detail
+
+            if existing_request:
+                return (
+                    True,
+                    f"Pending update request for {release_tag} (request_id={request_id}) "
+                    "started. The service will restart automatically.",
                 )
 
             return (
                 True,
-                "Update process started. The service will restart automatically.",
+                f"Update request for {latest_release_tag} (request_id={request_id}) started. "
+                "The service will restart automatically.",
             )
 
         except Exception as e:

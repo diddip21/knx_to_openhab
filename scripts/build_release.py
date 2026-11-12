@@ -74,7 +74,8 @@ def validate_tag(tag: str, expected_version: str | None = None) -> str:
     return version
 
 
-def _is_excluded(relative_path: PurePosixPath) -> bool:
+def is_excluded_release_path(relative_path: PurePosixPath) -> bool:
+    """Return whether a tracked path is omitted from release artifacts."""
     parts = relative_path.parts
     basename = relative_path.name
     if not parts or parts[0] in EXCLUDED_TOP_LEVEL or basename in EXCLUDED_NAMES:
@@ -117,7 +118,7 @@ def _tracked_files(repo_root: Path) -> Iterable[tuple[PurePosixPath, int]]:
                 )
             if relative_path.is_absolute() or ".." in relative_path.parts:
                 raise ReleaseArtifactError(f"Unsafe tracked path in release: {relative_path}")
-            if not _is_excluded(relative_path):
+            if not is_excluded_release_path(relative_path):
                 yield relative_path, int(mode_text, 8)
         except (UnicodeDecodeError, ValueError) as error:
             if isinstance(error, ReleaseArtifactError):
@@ -137,16 +138,40 @@ def _archive_info(name: str, mode: int, size: int = 0) -> tarfile.TarInfo:
     return info
 
 
-def _release_file_list(repo_root: Path) -> list[tuple[PurePosixPath, int]]:
-    files = sorted(_tracked_files(repo_root), key=lambda item: item[0].as_posix())
+def _release_file_list(
+    repo_root: Path,
+    tracked_files: Iterable[tuple[PurePosixPath, int]] | None = None,
+) -> list[tuple[PurePosixPath, int]]:
+    source_files = _tracked_files(repo_root) if tracked_files is None else tracked_files
+    files: list[tuple[PurePosixPath, int]] = []
+    seen: set[PurePosixPath] = set()
+    for relative_path, mode in source_files:
+        if (
+            not relative_path.parts
+            or relative_path.is_absolute()
+            or ".." in relative_path.parts
+            or mode not in {0o100644, 0o100755, 0o120000}
+        ):
+            raise ReleaseArtifactError(f"Invalid tracked release entry: {relative_path}")
+        if relative_path in seen:
+            raise ReleaseArtifactError(f"Duplicate tracked release path: {relative_path}")
+        seen.add(relative_path)
+        if not is_excluded_release_path(relative_path):
+            files.append((relative_path, mode))
+    files.sort(key=lambda item: item[0].as_posix())
     if not files:
         raise ReleaseArtifactError(f"No tracked application source files found in {repo_root}")
     return files
 
 
-def _write_archive(repo_root: Path, version: str, archive_path: Path) -> None:
+def _write_archive(
+    repo_root: Path,
+    version: str,
+    archive_path: Path,
+    tracked_files: Iterable[tuple[PurePosixPath, int]] | None = None,
+) -> None:
     prefix = f"knx_to_openhab-{version}"
-    files = _release_file_list(repo_root)
+    files = _release_file_list(repo_root, tracked_files)
     with archive_path.open("wb") as raw_archive:
         with gzip.GzipFile(filename="", mode="wb", fileobj=raw_archive, mtime=0) as compressed:
             with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as archive:
@@ -188,7 +213,13 @@ def _write_archive(repo_root: Path, version: str, archive_path: Path) -> None:
                         archive.addfile(_archive_info(archive_name, mode, size), source)
 
 
-def build_release(repo_root: Path, version: str, output_dir: Path) -> tuple[Path, Path]:
+def build_release(
+    repo_root: Path,
+    version: str,
+    output_dir: Path,
+    *,
+    tracked_files: Iterable[tuple[PurePosixPath, int]] | None = None,
+) -> tuple[Path, Path]:
     """Build a reproducible source archive and standard sha256sum sidecar."""
     version = validate_semver(version)
     repo_root = Path(repo_root).resolve()
@@ -214,7 +245,7 @@ def build_release(repo_root: Path, version: str, output_dir: Path) -> tuple[Path
             dir=output_dir, prefix=f".{archive_path.name}.", delete=False
         ) as tmp:
             temporary_archive = Path(tmp.name)
-        _write_archive(repo_root, version, temporary_archive)
+        _write_archive(repo_root, version, temporary_archive, tracked_files)
         digest = hashlib.sha256(temporary_archive.read_bytes()).hexdigest()
 
         with tempfile.NamedTemporaryFile(

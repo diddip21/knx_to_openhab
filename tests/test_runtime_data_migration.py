@@ -68,10 +68,10 @@ def _fixture(tmp_path):
     return source_root, template_root, config_dir, data_dir, backup_dir, legacy_jobs, legacy_backups
 
 
-def _run_migration(paths):
+def _run_migration(paths, maintenance_lock_file=None):
     source_root, template_root, config_dir, data_dir, backup_dir, *_ = paths
     paths_file = config_dir.parent / "paths.env"
-    return migrate_runtime_data(
+    arguments = (
         source_root,
         template_root,
         config_dir,
@@ -80,6 +80,21 @@ def _run_migration(paths):
         source_root,
         paths_file,
     )
+    if maintenance_lock_file is not None:
+        return migrate_runtime_data(*arguments, maintenance_lock_file=maintenance_lock_file)
+    return migrate_runtime_data(*arguments)
+
+
+def test_migration_persists_a_custom_maintenance_lock_path(tmp_path):
+    paths = _fixture(tmp_path)
+    config_dir = paths[2]
+    lock_file = tmp_path / "run locks" / "maintenance.lock"
+
+    result = _run_migration(paths, maintenance_lock_file=lock_file)
+
+    path_file = config_dir.parent / "paths.env"
+    assert result["KNXOH_MAINTENANCE_LOCK_FILE"] == lock_file
+    assert f'KNXOH_MAINTENANCE_LOCK_FILE="{lock_file}"' in path_file.read_text(encoding="utf-8")
 
 
 def test_migration_preserves_runtime_config_and_data_outside_install(monkeypatch, tmp_path):
@@ -367,3 +382,59 @@ def test_backup_cleanup_uses_canonical_external_paths(tmp_path):
     assert "Backups dir: " + str(backup_dir) in result.stdout
     assert not older.exists()
     assert newest.exists()
+
+
+def test_relative_runtime_paths_stay_at_the_stable_install_root(tmp_path, monkeypatch):
+    install_dir = tmp_path / "opt/knx_to_openhab"
+    release_dir = install_dir / "releases/v1.2.3-cafebabe"
+    config_dir = tmp_path / "etc/knx_to_openhab"
+    data_dir = tmp_path / "var/lib/knx_to_openhab"
+    release_dir.mkdir(parents=True)
+    config_dir.mkdir(parents=True)
+    data_dir.mkdir(parents=True)
+    (config_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "openhab_path": "openhab",
+                "backups_dir": "var/backups/knx_to_openhab",
+                "auth": {"enabled": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (config_dir / "secrets.env").write_text("", encoding="utf-8")
+    (data_dir / "generator.json").write_text('{"general":{}}', encoding="utf-8")
+    monkeypatch.setenv("KNXOH_INSTALL_DIR", str(install_dir))
+    monkeypatch.setenv("KNXOH_CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("KNXOH_BACKUP_DIR", str(tmp_path / "var/backups/knx_to_openhab"))
+    monkeypatch.setenv("KNXOH_PATHS_FILE", str(tmp_path / "missing-paths.env"))
+
+    config = load_config(release_dir)
+
+    assert config["openhab_path"] == str(install_dir / "openhab")
+    assert config["backups_dir"] == str(install_dir / "var/backups/knx_to_openhab")
+
+
+def test_job_manager_relative_paths_stay_at_the_stable_install_root(tmp_path, monkeypatch):
+    from web_ui.backend.jobs import JobManager
+
+    install_dir = tmp_path / "opt/knx_to_openhab"
+    release_dir = install_dir / "releases/v1.2.3-cafebabe"
+    release_dir.mkdir(parents=True)
+    monkeypatch.setenv("KNXOH_INSTALL_DIR", str(install_dir))
+    monkeypatch.setenv("KNXOH_PATHS_FILE", str(tmp_path / "missing-paths.env"))
+
+    manager = JobManager(
+        {
+            "jobs_dir": "var/lib/knx_to_openhab/jobs",
+            "staging_dir": "var/lib/knx_to_openhab/staging",
+            "backups_dir": "var/backups/knx_to_openhab",
+        }
+    )
+    try:
+        assert manager.jobs_dir == str(install_dir / "var/lib/knx_to_openhab/jobs")
+        assert manager.staging_dir == str(install_dir / "var/lib/knx_to_openhab/staging")
+        assert manager.backups_dir == str(install_dir / "var/backups/knx_to_openhab")
+    finally:
+        manager.executor.shutdown(wait=True)

@@ -142,6 +142,7 @@ try:
 except (OSError, UnicodeError) as error:
     reject(f"The paths registry cannot be read: {error}")
 
+has_managed_header = bool(lines) and lines[0].rstrip("\r\n") == managed_header
 seen = set()
 for raw_line in lines:
     line = raw_line.strip()
@@ -159,6 +160,8 @@ for raw_line in lines:
     seen.add(key)
 if not {"KNXOH_INSTALL_DIR", "KNXOH_CONFIG_DIR"}.issubset(seen):
     reject("The paths file is not a recognized registry")
+if not has_managed_header and path != Path("/etc/knx_to_openhab/paths.env"):
+    reject("The paths file is not a trusted paths registry")
 PY
     then
         fail "The paths registry could not be validated: $PATHS_FILE"

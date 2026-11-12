@@ -24,6 +24,8 @@ Address the six currently open Codex findings on PR #69 with regression coverage
 - Purge cleanup must not trust an arbitrary `KNXOH_PATHS_FILE` override. Validate the registry file and its protected path before removing it; if its path is already inside the install/config/data/backup trees purged by this invocation, rely on that tree removal.
 - The custom maintenance-lock parent is expected to be dedicated. Remove only the lock file and use non-recursive `rmdir`; if unrelated contents prevent removal, do not delete the service group.
 - Resolve transactional `current` targets only when they resolve below the install's `releases/` directory and contain the expected setup script.
+- Canonicalize the selected install/release directory before checking that setup resolves beneath it; this preserves relative path spelling such as trailing slashes and symlinked ancestors without weakening target containment.
+- Treat a headerless paths registry as legacy only at `/etc/knx_to_openhab/paths.env`; custom registry paths require the installer-managed header because recognized assignment content alone is not a trust signal.
 - Backup cleanup acquires the same exclusive `data/updater.lock` used by `update.sh`, while retaining its shared maintenance lock. This prevents deletion of an in-progress update's newly published archive.
 
 ## Acceptance criteria

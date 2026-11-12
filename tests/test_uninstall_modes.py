@@ -625,6 +625,28 @@ def test_purge_refuses_managed_header_with_unrecognized_registry_content(tmp_pat
     assert not any(invocation[0] == "rm" for invocation in sudo_invocations(sudo_log))
 
 
+def test_purge_refuses_unmarked_external_file_with_registry_assignments(tmp_path):
+    environment, app, _config, _data, _backups, paths_file, sudo_log = create_fixture(tmp_path)
+    unrelated_file = Path(environment["SAFE_ROOT"]) / "administrator-settings.env"
+    unrelated_file.write_text(
+        paths_file.read_text(encoding="utf-8").replace(
+            "# Managed by installer/setup.sh; do not edit by hand.",
+            "# Locally maintained settings; do not remove.",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    environment["KNXOH_PATHS_FILE"] = str(unrelated_file)
+
+    result = run_uninstaller(environment, ["--purge", "--yes"])
+
+    assert result.returncode == 2
+    assert "not a trusted paths registry" in result.stderr.lower()
+    assert app.is_dir()
+    assert unrelated_file.is_file()
+    assert not any(invocation[0] == "rm" for invocation in sudo_invocations(sudo_log))
+
+
 def test_purge_refuses_custom_lock_parent_with_unmanaged_contents(tmp_path):
     environment, app, _config, _data, _backups, _paths_file, sudo_log = create_fixture(tmp_path)
     lock_parent = Path(environment["KNXOH_MAINTENANCE_LOCK_FILE"]).parent

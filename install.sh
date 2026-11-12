@@ -297,11 +297,15 @@ parse_install_mode() {
 }
 
 resolve_repair_setup_dir() {
-    SETUP_APP_DIR="$INSTALL_DIR"
-    if [[ -L "$INSTALL_DIR/current" ]]; then
-        local canonical_install_dir current_release releases_dir setup_script
-        if ! canonical_install_dir="$(cd "$INSTALL_DIR" && pwd -P)" || \
-            ! current_release="$(readlink -f -- "$canonical_install_dir/current")"; then
+    local canonical_install_dir
+    if ! canonical_install_dir="$(cd -- "$INSTALL_DIR" && pwd -P)"; then
+        log_error "Cannot resolve the installation directory for repair: $INSTALL_DIR"
+        return 2
+    fi
+    SETUP_APP_DIR="$canonical_install_dir"
+    if [[ -L "$canonical_install_dir/current" ]]; then
+        local current_release releases_dir setup_script
+        if ! current_release="$(readlink -f -- "$canonical_install_dir/current")"; then
             log_error "Cannot resolve the active release link for repair."
             return 2
         fi
@@ -326,17 +330,17 @@ resolve_repair_setup_dir() {
             return 2
         fi
         SETUP_APP_DIR="$current_release"
-    elif [[ -e "$INSTALL_DIR/current" ]]; then
+    elif [[ -e "$canonical_install_dir/current" ]]; then
         log_error "The current release path exists but is not a release symlink."
         return 2
-    elif [[ ! -d "$INSTALL_DIR/installer" || -L "$INSTALL_DIR/installer" || \
-        ! -f "$INSTALL_DIR/installer/setup.sh" || -L "$INSTALL_DIR/installer/setup.sh" ]]; then
-        log_error "Cannot repair $INSTALL_DIR: installer/setup.sh is missing or unsafe."
+    elif [[ ! -d "$canonical_install_dir/installer" || -L "$canonical_install_dir/installer" || \
+        ! -f "$canonical_install_dir/installer/setup.sh" || -L "$canonical_install_dir/installer/setup.sh" ]]; then
+        log_error "Cannot repair $canonical_install_dir: installer/setup.sh is missing or unsafe."
         return 2
     else
         local legacy_setup_script
-        if ! legacy_setup_script="$(readlink -f -- "$INSTALL_DIR/installer/setup.sh")" || \
-            [[ "$legacy_setup_script" != "$INSTALL_DIR/"* ]]; then
+        if ! legacy_setup_script="$(readlink -f -- "$canonical_install_dir/installer/setup.sh")" || \
+            [[ "$legacy_setup_script" != "$canonical_install_dir/"* ]]; then
             log_error "The legacy setup script resolves outside the installation directory."
             return 2
         fi
@@ -596,6 +600,10 @@ run_setup_script() {
     log_info "Running setup script..."
 
     SETUP_APP_DIR="${SETUP_APP_DIR:-$INSTALL_DIR}"
+    if ! SETUP_APP_DIR="$(cd -- "$SETUP_APP_DIR" && pwd -P)"; then
+        log_error "Cannot resolve the setup directory: $SETUP_APP_DIR"
+        exit 1
+    fi
     local canonical_setup_script
     if [[ ! -d "$SETUP_APP_DIR/installer" || -L "$SETUP_APP_DIR/installer" || \
         ! -f "$SETUP_APP_DIR/installer/setup.sh" || -L "$SETUP_APP_DIR/installer/setup.sh" ]] || \

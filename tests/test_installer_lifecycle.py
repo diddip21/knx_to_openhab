@@ -42,8 +42,13 @@ def _write_executable(path: Path, content: str) -> None:
     path.chmod(0o755)
 
 
-def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path):
+@pytest.mark.parametrize("install_path_style", ["plain", "trailing-slash", "symlinked-ancestor"])
+def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_path_style):
     install_dir = tmp_path / "install"
+    if install_path_style == "symlinked-ancestor":
+        install_parent_alias = tmp_path / "install-parent-alias"
+        install_parent_alias.symlink_to(tmp_path, target_is_directory=True)
+        install_dir = install_parent_alias / "install"
     config_dir = tmp_path / "config"
     data_dir = tmp_path / "data"
     fake_bin = tmp_path / "bin"
@@ -130,7 +135,9 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path):
     environment.update(
         {
             "ALLOW_ROOT": "1",
-            "KNXOH_INSTALL_DIR": str(install_dir),
+            "KNXOH_INSTALL_DIR": (
+                f"{install_dir}/" if install_path_style == "trailing-slash" else str(install_dir)
+            ),
             "KNXOH_CONFIG_DIR": str(config_dir),
             "KNXOH_DATA_DIR": str(data_dir),
             "SETUP_LOG": str(setup_log),
@@ -196,7 +203,7 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path):
     assert setup_log.read_text(encoding="utf-8").splitlines() == [
         "setup",
         "setup",
-        f"active setup:{active_release}",
+        f"active setup:{active_release.resolve()}",
     ]
     assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 1
     assert len(clone_log.read_text(encoding="utf-8").splitlines()) == 1

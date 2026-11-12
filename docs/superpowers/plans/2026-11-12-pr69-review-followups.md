@@ -22,8 +22,9 @@
 
 - A custom lock parent containing unexpected files must prevent account/group deletion before destructive purge begins.
 - A caller-selected arbitrary file must never become a privileged purge target merely because it is named `KNXOH_PATHS_FILE`.
+- An unmarked legacy paths registry is trusted only at the established default location; a custom registry needs the installer-managed header.
 - Transactional links outside `releases/`, broken links, or missing active setup scripts must fail closed rather than run legacy setup.
-- Legacy installs without `current` must continue to run setup from `INSTALL_DIR`.
+- Legacy installs without `current` must continue to run setup from `INSTALL_DIR`, including trailing-slash paths and symlinked ancestors.
 - External `.git`, `venv`, `.venv`, `__pycache__`, and `.pyc` data must survive a backup; application copies stay excluded.
 - Cleanup encountering an active updater must leave backups untouched and return a retryable failure.
 
@@ -118,7 +119,7 @@
 
 ### Task 7: Verify, review, and update PR dispositions
 
-- [x] Run all six focused test files (`148 passed`), the full core suite (`994 passed, 13 skipped`), and the UI suite (`208 passed, 2 skipped`).
+- [x] Run all six focused test files (`151 passed`), the full core suite (`997 passed, 13 skipped`), and the UI suite (`208 passed, 2 skipped`).
 - [x] Run Black, isort, Flake8, mypy, `bash -n` for changed shell scripts, and `git diff --check` after final code changes.
 - [ ] Commit the fixes, request Codex review on the updated PR head, and inspect every new review finding before proceeding.
 - [ ] Reply with tested dispositions for the six open review threads; resolve only findings actually addressed.

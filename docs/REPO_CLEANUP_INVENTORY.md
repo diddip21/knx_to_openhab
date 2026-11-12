@@ -1,5 +1,7 @@
 # Repository Cleanup Inventory
 
+Historical snapshot for Issue #36 on `main`. For the current `dev` inventory and review decisions, see [AUDIT_dev.md](AUDIT_dev.md). The PR/Issue status statements below describe the original snapshot date and must not be read as current status.
+
 Audit snapshot: `main` at `edf28d4` (`2026-11-03`), after PR #62. This inventory supports Issue #36 and records evidence for conservative cleanup decisions. Runtime behavior, configuration formats, and generated OpenHAB output are unchanged.
 
 ## Removed duplicate data

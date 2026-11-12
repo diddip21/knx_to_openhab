@@ -43,7 +43,7 @@ def _basic_auth_header(username="operator", password="a-long-unique-password"):
 
 def _enable_basic_auth(monkeypatch, tmp_path, password="a-long-unique-password"):
     _enable_test_auth(monkeypatch, tmp_path, password)
-    app_module.cfg["auth"].update(mode="basic", allowed_origins=["https://mcrelay.greiner-wue.de"])
+    app_module.cfg["auth"].update(mode="basic", allowed_origins=["https://relay.example.com"])
 
 
 def test_password_hash_is_argon2id_and_verifies_only_matching_password():
@@ -103,7 +103,7 @@ def test_login_creates_protected_session_and_logout_revokes_it(monkeypatch, tmp_
 
 def test_login_origin_fallback_still_checks_password(monkeypatch, tmp_path):
     _enable_test_auth(monkeypatch, tmp_path)
-    app_module.cfg["login_csrf_allowed_origins"] = ["https://mcrelay.greiner-wue.de"]
+    app_module.cfg["login_csrf_allowed_origins"] = ["https://relay.example.com"]
     client = app_module.app.test_client()
     csrf_token = _csrf_cookie(client)
     client.delete_cookie("knx_login_csrf")
@@ -111,7 +111,7 @@ def test_login_origin_fallback_still_checks_password(monkeypatch, tmp_path):
     response = client.post(
         "/login",
         data={"csrf_token": csrf_token, "username": "operator", "password": "wrong"},
-        headers={"Origin": "https://mcrelay.greiner-wue.de"},
+        headers={"Origin": "https://relay.example.com"},
     )
 
     assert response.status_code == 401
@@ -169,7 +169,7 @@ def test_login_rejects_missing_or_invalid_csrf_token(monkeypatch, tmp_path):
 
 def test_login_allows_missing_csrf_cookie_for_configured_origin(monkeypatch, tmp_path):
     _enable_test_auth(monkeypatch, tmp_path)
-    app_module.cfg["login_csrf_allowed_origins"] = ["https://mcrelay.greiner-wue.de"]
+    app_module.cfg["login_csrf_allowed_origins"] = ["https://relay.example.com"]
     client = app_module.app.test_client()
     csrf_token = _csrf_cookie(client)
     client.delete_cookie("knx_login_csrf")
@@ -181,7 +181,7 @@ def test_login_allows_missing_csrf_cookie_for_configured_origin(monkeypatch, tmp
             "username": "operator",
             "password": "a-long-unique-password",
         },
-        headers={"Origin": "https://mcrelay.greiner-wue.de"},
+        headers={"Origin": "https://relay.example.com"},
     )
 
     assert response.status_code == 302
@@ -190,7 +190,7 @@ def test_login_allows_missing_csrf_cookie_for_configured_origin(monkeypatch, tmp
 
 def test_login_uses_referer_origin_only_when_origin_is_absent(monkeypatch, tmp_path):
     _enable_test_auth(monkeypatch, tmp_path)
-    app_module.cfg["login_csrf_allowed_origins"] = ["https://mcrelay.greiner-wue.de"]
+    app_module.cfg["login_csrf_allowed_origins"] = ["https://relay.example.com"]
     client = app_module.app.test_client()
     csrf_token = _csrf_cookie(client)
     client.delete_cookie("knx_login_csrf")
@@ -202,7 +202,7 @@ def test_login_uses_referer_origin_only_when_origin_is_absent(monkeypatch, tmp_p
             "username": "operator",
             "password": "a-long-unique-password",
         },
-        headers={"Referer": "https://mcrelay.greiner-wue.de/login?next=%2F"},
+        headers={"Referer": "https://relay.example.com/login?next=%2F"},
     )
 
     assert response.status_code == 302
@@ -212,20 +212,20 @@ def test_login_uses_referer_origin_only_when_origin_is_absent(monkeypatch, tmp_p
     "headers",
     [
         {"Origin": "https://evil.example"},
-        {"Origin": "https://mcrelay.greiner-wue.de.evil.example"},
+        {"Origin": "https://relay.example.com.evil.example"},
         {"Origin": "null"},
         {"Origin": "not-an-origin"},
         {},
         {
             "Origin": "https://evil.example",
-            "Referer": "https://mcrelay.greiner-wue.de/login",
+            "Referer": "https://relay.example.com/login",
         },
     ],
     ids=["unlisted", "lookalike-host", "null", "malformed", "no-origin", "bad-origin-wins"],
 )
 def test_login_rejects_missing_cookie_for_untrusted_origin(monkeypatch, tmp_path, headers):
     _enable_test_auth(monkeypatch, tmp_path)
-    app_module.cfg["login_csrf_allowed_origins"] = ["https://mcrelay.greiner-wue.de"]
+    app_module.cfg["login_csrf_allowed_origins"] = ["https://relay.example.com"]
     password_verifier = Mock(return_value=True)
     monkeypatch.setattr(app_module, "verify_password", password_verifier)
     client = app_module.app.test_client()
@@ -249,7 +249,7 @@ def test_login_rejects_missing_cookie_for_untrusted_origin(monkeypatch, tmp_path
 
 def test_login_rejects_mismatched_cookie_even_for_configured_origin(monkeypatch, tmp_path):
     _enable_test_auth(monkeypatch, tmp_path)
-    app_module.cfg["login_csrf_allowed_origins"] = ["https://mcrelay.greiner-wue.de"]
+    app_module.cfg["login_csrf_allowed_origins"] = ["https://relay.example.com"]
     client = app_module.app.test_client()
     csrf_token = _csrf_cookie(client)
     client.set_cookie("knx_login_csrf", "different-token")
@@ -257,7 +257,7 @@ def test_login_rejects_mismatched_cookie_even_for_configured_origin(monkeypatch,
     response = client.post(
         "/login",
         data={"csrf_token": csrf_token, "username": "operator", "password": "wrong"},
-        headers={"Origin": "https://mcrelay.greiner-wue.de"},
+        headers={"Origin": "https://relay.example.com"},
     )
 
     assert response.status_code == 400
@@ -267,7 +267,7 @@ def test_login_rejects_mismatched_cookie_even_for_configured_origin(monkeypatch,
 @pytest.mark.parametrize("token_kind", ["tampered", "expired"])
 def test_login_rejects_invalid_signed_token_without_cookie(monkeypatch, tmp_path, token_kind):
     _enable_test_auth(monkeypatch, tmp_path)
-    app_module.cfg["login_csrf_allowed_origins"] = ["https://mcrelay.greiner-wue.de"]
+    app_module.cfg["login_csrf_allowed_origins"] = ["https://relay.example.com"]
     if token_kind == "tampered":
         csrf_token = "not-a-valid-signed-token"
     else:
@@ -280,7 +280,7 @@ def test_login_rejects_invalid_signed_token_without_cookie(monkeypatch, tmp_path
     response = client.post(
         "/login",
         data={"csrf_token": csrf_token, "username": "operator", "password": "wrong"},
-        headers={"Origin": "https://mcrelay.greiner-wue.de"},
+        headers={"Origin": "https://relay.example.com"},
     )
 
     assert response.status_code == 400
@@ -289,9 +289,7 @@ def test_login_rejects_invalid_signed_token_without_cookie(monkeypatch, tmp_path
 
 def test_malformed_configured_login_origin_does_not_authorize_fallback(monkeypatch, tmp_path):
     _enable_test_auth(monkeypatch, tmp_path)
-    app_module.cfg["login_csrf_allowed_origins"] = [
-        "https://mcrelay.greiner-wue.de/unexpected-path"
-    ]
+    app_module.cfg["login_csrf_allowed_origins"] = ["https://relay.example.com/unexpected-path"]
     client = app_module.app.test_client()
     csrf_token = _csrf_cookie(client)
     client.delete_cookie("knx_login_csrf")
@@ -299,7 +297,7 @@ def test_malformed_configured_login_origin_does_not_authorize_fallback(monkeypat
     response = client.post(
         "/login",
         data={"csrf_token": csrf_token, "username": "operator", "password": "wrong"},
-        headers={"Origin": "https://mcrelay.greiner-wue.de"},
+        headers={"Origin": "https://relay.example.com"},
     )
 
     assert response.status_code == 400
@@ -315,7 +313,7 @@ def test_login_csrf_allowed_origins_default_to_empty(tmp_path, monkeypatch):
     assert load_config(tmp_path)["login_csrf_allowed_origins"] == []
 
 
-@pytest.mark.parametrize("configured_origins", ["https://mcrelay.greiner-wue.de", [1]])
+@pytest.mark.parametrize("configured_origins", ["https://relay.example.com", [1]])
 def test_load_config_rejects_invalid_login_csrf_origin_shape(
     tmp_path, monkeypatch, configured_origins
 ):
@@ -521,11 +519,11 @@ def test_basic_auth_allows_write_with_exact_origin_or_referer(monkeypatch, tmp_p
     auth = _basic_auth_header()
 
     with_origin = client.post(
-        "/api/logout", headers={**auth, "Origin": "https://mcrelay.greiner-wue.de"}
+        "/api/logout", headers={**auth, "Origin": "https://relay.example.com"}
     )
     with_referer = client.post(
         "/api/logout",
-        headers={**auth, "Referer": "https://mcrelay.greiner-wue.de/settings"},
+        headers={**auth, "Referer": "https://relay.example.com/settings"},
     )
 
     assert with_origin.status_code == 200
@@ -546,7 +544,7 @@ def test_basic_auth_allows_write_with_exact_origin_or_referer(monkeypatch, tmp_p
         {"Origin": "not-an-origin"},
         {
             "Origin": "https://evil.example",
-            "Referer": "https://mcrelay.greiner-wue.de/settings",
+            "Referer": "https://relay.example.com/settings",
         },
     ],
     ids=["absent", "unlisted", "null", "malformed", "bad-origin-wins"],
@@ -564,11 +562,11 @@ def test_basic_auth_rejects_unsafe_request_from_untrusted_origin(monkeypatch, tm
 
 def test_basic_auth_rejects_http_allowlisted_origin(monkeypatch, tmp_path):
     _enable_basic_auth(monkeypatch, tmp_path)
-    app_module.cfg["auth"]["allowed_origins"] = ["http://mcrelay.greiner-wue.de"]
+    app_module.cfg["auth"]["allowed_origins"] = ["http://relay.example.com"]
 
     response = app_module.app.test_client().post(
         "/api/logout",
-        headers={**_basic_auth_header(), "Origin": "http://mcrelay.greiner-wue.de"},
+        headers={**_basic_auth_header(), "Origin": "http://relay.example.com"},
     )
 
     assert response.status_code == 403

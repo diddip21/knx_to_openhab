@@ -10,9 +10,8 @@ do not deploy or modify a real OpenHAB installation.
 From the repository root:
 
 ```bash
-pip install -r requirements.txt
 pip install -r requirements-dev.txt
-playwright install chromium
+python -m playwright install chromium
 
 # Full browser suite
 pytest tests/ui/ -v -m ui
@@ -28,11 +27,11 @@ pytest tests/ui/ -v -m ui --headed
 pytest tests/ui/ -v -m "ui and slow"
 ```
 
-The default server URL is `http://127.0.0.1:8085`; set `UI_BASE_URL` to use a
-different running instance. Set `UI_AUTH_USER` and `UI_AUTH_PASSWORD` when the
-instance requires HTTP Basic authentication. Authentication/session behavior
-also has isolated test-client coverage, and `auth_preview_server` starts a
-temporary authenticated instance for screenshot tests.
+The main fixture starts its own server at `http://127.0.0.1:8085` by default;
+set `UI_BASE_URL` to use a different local port. Keep the selected port free.
+Set `UI_AUTH_USER` and `UI_AUTH_PASSWORD` when testing HTTP Basic authentication.
+Authentication/session behavior also has isolated test-client coverage, and
+`auth_preview_server` starts a temporary authenticated instance for screenshot tests.
 
 ## Coverage map
 
@@ -85,7 +84,7 @@ test UI, not screenshots of a user's live OpenHAB instance.
 
 - Install Chromium with `playwright install chromium` (or `playwright install
   --with-deps` on the Ubuntu CI runner).
-- The default server uses port 8085; stop any process already listening there or
+- The main fixture uses port 8085; stop any process already listening there or
   choose another `UI_BASE_URL`.
 - Run a failing test with `--headed` and inspect its pytest/Playwright output.
 - On failure, pytest retains screenshots, video and traces according to

@@ -7,13 +7,18 @@ Thanks for your interest in contributing! This guide covers the basics.
 ```bash
 git clone https://github.com/diddip21/knx_to_openhab.git
 cd knx_to_openhab
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+chmod +x scripts/dev-setup.sh scripts/dev-run.sh
+./scripts/dev-setup.sh
+./scripts/dev-run.sh
+```
 
-# Start dev server
-flask --app web_ui.backend.app:app run --debug
+On Windows PowerShell, use the matching scripts:
+
+```powershell
+git clone https://github.com/diddip21/knx_to_openhab.git
+cd knx_to_openhab
+.\scripts\dev-setup.ps1
+.\scripts\dev-run.ps1
 ```
 
 See [Developer Guide](docs/DEVELOPER_GUIDE.md) for full details.
@@ -71,7 +76,7 @@ Before opening a PR:
 - [ ] Code passes `black --check .`
 - [ ] Code passes `isort --check-only .`
 - [ ] Code passes `flake8 .`
-- [ ] All tests pass: `pytest -q`
+- [ ] Applicable core tests pass: `pytest -q --cov=. --cov-report=xml -m "not ui" --ignore=tests/ui` (Linux)
 - [ ] New tests added (if applicable)
 - [ ] Golden files regenerated (if output logic changed): `python scripts/regenerate_golden.py`
 - [ ] Documentation updated (if needed)
@@ -80,20 +85,19 @@ Before opening a PR:
 ## Running Tests
 
 ```bash
-# Quick (core tests only)
-pytest -q
+# Core tests (CI command, Linux)
+pytest -q --cov=. --cov-report=xml -m "not ui" --ignore=tests/ui
 
 # With coverage
 pytest --cov=. --cov-report=html
 
 # Specific group
 pytest tests/integration -v
-pytest -m unit
+pytest -q --ignore=tests/ui --ignore=tests/integration
 
-# UI tests (needs Playwright)
-pip install pytest-playwright
+# UI tests (fixtures start an isolated server)
 python -m playwright install chromium
-pytest tests/ui -v -o addopts=
+pytest tests/ui -v -m ui
 ```
 
 See [tests/README.md](tests/README.md) for details.

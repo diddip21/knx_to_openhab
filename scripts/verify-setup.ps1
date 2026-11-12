@@ -91,7 +91,7 @@ Write-Host "4. Checking project structure..." -ForegroundColor Cyan
 
 $requiredFiles = @(
     "README.md",
-    "DEVELOPMENT.md",
+    "docs\DEVELOPER_GUIDE.md",
     "requirements.txt",
     "config.json",
     "knxproject_to_openhab.py",

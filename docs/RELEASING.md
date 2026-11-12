@@ -18,6 +18,7 @@ prereleases. Build metadata after `+` does not make a version a prerelease.
    instructions users need for that version.
 3. Merge the version and changelog update to `main`.
 4. Push an annotated tag named `v<version>` at that commit.
+5. After the first stable release is published, remove temporary no-release notes. Find their blocks with `rg -n 'no-release-note' README.md docs/PRODUCTION_GUIDE.md installer/README.md`, then remove the opening and closing markers and their enclosed text.
 
 The workflow checks that the tag version matches `VERSION`. It builds a
 reproducible archive from tracked source files and publishes the archive and

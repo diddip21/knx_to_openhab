@@ -54,8 +54,10 @@ def run_setup_unit_manager(
     destination.parent.mkdir()
     if runtime_mask:
         destination.write_text("[Service]\nExecStart=/old/runtime-masked-unit\n", encoding="utf-8")
-    else:
+    elif load_state == "masked":
         destination.symlink_to("/dev/null")
+    else:
+        destination.write_text("[Service]\nExecStart=/old/unit\n", encoding="utf-8")
     environment = os.environ.copy()
     environment.update(
         {

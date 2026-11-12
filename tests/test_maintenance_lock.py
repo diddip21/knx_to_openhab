@@ -327,7 +327,7 @@ def test_lock_validation_refuses_common_shared_system_directories(lock_file):
     result = run_lock_script(lock_file, "validate_maintenance_lock_location root")
 
     assert result.returncode == 2
-    assert "dedicated" in result.stderr
+    assert "dedicated" in result.stderr or "untrusted writable ancestor" in result.stderr
 
 
 def test_lock_validation_refuses_existing_non_dedicated_parent(tmp_path):

@@ -51,6 +51,7 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path):
     setup_log = tmp_path / "setup.log"
     curl_log = tmp_path / "curl.log"
     clone_log = tmp_path / "clone.log"
+    privileged_log = tmp_path / "privileged.log"
 
     _write_executable(
         fake_bin / "curl",
@@ -88,7 +89,7 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path):
         "#!/bin/bash\n"
         'if [[ "$1" == "-n" && "$2" == "true" ]]; then exit 0; fi\n'
         'if [[ "$1" == "-n" ]]; then shift; fi\n'
-        'if [[ "$1" == "apt-get" ]]; then exit 0; fi\n'
+        'if [[ "$1" == "apt-get" ]]; then printf "apt-get\\n" >> "$PRIVILEGED_LOG"; exit 0; fi\n'
         'exec "$@"\n',
     )
     _write_executable(
@@ -98,6 +99,12 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path):
         'destination="${@: -1}"\n'
         'mkdir -p "$destination"\n'
         'cp -a "$source"/. "$destination"/\n',
+    )
+    _write_executable(
+        fake_bin / "chmod",
+        "#!/bin/bash\n"
+        'if [[ "${FAKE_CHMOD_DENY:-0}" == 1 ]]; then exit 1; fi\n'
+        'exec /bin/chmod "$@"\n',
     )
     _write_executable(
         fake_bin / "dpkg",
@@ -127,6 +134,7 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path):
             "KNXOH_CONFIG_DIR": str(config_dir),
             "KNXOH_DATA_DIR": str(data_dir),
             "SETUP_LOG": str(setup_log),
+            "PRIVILEGED_LOG": str(privileged_log),
             "CURL_LOG": str(curl_log),
             "CLONE_LOG": str(clone_log),
             "PATH": str(fake_bin) + os.pathsep + environment["PATH"],
@@ -166,3 +174,70 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path):
     assert user_data.read_text(encoding="utf-8") == '{"created": true, "custom": "keep"}'
     assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 1
     assert len(clone_log.read_text(encoding="utf-8").splitlines()) == 1
+
+    active_release = install_dir / "releases" / "v2.0.0"
+    (active_release / "installer").mkdir(parents=True)
+    (active_release / "installer" / "setup.sh").write_text(
+        '#!/bin/bash\nprintf \'active setup:%s\\n\' "$PWD" >> "$SETUP_LOG"\n',
+        encoding="utf-8",
+    )
+    (active_release / "installer" / "setup.sh").chmod(0o755)
+    (active_release / "installer" / "backup_cleanup.sh").write_text(
+        "#!/bin/bash\nexit 0\n", encoding="utf-8"
+    )
+    (install_dir / "current").symlink_to(active_release)
+    environment["FAKE_CHMOD_DENY"] = "1"
+
+    transactional_repair = run_installer("--repair")
+
+    assert transactional_repair.returncode == 0, (
+        transactional_repair.stdout + transactional_repair.stderr
+    )
+    assert setup_log.read_text(encoding="utf-8").splitlines() == [
+        "setup",
+        "setup",
+        f"active setup:{active_release}",
+    ]
+    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 1
+    assert len(clone_log.read_text(encoding="utf-8").splitlines()) == 1
+    environment.pop("FAKE_CHMOD_DENY")
+
+    outside_release = tmp_path / "outside-release"
+    (outside_release / "installer").mkdir(parents=True)
+    (outside_release / "installer" / "setup.sh").write_text(
+        f"#!/bin/bash\n: > {tmp_path / 'external-setup-ran'}\n",
+        encoding="utf-8",
+    )
+    (install_dir / "current").unlink()
+    (install_dir / "current").symlink_to(outside_release)
+    privileged_log.write_text("", encoding="utf-8")
+    setup_log.write_text("", encoding="utf-8")
+
+    invalid_repair = run_installer("--repair")
+
+    assert invalid_repair.returncode == 2
+    assert (
+        "active release link points outside"
+        in (invalid_repair.stdout + invalid_repair.stderr).lower()
+    )
+    assert setup_log.read_text(encoding="utf-8") == ""
+    assert privileged_log.read_text(encoding="utf-8") == ""
+
+    (install_dir / "current").unlink()
+    (install_dir / "current").symlink_to(active_release)
+    shutil.rmtree(active_release / "installer")
+    (active_release / "installer").symlink_to(
+        outside_release / "installer", target_is_directory=True
+    )
+    external_setup_marker = tmp_path / "external-setup-ran"
+    external_setup_marker.unlink(missing_ok=True)
+
+    symlinked_installer_repair = run_installer("--repair")
+
+    assert symlinked_installer_repair.returncode == 2
+    assert (
+        "safe installer/setup.sh"
+        in (symlinked_installer_repair.stdout + symlinked_installer_repair.stderr).lower()
+    )
+    assert setup_log.read_text(encoding="utf-8") == ""
+    assert not external_setup_marker.exists()

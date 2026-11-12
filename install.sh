@@ -52,6 +52,7 @@ PY
 }
 INSTALL_DIR="${KNXOH_INSTALL_DIR:-$(read_saved_install_dir)}"
 CONFIG_DIR="${KNXOH_CONFIG_DIR:-$(read_saved_config_dir)}"
+SETUP_APP_DIR=""
 REQUESTED_VERSION=""
 RELEASE_VERSION=""
 RELEASE_TAG=""
@@ -295,6 +296,53 @@ parse_install_mode() {
     fi
 }
 
+resolve_repair_setup_dir() {
+    SETUP_APP_DIR="$INSTALL_DIR"
+    if [[ -L "$INSTALL_DIR/current" ]]; then
+        local canonical_install_dir current_release releases_dir setup_script
+        if ! canonical_install_dir="$(cd "$INSTALL_DIR" && pwd -P)" || \
+            ! current_release="$(readlink -f -- "$canonical_install_dir/current")"; then
+            log_error "Cannot resolve the active release link for repair."
+            return 2
+        fi
+        releases_dir="$canonical_install_dir/releases"
+        case "$current_release" in
+            "$releases_dir"/*) ;;
+            *)
+                log_error "The active release link points outside $releases_dir."
+                return 2
+                ;;
+        esac
+        if [[ ! -d "$current_release" || \
+            ! -d "$current_release/installer" || -L "$current_release/installer" || \
+            ! -f "$current_release/installer/setup.sh" || \
+            -L "$current_release/installer/setup.sh" ]]; then
+            log_error "The active release does not contain a safe installer/setup.sh."
+            return 2
+        fi
+        if ! setup_script="$(readlink -f -- "$current_release/installer/setup.sh")" || \
+            [[ "$setup_script" != "$current_release/"* ]]; then
+            log_error "The active release setup script resolves outside the release directory."
+            return 2
+        fi
+        SETUP_APP_DIR="$current_release"
+    elif [[ -e "$INSTALL_DIR/current" ]]; then
+        log_error "The current release path exists but is not a release symlink."
+        return 2
+    elif [[ ! -d "$INSTALL_DIR/installer" || -L "$INSTALL_DIR/installer" || \
+        ! -f "$INSTALL_DIR/installer/setup.sh" || -L "$INSTALL_DIR/installer/setup.sh" ]]; then
+        log_error "Cannot repair $INSTALL_DIR: installer/setup.sh is missing or unsafe."
+        return 2
+    else
+        local legacy_setup_script
+        if ! legacy_setup_script="$(readlink -f -- "$INSTALL_DIR/installer/setup.sh")" || \
+            [[ "$legacy_setup_script" != "$INSTALL_DIR/"* ]]; then
+            log_error "The legacy setup script resolves outside the installation directory."
+            return 2
+        fi
+    fi
+}
+
 select_install_mode() {
     if [[ "$INSTALL_MODE" == "cancel" ]]; then
         log_info "Installation cancelled; no system or installation changes were made."
@@ -361,10 +409,7 @@ select_install_mode() {
                 fi
                 ;;
             repair)
-                if [[ ! -f "$INSTALL_DIR/installer/setup.sh" ]]; then
-                    log_error "Cannot repair $INSTALL_DIR: installer/setup.sh is missing."
-                    exit 2
-                fi
+                resolve_repair_setup_dir || exit 2
                 ;;
             *)
                 log_error "Invalid installer mode: $INSTALL_MODE"
@@ -549,16 +594,18 @@ clone_repository() {
 
 run_setup_script() {
     log_info "Running setup script..."
-    
-    cd "$INSTALL_DIR"
-    
-    if [[ ! -f "installer/setup.sh" ]]; then
-        log_error "Setup script not found at installer/setup.sh"
+
+    SETUP_APP_DIR="${SETUP_APP_DIR:-$INSTALL_DIR}"
+    local canonical_setup_script
+    if [[ ! -d "$SETUP_APP_DIR/installer" || -L "$SETUP_APP_DIR/installer" || \
+        ! -f "$SETUP_APP_DIR/installer/setup.sh" || -L "$SETUP_APP_DIR/installer/setup.sh" ]] || \
+        ! canonical_setup_script="$(readlink -f -- "$SETUP_APP_DIR/installer/setup.sh")" || \
+        [[ "$canonical_setup_script" != "$SETUP_APP_DIR/"* ]]; then
+        log_error "Setup script not found or unsafe at $SETUP_APP_DIR/installer/setup.sh"
         exit 1
     fi
-    
-    chmod +x installer/setup.sh installer/backup_cleanup.sh
-    
+
+    cd "$SETUP_APP_DIR"
     bash installer/setup.sh || {
         log_error "Setup script failed"
         exit 1
@@ -571,7 +618,7 @@ display_completion() {
     local ip_addresses=$(hostname -I)
     local ip_address="${ip_addresses%% *}"
     local ui_settings
-    ui_settings=$(sudo python3 "$INSTALL_DIR/installer/web_ui_endpoint.py" \
+    ui_settings=$(sudo python3 "${SETUP_APP_DIR:-$INSTALL_DIR}/installer/web_ui_endpoint.py" \
         --config "$CONFIG_DIR/config.json" --lan-ip "$ip_addresses")
     local -a ui_values=()
     mapfile -t ui_values <<<"$ui_settings"

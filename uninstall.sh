@@ -76,6 +76,96 @@ decode_saved_value() {
 }
 
 declare -A SAVED_PATHS=()
+PATHS_FILE_VALIDATED=0
+if [[ -e "$PATHS_FILE" || -L "$PATHS_FILE" ]]; then
+    if ! python3 - "$PATHS_FILE" <<'PY'
+import shlex
+import stat
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+managed_header = "# Managed by installer/setup.sh; do not edit by hand."
+legacy_keys = {
+    "KNXOH_INSTALL_DIR",
+    "KNXOH_CONFIG_DIR",
+    "KNXOH_DATA_DIR",
+    "KNXOH_BACKUP_DIR",
+    "KNXOH_MAINTENANCE_LOCK_FILE",
+}
+
+
+def reject(message):
+    print(f"ERROR: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+raw_path = str(path)
+if (
+    not path.is_absolute()
+    or path.parent == Path("/")
+    or any(part in {".", ".."} for part in raw_path.split("/"))
+    or any(ord(character) < 32 or ord(character) == 127 for character in raw_path)
+):
+    reject("The paths registry must be a dedicated absolute file")
+
+protected_parent = False
+for parent in path.parents:
+    try:
+        metadata = parent.lstat()
+    except FileNotFoundError:
+        continue
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        reject("The paths registry has a symlinked or non-directory parent")
+    if metadata.st_uid != 0:
+        reject(f"The paths registry has an untrusted writable ancestor: {parent}")
+    mode = stat.S_IMODE(metadata.st_mode)
+    writable = mode & (stat.S_IWGRP | stat.S_IWOTH)
+    sticky = mode & stat.S_ISVTX
+    if writable and not (sticky and protected_parent):
+        reject(f"The paths registry has an untrusted writable ancestor: {parent}")
+    if not writable:
+        protected_parent = True
+
+try:
+    metadata = path.lstat()
+except FileNotFoundError:
+    reject("The paths registry disappeared during validation")
+if not stat.S_ISREG(metadata.st_mode):
+    reject("The paths registry is not a regular file")
+if metadata.st_uid != 0 or metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+    reject("The paths registry is an untrusted registry file")
+
+try:
+    with path.open(encoding="utf-8") as registry:
+        lines = registry.readlines()
+except (OSError, UnicodeError) as error:
+    reject(f"The paths registry cannot be read: {error}")
+
+seen = set()
+for raw_line in lines:
+    line = raw_line.strip()
+    if not line or line.startswith("#"):
+        continue
+    key, separator, value = line.partition("=")
+    if not separator or key not in legacy_keys or key in seen:
+        reject("The paths file is not a recognized registry")
+    try:
+        parsed = shlex.split(value, posix=True)
+    except ValueError as error:
+        reject(f"The paths file is not a recognized registry: {error}")
+    if len(parsed) != 1 or not Path(parsed[0]).is_absolute():
+        reject("The paths file is not a recognized registry")
+    seen.add(key)
+if not {"KNXOH_INSTALL_DIR", "KNXOH_CONFIG_DIR"}.issubset(seen):
+    reject("The paths file is not a recognized registry")
+PY
+    then
+        fail "The paths registry could not be validated: $PATHS_FILE"
+    fi
+    PATHS_FILE_VALIDATED=1
+fi
+
 if [[ -e "$PATHS_FILE" || -L "$PATHS_FILE" ]]; then
     [[ -f "$PATHS_FILE" && ! -L "$PATHS_FILE" ]] || fail "Path registry is not a regular file: $PATHS_FILE"
     while IFS= read -r line || [[ -n "$line" ]]; do
@@ -526,6 +616,39 @@ if (( PURGE )) && [[ "$KNXOH_MAINTENANCE_LOCK_FILE" == "$DEFAULT_MAINTENANCE_LOC
         fail "Could not determine whether the default maintenance lock parent is a mount point: $DEFAULT_LOCK_PARENT"
 fi
 
+validate_custom_lock_purge_target() {
+    local lock_parent lock_name inspection_status
+    if (( ! PURGE )) || [[ "$KNXOH_MAINTENANCE_LOCK_FILE" == "$DEFAULT_MAINTENANCE_LOCK_FILE" ]]; then
+        return 0
+    fi
+
+    lock_parent="$(dirname -- "$KNXOH_MAINTENANCE_LOCK_FILE")"
+    lock_name="$(basename -- "$KNXOH_MAINTENANCE_LOCK_FILE")"
+    if sudo python3 - "$lock_parent" "$lock_name" <<'PY'
+import os
+import sys
+
+parent, expected_name = sys.argv[1:]
+try:
+    names = os.listdir(parent)
+except OSError as error:
+    print(f"Could not inspect custom maintenance lock directory: {error}", file=sys.stderr)
+    raise SystemExit(2)
+if any(name != expected_name for name in names):
+    raise SystemExit(1)
+PY
+    then
+        return 0
+    else
+        inspection_status=$?
+    fi
+    if (( inspection_status == 1 )); then
+        fail "Custom maintenance lock directory contains unmanaged files: $lock_parent"
+    fi
+    fail "Could not safely inspect custom maintenance lock directory: $lock_parent"
+}
+validate_custom_lock_purge_target
+
 for unit in "${UNITS[@]}"; do
     if sudo systemctl is-enabled --quiet "$unit"; then
         sudo systemctl disable "$unit"
@@ -550,7 +673,26 @@ sudo systemctl daemon-reload
 sudo rm --one-file-system -rf -- "$INSTALL_DIR"
 
 if ((PURGE)); then
+    if [[ "$KNXOH_MAINTENANCE_LOCK_FILE" != "$DEFAULT_MAINTENANCE_LOCK_FILE" ]]; then
+        sudo rm -f -- "$KNXOH_MAINTENANCE_LOCK_FILE"
+        sudo rmdir -- "$(dirname -- "$KNXOH_MAINTENANCE_LOCK_FILE")" || \
+            fail "Could not remove the empty custom maintenance lock directory."
+    fi
     sudo rm --one-file-system -rf -- "$CONFIG_DIR" "$DATA_DIR" "$BACKUP_DIR"
+    if (( PATHS_FILE_VALIDATED )) && [[ -e "$PATHS_FILE" ]]; then
+        PATHS_FILE_CANONICAL="$(realpath -m -- "$PATHS_FILE")" || \
+            fail "Could not normalize the validated paths registry."
+        registry_is_covered=0
+        for removed_root in "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR" "$BACKUP_DIR"; do
+            if path_contains "$removed_root" "$PATHS_FILE_CANONICAL"; then
+                registry_is_covered=1
+                break
+            fi
+        done
+        if (( ! registry_is_covered )); then
+            sudo rm -f -- "$PATHS_FILE_CANONICAL"
+        fi
+    fi
     if [[ "$KNXOH_MAINTENANCE_LOCK_FILE" == "$DEFAULT_MAINTENANCE_LOCK_FILE" ]]; then
         sudo rm --one-file-system -rf -- "$(dirname -- "$DEFAULT_MAINTENANCE_LOCK_FILE")"
     fi

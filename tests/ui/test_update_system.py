@@ -270,6 +270,36 @@ class TestUpdateSystem:
         expect(page.locator("#updateLogContent")).to_contain_text("updater is already running")
         expect(page.locator("#updateSuccessDialog[open]")).to_have_count(0)
 
+    def test_password_recovery_instruction_is_visible_in_update_error(
+        self, page: Page, base_url, flask_server
+    ):
+        recovery_error = (
+            "A migrated Web UI password hash is required before updating.\n"
+            "Run the following command from an interactive SSH terminal:\n"
+            "sudo bash /opt/knx_to_openhab/releases/v2.0.0/installer/setup.sh\n"
+            "(for example, ssh -t). Setup will ask for a Web UI password; then retry the update."
+        )
+        _setup_version_routes(
+            page,
+            update_available=True,
+            update_response={"error": recovery_error},
+            update_status=409,
+        )
+        page.goto(base_url)
+
+        page.locator("#versionBadge").click()
+        expect(page.locator("#updateDialog[open]")).to_be_visible(timeout=10000)
+        page.locator("#dialogUpdateBtn").click()
+
+        expect(page.locator("#updateLogContent")).to_contain_text(
+            "/opt/knx_to_openhab/releases/v2.0.0/installer/setup.sh", timeout=10000
+        )
+        expect(page.locator("#updateSuccessDialog[open]")).to_have_count(0)
+        page.screenshot(
+            path="docs/screenshots/pr69-active-release-credential-recovery.png",
+            full_page=True,
+        )
+
     def test_success_from_a_different_request_is_ignored(self, page: Page, base_url, flask_server):
         current_request_id = "b" * 32
         other_request_id = "a" * 32

@@ -2,11 +2,13 @@ import hashlib
 import json
 import logging
 import os
+import shlex
 import subprocess
 import sys
 import tarfile
 import time
 import uuid
+from pathlib import Path
 from threading import Lock
 from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
@@ -62,6 +64,47 @@ from .upload_security import (
     get_zip_validation_options,
     validate_upload_from_path,
 )
+
+
+def _setup_recovery_script(project_root: str, module_file: str | Path) -> Path | None:
+    stable_root = Path(project_root).resolve()
+    try:
+        module_root = Path(module_file).resolve(strict=True).parents[2]
+    except (OSError, RuntimeError, IndexError):
+        return None
+
+    current_link = stable_root / "current"
+    if current_link.is_symlink():
+        releases_root = stable_root / "releases"
+        if releases_root.is_symlink() or not releases_root.is_dir():
+            return None
+        try:
+            releases_root = releases_root.resolve(strict=True)
+            active_root = current_link.resolve(strict=True)
+            active_root.relative_to(releases_root)
+        except (OSError, RuntimeError, ValueError):
+            return None
+        if active_root == releases_root or not active_root.is_dir() or module_root != active_root:
+            return None
+    elif current_link.exists():
+        return None
+    elif module_root == stable_root:
+        active_root = stable_root
+    else:
+        return None
+
+    installer_dir = active_root / "installer"
+    active_setup = installer_dir / "setup.sh"
+    if installer_dir.is_symlink() or not installer_dir.is_dir():
+        return None
+    if active_setup.is_symlink() or not active_setup.is_file():
+        return None
+    try:
+        active_setup.resolve(strict=True).relative_to(active_root)
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return active_setup
+
 
 logger = logging.getLogger(__name__)
 
@@ -866,13 +909,24 @@ if FLASK_AVAILABLE:
         """Trigger the self-update process."""
         acfg = cfg.get("auth", {})
         if acfg.get("enabled") and not acfg.get("password_hash"):
+            setup_script = _setup_recovery_script(project_root, __file__)
+            if setup_script is None:
+                recovery_instruction = (
+                    "No safe setup script is available for this installation.\n"
+                    "Restore or reinstall a verified release before retrying."
+                )
+            else:
+                recovery_instruction = (
+                    "Run the following command from an interactive SSH terminal:\n"
+                    f"sudo bash {shlex.quote(str(setup_script))}\n"
+                    "(for example, ssh -t). Setup will ask for a Web UI password; then retry the update."
+                )
             return (
                 jsonify(
                     {
                         "error": (
-                            "A migrated Web UI password hash is required before updating. "
-                            f"Run 'sudo bash {project_root}/installer/setup.sh' from an interactive SSH terminal "
-                            "(for example, ssh -t). Setup will ask for a Web UI password; then retry the update."
+                            "A migrated Web UI password hash is required before updating.\n"
+                            f"{recovery_instruction}"
                         )
                     }
                 ),

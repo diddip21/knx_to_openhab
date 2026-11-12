@@ -2,6 +2,7 @@
 
 import fcntl
 import os
+import shutil
 import subprocess
 import threading
 from pathlib import Path
@@ -719,6 +720,71 @@ def test_backup_cleanup_launcher_fails_closed_while_setup_holds_exclusive_lock(t
     assert result.returncode != 0
     assert "setup or uninstall is in progress" in (result.stdout + result.stderr).lower()
     assert not marker.exists()
+
+
+def test_backup_cleanup_launcher_waits_for_updates_to_release_the_updater_lock(tmp_path):
+    install = tmp_path / "install"
+    cleanup = install / "current" / "installer" / "backup_cleanup.sh"
+    marker = tmp_path / "cleanup-started"
+    cleanup.parent.mkdir(parents=True)
+    cleanup.write_text(f"#!/bin/bash\n: > {marker}\n", encoding="utf-8")
+    launcher_dir = tmp_path / "stable-launcher"
+    launcher_dir.mkdir()
+    shutil.copy2(ROOT / "installer" / "launch_backup_cleanup.sh", launcher_dir)
+    maintenance_helper = launcher_dir / "maintenance_lock.sh"
+    maintenance_helper.write_text(
+        (ROOT / "installer" / "maintenance_lock.sh").read_text(encoding="utf-8")
+        + "\n_validate_maintenance_lock_ancestors() { return 0; }\n",
+        encoding="utf-8",
+    )
+    maintenance_lock = tmp_path / "maintenance.lock"
+    maintenance_lock.touch()
+    paths_file = tmp_path / "paths.env"
+    paths_file.write_text(
+        f"# Managed by installer/setup.sh; do not edit by hand.\n"
+        f'KNXOH_MAINTENANCE_LOCK_FILE="{maintenance_lock}"\n',
+        encoding="utf-8",
+    )
+    data_dir = tmp_path / "runtime-data"
+    data_dir.mkdir()
+    updater_lock = data_dir / "updater.lock"
+    updater_lock.touch()
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "KNXOH_INSTALL_DIR": str(install),
+            "KNXOH_DATA_DIR": str(data_dir),
+            "KNXOH_PATHS_FILE": str(paths_file),
+            "KNXOH_MAINTENANCE_LOCK_FILE": str(maintenance_lock),
+        }
+    )
+
+    with updater_lock.open("r+") as update_stream:
+        fcntl.flock(update_stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        blocked = subprocess.run(
+            ["bash", str(launcher_dir / "launch_backup_cleanup.sh")],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+
+    assert blocked.returncode != 0
+    assert "update is in progress" in (blocked.stdout + blocked.stderr).lower()
+    assert not marker.exists()
+
+    retry = subprocess.run(
+        ["bash", str(launcher_dir / "launch_backup_cleanup.sh")],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+
+    assert retry.returncode == 0, retry.stdout + retry.stderr
+    assert marker.is_file()
 
 
 def test_direct_updater_fails_before_logging_while_setup_holds_exclusive_lock(tmp_path):

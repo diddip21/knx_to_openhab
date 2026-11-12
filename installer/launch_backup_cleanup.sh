@@ -12,6 +12,25 @@ if ! acquire_maintenance_shared_lock; then
     exit 1
 fi
 
+UPDATE_LOCK_DIR="${KNXOH_DATA_DIR:-/var/lib/knx_to_openhab}"
+UPDATE_LOCK_FILE="$UPDATE_LOCK_DIR/updater.lock"
+if [[ ! -d "$UPDATE_LOCK_DIR" || -L "$UPDATE_LOCK_DIR" ]]; then
+    echo "ERROR: The update-lock directory is missing or unsafe: $UPDATE_LOCK_DIR" >&2
+    exit 1
+fi
+if [[ -L "$UPDATE_LOCK_FILE" || ( -e "$UPDATE_LOCK_FILE" && ! -f "$UPDATE_LOCK_FILE" ) ]]; then
+    echo "ERROR: The update-lock path is not a regular file: $UPDATE_LOCK_FILE" >&2
+    exit 1
+fi
+if ! exec 9>>"$UPDATE_LOCK_FILE"; then
+    echo "ERROR: Could not open the update-lock file: $UPDATE_LOCK_FILE" >&2
+    exit 1
+fi
+if ! flock --exclusive --nonblock 9; then
+    echo "ERROR: An update is in progress; retry backup cleanup later." >&2
+    exit 1
+fi
+
 INSTALL_DIR="${KNXOH_INSTALL_DIR:-/opt/knx_to_openhab}"
 APP_DIR="$INSTALL_DIR/current"
 if [[ ! -f "$APP_DIR/installer/backup_cleanup.sh" ]]; then

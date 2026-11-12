@@ -120,7 +120,12 @@ def create_update_backup(
         with tarfile.open(temp_path, mode="w:gz") as archive:
             for label, root in roots:
                 arcname = label if root.is_dir() else f"{label}/{root.name}"
-                archive.add(root, arcname=arcname, recursive=True, filter=_archive_filter)
+                archive.add(
+                    root,
+                    arcname=arcname,
+                    recursive=True,
+                    filter=_archive_filter if label == "application" else None,
+                )
 
         _verify_archive(temp_path, (label for label, _ in roots))
         with temp_path.open("rb") as archive_file:

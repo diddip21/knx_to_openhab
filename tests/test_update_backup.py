@@ -31,6 +31,12 @@ def _make_snapshot_paths(tmp_path):
     (install_dir / "web_ui/backend/__pycache__/app.pyc").write_bytes(b"bytecode")
     (config_dir / "config.json").write_text('{"port": 8085}', encoding="utf-8")
     (config_dir / "secrets.env").write_text("KNXOH_UI_PASSWORD_HASH_B64=secret", encoding="utf-8")
+    for external_root in (config_dir, data_dir):
+        for directory_name in (".git", "venv", ".venv", "__pycache__"):
+            external_directory = external_root / directory_name
+            external_directory.mkdir()
+            sentinel = "module.pyc" if directory_name == "__pycache__" else "sentinel.dat"
+            (external_directory / sentinel).write_text("external state", encoding="utf-8")
     generator_config = data_dir / "generator.json"
     generator_config.write_text('{"general": {}}', encoding="utf-8")
     (data_dir / "jobs").mkdir()
@@ -55,9 +61,17 @@ def test_update_backup_contains_application_configuration_and_runtime_data(tmp_p
     assert "configuration/secrets.env" in members
     assert "runtime data/generator.json" in members
     assert "runtime data/jobs/job.json" in members
-    assert not any("/.git/" in f"/{name}/" for name in members)
-    assert not any("/venv/" in f"/{name}/" for name in members)
-    assert not any("__pycache__" in name or name.endswith(".pyc") for name in members)
+    application_members = {
+        name.removeprefix("application/") for name in members if name.startswith("application/")
+    }
+    assert not any("/.git/" in f"/{name}/" for name in application_members)
+    assert not any("/venv/" in f"/{name}/" for name in application_members)
+    assert not any("/.venv/" in f"/{name}/" for name in application_members)
+    assert not any("__pycache__" in name or name.endswith(".pyc") for name in application_members)
+    for root in ("configuration", "runtime data"):
+        for directory_name in (".git", "venv", ".venv", "__pycache__"):
+            sentinel = "module.pyc" if directory_name == "__pycache__" else "sentinel.dat"
+            assert f"{root}/{directory_name}/{sentinel}" in members
 
 
 def test_update_backup_is_not_published_when_archive_validation_fails(monkeypatch, tmp_path):

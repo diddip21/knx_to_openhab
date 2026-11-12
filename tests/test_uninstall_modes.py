@@ -46,7 +46,7 @@ def create_fixture(tmp_path):
         "KNXOH_DATA_DIR": data,
         "KNXOH_BACKUP_DIR": backups,
     }
-    path_file_contents = "# managed paths\n" + "\n".join(
+    path_file_contents = "# Managed by installer/setup.sh; do not edit by hand.\n" + "\n".join(
         f'{name}="{path}"' for name, path in path_values.items()
     )
     paths_file.write_text(path_file_contents + "\n", encoding="utf-8")
@@ -147,6 +147,8 @@ case "${1:-}" in
     shift
     exec flock "$@"
     ;;
+  python3) shift; exec python3 "$@" ;;
+  find) shift; exec find "$@" ;;
   kill) shift; exec /bin/kill "$@" ;;
   bash) shift; exec /bin/bash "$@" ;;
   rm)
@@ -176,6 +178,11 @@ case "${1:-}" in
           ;;
       esac
     done
+    ;;
+  rmdir)
+    shift
+    [[ "${1:-}" != -- ]] || shift
+    exec /bin/rmdir -- "$@"
     ;;
   userdel|groupdel) ;;
 esac
@@ -522,7 +529,7 @@ def test_uninstall_releases_exclusive_lock_after_a_post_acquisition_failure(tmp_
 
 
 def test_purge_removes_custom_paths_and_service_account_and_can_repeat(tmp_path):
-    environment, app, config, data, backups, _, sudo_log = create_fixture(tmp_path)
+    environment, app, config, data, backups, paths_file, sudo_log = create_fixture(tmp_path)
     environment["FAKE_SERVICE_ACCOUNT"] = "1"
     custom_lock_parent = Path(environment["KNXOH_MAINTENANCE_LOCK_FILE"]).parent
 
@@ -530,10 +537,19 @@ def test_purge_removes_custom_paths_and_service_account_and_can_repeat(tmp_path)
 
     assert result.returncode == 0, result.stderr
     assert all(not path.exists() for path in (app, config, data, backups))
-    assert custom_lock_parent.is_dir()
+    assert not custom_lock_parent.exists()
     calls = sudo_arguments(sudo_log)
     assert "userdel" in calls
     assert "groupdel" in calls
+    assert calls.index("rmdir") < calls.index("groupdel")
+    assert any(
+        invocation[:3] == ["python3", "-", str(custom_lock_parent)]
+        for invocation in sudo_invocations(sudo_log)
+    )
+    assert not any(
+        invocation[0] == "rm" and str(paths_file) in invocation
+        for invocation in sudo_invocations(sudo_log)
+    )
     assert "Purge löscht zusätzlich" in result.stdout
 
     sudo_log.unlink()
@@ -550,6 +566,109 @@ def test_purge_removes_custom_paths_and_service_account_and_can_repeat(tmp_path)
     assert repeated.returncode == 0, repeated.stderr
     assert "bereits entfernt" in repeated.stdout
     assert not sudo_log.exists()
+
+
+def test_purge_removes_a_managed_registry_outside_purged_directories(tmp_path):
+    environment, _app, _config, _data, _backups, paths_file, sudo_log = create_fixture(tmp_path)
+    external_registry = Path(environment["SAFE_ROOT"]) / "custom-paths.env"
+    external_registry.write_text(paths_file.read_text(encoding="utf-8"), encoding="utf-8")
+    environment["KNXOH_PATHS_FILE"] = str(external_registry)
+
+    result = run_uninstaller(environment, ["--purge", "--yes"])
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not external_registry.exists()
+    assert any(
+        invocation[0] == "rm" and str(external_registry) in invocation
+        for invocation in sudo_invocations(sudo_log)
+    )
+
+
+def test_purge_refuses_to_remove_an_unmanaged_paths_registry(tmp_path):
+    environment, app, _config, _data, _backups, paths_file, sudo_log = create_fixture(tmp_path)
+    unmanaged_registry = Path(environment["SAFE_ROOT"]) / "unmanaged-paths.env"
+    unmanaged_registry.write_text(
+        paths_file.read_text(encoding="utf-8").replace(
+            "# Managed by installer/setup.sh; do not edit by hand.",
+            "# unrelated file",
+            1,
+        )
+        + "UNRELATED_SETTING=keep\n",
+        encoding="utf-8",
+    )
+    environment["KNXOH_PATHS_FILE"] = str(unmanaged_registry)
+
+    result = run_uninstaller(environment, ["--purge", "--yes"])
+
+    assert result.returncode == 2
+    assert "not a recognized registry" in result.stderr.lower()
+    assert app.is_dir()
+    assert unmanaged_registry.is_file()
+    assert not any(invocation[0] == "rm" for invocation in sudo_invocations(sudo_log))
+
+
+def test_purge_refuses_managed_header_with_unrecognized_registry_content(tmp_path):
+    environment, app, _config, _data, _backups, paths_file, sudo_log = create_fixture(tmp_path)
+    malformed_registry = Path(environment["SAFE_ROOT"]) / "malformed-paths.env"
+    malformed_registry.write_text(
+        paths_file.read_text(encoding="utf-8") + "UNRELATED_SETTING=keep\n",
+        encoding="utf-8",
+    )
+    environment["KNXOH_PATHS_FILE"] = str(malformed_registry)
+
+    result = run_uninstaller(environment, ["--purge", "--yes"])
+
+    assert result.returncode == 2
+    assert "could not be validated" in result.stderr.lower()
+    assert app.is_dir()
+    assert malformed_registry.is_file()
+    assert not any(invocation[0] == "rm" for invocation in sudo_invocations(sudo_log))
+
+
+def test_purge_refuses_custom_lock_parent_with_unmanaged_contents(tmp_path):
+    environment, app, _config, _data, _backups, _paths_file, sudo_log = create_fixture(tmp_path)
+    lock_parent = Path(environment["KNXOH_MAINTENANCE_LOCK_FILE"]).parent
+    unrelated_file = lock_parent / "keep-me.txt"
+    unrelated_file.write_text("unmanaged state", encoding="utf-8")
+    environment["FAKE_SERVICE_ACCOUNT"] = "1"
+
+    result = run_uninstaller(environment, ["--purge", "--yes"])
+
+    assert result.returncode == 2
+    assert "custom maintenance lock directory contains unmanaged files" in result.stderr.lower()
+    assert app.is_dir()
+    assert unrelated_file.read_text(encoding="utf-8") == "unmanaged state"
+    calls = sudo_arguments(sudo_log)
+    assert "groupdel" not in calls
+    assert "rm" not in calls
+
+
+def test_purge_custom_lock_name_globs_cannot_hide_unmanaged_entries(tmp_path):
+    environment, app, _config, _data, _backups, paths_file, sudo_log = create_fixture(tmp_path)
+    original_lock = Path(environment["KNXOH_MAINTENANCE_LOCK_FILE"])
+    glob_lock = original_lock.parent / "maintenance*.lock"
+    original_lock.unlink()
+    glob_lock.touch()
+    glob_lock.chmod(0o666)
+    unrelated_file = original_lock.parent / "maintenance-other.lock"
+    unrelated_file.write_text("unmanaged state", encoding="utf-8")
+    paths_file.write_text(
+        paths_file.read_text(encoding="utf-8").replace(str(original_lock), str(glob_lock)),
+        encoding="utf-8",
+    )
+    environment["KNXOH_MAINTENANCE_LOCK_FILE"] = str(glob_lock)
+
+    result = run_uninstaller(environment, ["--purge", "--yes"])
+
+    assert result.returncode == 2
+    assert "custom maintenance lock directory contains unmanaged files" in result.stderr.lower()
+    assert app.is_dir()
+    assert glob_lock.is_file()
+    assert unrelated_file.is_file()
+    assert not any(
+        invocation[0] == "rm" and str(app) in invocation
+        for invocation in sudo_invocations(sudo_log)
+    )
 
 
 @pytest.mark.skipif(os.name != "posix", reason="A POSIX terminal is required")

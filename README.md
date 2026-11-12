@@ -36,7 +36,7 @@ Includes a **Web UI** for browser-based management and a **CLI** for automated w
 
 Best for fresh installs of Raspberry Pi OS (Lite) or DietPi.
 
-**Prereqs:** Linux with systemd, `sudo`, Git, curl, Python 3.11+, a working `python3-venv`, enough disk space, and network access to GitHub. The installer checks these before package changes. Python 3.12/3.13 are used in CI; `python3-tk` is only needed for the CLI file picker.
+**Prereqs:** Linux with systemd, `sudo`, Git, curl, Python 3.11+, a working `python3-venv`, enough disk space, and network access to GitHub. The installer checks these before package changes. Python 3.11/3.12/3.13 are used in CI; `python3-tk` is only needed for the CLI file picker.
 
 The top-level installer selects the latest published stable GitHub Release.
 

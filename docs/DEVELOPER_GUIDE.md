@@ -8,7 +8,7 @@ This guide helps you set up a local development environment to work on the KNX t
 
 ## Prerequisites
 
-- **Python 3.12+** (verify with `python --version` or `python3 --version`)
+- **Python 3.11+** (verify with `python --version` or `python3 --version`)
 - **pip** (Python package manager)
 - **git** (for cloning the repository)
 

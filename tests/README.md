@@ -95,7 +95,7 @@ pytest tests/ui -m ui
 Tests run automatically on every push via GitHub Actions:
 
 - **Lint:** Black + isort + flake8 + mypy
-- **Core Tests:** Python 3.12 + 3.13 matrix on ubuntu-latest
+- **Core Tests:** Python 3.11 + 3.12 + 3.13 matrix on ubuntu-latest
 - **UI Tests:** Playwright with Chromium (depends on core tests passing)
 
 Status: [GitHub Actions](https://github.com/diddip21/knx_to_openhab/actions/workflows/ci.yml)
@@ -169,8 +169,8 @@ docker run --platform linux/arm64 knx-test:arm64
 ssh pi@raspberrypi.local
 git clone https://github.com/diddip21/knx_to_openhab.git
 cd knx_to_openhab
-pip install -r requirements.txt
-pytest -v
+pip install -r requirements-dev.txt
+pytest -q -m "not ui" --ignore=tests/ui
 ```
 
 ## Troubleshooting

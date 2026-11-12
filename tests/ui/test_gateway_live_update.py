@@ -537,11 +537,15 @@ def test_issue40_documentation_views_use_example_data(page: Page, flask_server):
     page.get_by_role("button", name="Devices").click()
     page.locator("#conf-gateway-ip").fill("192.0.2.45")
     expect(page.locator("#conf-gateway-ip")).to_have_value("192.0.2.45")
+    expect(page.locator("#tab-devices")).to_be_visible()
+    page.wait_for_timeout(400)  # Let the tab animation finish before capturing documentation.
 
     screenshot_dir = Path(__file__).resolve().parents[2] / "test-results"
     if os.getenv("SAVE_UI_SCREENSHOTS") == "1":
         screenshot_dir.mkdir(parents=True, exist_ok=True)
-        page.screenshot(path=str(screenshot_dir / "issue-40-gateway-ip-settings.png"))
+        page.locator("#settings-section").screenshot(
+            path=str(screenshot_dir / "issue-40-gateway-ip-settings.png")
+        )
 
     example_things = """Bridge knx:ip:bridge [
     type="TUNNEL",

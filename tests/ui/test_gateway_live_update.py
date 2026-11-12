@@ -543,17 +543,16 @@ def test_issue40_documentation_views_use_example_data(page: Page, flask_server):
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(screenshot_dir / "issue-40-gateway-ip-settings.png"))
 
-    example_things = (
-        'Bridge knx:ip:bridge [\n'
-        '    type="TUNNEL",\n'
-        '    ipAddress="192.0.2.45",\n'
-        '    portNumber=3671\n'
-        '] {\n'
-        '    Thing device demo [\n'
-        '        Type switch : i_demo_switch "Demo switch" [ ga="1/1/1" ]\n'
-        '    ]\n'
-        '}\n'
-    )
+    example_things = """Bridge knx:ip:bridge [
+    type="TUNNEL",
+    ipAddress="192.0.2.45",
+    portNumber=3671
+] {
+    Thing device demo [
+        Type switch : i_demo_switch "Demo switch" [ ga="1/1/1" ]
+    ]
+}
+"""
     page.route(
         "**/api/file/preview?*",
         lambda route: route.fulfill(

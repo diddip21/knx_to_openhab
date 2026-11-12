@@ -95,7 +95,7 @@ echo "4️⃣  Checking project structure..."
 
 required_files=(
     "README.md"
-    "DEVELOPMENT.md"
+    "docs/DEVELOPER_GUIDE.md"
     "requirements.txt"
     "config.json"
     "knxproject_to_openhab.py"

@@ -51,7 +51,12 @@ The Web UI will be available at **`http://localhost:5000`**
 
 ---
 
-## Manual Setup (Without Scripts)
+## Manual Setup (Without Setup Script)
+
+Use this only if you prefer to create the virtual environment and install the
+runtime dependencies yourself. Start the server with the same `dev-run` script
+shown in Quick Start; it listens on `http://localhost:5000` and sets
+`FLASK_ENV=testing` for the local development process.
 
 ### 1. Create Virtual Environment
 
@@ -74,33 +79,8 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 3. Configure Web UI (Optional)
-
-For local development and browser tests, set `FLASK_ENV=testing`. This disables
-authentication only for that explicitly marked test process; production does
-not use this setting.
-
-### 4. Start Development Server
-
-**Using Flask CLI** (recommended):
-```bash
-# Activate venv first (see step 1)
-export FLASK_ENV=testing
-flask --app web_ui.backend.app:app run --debug
-```
-
-**Or using Python directly**:
-```bash
-FLASK_ENV=testing \
-python -m flask --app web_ui.backend.app:app run --debug
-```
-
-**Or run the app module**:
-```bash
-cd web_ui/backend
-export FLASK_ENV=testing
-python -m app
-```
+After installing dependencies, use `scripts/dev-run.ps1` on Windows or
+`scripts/dev-run.sh` on Linux/macOS to start the development server.
 
 ---
 
@@ -390,21 +370,14 @@ FLASK_ENV=testing flask --app web_ui.backend.app:app run
 
 ## Advanced Configuration
 
-### Development Config File
+### Local Configuration Files
 
-Create `web_ui/backend/config.dev.json` for local overrides:
-
-```json
-{
-  "bind_host": "127.0.0.1",
-  "port": 5000,
-  "auth": {
-    "enabled": false
-  }
-}
-```
-
-Then modify `storage.py` to load `config.dev.json` if it exists.
+The local Web UI reads `web_ui/backend/config.json`; local CLI generator rules
+come from the root `config.json`. The Web UI does not load a `config.dev.json`
+overlay. For local Web UI changes, edit the tracked backend config and restore
+temporary changes before committing. An installed service reads its Web UI
+settings from `/etc/knx_to_openhab/config.json` and generator rules from
+`/var/lib/knx_to_openhab/generator.json`.
 
 ### Debug Logging
 

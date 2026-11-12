@@ -82,6 +82,8 @@ Die Web-Laufzeitkonfiguration ist getrennt: `web_ui/backend/config.json:2-19` un
 12. `CHANGELOG.md:5-7` enthält nur `[Unreleased]`; `VERSION:1` lautet `0.1.0`. `git ls-remote --tags origin` lieferte keinen Tag. Damit ist noch keine datierte Veröffentlichung belegbar; die Audit-Änderung gehört zunächst unter `[Unreleased]`. Datierte Notizen erst bei einem tatsächlichen Tag gemäß `docs/RELEASING.md:15-18` anlegen.
 13. `docs/REPO_CLEANUP_INVENTORY.md` ist ein historischer `main`-Schnappschuss mit alten PR-/Issue-Ständen. Dieser PR kennzeichnet ihn als Archiv und setzt das Urteil auf `BEHALTEN (archiviert)`.
 14. Der neue Checkout-basierte Dev-Setup-Aufruf übersprang die Installation von `rsync`, obwohl `installer/setup.sh:221` es voraussetzt. `install.sh:539-548` installiert es nur im Release-Installer. Review-Hinweis in PR #76 bestätigt; README und beide Installationsanleitungen nennen jetzt `apt-get install rsync` vor direktem Setup.
+15. `scripts/verify-setup.sh` und `scripts/verify-setup.ps1` prüften auf das entfernte `DEVELOPMENT.md`; die vorhandene Entwicklerdoku liegt unter `docs/DEVELOPER_GUIDE.md`. Beide Prüfskripte verwenden jetzt diesen Pfad. Der Entwicklerleitfaden verweist für den Serverstart ebenfalls einheitlich auf `dev-run`.
+16. `docs/DEVELOPER_GUIDE.md` beschrieb ein nicht unterstütztes `config.dev.json`-Overlay und forderte eine Codeänderung dafür. `storage.py` liest stattdessen `web_ui/backend/config.json`; der Leitfaden nennt jetzt die lokalen und installierten Konfigurationsdateien. `CONTRIBUTING.md` verwendet nun dieselben Startskripte wie README und Developer Guide.
 
 Die Prüfung aller Markdown-Links auf relative Zielpfade fand 24 Ziele und genau den fehlenden Link unter Punkt 10. Externe HTTP-Links und Anker wurden dabei nicht online geprüft.
 
@@ -246,8 +248,8 @@ Die Spalte „Referenziert von“ nennt einen belegten internen Pfad oder den Di
 | `scripts/dev-setup.sh` | Entwickler-/Release-Helfer | docs/DEVELOPER_GUIDE.md:43 | BEHALTEN | docs/DEVELOPER_GUIDE.md:43 | niedrig |
 | `scripts/generate_golden_files.py` | Entwickler-/Release-Helfer | docs/DEVELOPER_GUIDE.md:319 | BEHALTEN | docs/DEVELOPER_GUIDE.md:319 | niedrig |
 | `scripts/regenerate_golden.py` | Entwickler-/Release-Helfer | .github/copilot-instructions.md:54 | BEHALTEN | .github/copilot-instructions.md:54 | niedrig |
-| `scripts/verify-setup.ps1` | Entwickler-/Release-Helfer | docs/DEVELOPER_GUIDE.md:150 | BEHALTEN | docs/DEVELOPER_GUIDE.md:150 | niedrig |
-| `scripts/verify-setup.sh` | Entwickler-/Release-Helfer | scripts/dev-setup.sh:93 | BEHALTEN | scripts/dev-setup.sh:93 | niedrig |
+| `scripts/verify-setup.ps1` | Entwickler-/Release-Helfer | docs/DEVELOPER_GUIDE.md:150 | BEHALTEN | Prüft vorhandene Setup-Dateien; Referenz auf `DEVELOPER_GUIDE.md` korrigiert | niedrig |
+| `scripts/verify-setup.sh` | Entwickler-/Release-Helfer | scripts/dev-setup.sh:93 | BEHALTEN | Prüft vorhandene Setup-Dateien; Referenz auf `DEVELOPER_GUIDE.md` korrigiert | niedrig |
 | `sitemap.template` | Legacy-Sitemap-Wrapper | ets_to_openhab.py:1005-1007 | BEHALTEN | ets_to_openhab.py:1005-1007 | hoch |
 | `tests/Charne.knxproj.json` | ETS-JSON-Fixture | tests/integration/test_output_validation.py:28 | BEHALTEN | tests/integration/test_output_validation.py:28 | hoch |
 | `tests/README.md` | Testanleitung | CONTRIBUTING.md:99 | AKTUALISIEREN | CONTRIBUTING.md:99 | niedrig |

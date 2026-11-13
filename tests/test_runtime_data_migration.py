@@ -1,4 +1,5 @@
 import base64
+import errno
 import json
 import os
 import subprocess
@@ -281,6 +282,67 @@ def test_interrupted_file_copy_keeps_legacy_data_and_can_retry(monkeypatch, tmp_
     assert (backup_dir / "job-1.tar.gz").read_bytes() == b"fixture backup"
     assert not old_jobs.exists()
     assert not old_backups.exists()
+
+
+def test_copy_publication_works_without_hard_links(monkeypatch, tmp_path):
+    paths = _fixture(tmp_path)
+
+    def reject_hard_links(*_args):
+        raise OSError(errno.EPERM, "hard links are disabled")
+
+    monkeypatch.setattr(migration.os, "link", reject_hard_links)
+
+    _run_migration(paths)
+
+    assert (paths[3] / "jobs/upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+    assert (paths[4] / "job-1.tar.gz").read_bytes() == b"fixture backup"
+    assert not paths[5].exists()
+    assert not paths[6].exists()
+
+
+def test_no_hard_link_fallback_does_not_replace_a_racing_target(monkeypatch, tmp_path):
+    paths = _fixture(tmp_path)
+    original_link = migration.os.link
+    raced_target = paths[3] / "jobs/upload.knxproj"
+
+    def race_upload_target(source, destination):
+        if Path(source).name == "upload.knxproj":
+            Path(destination).write_text("concurrent data", encoding="utf-8")
+            raise OSError(errno.EPERM, "hard links are disabled")
+        return original_link(source, destination)
+
+    monkeypatch.setattr(migration.os, "link", race_upload_target)
+
+    with pytest.raises(FileExistsError):
+        _run_migration(paths)
+
+    assert raced_target.read_text(encoding="utf-8") == "concurrent data"
+    assert (paths[5] / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+    assert not list(raced_target.parent.glob(".knxoh-copy-*"))
+
+
+def test_no_hard_link_fallback_cleans_up_an_interrupted_copy(monkeypatch, tmp_path):
+    paths = _fixture(tmp_path)
+    original_copyfileobj = migration.shutil.copyfileobj
+
+    def reject_hard_links(*_args):
+        raise OSError(errno.EPERM, "hard links are disabled")
+
+    def fail_after_partial_write(source, destination, *args, **kwargs):
+        if Path(source).name.startswith(".knxoh-copy-"):
+            destination.write(b"partial")
+            raise OSError("simulated fallback copy interruption")
+        return original_copyfileobj(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(migration.os, "link", reject_hard_links)
+    monkeypatch.setattr(migration.shutil, "copyfileobj", fail_after_partial_write)
+
+    with pytest.raises(OSError, match="simulated fallback copy interruption"):
+        _run_migration(paths)
+
+    assert (paths[5] / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+    assert not (paths[3] / "jobs/upload.knxproj").exists()
+    assert not list((paths[3] / "jobs").glob(".knxoh-copy-*"))
 
 
 def test_migration_copies_valid_long_filename(tmp_path):

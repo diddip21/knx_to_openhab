@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import errno
 import filecmp
 import json
 import os
@@ -52,6 +53,21 @@ def _atomic_write(path: Path, contents: str, mode: int) -> None:
         raise
 
 
+def _copy_no_replace(source: Path, destination: Path) -> None:
+    """Copy a completed temporary file only if its target does not exist."""
+    descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            with source.open("rb") as input_file:
+                shutil.copyfileobj(input_file, output)
+            output.flush()
+            shutil.copystat(source, destination, follow_symlinks=False)
+            os.fsync(output.fileno())
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+
+
 def _copy_missing_tree(source: Path, destination: Path) -> None:
     """Copy regular files without following links or replacing existing data."""
     if not source.exists() or source.resolve() == destination.resolve():
@@ -86,8 +102,14 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
             try:
                 shutil.copy2(entry, temporary_name)
                 # Link publishes the complete file only if no target appeared
-                # while it was copied. A failed copy leaves no partial target.
-                os.link(temporary_name, target)
+                # while it was copied. Some filesystems disable hard links;
+                # copy into an exclusive target on those filesystems instead.
+                try:
+                    os.link(temporary_name, target)
+                except OSError as error:
+                    if error.errno not in {errno.EPERM, errno.EOPNOTSUPP, errno.ENOTSUP}:
+                        raise
+                    _copy_no_replace(Path(temporary_name), target)
             finally:
                 Path(temporary_name).unlink(missing_ok=True)
 

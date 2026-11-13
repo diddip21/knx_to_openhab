@@ -253,6 +253,36 @@ def test_failed_path_publication_keeps_legacy_sources_and_can_retry(monkeypatch,
     assert retried_job["input"] == str(data_dir / "jobs/upload.knxproj")
 
 
+def test_interrupted_file_copy_keeps_legacy_data_and_can_retry(monkeypatch, tmp_path):
+    paths = _fixture(tmp_path)
+    _, _, config_dir, data_dir, backup_dir, old_jobs, old_backups = paths
+    original_copy2 = migration.shutil.copy2
+
+    def fail_after_partial_write(source, destination, *args, **kwargs):
+        if Path(source).name == "upload.knxproj":
+            Path(destination).write_bytes(b"partial")
+            raise OSError("simulated interrupted copy")
+        return original_copy2(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(migration.shutil, "copy2", fail_after_partial_write)
+    with pytest.raises(OSError, match="simulated interrupted copy"):
+        _run_migration(paths)
+
+    assert (old_jobs / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+    assert old_backups.is_dir()
+    assert not (data_dir / "jobs/upload.knxproj").exists()
+    assert not list((data_dir / "jobs").glob(".upload.knxproj.*"))
+    assert not (config_dir.parent / "paths.env").exists()
+
+    monkeypatch.setattr(migration.shutil, "copy2", original_copy2)
+    _run_migration(paths)
+
+    assert (data_dir / "jobs/upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+    assert (backup_dir / "job-1.tar.gz").read_bytes() == b"fixture backup"
+    assert not old_jobs.exists()
+    assert not old_backups.exists()
+
+
 def test_migration_refuses_conflicting_existing_data_without_deleting_legacy(tmp_path):
     paths = _fixture(tmp_path)
     legacy_jobs = paths[5]

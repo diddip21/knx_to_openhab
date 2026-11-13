@@ -48,8 +48,10 @@ the application directory.
 `setup.sh` copies existing settings, jobs, uploads, and backups before changing
 the active paths. It checks for conflicting files and refuses symlinked or
 system-wide legacy source directories. Only after a successful copy does it
-remove legacy job or backup directories inside the application tree. The old
-root `config.json` is copied to `generator.json` before the application tree is
+remove legacy job or backup directories inside the application tree. Runtime
+files are copied through temporary files, so an interrupted copy does not leave
+a partial destination file and the migration can be retried. The old root
+`config.json` is copied to `generator.json` before the application tree is
 reset to the packaged defaults. Existing user-chosen Web UI passwords are converted to
 Argon2id hashes in the restricted secrets file. If no usable password exists, setup
 generates a random password, stores only its hash, and prints the new password once. This

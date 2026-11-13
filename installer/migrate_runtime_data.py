@@ -81,7 +81,17 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
                 raise FileExistsError(f"Legacy data conflicts with existing destination: {target}")
         elif entry.is_file():
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(entry, target)
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{target.name}.", dir=target.parent
+            )
+            os.close(descriptor)
+            try:
+                shutil.copy2(entry, temporary_name)
+                # Link publishes the complete file only if no target appeared
+                # while it was copied. A failed copy leaves no partial target.
+                os.link(temporary_name, target)
+            finally:
+                Path(temporary_name).unlink(missing_ok=True)
 
 
 def _validate_legacy_source(path: Path, kind: str, source_root: Path) -> None:

@@ -30,9 +30,7 @@ def _run_dependency_step(tmp_path, missing_package=""):
     )
     dpkg.chmod(0o755)
     sudo = fake_bin / "sudo"
-    sudo.write_text(
-        '#!/bin/bash\nprintf "%s\\n" "$*" >> "$APT_CALLS"\n', encoding="utf-8"
-    )
+    sudo.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$APT_CALLS"\n', encoding="utf-8")
     sudo.chmod(0o755)
     calls = tmp_path / "apt-calls"
     environment = os.environ.copy()

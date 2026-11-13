@@ -183,7 +183,9 @@ an unavailable release or network fails before package changes. After system
 packages are available, a temporary Python virtual environment is created and
 removed to verify venv support before cloning or running setup. `--repair`
 does not fetch a release, but its dependency and setup steps may still need
-network access. `--help` and `--cancel` work without Python.
+network access. When all required system packages are installed, a repeated
+run skips `apt-get update`; Python package installation in setup may still
+access a package index. `--help` and `--cancel` work without Python.
 
 On a first install, running without a mode keeps `--install` as the default.
 For an existing installation, an interactive run asks for update, repair, or

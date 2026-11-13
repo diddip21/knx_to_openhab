@@ -553,8 +553,7 @@ check_sudo() {
 
 install_dependencies() {
     log_info "Installing system dependencies..."
-    
-    sudo apt-get update -qq
+    local package_lists_updated=0
     
     local packages=(
         "git"
@@ -567,6 +566,13 @@ install_dependencies() {
     
     for pkg in "${packages[@]}"; do
         if ! dpkg -l | grep -q "^ii  $pkg "; then
+            if (( package_lists_updated == 0 )); then
+                if ! sudo apt-get update -qq; then
+                    log_error "Failed to update system package lists"
+                    return 1
+                fi
+                package_lists_updated=1
+            fi
             log_info "Installing $pkg..."
             sudo apt-get install -y -qq "$pkg" || {
                 log_error "Failed to install $pkg"

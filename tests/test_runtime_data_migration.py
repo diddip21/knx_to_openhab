@@ -290,7 +290,11 @@ def test_copy_publication_works_without_hard_links(monkeypatch, tmp_path):
     def reject_hard_links(*_args):
         raise OSError(errno.EPERM, "hard links are disabled")
 
+    def fail_if_a_second_copy_is_needed(*_args):
+        raise AssertionError("the no-replace rename should publish the temporary file")
+
     monkeypatch.setattr(migration.os, "link", reject_hard_links)
+    monkeypatch.setattr(migration, "_copy_no_replace", fail_if_a_second_copy_is_needed)
 
     _run_migration(paths)
 
@@ -306,7 +310,7 @@ def test_no_hard_link_fallback_does_not_replace_a_racing_target(monkeypatch, tmp
     raced_target = paths[3] / "jobs/upload.knxproj"
 
     def race_upload_target(source, destination):
-        if Path(source).name == "upload.knxproj":
+        if Path(destination).name == "upload.knxproj":
             Path(destination).write_text("concurrent data", encoding="utf-8")
             raise OSError(errno.EPERM, "hard links are disabled")
         return original_link(source, destination)
@@ -328,13 +332,17 @@ def test_no_hard_link_fallback_cleans_up_an_interrupted_copy(monkeypatch, tmp_pa
     def reject_hard_links(*_args):
         raise OSError(errno.EPERM, "hard links are disabled")
 
+    def no_replace_rename_unavailable(*_args):
+        raise OSError(errno.ENOTSUP, "no-replace rename is unavailable")
+
     def fail_after_partial_write(source, destination, *args, **kwargs):
-        if Path(source).name.startswith(".knxoh-copy-"):
+        if Path(source.name).name.startswith(".knxoh-copy-"):
             destination.write(b"partial")
             raise OSError("simulated fallback copy interruption")
         return original_copyfileobj(source, destination, *args, **kwargs)
 
     monkeypatch.setattr(migration.os, "link", reject_hard_links)
+    monkeypatch.setattr(migration, "_rename_no_replace", no_replace_rename_unavailable)
     monkeypatch.setattr(migration.shutil, "copyfileobj", fail_after_partial_write)
 
     with pytest.raises(OSError, match="simulated fallback copy interruption"):
@@ -351,11 +359,15 @@ def test_no_hard_link_fallback_cleans_up_on_keyboard_interrupt(monkeypatch, tmp_
     def reject_hard_links(*_args):
         raise OSError(errno.EPERM, "hard links are disabled")
 
+    def no_replace_rename_unavailable(*_args):
+        raise OSError(errno.ENOTSUP, "no-replace rename is unavailable")
+
     def interrupt_after_partial_write(_source, destination, *_args, **_kwargs):
         destination.write(b"partial")
         raise KeyboardInterrupt
 
     monkeypatch.setattr(migration.os, "link", reject_hard_links)
+    monkeypatch.setattr(migration, "_rename_no_replace", no_replace_rename_unavailable)
     monkeypatch.setattr(migration.shutil, "copyfileobj", interrupt_after_partial_write)
 
     with pytest.raises(KeyboardInterrupt):

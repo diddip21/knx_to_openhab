@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import ctypes
 import errno
 import filecmp
 import json
@@ -21,6 +22,8 @@ LEGACY_RUNTIME_PATHS = {
     "backups": Path("var/backups/knx_to_openhab"),
 }
 SHIPPED_DEFAULT_PASSWORD = "logihome"
+AT_FDCWD = -100
+RENAME_NOREPLACE = 1
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -68,6 +71,38 @@ def _copy_no_replace(source: Path, destination: Path) -> None:
         raise
 
 
+def _rename_no_replace(source: Path, destination: Path) -> None:
+    """Atomically publish a file without another full allocation."""
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        renameat2 = libc.renameat2
+    except AttributeError as error:
+        raise OSError(
+            errno.ENOTSUP,
+            "No-replace rename is unavailable",
+            str(destination),
+        ) from error
+
+    renameat2.argtypes = [
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    ]
+    renameat2.restype = ctypes.c_int
+    result = renameat2(
+        AT_FDCWD,
+        os.fsencode(source),
+        AT_FDCWD,
+        os.fsencode(destination),
+        RENAME_NOREPLACE,
+    )
+    if result != 0:
+        error_number = ctypes.get_errno()
+        raise OSError(error_number, os.strerror(error_number), str(destination))
+
+
 def _copy_missing_tree(source: Path, destination: Path) -> None:
     """Copy regular files without following links or replacing existing data."""
     if not source.exists() or source.resolve() == destination.resolve():
@@ -109,7 +144,18 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
                 except OSError as error:
                     if error.errno not in {errno.EPERM, errno.EOPNOTSUPP, errno.ENOTSUP}:
                         raise
-                    _copy_no_replace(Path(temporary_name), target)
+                    try:
+                        _rename_no_replace(Path(temporary_name), target)
+                    except OSError as rename_error:
+                        if rename_error.errno not in {
+                            errno.EINVAL,
+                            errno.ENOSYS,
+                            errno.EPERM,
+                            errno.EOPNOTSUPP,
+                            errno.ENOTSUP,
+                        }:
+                            raise
+                        _copy_no_replace(Path(temporary_name), target)
             finally:
                 Path(temporary_name).unlink(missing_ok=True)
 

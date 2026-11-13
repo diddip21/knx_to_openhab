@@ -3,6 +3,7 @@ import errno
 import json
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -376,6 +377,62 @@ def test_no_hard_link_fallback_cleans_up_on_keyboard_interrupt(monkeypatch, tmp_
     assert (paths[5] / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
     assert not (paths[3] / "jobs/upload.knxproj").exists()
     assert not list((paths[3] / "jobs").glob(".knxoh-copy-*"))
+
+
+def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path):
+    paths = _fixture(tmp_path)
+    source = paths[5]
+    destination = paths[3] / "jobs"
+    ready = tmp_path / "copy-ready"
+    repository_root = Path(__file__).resolve().parents[1]
+    child_code = "\n".join(
+        (
+            "import errno, sys, time",
+            "from pathlib import Path",
+            "import installer.migrate_runtime_data as migration",
+            "def reject_hard_links(*args):",
+            "    raise OSError(errno.EPERM, 'hard links are disabled')",
+            "def no_replace_rename(*args):",
+            "    raise OSError(errno.ENOTSUP, 'no-replace rename is unavailable')",
+            "def stop_after_partial_write(source, destination, *args, **kwargs):",
+            "    destination.write(b'partial')",
+            "    Path(sys.argv[3]).write_text('ready', encoding='utf-8')",
+            "    time.sleep(60)",
+            "migration.os.link = reject_hard_links",
+            "migration._rename_no_replace = no_replace_rename",
+            "migration.shutil.copyfileobj = stop_after_partial_write",
+            "migration._copy_missing_tree(Path(sys.argv[1]), Path(sys.argv[2]))",
+        )
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", child_code, str(source), str(destination), str(ready)],
+        cwd=repository_root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    deadline = time.monotonic() + 10
+    while not ready.exists() and process.poll() is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    if not ready.exists():
+        process.kill()
+        stdout, stderr = process.communicate(timeout=10)
+        pytest.fail(f"fallback child did not reach its partial copy: {stdout}{stderr}")
+
+    partial_target = destination / "upload.knxproj"
+    try:
+        assert partial_target.read_bytes() == b"partial"
+        assert migration._fallback_copy_state_path(partial_target).is_file()
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.communicate(timeout=10)
+
+    _run_migration(paths)
+
+    assert partial_target.read_text(encoding="utf-8") == "fixture upload"
+    assert not migration._fallback_copy_state_path(partial_target).exists()
+    assert not paths[5].exists()
 
 
 def test_migration_copies_valid_long_filename(tmp_path):

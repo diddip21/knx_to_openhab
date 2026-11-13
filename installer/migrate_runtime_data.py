@@ -9,9 +9,11 @@ import binascii
 import ctypes
 import errno
 import filecmp
+import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -56,19 +58,111 @@ def _atomic_write(path: Path, contents: str, mode: int) -> None:
         raise
 
 
+def _fallback_copy_state_path(destination: Path) -> Path:
+    name_hash = hashlib.sha256(os.fsencode(destination.name)).hexdigest()
+    return destination.parent / f".knxoh-copy-state-{name_hash}"
+
+
+def _write_fallback_copy_state(descriptor: int, state: dict) -> None:
+    contents = json.dumps(state, separators=(",", ":")).encode("utf-8")
+    os.ftruncate(descriptor, 0)
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    remaining = memoryview(contents)
+    while remaining:
+        remaining = remaining[os.write(descriptor, remaining) :]
+    os.fsync(descriptor)
+
+
+def _cleanup_interrupted_fallback_copy(destination: Path) -> None:
+    """Remove a partial fallback target left by a killed migration process."""
+    marker = _fallback_copy_state_path(destination)
+    try:
+        marker_info = marker.lstat()
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(marker_info.st_mode):
+        raise ValueError(f"Refusing to follow an unsafe fallback-copy marker: {marker}")
+
+    marker_descriptor = os.open(marker, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(marker_descriptor).st_mode):
+            raise ValueError(f"Refusing to read an unsafe fallback-copy marker: {marker}")
+        with os.fdopen(marker_descriptor, "r", encoding="utf-8") as marker_file:
+            marker_descriptor = -1
+            try:
+                state = json.load(marker_file)
+            except (json.JSONDecodeError, UnicodeDecodeError) as error:
+                raise ValueError(f"The fallback-copy marker is invalid: {marker}") from error
+    finally:
+        if marker_descriptor >= 0:
+            os.close(marker_descriptor)
+
+    if not isinstance(state, dict) or state.get("name") != destination.name:
+        raise ValueError(f"The fallback-copy marker does not match its target: {marker}")
+
+    identity = state.get("identity")
+    try:
+        destination_info = destination.lstat()
+    except FileNotFoundError:
+        marker.unlink()
+        return
+
+    if not isinstance(identity, dict):
+        raise FileExistsError(
+            f"An interrupted migration left an unverified target; inspect and remove it before retrying: {destination}"
+        )
+    if (
+        not stat.S_ISREG(destination_info.st_mode)
+        or destination_info.st_dev != identity.get("device")
+        or destination_info.st_ino != identity.get("inode")
+    ):
+        raise FileExistsError(
+            f"The interrupted fallback-copy target changed; refusing to remove it: {destination}"
+        )
+    destination.unlink()
+    marker.unlink()
+
+
 def _copy_no_replace(source: Path, destination: Path) -> None:
     """Copy a completed temporary file only if its target does not exist."""
-    descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    marker = _fallback_copy_state_path(destination)
+    marker_descriptor = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    target_descriptor = -1
+    target_identity = None
     try:
-        with os.fdopen(descriptor, "wb") as output:
+        _write_fallback_copy_state(marker_descriptor, {"name": destination.name})
+        target_descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        target_info = os.fstat(target_descriptor)
+        target_identity = {"device": target_info.st_dev, "inode": target_info.st_ino}
+        _write_fallback_copy_state(
+            marker_descriptor, {"name": destination.name, "identity": target_identity}
+        )
+        with os.fdopen(target_descriptor, "wb") as output:
+            target_descriptor = -1
             with source.open("rb") as input_file:
                 shutil.copyfileobj(input_file, output)
             output.flush()
             shutil.copystat(source, destination, follow_symlinks=False)
             os.fsync(output.fileno())
+        marker.unlink()
     except BaseException:
-        destination.unlink(missing_ok=True)
+        if target_descriptor >= 0:
+            os.close(target_descriptor)
+        if target_identity is not None:
+            try:
+                destination_info = destination.lstat()
+            except FileNotFoundError:
+                pass
+            else:
+                if (destination_info.st_dev, destination_info.st_ino) == (
+                    target_identity["device"],
+                    target_identity["inode"],
+                ):
+                    destination.unlink()
+        marker.unlink(missing_ok=True)
         raise
+    finally:
+        os.close(marker_descriptor)
 
 
 def _rename_no_replace(source: Path, destination: Path) -> None:
@@ -127,10 +221,14 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
             raise ValueError(f"Refusing to copy a symlink from legacy data: {entry}")
         if entry.is_dir():
             _copy_missing_tree(entry, target)
-        elif entry.is_file() and target.exists():
-            if not target.is_file() or not filecmp.cmp(entry, target, shallow=False):
-                raise FileExistsError(f"Legacy data conflicts with existing destination: {target}")
         elif entry.is_file():
+            _cleanup_interrupted_fallback_copy(target)
+            if target.exists():
+                if not target.is_file() or not filecmp.cmp(entry, target, shallow=False):
+                    raise FileExistsError(
+                        f"Legacy data conflicts with existing destination: {target}"
+                    )
+                continue
             target.parent.mkdir(parents=True, exist_ok=True)
             descriptor, temporary_name = tempfile.mkstemp(prefix=".knxoh-copy-", dir=target.parent)
             os.close(descriptor)

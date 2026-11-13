@@ -65,9 +65,7 @@ def _fallback_copy_state_path(destination: Path) -> Path:
 
 def _write_fallback_copy_state(marker: Path, state: dict) -> None:
     """Atomically replace a marker state so a crash leaves the previous state intact."""
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f"{marker.name}.tmp-", dir=marker.parent
-    )
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f"{marker.name}.tmp-", dir=marker.parent)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as temporary:
             json.dump(state, temporary, separators=(",", ":"))
@@ -209,9 +207,7 @@ def _copy_no_replace(source: Path, destination: Path) -> None:
     target_descriptor = -1
     target_identity = None
     try:
-        _write_fallback_copy_state(
-            marker, {"name": destination.name, "temporary": source.name}
-        )
+        _write_fallback_copy_state(marker, {"name": destination.name, "temporary": source.name})
         target_descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         target_info = os.fstat(target_descriptor)
         target_identity = {"device": target_info.st_dev, "inode": target_info.st_ino}

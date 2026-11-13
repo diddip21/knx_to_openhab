@@ -440,6 +440,7 @@ def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path, crash_poi
             "def interrupt_copy(source, destination, *args, **kwargs):",
             "    if crash_point == 'partial-copy' and Path(source.name) == migration._copy_temporary_path(target):",
             "        destination.write(b'partial')",
+            "        destination.flush()",
             "        ready_path.write_text('ready', encoding='utf-8')",
             "        time.sleep(60)",
             "    return original_copyfileobj(source, destination, *args, **kwargs)",

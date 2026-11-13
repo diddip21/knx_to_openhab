@@ -23,6 +23,7 @@ def check_web_port(config_path: Path) -> tuple[str, int]:
     addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     for family, socktype, protocol, _, address in addresses:
         with socket.socket(family, socktype, protocol) as listener:
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             if family == socket.AF_INET6:
                 listener.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
             listener.bind(address)

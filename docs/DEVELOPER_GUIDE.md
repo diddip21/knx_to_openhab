@@ -97,7 +97,12 @@ to the original checkout, and remove the test worktree with
 
 ---
 
-## Manual Setup (Without Scripts)
+## Manual Setup (Without Setup Script)
+
+Use this only if you prefer to create the virtual environment and install the
+runtime dependencies yourself. Start the server with the same `dev-run` script
+shown in Quick Start; it listens on `http://localhost:5000` and sets
+`FLASK_ENV=testing` for the local development process.
 
 ### 1. Create Virtual Environment
 
@@ -120,33 +125,8 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 3. Configure Web UI (Optional)
-
-For local development and browser tests, set `FLASK_ENV=testing`. This disables
-authentication only for that explicitly marked test process; production does
-not use this setting.
-
-### 4. Start Development Server
-
-**Using Flask CLI** (recommended):
-```bash
-# Activate venv first (see step 1)
-export FLASK_ENV=testing
-flask --app web_ui.backend.app:app run --debug
-```
-
-**Or using Python directly**:
-```bash
-FLASK_ENV=testing \
-python -m flask --app web_ui.backend.app:app run --debug
-```
-
-**Or run the app module**:
-```bash
-cd web_ui/backend
-export FLASK_ENV=testing
-python -m app
-```
+After installing dependencies, use `scripts/dev-run.ps1` on Windows or
+`scripts/dev-run.sh` on Linux/macOS to start the development server.
 
 ---
 
@@ -321,9 +301,8 @@ file. Restart the Flask server after changing local development config.
 
 ## Running Tests
 
-The test suite has core tests and Playwright UI tests. The default pytest
-configuration excludes the UI suite; run it separately when Chromium is
-installed.
+The test suite contains core and browser tests. The default pytest configuration
+excludes UI tests; select the Playwright suite explicitly when Chromium is installed.
 
 ### Prerequisites
 
@@ -339,13 +318,15 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 ```
 
-### Core Tests (default)
+### Core Tests
 
-The default pytest config excludes UI tests, matching the CI core-test job.
+CI selects core tests with the following command:
 
 ```bash
-pytest -q
+pytest -q --cov=. --cov-report=xml -m "not ui" --ignore=tests/ui
 ```
+
+On Windows, the Unix-only `tests/test_uninstall_modes.py` currently fails during collection because `termios` is unavailable; run this full command on Linux. On Windows, `pytest tests/integration/test_output_validation.py tests/test_openhab_yaml.py -q -o addopts=` verifies the generator's legacy and YAML outputs.
 
 **Run integration-only:**
 ```bash
@@ -354,14 +335,13 @@ pytest tests/integration -v
 
 ### UI Tests (optional)
 
-UI tests use Playwright and start an isolated local Flask server on **8085**
-with authentication disabled. No separately running development server is needed.
+UI tests use Playwright and start an isolated Flask subprocess at `UI_BASE_URL`
+(default `http://127.0.0.1:8085`) with authentication disabled. A separately
+running server is not required, but port 8085 must be free. Authenticated
+screenshot tests use a temporary port.
 
 ```bash
-pip install pytest-playwright
 python -m playwright install chromium
-
-# Select the Playwright tests explicitly; this overrides the default core marker
 pytest tests/ui -v -m ui
 ```
 
@@ -453,17 +433,17 @@ FLASK_ENV=testing flask --app web_ui.backend.app:app run
 
 ## Advanced Configuration
 
-### Local and installed configuration
+### Local Configuration Files
 
-Local development uses the repository's `web_ui/backend/config.json` for Web UI
-defaults and the root `config.json` for generator settings. The application does
-not load a `config.dev.json` override. Set `FLASK_ENV=testing` only for local
-tests that need authentication disabled.
-
-An installed system stores Web UI settings under `/etc/knx_to_openhab/` and
-generator rules under `/var/lib/knx_to_openhab/generator.json`. The installer
-records the active paths in `/etc/knx_to_openhab/paths.env`; do not edit the
-repository defaults to change production settings.
+The local Web UI reads `web_ui/backend/config.json`; local CLI generator rules
+come from the root `config.json`. The Web UI does not load a `config.dev.json`
+overlay. For local Web UI changes, edit the tracked backend config and restore
+temporary changes before committing. An installed service reads its Web UI
+settings from `/etc/knx_to_openhab/config.json` and generator rules from
+`/var/lib/knx_to_openhab/generator.json`. The installer records active paths in
+`/etc/knx_to_openhab/paths.env`; do not edit repository defaults to change
+production settings. The application does not load a `config.dev.json` override.
+Set `FLASK_ENV=testing` only for local tests that need authentication disabled.
 
 ### Debug Logging
 

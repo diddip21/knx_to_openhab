@@ -1,9 +1,8 @@
 # Repository Cleanup Inventory
 
-Audit snapshot: the `dev` working tree based on `6bc8ad5` (`2026-11-06`),
-containing the fetched `origin/dev` and `origin/main` histories. This inventory
-covers tracked repository files; local worktrees and their uncommitted contents
-are outside its scope.
+Historical snapshot for Issue #36 on `main`. For the current `dev` inventory and review decisions, see [AUDIT_dev.md](AUDIT_dev.md). The PR/Issue status statements below describe the original snapshot date and must not be read as current status.
+
+Audit snapshot: `main` at `edf28d4` (`2026-11-03`), after PR #62. This inventory supports Issue #36 and records evidence for conservative cleanup decisions. Runtime behavior, configuration formats, and generated OpenHAB output are unchanged. Local worktrees and their uncommitted contents are outside its scope.
 
 ## Current findings
 

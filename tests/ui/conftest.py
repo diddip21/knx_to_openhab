@@ -452,7 +452,7 @@ def basic_auth_preview_server(tmp_path_factory):
             "enabled": True,
             "user": "operator",
             "mode": "basic",
-            "allowed_origins": ["https://mcrelay.greiner-wue.de"],
+            "allowed_origins": ["https://relay.example.com"],
         },
         "retention": {"days": 14, "max_backups": 50, "max_backups_size_mb": 500},
         "general": {"auto_place_unknown": False},

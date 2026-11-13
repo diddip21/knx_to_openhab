@@ -17,13 +17,13 @@ Target audience: German-speaking smart home users running OpenHAB on Raspberry P
       put_addresses_in_building() → addresses placed into building tree
   → ets_to_openhab.py
       gen_building()         → generates legacy strings and a structured openHAB model
-  → openhab_yaml.py
-      validate_model()       → validates IDs and cross-references
-      render_yaml()          → deterministic openHAB 5.2 YAML
-      export_output()        → writes files using *.template wrappers
+  → ets_to_openhab.py:export_output()
+      legacy → reads *.template wrappers and writes Things/Items/Sitemap
+      yaml → openhab_yaml.py validates/renders openHAB 5.2 YAML
+      both → write persistence and window-contact rule text
   → openhab/ output directory
       items/knx.items, things/knx.things, sitemaps/knx.sitemap,
-      persistence/influxdb.persist; optional yaml/knx.yaml
+      persistence/influxdb.persist, rules/fenster.rules; optional yaml/knx.yaml
 ```
 
 ## Key Files
@@ -48,10 +48,10 @@ Target audience: German-speaking smart home users running OpenHAB on Raspberry P
 
 ## Coding Conventions
 
-- **Python 3.12+** (target version in CI and pyproject.toml)
+- **Python 3.12/3.13** in CI; installer preflight accepts Python 3.11+
 - **Black**: line-length 100, target py312
 - **isort**: profile="black", line_length=100
-- **flake8**: max-line-length 100, ignore E203/W503
+- **flake8**: see `.flake8` for actual ignores (`E203`, `W503`, `E501` plus per-file rules)
 - **mypy**: python_version 3.12, ignore missing imports
 - Conventional commit messages: `feat:`, `fix:`, `chore:`, `style:`, `docs:`
 - Item names use `i_` prefix + floor/room short names + shortened GA label
@@ -62,13 +62,12 @@ Target audience: German-speaking smart home users running OpenHAB on Raspberry P
 ### Run Tests
 
 ```bash
-# All core tests (default, excludes UI tests)
-pytest -q
+# Core tests (CI command, Linux)
+pytest -q --cov=. --cov-report=xml -m "not ui" --ignore=tests/ui
 
 # Specific test groups
 pytest tests/integration -v
-pytest -m unit
-pytest -m integration
+pytest -q --ignore=tests/ui --ignore=tests/integration
 
 # With coverage
 pytest --cov=. --cov-report=html
@@ -104,7 +103,7 @@ python scripts/regenerate_golden.py
 
 ### CI Pipeline (GitHub Actions)
 
-1. **Lint**: `black --check .` + `isort --check-only .` + `flake8 .`
+1. **Lint and typecheck**: `black --check .` + `isort --check-only .` + `flake8 .` + `mypy .`
 2. **Core Tests**: Python 3.12 + 3.13 matrix on ubuntu-latest
 3. **UI Tests**: Playwright with Chromium (depends on core tests passing)
 
@@ -126,7 +125,7 @@ def setup_method(self):
 
 ### 2. config.py executes on import
 
-`config.py` calls `main()` at module level (line 202). Every `import config` triggers file I/O, subprocess calls, and path detection. Tests that import any module depending on `config` will trigger this. Mock or patch before importing.
+`config.py` calls `main()` at module level. Every `import config` triggers file I/O, subprocess calls, and path detection. Tests that import any module depending on `config` will trigger this. Mock or patch before importing.
 
 ### 3. gen_building() is 500+ lines
 

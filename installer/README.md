@@ -4,7 +4,7 @@ This directory contains installation and maintenance scripts for the web UI.
 
 ## Files
 
-- **`setup.sh`** — Main installer script (run once as sudo)
+- **`setup.sh`** — Main setup/repair script (run as sudo from a checkout)
 - **`backup_cleanup.sh`** — Backup retention enforcement script
 - **`knxohui.service`** — systemd unit for Flask web server
 - **`knxohui-backup-cleanup.service`** — systemd unit for cleanup oneshot
@@ -14,8 +14,12 @@ This directory contains installation and maintenance scripts for the web UI.
 
 ```bash
 # Run from the repository root.
+sudo apt-get update
+sudo apt-get install -y rsync
 sudo bash installer/setup.sh
 ```
+
+`setup.sh` uses `rsync` but does not install operating-system packages. The root `install.sh` installs `rsync` for release-based installs.
 
 This will:
 1. Install the application under `/opt/knx_to_openhab` by default
@@ -75,7 +79,7 @@ preserving its other settings:
 
 ```json
 {
-  "login_csrf_allowed_origins": ["https://mcrelay.greiner-wue.de"]
+  "login_csrf_allowed_origins": ["https://relay.example.com"]
 }
 ```
 
@@ -100,7 +104,7 @@ existing `auth` object (preserve its other fields):
 "auth": {
   "enabled": true,
   "mode": "basic",
-  "allowed_origins": ["https://mcrelay.greiner-wue.de"]
+  "allowed_origins": ["https://relay.example.com"]
 }
 ```
 
@@ -172,6 +176,11 @@ published release. The version omits the `v` tag prefix. Explicit SemVer
 prereleases such as `1.3.0-rc.1` can be selected this way; they are never
 chosen by the default stable channel. If GitHub has no matching release, the
 installer stops instead of falling back to `main`.
+<!-- no-release-note -->
+Until the first stable release is published, `--install` and `--update` cannot
+select a release. The checkout-based `setup.sh` command above remains available
+for development and evaluation.
+<!-- /no-release-note -->
 
 ### Installer preflight checks
 

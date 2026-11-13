@@ -27,6 +27,7 @@ prereleases. Build metadata after `+` does not make a version a prerelease.
    git tag -a "v${VERSION}" -m "Release ${VERSION}"
    git push origin "v${VERSION}"
    ```
+6. After the first stable release is published, remove temporary no-release notes. Find their blocks with `rg -n 'no-release-note' README.md docs/PRODUCTION_GUIDE.md installer/README.md`, then remove the opening and closing markers and their enclosed text.
 
 The workflow checks that the tag version matches `VERSION`. It builds a
 reproducible archive from tracked source files and publishes the archive and

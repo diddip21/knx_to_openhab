@@ -619,7 +619,7 @@ def test_update_unit_installer_replaces_an_unmasked_unit(tmp_path):
         '#!/bin/bash\n[[ "$1" == show ]] || exit 2\n'
         'if [[ "$2" == --property=FragmentPath ]]; then\n'
         '  echo "$UNIT_INSTALL_DESTINATION"\n'
-        'else\n  echo loaded\nfi\n',
+        "else\n  echo loaded\nfi\n",
         encoding="utf-8",
     )
     (fake_bin / "systemctl").chmod(0o755)

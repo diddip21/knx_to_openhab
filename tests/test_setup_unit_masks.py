@@ -36,10 +36,10 @@ def run_setup_unit_manager(
         '  if [[ "${2:-}" == --property=FragmentPath ]]; then\n'
         '    echo "$UNIT_TEST_FRAGMENT_PATH"\n'
         '  elif [[ "${4:-}" == "$UNIT_TEST_MASKED_UNIT" ]]; then\n'
-        '    echo masked\n'
-        '  else\n'
-        '    echo loaded\n'
-        '  fi\n'
+        "    echo masked\n"
+        "  else\n"
+        "    echo loaded\n"
+        "  fi\n"
         "else\n"
         '  [[ "${1:-}" == enable || "${1:-}" == restart || "${1:-}" == start ]] || exit 2\n'
         '  printf "action:%s\\n" "$*" >> "$UNIT_TEST_EVENTS"\n'
@@ -161,8 +161,10 @@ def test_setup_refuses_unit_loaded_from_another_location(tmp_path, fragment_path
 
 @pytest.mark.parametrize("unit", MANAGED_UNITS)
 def test_setup_accepts_an_existing_unmarked_project_unit(tmp_path, unit):
-    legacy = (ROOT / "installer" / unit).read_text(encoding="utf-8").replace(
-        "# Managed by knx_to_openhab installer\n", ""
+    legacy = (
+        (ROOT / "installer" / unit)
+        .read_text(encoding="utf-8")
+        .replace("# Managed by knx_to_openhab installer\n", "")
     )
     if unit == "knxohui.service":
         legacy = legacy.replace(

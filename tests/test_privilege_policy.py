@@ -837,10 +837,12 @@ def test_setup_preflights_credentials_before_stopping_services():
 
 def test_setup_restores_previously_active_services_after_failure():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+    restore = (ROOT / "installer" / "setup_restore.sh").read_text(encoding="utf-8")
 
     assert "PREVIOUSLY_ACTIVE_UNITS" in setup
+    assert 'source "$SCRIPT_DIR/setup_restore.sh"' in setup
     assert "trap restore_previous_services EXIT" in setup
-    assert 'sudo systemctl start "$unit"' in setup
+    assert 'sudo systemctl start "$unit"' in restore
     assert setup.index("trap restore_previous_services EXIT") < setup.index(
         'echo "Stopping services and waiting for the updater to finish"'
     )

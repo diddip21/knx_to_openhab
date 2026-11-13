@@ -20,7 +20,7 @@ def _executable(path, contents):
     path.chmod(0o755)
 
 
-def _environment(tmp_path, *, python_version="3.11", free_kib=1048576):
+def _environment(tmp_path, *, python_version="3.12", free_kib=1048576):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     _executable(
@@ -102,7 +102,7 @@ def test_missing_python_has_explicit_error_before_path_resolution(tmp_path):
 
 
 def test_unsupported_python_stops_before_sudo(tmp_path):
-    environment = _environment(tmp_path, python_version="3.10")
+    environment = _environment(tmp_path, python_version="3.11")
 
     result = subprocess.run(
         ["bash", str(INSTALLER), "--install"],
@@ -114,13 +114,13 @@ def test_unsupported_python_stops_before_sudo(tmp_path):
     )
 
     assert result.returncode == 1
-    assert "Python 3.11 or newer is required" in result.stdout + result.stderr
+    assert "Python 3.12 or newer is required" in result.stdout + result.stderr
     assert not (tmp_path / "sudo.log").exists()
 
 
 def test_sudo_python_must_meet_installer_minimum(tmp_path):
     environment = _environment(tmp_path)
-    environment["PREFLIGHT_SUDO_PYTHON_VERSION"] = "3.10"
+    environment["PREFLIGHT_SUDO_PYTHON_VERSION"] = "3.11"
     _executable(
         tmp_path / "bin" / "sudo",
         "#!/bin/sh\n"
@@ -143,7 +143,7 @@ def test_sudo_python_must_meet_installer_minimum(tmp_path):
 
 
 def test_unsupported_python_is_rejected_before_reading_saved_paths(tmp_path):
-    environment = _environment(tmp_path, python_version="3.10")
+    environment = _environment(tmp_path, python_version="3.11")
     environment.pop("KNXOH_INSTALL_DIR")
     environment.pop("KNXOH_CONFIG_DIR")
     paths_file = tmp_path / "paths.env"
@@ -160,8 +160,31 @@ def test_unsupported_python_is_rejected_before_reading_saved_paths(tmp_path):
     )
 
     assert result.returncode == 1
-    assert "Python 3.11 or newer is required" in result.stdout + result.stderr
+    assert "Python 3.12 or newer is required" in result.stdout + result.stderr
     assert "No closing quotation" not in result.stderr
+    assert not (tmp_path / "sudo.log").exists()
+
+
+def test_installed_dependencies_do_not_refresh_package_lists(tmp_path):
+    environment = _environment(tmp_path)
+    _executable(
+        tmp_path / "bin" / "dpkg-query",
+        "#!/bin/sh\n"
+        'printf "installed\\n" >> "$PREFLIGHT_DPKG_LOG"\n'
+        'printf "installed\\n"\n',
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", 'source "$1"; install_dependencies', "preflight", str(INSTALLER)],
+        env={**environment, "PREFLIGHT_DPKG_LOG": str(tmp_path / "dpkg.log")},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len((tmp_path / "dpkg.log").read_text(encoding="utf-8").splitlines()) == 6
     assert not (tmp_path / "sudo.log").exists()
 
 

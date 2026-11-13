@@ -153,15 +153,11 @@ def test_invalid_web_port_is_rejected(tmp_path, port):
 def test_setup_checks_port_after_quiescing_and_before_migration():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
     quiesce = setup.index("acquire_setup_maintenance_lock quiesce_setup_services")
-    bind_selection = setup.index(
-        '"$AUTH_PREFLIGHT_CONFIG" --output "$BIND_PREFLIGHT_CONFIG"'
-    )
+    bind_selection = setup.index('"$AUTH_PREFLIGHT_CONFIG" --output "$BIND_PREFLIGHT_CONFIG"')
     port_check = setup.index(
         'sudo -u "$SERVICE_USER" python3 "$REPO_ROOT/installer/check_web_port.py" -'
     )
-    bind_publish = setup.index(
-        'sudo mv -f -- "$BIND_PREFLIGHT_CONFIG" "$AUTH_PREFLIGHT_CONFIG"'
-    )
+    bind_publish = setup.index('sudo mv -f -- "$BIND_PREFLIGHT_CONFIG" "$AUTH_PREFLIGHT_CONFIG"')
     migration = setup.index("migrate_runtime_data.py")
 
     assert quiesce < bind_selection < port_check < bind_publish < migration

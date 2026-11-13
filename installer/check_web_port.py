@@ -11,7 +11,9 @@ from pathlib import Path
 
 
 def check_web_port(config_path: Path | None) -> tuple[str, int]:
-    raw_config = sys.stdin.read() if config_path is None else config_path.read_text(encoding="utf-8")
+    raw_config = (
+        sys.stdin.read() if config_path is None else config_path.read_text(encoding="utf-8")
+    )
     config = json.loads(raw_config)
     if not isinstance(config, dict):
         raise ValueError("Web UI configuration must be a JSON object")

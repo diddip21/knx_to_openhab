@@ -103,6 +103,10 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
         'source="${@: -2:1}"\n'
         'destination="${@: -1}"\n'
         'mkdir -p "$destination"\n'
+        'if [[ "${FAKE_RSYNC_FAIL:-0}" == 1 ]]; then\n'
+        '  printf "partial\\n" > "$destination/partial"\n'
+        '  exit 75\n'
+        'fi\n'
         'cp -a "$source"/. "$destination"/\n',
     )
     _write_executable(
@@ -158,11 +162,20 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
             check=False,
         )
 
+    environment["FAKE_RSYNC_FAIL"] = "1"
+    interrupted_install = run_installer("--install")
+    assert interrupted_install.returncode != 0
+    assert "left untouched" in interrupted_install.stdout
+    assert not install_dir.exists()
+    assert not list(tmp_path.glob(".knxoh-install.*"))
+    assert not setup_log.exists()
+    environment.pop("FAKE_RSYNC_FAIL")
+
     fresh_install = run_installer("--install")
     assert fresh_install.returncode == 0, fresh_install.stdout + fresh_install.stderr
     assert "Cloning release v1.2.3" in fresh_install.stdout
     assert setup_log.read_text(encoding="utf-8").splitlines() == ["setup"]
-    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 1
+    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 2
     assert "--branch v1.2.3" in clone_log.read_text(encoding="utf-8")
 
     user_data = data_dir / "user-data.json"
@@ -172,15 +185,15 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
     assert "existing files were left untouched" in second_install.stdout
     assert user_data.read_text(encoding="utf-8") == '{"created": true, "custom": "keep"}'
     assert setup_log.read_text(encoding="utf-8").splitlines() == ["setup"]
-    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 1
+    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 2
 
     repair = run_installer("--repair")
     assert repair.returncode == 0, repair.stdout + repair.stderr
     assert "Repairing the existing installation without pulling source" in repair.stdout
     assert setup_log.read_text(encoding="utf-8").splitlines() == ["setup", "setup"]
     assert user_data.read_text(encoding="utf-8") == '{"created": true, "custom": "keep"}'
-    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 1
-    assert len(clone_log.read_text(encoding="utf-8").splitlines()) == 1
+    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 2
+    assert len(clone_log.read_text(encoding="utf-8").splitlines()) == 2
 
     active_release = install_dir / "releases" / "v2.0.0"
     (active_release / "installer").mkdir(parents=True)
@@ -205,8 +218,8 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
         "setup",
         f"active setup:{active_release.resolve()}",
     ]
-    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 1
-    assert len(clone_log.read_text(encoding="utf-8").splitlines()) == 1
+    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 2
+    assert len(clone_log.read_text(encoding="utf-8").splitlines()) == 2
     environment.pop("FAKE_CHMOD_DENY")
 
     outside_release = tmp_path / "outside-release"

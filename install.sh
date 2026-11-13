@@ -571,6 +571,57 @@ update_repository() {
     log_success "Repository updated to $RELEASE_TAG"
 }
 
+clone_new_repository() (
+    local temp_dir stage_dir="" install_target="$INSTALL_DIR" install_parent
+    while [[ "$install_target" == */ ]]; do
+        install_target="${install_target%/}"
+    done
+    install_parent="$(dirname -- "$install_target")"
+
+    if ! temp_dir="$(mktemp -d)"; then
+        log_error "Could not create a temporary directory for the release checkout."
+        exit 1
+    fi
+    cleanup_clone() {
+        local status=$?
+        trap - EXIT
+        rm -rf -- "$temp_dir" || log_warning "Could not remove temporary checkout $temp_dir."
+        if [[ -n "$stage_dir" && "$stage_dir" == "$install_parent"/.knxoh-install.* ]]; then
+            sudo rm -rf -- "$stage_dir" || log_warning "Could not remove staging directory $stage_dir."
+        fi
+        exit "$status"
+    }
+    trap cleanup_clone EXIT
+
+    log_info "Cloning release $RELEASE_TAG from $REPO_URL..."
+    if ! git clone --depth 1 --single-branch --branch "$RELEASE_TAG" "$REPO_URL" "$temp_dir/repository"; then
+        log_error "Failed to clone release $RELEASE_TAG"
+        exit 1
+    fi
+
+    sudo mkdir -p -- "$install_parent"
+    install_parent="$(cd -- "$install_parent" && pwd -P)"
+    if ! stage_dir="$(sudo mktemp -d "$install_parent/.knxoh-install.XXXXXXXX")"; then
+        log_error "Could not stage the release beside $install_target."
+        exit 1
+    fi
+    if ! sudo rsync -a "$temp_dir/repository/" "$stage_dir/"; then
+        log_error "Could not copy the release; $install_target was left untouched."
+        exit 1
+    fi
+    sudo chmod 0755 "$stage_dir"
+    if [[ -e "$install_target" || -L "$install_target" ]]; then
+        log_error "Installation path appeared during checkout: $install_target. Existing files were left untouched."
+        exit 2
+    fi
+    if ! sudo mv -T -- "$stage_dir" "$install_target"; then
+        log_error "Could not activate the staged release at $install_target."
+        exit 1
+    fi
+    stage_dir=""
+    log_success "Release $RELEASE_TAG cloned successfully"
+)
+
 clone_repository() {
     if [[ "$INSTALL_MODE" == "update" ]]; then
         update_repository
@@ -582,18 +633,7 @@ clone_repository() {
         return 0
     fi
 
-    log_info "Cloning release $RELEASE_TAG from $REPO_URL..."
-    TEMP_DIR=$(mktemp -d)
-    if ! git clone --depth 1 --single-branch --branch "$RELEASE_TAG" "$REPO_URL" "$TEMP_DIR/repository"; then
-        rm -rf "$TEMP_DIR"
-        log_error "Failed to clone release $RELEASE_TAG"
-        exit 1
-    fi
-    sudo install -d -m 0755 "$INSTALL_DIR"
-    sudo rsync -a "$TEMP_DIR/repository/" "$INSTALL_DIR/"
-    rm -rf "$TEMP_DIR"
-
-    log_success "Release $RELEASE_TAG cloned successfully"
+    clone_new_repository
 }
 
 run_setup_script() {

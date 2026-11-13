@@ -283,6 +283,18 @@ def test_interrupted_file_copy_keeps_legacy_data_and_can_retry(monkeypatch, tmp_
     assert not old_backups.exists()
 
 
+def test_migration_copies_valid_long_filename(tmp_path):
+    paths = _fixture(tmp_path)
+    old_jobs = paths[5]
+    filename = "a" * 250
+    (old_jobs / filename).write_text("long-name fixture", encoding="utf-8")
+
+    _run_migration(paths)
+
+    copied = paths[3] / "jobs" / filename
+    assert copied.read_text(encoding="utf-8") == "long-name fixture"
+
+
 def test_migration_refuses_conflicting_existing_data_without_deleting_legacy(tmp_path):
     paths = _fixture(tmp_path)
     legacy_jobs = paths[5]

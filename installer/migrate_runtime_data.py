@@ -82,7 +82,7 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
         elif entry.is_file():
             target.parent.mkdir(parents=True, exist_ok=True)
             descriptor, temporary_name = tempfile.mkstemp(
-                prefix=f".{target.name}.", dir=target.parent
+                prefix=".knxoh-copy-", dir=target.parent
             )
             os.close(descriptor)
             try:

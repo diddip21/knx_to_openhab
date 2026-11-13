@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from installer.check_web_port import check_web_port
+from installer.configure_bind import configure_bind
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -64,7 +65,7 @@ def test_decimal_string_port_remains_supported(tmp_path):
     assert check_web_port(_config(tmp_path, "127.0.0.1", str(port))) == ("127.0.0.1", port)
 
 
-def test_external_bind_also_checks_loopback_fallback(tmp_path, monkeypatch):
+def test_selected_external_bind_does_not_require_loopback_port_free(tmp_path, monkeypatch):
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         listener.listen()
@@ -78,8 +79,32 @@ def test_external_bind_also_checks_loopback_fallback(tmp_path, monkeypatch):
             return getaddrinfo(host, requested_port, **kwargs)
 
         monkeypatch.setattr(socket, "getaddrinfo", resolve_bind_host)
+        assert check_web_port(_config(tmp_path, "lan-test", port)) == ("lan-test", port)
+
+
+def test_loopback_fallback_is_checked_after_bind_selection(tmp_path):
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        port = listener.getsockname()[1]
+        config = _config(tmp_path, "192.168.1.10", port)
+
+        assert configure_bind(config, confirm_external=lambda _host: False)
         with pytest.raises(OSError):
-            check_web_port(_config(tmp_path, "lan-test", port))
+            check_web_port(config)
+
+
+def test_ipv6_wildcard_probe_preserves_dual_stack_behavior(tmp_path):
+    with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as probe:
+        if probe.getsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY):
+            pytest.skip("the host configures IPv6 wildcard sockets as IPv6-only")
+
+    with socket.socket(socket.AF_INET) as listener:
+        listener.bind(("0.0.0.0", 0))
+        listener.listen()
+        port = listener.getsockname()[1]
+        with pytest.raises(OSError):
+            check_web_port(_config(tmp_path, "::", port))
 
 
 @pytest.mark.parametrize("port", [0, 65536, "not-a-port", True])
@@ -91,7 +116,10 @@ def test_invalid_web_port_is_rejected(tmp_path, port):
 def test_setup_checks_port_after_quiescing_and_before_migration():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
     quiesce = setup.index("acquire_setup_maintenance_lock quiesce_setup_services")
+    bind_selection = setup.index(
+        'sudo python3 "$REPO_ROOT/installer/configure_bind.py" "$AUTH_PREFLIGHT_CONFIG"'
+    )
     port_check = setup.index('sudo python3 "$REPO_ROOT/installer/check_web_port.py"')
     migration = setup.index("migrate_runtime_data.py")
 
-    assert quiesce < port_check < migration
+    assert quiesce < bind_selection < port_check < migration

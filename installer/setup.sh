@@ -377,6 +377,9 @@ quiesce_setup_services
 echo "Acquiring exclusive maintenance lock and rechecking systemd state"
 acquire_setup_maintenance_lock quiesce_setup_services
 
+echo "Checking the Web UI network binding choice"
+sudo python3 "$REPO_ROOT/installer/configure_bind.py" "$AUTH_PREFLIGHT_CONFIG"
+
 echo "Checking that the configured Web UI port is available"
 if ! sudo python3 "$REPO_ROOT/installer/check_web_port.py" "$AUTH_PREFLIGHT_CONFIG"; then
     echo "The Web UI address is unavailable after stopping knxohui.service; resolve the conflict before retrying setup." >&2
@@ -453,10 +456,6 @@ sudo "$BASE/venv/bin/python" "$BASE/installer/migrate_runtime_data.py" \
     --install-dir "$BASE" \
     --paths-file "$PATHS_FILE" \
     --maintenance-lock-file "$KNXOH_MAINTENANCE_LOCK_FILE"
-
-echo "Checking the Web UI network binding"
-sudo "$BASE/venv/bin/python" "$BASE/installer/configure_bind.py" \
-    "$CONFIG_DIR/config.json"
 
 export KNXOH_INSTALL_DIR="$BASE"
 export KNXOH_CONFIG_DIR="$CONFIG_DIR"

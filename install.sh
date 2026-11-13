@@ -527,13 +527,13 @@ verify_venv_support() (
         log_error "Could not create a temporary directory to test Python virtual environment support."
         exit 1
     fi
-    trap 'rm -rf -- "$probe_root"' EXIT
-    if ! python3 -m venv "$probe_root/venv" >/dev/null 2>&1; then
+    trap 'sudo rm -rf -- "$probe_root"' EXIT
+    if ! sudo python3 -m venv "$probe_root/venv" >/dev/null 2>&1; then
         log_error "Could not create a temporary Python virtual environment; check the python3-venv package."
         exit 1
     fi
     if [[ ! -x "$probe_root/venv/bin/python" ]] ||
-       ! "$probe_root/venv/bin/python" -c 'import sys' >/dev/null 2>&1; then
+       ! sudo "$probe_root/venv/bin/python" -c 'import sys' >/dev/null 2>&1; then
         log_error "The temporary Python virtual environment is not usable."
         exit 1
     fi
@@ -549,6 +549,22 @@ check_sudo() {
         }
     fi
     log_success "Sudo access confirmed"
+}
+
+check_sudo_installer_python() {
+    local python_version python_major python_minor
+    if ! python_version="$(sudo python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" ||
+       [[ ! "$python_version" =~ ^[0-9]+\.[0-9]+$ ]]; then
+        log_error "Could not determine the Python version available through sudo."
+        return 1
+    fi
+    python_major="${python_version%%.*}"
+    python_minor="${python_version#*.}"
+    if (( python_major < 3 || (python_major == 3 && python_minor < 11) )); then
+        log_error "Python 3.11 or newer must be available through sudo as python3; found $python_version."
+        return 1
+    fi
+    log_success "Sudo uses supported Python $python_version."
 }
 
 install_dependencies() {
@@ -795,6 +811,9 @@ main() {
         fi
     fi
     install_dependencies
+    if ! check_sudo_installer_python; then
+        exit 1
+    fi
     if ! verify_venv_support; then
         exit 1
     fi

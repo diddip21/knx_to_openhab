@@ -38,7 +38,10 @@ def _environment(tmp_path, *, python_version="3.11", free_kib=1048576):
     )
     _executable(
         fake_bin / "sudo",
-        '#!/bin/sh\nprintf "called\\n" >> "$PREFLIGHT_SUDO_LOG"\nexit 99\n',
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = "rm" ]; then shift; exec /bin/rm "$@"; fi\n'
+        'printf "called\\n" >> "$PREFLIGHT_SUDO_LOG"\n'
+        "exit 99\n",
     )
     environment = os.environ.copy()
     environment.update(
@@ -113,6 +116,30 @@ def test_unsupported_python_stops_before_sudo(tmp_path):
     assert result.returncode == 1
     assert "Python 3.11 or newer is required" in result.stdout + result.stderr
     assert not (tmp_path / "sudo.log").exists()
+
+
+def test_sudo_python_must_meet_installer_minimum(tmp_path):
+    environment = _environment(tmp_path)
+    environment["PREFLIGHT_SUDO_PYTHON_VERSION"] = "3.10"
+    _executable(
+        tmp_path / "bin" / "sudo",
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = "python3" ]; then printf "%s\\n" "$PREFLIGHT_SUDO_PYTHON_VERSION"; exit 0; fi\n'
+        'printf "called\\n" >> "$PREFLIGHT_SUDO_LOG"\n'
+        "exit 99\n",
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", 'source "$1"; check_sudo_installer_python', "preflight", str(INSTALLER)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 1
+    assert "must be available through sudo as python3" in result.stdout + result.stderr
 
 
 def test_unsupported_python_is_rejected_before_reading_saved_paths(tmp_path):
@@ -203,6 +230,14 @@ def test_venv_probe_fails_cleanly_before_setup(tmp_path):
 def test_venv_probe_accepts_usable_interpreter_and_cleans_up(tmp_path):
     environment = _environment(tmp_path)
     environment["TMPDIR"] = str(tmp_path)
+    _executable(
+        tmp_path / "bin" / "sudo",
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = "python3" ]; then shift; exec "$PREFLIGHT_REAL_PYTHON" "$@"; fi\n'
+        'if [ "${1:-}" = "-u" ]; then shift 2; fi\n'
+        'if [ "${1:-}" = "rm" ]; then shift; exec /bin/rm "$@"; fi\n'
+        'exec "$@"\n',
+    )
 
     result = subprocess.run(
         ["bash", "-c", 'source "$1"; verify_venv_support', "preflight", str(INSTALLER)],

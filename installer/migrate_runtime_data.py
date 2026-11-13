@@ -6,10 +6,14 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import ctypes
+import errno
 import filecmp
+import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -20,6 +24,8 @@ LEGACY_RUNTIME_PATHS = {
     "backups": Path("var/backups/knx_to_openhab"),
 }
 SHIPPED_DEFAULT_PASSWORD = "logihome"
+AT_FDCWD = -100
+RENAME_NOREPLACE = 1
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -52,6 +58,262 @@ def _atomic_write(path: Path, contents: str, mode: int) -> None:
         raise
 
 
+def _fallback_copy_state_path(destination: Path) -> Path:
+    name_hash = hashlib.sha256(os.fsencode(destination.name)).hexdigest()
+    return destination.parent / f".knxoh-copy-state-{name_hash}"
+
+
+def _copy_temporary_path(destination: Path) -> Path:
+    name_hash = hashlib.sha256(os.fsencode(destination.name)).hexdigest()
+    return destination.parent / f".knxoh-copy-{name_hash}"
+
+
+def _write_fallback_copy_state(marker: Path, state: dict) -> None:
+    """Atomically replace a marker state so a crash leaves the previous state intact."""
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f"{marker.name}.tmp-", dir=marker.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as temporary:
+            json.dump(state, temporary, separators=(",", ":"))
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_name, marker)
+    except BaseException:
+        Path(temporary_name).unlink(missing_ok=True)
+        raise
+
+
+def _cleanup_fallback_state_temps(marker: Path) -> None:
+    for temporary in marker.parent.glob(f"{marker.name}.tmp-*"):
+        try:
+            temporary_info = temporary.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISREG(temporary_info.st_mode) or stat.S_ISLNK(temporary_info.st_mode):
+            temporary.unlink(missing_ok=True)
+
+
+def _file_is_prefix(candidate: Path, complete: Path) -> bool:
+    if candidate.stat().st_size > complete.stat().st_size:
+        return False
+    with candidate.open("rb") as partial, complete.open("rb") as original:
+        while chunk := partial.read(64 * 1024):
+            if original.read(len(chunk)) != chunk:
+                return False
+    return True
+
+
+def _cleanup_interrupted_fallback_copy(destination: Path, source: Path) -> None:
+    """Recover files and markers left by a killed migration process."""
+    marker = _fallback_copy_state_path(destination)
+    temporary_source = _copy_temporary_path(destination)
+    try:
+        marker_info = marker.lstat()
+    except FileNotFoundError:
+        _cleanup_fallback_state_temps(marker)
+        return
+    if not stat.S_ISREG(marker_info.st_mode):
+        raise ValueError(f"Refusing to follow an unsafe fallback-copy marker: {marker}")
+
+    try:
+        destination_info = destination.lstat()
+    except FileNotFoundError:
+        destination_info = None
+
+    marker_descriptor = os.open(marker, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(marker_descriptor).st_mode):
+            raise ValueError(f"Refusing to read an unsafe fallback-copy marker: {marker}")
+        with os.fdopen(marker_descriptor, "r", encoding="utf-8") as marker_file:
+            marker_descriptor = -1
+            try:
+                state = json.load(marker_file)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                if destination_info is None and not temporary_source.exists():
+                    marker.unlink()
+                    _cleanup_fallback_state_temps(marker)
+                    return
+                raise ValueError(f"The fallback-copy marker is invalid: {marker}") from None
+    finally:
+        if marker_descriptor >= 0:
+            os.close(marker_descriptor)
+
+    expected_name = temporary_source.name
+    if (
+        not isinstance(state, dict)
+        or state.get("name") != destination.name
+        or state.get("temporary") != expected_name
+        or state.get("phase") not in {"staging", "fallback-prepared", "fallback-copying"}
+    ):
+        if destination_info is None and not temporary_source.exists():
+            marker.unlink()
+            _cleanup_fallback_state_temps(marker)
+            return
+        raise ValueError(f"The fallback-copy marker does not match its target: {marker}")
+
+    try:
+        temporary_info = temporary_source.lstat()
+    except FileNotFoundError:
+        temporary_info = None
+
+    if destination_info is None:
+        identity = state.get("temporary_identity")
+        if temporary_info is not None:
+            if (
+                not stat.S_ISREG(temporary_info.st_mode)
+                or not isinstance(identity, dict)
+                or (temporary_info.st_dev, temporary_info.st_ino)
+                != (identity.get("device"), identity.get("inode"))
+            ):
+                raise FileExistsError(
+                    f"An interrupted migration left an unverified temporary file; inspect it before retrying: {temporary_source}"
+                )
+            temporary_source.unlink()
+        marker.unlink()
+        _cleanup_fallback_state_temps(marker)
+        return
+
+    if not stat.S_ISREG(destination_info.st_mode):
+        raise FileExistsError(f"Legacy data conflicts with existing destination: {destination}")
+
+    phase = state["phase"]
+    if phase == "staging":
+        if not filecmp.cmp(source, destination, shallow=False):
+            raise FileExistsError(
+                f"The interrupted primary copy target changed; refusing to remove it: {destination}"
+            )
+    elif phase == "fallback-prepared":
+        if (
+            temporary_info is None
+            or not stat.S_ISREG(temporary_info.st_mode)
+            or not _same_file_identity(temporary_info, state.get("temporary_identity"))
+            or not filecmp.cmp(source, temporary_source, shallow=False)
+        ):
+            raise FileExistsError(
+                f"The interrupted fallback-copy source is missing or changed: {temporary_source}"
+            )
+        if not filecmp.cmp(source, destination, shallow=False) and not _file_is_prefix(
+            destination, temporary_source
+        ):
+            raise FileExistsError(
+                f"The interrupted fallback-copy target changed; refusing to remove it: {destination}"
+            )
+        if not filecmp.cmp(source, destination, shallow=False):
+            destination.unlink()
+    else:
+        if not _same_file_identity(destination_info, state.get("destination_identity")):
+            raise FileExistsError(
+                f"The interrupted fallback-copy target changed; refusing to remove it: {destination}"
+            )
+        if not filecmp.cmp(source, destination, shallow=False):
+            destination.unlink()
+
+    if temporary_info is not None:
+        identity = state.get("temporary_identity")
+        if _same_file_identity(temporary_info, identity) and filecmp.cmp(
+            source, temporary_source, shallow=False
+        ):
+            temporary_source.unlink()
+        else:
+            raise FileExistsError(
+                f"The interrupted migration temporary changed; refusing to remove it: {temporary_source}"
+            )
+    marker.unlink()
+    _cleanup_fallback_state_temps(marker)
+
+
+def _same_file_identity(info, identity) -> bool:
+    return (
+        stat.S_ISREG(info.st_mode)
+        and isinstance(identity, dict)
+        and (info.st_dev, info.st_ino) == (identity.get("device"), identity.get("inode"))
+    )
+
+
+def _copy_no_replace(source: Path, destination: Path, marker: Path) -> None:
+    """Copy a completed temporary file only if its target does not exist."""
+    source_info = source.lstat()
+    temporary_identity = {"device": source_info.st_dev, "inode": source_info.st_ino}
+    _write_fallback_copy_state(
+        marker,
+        {
+            "name": destination.name,
+            "temporary": source.name,
+            "temporary_identity": temporary_identity,
+            "phase": "fallback-prepared",
+        },
+    )
+    target_descriptor = -1
+    target_identity = None
+    try:
+        target_descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        target_info = os.fstat(target_descriptor)
+        target_identity = {"device": target_info.st_dev, "inode": target_info.st_ino}
+        _write_fallback_copy_state(
+            marker,
+            {
+                "name": destination.name,
+                "temporary": source.name,
+                "temporary_identity": temporary_identity,
+                "destination_identity": target_identity,
+                "phase": "fallback-copying",
+            },
+        )
+        with os.fdopen(target_descriptor, "wb") as output:
+            target_descriptor = -1
+            with source.open("rb") as input_file:
+                shutil.copyfileobj(input_file, output)
+            output.flush()
+            shutil.copystat(source, destination, follow_symlinks=False)
+            os.fsync(output.fileno())
+    except BaseException:
+        if target_descriptor >= 0:
+            os.close(target_descriptor)
+        if target_identity is not None:
+            try:
+                destination_info = destination.lstat()
+            except FileNotFoundError:
+                pass
+            else:
+                if (destination_info.st_dev, destination_info.st_ino) == (
+                    target_identity["device"],
+                    target_identity["inode"],
+                ):
+                    destination.unlink()
+        raise
+
+
+def _rename_no_replace(source: Path, destination: Path) -> None:
+    """Atomically publish a file without another full allocation."""
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        renameat2 = libc.renameat2
+    except AttributeError as error:
+        raise OSError(
+            errno.ENOTSUP,
+            "No-replace rename is unavailable",
+            str(destination),
+        ) from error
+
+    renameat2.argtypes = [
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    ]
+    renameat2.restype = ctypes.c_int
+    result = renameat2(
+        AT_FDCWD,
+        os.fsencode(source),
+        AT_FDCWD,
+        os.fsencode(destination),
+        RENAME_NOREPLACE,
+    )
+    if result != 0:
+        error_number = ctypes.get_errno()
+        raise OSError(error_number, os.strerror(error_number), str(destination))
+
+
 def _copy_missing_tree(source: Path, destination: Path) -> None:
     """Copy regular files without following links or replacing existing data."""
     if not source.exists() or source.resolve() == destination.resolve():
@@ -76,12 +338,72 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
             raise ValueError(f"Refusing to copy a symlink from legacy data: {entry}")
         if entry.is_dir():
             _copy_missing_tree(entry, target)
-        elif entry.is_file() and target.exists():
-            if not target.is_file() or not filecmp.cmp(entry, target, shallow=False):
-                raise FileExistsError(f"Legacy data conflicts with existing destination: {target}")
         elif entry.is_file():
+            _cleanup_interrupted_fallback_copy(target, entry)
+            if target.exists():
+                if not target.is_file() or not filecmp.cmp(entry, target, shallow=False):
+                    raise FileExistsError(
+                        f"Legacy data conflicts with existing destination: {target}"
+                    )
+                continue
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(entry, target)
+            marker = _fallback_copy_state_path(target)
+            temporary_path = _copy_temporary_path(target)
+            marker_descriptor = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            os.close(marker_descriptor)
+            temporary_created = False
+            temporary_identity = None
+            try:
+                state: dict[str, object] = {
+                    "name": target.name,
+                    "temporary": temporary_path.name,
+                    "phase": "staging",
+                }
+                _write_fallback_copy_state(marker, state)
+                descriptor = os.open(temporary_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                temporary_created = True
+                try:
+                    temporary_info = os.fstat(descriptor)
+                    temporary_identity = {
+                        "device": temporary_info.st_dev,
+                        "inode": temporary_info.st_ino,
+                    }
+                    state["temporary_identity"] = temporary_identity
+                    _write_fallback_copy_state(marker, state)
+                finally:
+                    os.close(descriptor)
+                shutil.copy2(entry, temporary_path)
+                # Link publishes the complete file only if no target appeared
+                # while it was copied. Some filesystems disable hard links;
+                # copy into an exclusive target on those filesystems instead.
+                try:
+                    os.link(temporary_path, target)
+                except OSError as error:
+                    if error.errno not in {errno.EPERM, errno.EOPNOTSUPP, errno.ENOTSUP}:
+                        raise
+                    try:
+                        _rename_no_replace(temporary_path, target)
+                    except OSError as rename_error:
+                        if rename_error.errno not in {
+                            errno.EINVAL,
+                            errno.ENOSYS,
+                            errno.EPERM,
+                            errno.EOPNOTSUPP,
+                            errno.ENOTSUP,
+                        }:
+                            raise
+                        _copy_no_replace(temporary_path, target, marker)
+            finally:
+                if temporary_created:
+                    try:
+                        temporary_info = temporary_path.lstat()
+                    except FileNotFoundError:
+                        pass
+                    else:
+                        if _same_file_identity(temporary_info, temporary_identity):
+                            temporary_path.unlink()
+                marker.unlink(missing_ok=True)
+                _cleanup_fallback_state_temps(marker)
 
 
 def _validate_legacy_source(path: Path, kind: str, source_root: Path) -> None:

@@ -1,7 +1,9 @@
 import base64
+import errno
 import json
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -251,6 +253,271 @@ def test_failed_path_publication_keeps_legacy_sources_and_can_retry(monkeypatch,
     )
     retried_job = json.loads((data_dir / "jobs/jobs.json").read_text(encoding="utf-8"))["job-1"]
     assert retried_job["input"] == str(data_dir / "jobs/upload.knxproj")
+
+
+def test_interrupted_file_copy_keeps_legacy_data_and_can_retry(monkeypatch, tmp_path):
+    paths = _fixture(tmp_path)
+    _, _, config_dir, data_dir, backup_dir, old_jobs, old_backups = paths
+    original_copy2 = migration.shutil.copy2
+
+    def fail_after_partial_write(source, destination, *args, **kwargs):
+        if Path(source).name == "upload.knxproj":
+            Path(destination).write_bytes(b"partial")
+            raise OSError("simulated interrupted copy")
+        return original_copy2(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(migration.shutil, "copy2", fail_after_partial_write)
+    with pytest.raises(OSError, match="simulated interrupted copy"):
+        _run_migration(paths)
+
+    assert (old_jobs / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+    assert old_backups.is_dir()
+    assert not (data_dir / "jobs/upload.knxproj").exists()
+    assert not list((data_dir / "jobs").glob(".knxoh-copy-*"))
+    assert not (config_dir.parent / "paths.env").exists()
+
+    monkeypatch.setattr(migration.shutil, "copy2", original_copy2)
+    _run_migration(paths)
+
+    assert (data_dir / "jobs/upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+    assert (backup_dir / "job-1.tar.gz").read_bytes() == b"fixture backup"
+    assert not old_jobs.exists()
+    assert not old_backups.exists()
+
+
+def test_copy_retry_preserves_unrelated_file_with_temporary_prefix(tmp_path):
+    paths = _fixture(tmp_path)
+    target_jobs = paths[3] / "jobs"
+    target_jobs.mkdir(parents=True)
+    unrelated = target_jobs / ".knxoh-copy-unrelated"
+    unrelated.write_text("fixture upload", encoding="utf-8")
+
+    _run_migration(paths)
+
+    assert unrelated.read_text(encoding="utf-8") == "fixture upload"
+    assert (target_jobs / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+
+
+def test_copy_publication_works_without_hard_links(monkeypatch, tmp_path):
+    paths = _fixture(tmp_path)
+
+    def reject_hard_links(*_args):
+        raise OSError(errno.EPERM, "hard links are disabled")
+
+    def fail_if_a_second_copy_is_needed(*_args):
+        raise AssertionError("the no-replace rename should publish the temporary file")
+
+    monkeypatch.setattr(migration.os, "link", reject_hard_links)
+    monkeypatch.setattr(migration, "_copy_no_replace", fail_if_a_second_copy_is_needed)
+
+    _run_migration(paths)
+
+    assert (paths[3] / "jobs/upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+    assert (paths[4] / "job-1.tar.gz").read_bytes() == b"fixture backup"
+    assert not paths[5].exists()
+    assert not paths[6].exists()
+
+
+def test_no_hard_link_fallback_does_not_replace_a_racing_target(monkeypatch, tmp_path):
+    paths = _fixture(tmp_path)
+    original_link = migration.os.link
+    raced_target = paths[3] / "jobs/upload.knxproj"
+
+    def race_upload_target(source, destination):
+        if Path(destination).name == "upload.knxproj":
+            Path(destination).write_text("concurrent data", encoding="utf-8")
+            raise OSError(errno.EPERM, "hard links are disabled")
+        return original_link(source, destination)
+
+    monkeypatch.setattr(migration.os, "link", race_upload_target)
+
+    with pytest.raises(FileExistsError):
+        _run_migration(paths)
+
+    assert raced_target.read_text(encoding="utf-8") == "concurrent data"
+    assert (paths[5] / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+    assert not list(raced_target.parent.glob(".knxoh-copy-*"))
+
+
+def test_no_hard_link_fallback_cleans_up_an_interrupted_copy(monkeypatch, tmp_path):
+    paths = _fixture(tmp_path)
+    original_copyfileobj = migration.shutil.copyfileobj
+
+    def reject_hard_links(*_args):
+        raise OSError(errno.EPERM, "hard links are disabled")
+
+    def no_replace_rename_unavailable(*_args):
+        raise OSError(errno.ENOTSUP, "no-replace rename is unavailable")
+
+    def fail_after_partial_write(source, destination, *args, **kwargs):
+        if Path(source.name).name.startswith(".knxoh-copy-"):
+            destination.write(b"partial")
+            raise OSError("simulated fallback copy interruption")
+        return original_copyfileobj(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(migration.os, "link", reject_hard_links)
+    monkeypatch.setattr(migration, "_rename_no_replace", no_replace_rename_unavailable)
+    monkeypatch.setattr(migration.shutil, "copyfileobj", fail_after_partial_write)
+
+    with pytest.raises(OSError, match="simulated fallback copy interruption"):
+        _run_migration(paths)
+
+    assert (paths[5] / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+    assert not (paths[3] / "jobs/upload.knxproj").exists()
+    assert not list((paths[3] / "jobs").glob(".knxoh-copy-*"))
+
+
+def test_no_hard_link_fallback_cleans_up_on_keyboard_interrupt(monkeypatch, tmp_path):
+    paths = _fixture(tmp_path)
+
+    def reject_hard_links(*_args):
+        raise OSError(errno.EPERM, "hard links are disabled")
+
+    def no_replace_rename_unavailable(*_args):
+        raise OSError(errno.ENOTSUP, "no-replace rename is unavailable")
+
+    def interrupt_after_partial_write(_source, destination, *_args, **_kwargs):
+        destination.write(b"partial")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(migration.os, "link", reject_hard_links)
+    monkeypatch.setattr(migration, "_rename_no_replace", no_replace_rename_unavailable)
+    monkeypatch.setattr(migration.shutil, "copyfileobj", interrupt_after_partial_write)
+
+    with pytest.raises(KeyboardInterrupt):
+        _run_migration(paths)
+
+    assert (paths[5] / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+    assert not (paths[3] / "jobs/upload.knxproj").exists()
+    assert not list((paths[3] / "jobs").glob(".knxoh-copy-*"))
+
+
+@pytest.mark.parametrize(
+    "crash_point",
+    [
+        "marker-initial-write",
+        "fallback-prepared",
+        "fallback-copying",
+        "partial-copy",
+        "initial-copy",
+    ],
+)
+def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path, crash_point):
+    paths = _fixture(tmp_path)
+    source = paths[5]
+    destination = paths[3] / "jobs"
+    ready = tmp_path / "copy-ready"
+    repository_root = Path(__file__).resolve().parents[1]
+    child_code = "\n".join(
+        (
+            "import errno, json, sys, time",
+            "from pathlib import Path",
+            "import installer.migrate_runtime_data as migration",
+            "crash_point = sys.argv[4]",
+            "ready_path = Path(sys.argv[3])",
+            "target = Path(sys.argv[2]) / 'upload.knxproj'",
+            "marker = migration._fallback_copy_state_path(target)",
+            "original_replace = migration.os.replace",
+            "def marker_state(path):",
+            "    try:",
+            "        return json.loads(Path(path).read_text(encoding='utf-8'))",
+            "    except (OSError, ValueError):",
+            "        return {}",
+            "def interrupt_marker_update(source, destination):",
+            "    if Path(destination) == marker:",
+            "        state = marker_state(source)",
+            "        should_interrupt = state.get('phase') == crash_point",
+            "        should_interrupt = should_interrupt or (crash_point == 'marker-initial-write' and state.get('phase') == 'staging' and 'temporary_identity' not in state)",
+            "        if should_interrupt:",
+            "            ready_path.write_text('ready', encoding='utf-8')",
+            "            time.sleep(60)",
+            "    return original_replace(source, destination)",
+            "def reject_hard_links(*args):",
+            "    raise OSError(errno.EPERM, 'hard links are disabled')",
+            "def no_replace_rename(*args):",
+            "    raise OSError(errno.ENOTSUP, 'no-replace rename is unavailable')",
+            "original_copyfileobj = migration.shutil.copyfileobj",
+            "def interrupt_copy(source, destination, *args, **kwargs):",
+            "    if crash_point == 'partial-copy' and Path(source.name) == migration._copy_temporary_path(target):",
+            "        destination.write(b'partial')",
+            "        destination.flush()",
+            "        ready_path.write_text('ready', encoding='utf-8')",
+            "        time.sleep(60)",
+            "    return original_copyfileobj(source, destination, *args, **kwargs)",
+            "original_copy2 = migration.shutil.copy2",
+            "def interrupt_initial_copy(source, destination, *args, **kwargs):",
+            "    if crash_point == 'initial-copy' and Path(destination) == migration._copy_temporary_path(target):",
+            "        Path(destination).write_bytes(b'partial')",
+            "        ready_path.write_text('ready', encoding='utf-8')",
+            "        time.sleep(60)",
+            "    return original_copy2(source, destination, *args, **kwargs)",
+            "migration.os.link = reject_hard_links",
+            "migration._rename_no_replace = no_replace_rename",
+            "migration.os.replace = interrupt_marker_update",
+            "migration.shutil.copyfileobj = interrupt_copy",
+            "migration.shutil.copy2 = interrupt_initial_copy",
+            "migration._copy_missing_tree(Path(sys.argv[1]), Path(sys.argv[2]))",
+        )
+    )
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            child_code,
+            str(source),
+            str(destination),
+            str(ready),
+            crash_point,
+        ],
+        cwd=repository_root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    deadline = time.monotonic() + 10
+    while not ready.exists() and process.poll() is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    if not ready.exists():
+        process.kill()
+        stdout, stderr = process.communicate(timeout=10)
+        pytest.fail(f"migration child did not reach {crash_point}: {stdout}{stderr}")
+
+    partial_target = destination / "upload.knxproj"
+    try:
+        if crash_point in {"marker-initial-write", "fallback-prepared"}:
+            assert not partial_target.exists()
+        elif crash_point == "fallback-copying":
+            assert partial_target.read_bytes() == b""
+        elif crash_point == "partial-copy":
+            assert partial_target.read_bytes() == b"partial"
+        if crash_point == "initial-copy":
+            assert not partial_target.exists()
+            assert migration._copy_temporary_path(partial_target).read_bytes() == b"partial"
+        assert migration._fallback_copy_state_path(partial_target).is_file()
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.communicate(timeout=10)
+
+    _run_migration(paths)
+
+    assert partial_target.read_text(encoding="utf-8") == "fixture upload"
+    assert not migration._fallback_copy_state_path(partial_target).exists()
+    assert not list(destination.glob(".knxoh-copy-state-*.tmp-*"))
+    assert not list(destination.glob(".knxoh-copy-*"))
+    assert not paths[5].exists()
+
+
+def test_migration_copies_valid_long_filename(tmp_path):
+    paths = _fixture(tmp_path)
+    old_jobs = paths[5]
+    filename = "a" * 250
+    (old_jobs / filename).write_text("long-name fixture", encoding="utf-8")
+
+    _run_migration(paths)
+
+    copied = paths[3] / "jobs" / filename
+    assert copied.read_text(encoding="utf-8") == "long-name fixture"
 
 
 def test_migration_refuses_conflicting_existing_data_without_deleting_legacy(tmp_path):

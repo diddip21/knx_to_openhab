@@ -607,7 +607,8 @@ def test_update_unit_installer_preserves_a_systemd_mask(tmp_path):
     assert destination.is_symlink()
     assert os.readlink(destination) == "/dev/null"
     assert log_file.read_text(encoding="utf-8").splitlines() == [
-        "systemctl show --property=LoadState --value knxohui-update.service"
+        "systemctl show --property=LoadState --value knxohui-update.service",
+        "systemctl show --property=LoadState --value knxohui-update.service",
     ]
 
 
@@ -616,7 +617,11 @@ def test_update_unit_installer_replaces_an_unmasked_unit(tmp_path):
     fake_bin.mkdir()
     log_file = tmp_path / "unmasked-unit-install.log"
     (fake_bin / "systemctl").write_text(
-        '#!/bin/bash\n[[ "$1" == show ]] || exit 2\necho loaded\n', encoding="utf-8"
+        '#!/bin/bash\n[[ "$1" == show ]] || exit 2\n'
+        'if [[ "$2" == --property=FragmentPath ]]; then\n'
+        '  echo "$UNIT_INSTALL_DESTINATION"\n'
+        "else\n  echo loaded\nfi\n",
+        encoding="utf-8",
     )
     (fake_bin / "systemctl").chmod(0o755)
     (fake_bin / "sudo").write_text(
@@ -628,11 +633,13 @@ def test_update_unit_installer_replaces_an_unmasked_unit(tmp_path):
     unit_source.write_text("[Service]\nExecStart=/bin/true\n", encoding="utf-8")
     destination = tmp_path / "systemd" / "knxohui-update.service"
     destination.parent.mkdir()
+    destination.write_text("# Managed by knx_to_openhab installer\n[Unit]\n", encoding="utf-8")
     environment = os.environ.copy()
     environment.update(
         {
             "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
             "UNIT_INSTALL_LOG": str(log_file),
+            "UNIT_INSTALL_DESTINATION": str(destination),
         }
     )
 

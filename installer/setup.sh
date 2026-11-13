@@ -325,6 +325,16 @@ if [[ "$AUTH_PREFLIGHT_STATUS" -eq 1 || "$AUTH_PREFLIGHT_STATUS" -eq 3 ]]; then
     echo "If no usable Web UI password is configured, setup will generate one and show it once."
 fi
 
+# Reject a name collision before stopping services or changing host state.
+preflight_setup_systemd_unit knxohui.service \
+    /etc/systemd/system/knxohui.service
+preflight_setup_systemd_unit knxohui-update.service \
+    /etc/systemd/system/knxohui-update.service
+preflight_setup_systemd_unit knxohui-backup-cleanup.service \
+    /etc/systemd/system/knxohui-backup-cleanup.service
+preflight_setup_systemd_unit knxohui-backup-cleanup.timer \
+    /etc/systemd/system/knxohui-backup-cleanup.timer
+
 if ! getent group "$SERVICE_USER" >/dev/null 2>&1; then
     sudo groupadd -r "$SERVICE_USER"
 fi

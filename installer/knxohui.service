@@ -1,4 +1,5 @@
 [Unit]
+# Managed by knx_to_openhab installer
 Description=KNX to OpenHAB Web UI Service
 After=network.target
 Wants=knxohui-backup-cleanup.timer

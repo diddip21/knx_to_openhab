@@ -232,6 +232,16 @@ echo "Using configuration directory: $CONFIG_DIR"
 echo "Using runtime data directory: $DATA_DIR"
 echo "Using backup directory: $BACKUP_DIR"
 
+# Reject a name collision before stopping services or changing host state.
+preflight_setup_systemd_unit knxohui.service \
+    /etc/systemd/system/knxohui.service
+preflight_setup_systemd_unit knxohui-update.service \
+    /etc/systemd/system/knxohui-update.service
+preflight_setup_systemd_unit knxohui-backup-cleanup.service \
+    /etc/systemd/system/knxohui-backup-cleanup.service
+preflight_setup_systemd_unit knxohui-backup-cleanup.timer \
+    /etc/systemd/system/knxohui-backup-cleanup.timer
+
 AUTH_PREFLIGHT_CONFIG="$CONFIG_DIR/config.json"
 if [[ ! -f "$AUTH_PREFLIGHT_CONFIG" && -f "$BASE/web_ui/backend/config.json" ]]; then
     AUTH_PREFLIGHT_CONFIG="$BASE/web_ui/backend/config.json"

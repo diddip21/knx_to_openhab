@@ -1,4 +1,5 @@
 [Unit]
+# Managed by knx_to_openhab installer
 Description=KNX to OpenHAB Daily Backup Cleanup Timer
 Documentation=https://github.com/diddip21/knx_to_openhab
 

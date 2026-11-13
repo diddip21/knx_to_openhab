@@ -56,6 +56,22 @@ def test_staged_fallback_keeps_live_config_unchanged_and_preserves_metadata(tmp_
     assert (staged_stat.st_uid, staged_stat.st_gid) == (original_stat.st_uid, original_stat.st_gid)
 
 
+def test_staged_confirmed_lan_bind_does_not_report_a_migration(tmp_path):
+    config_path = tmp_path / "config.json"
+    staged_path = tmp_path / "config.json.staged"
+    _config(config_path, "192.168.1.10")
+
+    changed = configure_bind(
+        config_path,
+        confirm_external=lambda _host: True,
+        output_path=staged_path,
+    )
+
+    assert not changed
+    assert json.loads(config_path.read_text(encoding="utf-8"))["bind_host"] == "192.168.1.10"
+    assert json.loads(staged_path.read_text(encoding="utf-8"))["bind_host"] == "192.168.1.10"
+
+
 def test_explicit_lan_choice_preserves_existing_bind(tmp_path):
     config_path = tmp_path / "config.json"
     _config(config_path, "192.168.1.10")

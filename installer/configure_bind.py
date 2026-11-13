@@ -83,7 +83,7 @@ def configure_bind(
         except FileNotFoundError:
             pass
         raise
-    return True
+    return changed
 
 
 def main() -> None:

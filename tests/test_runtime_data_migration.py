@@ -271,7 +271,7 @@ def test_interrupted_file_copy_keeps_legacy_data_and_can_retry(monkeypatch, tmp_
     assert (old_jobs / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
     assert old_backups.is_dir()
     assert not (data_dir / "jobs/upload.knxproj").exists()
-    assert not list((data_dir / "jobs").glob(".upload.knxproj.*"))
+    assert not list((data_dir / "jobs").glob(".knxoh-copy-*"))
     assert not (config_dir.parent / "paths.env").exists()
 
     monkeypatch.setattr(migration.shutil, "copy2", original_copy2)

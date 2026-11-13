@@ -81,9 +81,7 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
                 raise FileExistsError(f"Legacy data conflicts with existing destination: {target}")
         elif entry.is_file():
             target.parent.mkdir(parents=True, exist_ok=True)
-            descriptor, temporary_name = tempfile.mkstemp(
-                prefix=".knxoh-copy-", dir=target.parent
-            )
+            descriptor, temporary_name = tempfile.mkstemp(prefix=".knxoh-copy-", dir=target.parent)
             os.close(descriptor)
             try:
                 shutil.copy2(entry, temporary_name)

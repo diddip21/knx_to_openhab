@@ -299,7 +299,12 @@ def test_gateway_api_requires_authentication_when_auth_is_enabled(client, monkey
     monkeypatch.setitem(
         app_module.cfg,
         "auth",
-        {"enabled": True, "user": "operator", "legacy_password": "configured"},
+        {
+            "enabled": True,
+            "user": "operator",
+            "legacy_password": "configured",
+            "mode": "session",
+        },
     )
     job_mgr = Mock()
     monkeypatch.setattr(app_module, "job_mgr", job_mgr)
@@ -436,7 +441,12 @@ def test_gateway_undo_route_requires_authentication_when_enabled(client, monkeyp
     monkeypatch.setitem(
         app_module.cfg,
         "auth",
-        {"enabled": True, "user": "operator", "legacy_password": "configured"},
+        {
+            "enabled": True,
+            "user": "operator",
+            "legacy_password": "configured",
+            "mode": "session",
+        },
     )
     job_mgr = Mock()
     monkeypatch.setattr(app_module, "job_mgr", job_mgr)

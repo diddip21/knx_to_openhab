@@ -109,6 +109,9 @@ def test_updater_retries_yaml_provisioning_when_git_is_already_current(tmp_path)
     fake_python = install_dir / "venv" / "bin" / "python"
     fake_python.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
     fake_python.chmod(0o755)
+    fake_pip = install_dir / "venv" / "bin" / "pip"
+    fake_pip.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    fake_pip.chmod(0o755)
 
     fake_git = bin_dir / "git"
     fake_git.write_text(
@@ -252,8 +255,15 @@ def test_web_updater_rolls_back_if_updated_service_fails_health_check():
     assert update.index("if ! wait_for_service_active; then") < update.index(
         'log "Update completed successfully!"'
     )
+    pip_preflight = 'if [[ ! -x "$INSTALL_DIR/venv/bin/pip" ]]; then'
+    assert pip_preflight in update
+    assert update.index(pip_preflight) < update.index("# Create backup of current installation")
 
 
+@pytest.mark.skipif(
+    os.name != "posix" or shutil.which("bash") is None,
+    reason="installer preflight integration requires a POSIX shell environment",
+)
 def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_config(tmp_path):
     setup_script = ROOT / "installer" / "setup.sh"
     for status, message in (
@@ -344,7 +354,12 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
         assert not (config.parent / "paths.env").exists()
 
 
-def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path):
+@pytest.mark.skipif(
+    os.name != "posix" or shutil.which("bash") is None,
+    reason="the updater rollback integration test requires a POSIX shell environment",
+)
+@pytest.mark.parametrize("failure_stage", ["health_check", "dependencies"])
+def test_update_restores_previous_release_after_update_failure(tmp_path, failure_stage):
     remote = tmp_path / "remote.git"
     seed = tmp_path / "seed"
     install = tmp_path / "install"
@@ -388,10 +403,21 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
 
     venv_bin = install / "venv" / "bin"
     venv_bin.mkdir(parents=True)
-    for executable in ("python", "pip"):
-        path = venv_bin / executable
-        path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-        path.chmod(0o755)
+    python = venv_bin / "python"
+    python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    python.chmod(0o755)
+    pip = venv_bin / "pip"
+    pip.write_text(
+        "#!/bin/bash\n"
+        'printf \'%s\\n\' "$*" >> "$UPDATE_TEST_STATE/pip-calls"\n'
+        'if [[ "$1" == "install" && "$2" == "-r" ]]; then cat "$3" >> '
+        '"$UPDATE_TEST_STATE/pip-requirements"; fi\n'
+        'if [[ "$*" == *"install -r"* ]] && grep -q new-dependency "$3" && '
+        '[[ "$UPDATE_TEST_FAIL_STAGE" == "dependencies" ]]; then exit 1; fi\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    pip.chmod(0o755)
     sudo = fake_bin / "sudo"
     sudo.write_text(
         "#!/bin/bash\n"
@@ -402,7 +428,7 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
         "  count=0\n"
         '  [[ -f "$UPDATE_TEST_STATE/restarts" ]] && count=$(<"$UPDATE_TEST_STATE/restarts")\n'
         '  count=$((count + 1))\n  echo "$count" > "$UPDATE_TEST_STATE/restarts"\n'
-        "  if (( count == 1 )); then exit 0; fi\n"
+        '  if [[ "$UPDATE_TEST_FAIL_STAGE" == "health_check" ]] && (( count == 1 )); then exit 0; fi\n'
         '  touch "$UPDATE_TEST_STATE/active"\n  exit 0\nfi\n'
         'if [[ "$1" == "systemctl" && "$2" == "is-active" ]]; then\n'
         '  [[ -f "$UPDATE_TEST_STATE/active" ]] || exit 3\n'
@@ -423,6 +449,7 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
         {
             "PATH": str(fake_bin) + os.pathsep + env["PATH"],
             "UPDATE_TEST_STATE": str(state),
+            "UPDATE_TEST_FAIL_STAGE": failure_stage,
             "INSTALL_DIR": str(install),
             "KNXOH_BACKUP_DIR": str(backup_dir),
             "KNXOH_CONFIG_DIR": str(config_dir),
@@ -448,9 +475,16 @@ def test_update_restores_previous_commit_if_service_health_check_fails(tmp_path)
     assert result.returncode == 1
     assert current_commit == previous_commit
     assert (state / "active").is_file()
-    assert (state / "restarts").read_text(encoding="utf-8").strip() == "2"
+    expected_restarts = "2" if failure_stage == "health_check" else "1"
+    assert (state / "restarts").read_text(encoding="utf-8").strip() == expected_restarts
     assert int((state / "active-checks").read_text(encoding="utf-8")) >= 3
-    assert "The updated service did not become active." in log
+    if failure_stage == "health_check":
+        assert "The updated service did not become active." in log
+    else:
+        assert "Failed to install dependencies" in log
+        installed_requirements = (state / "pip-requirements").read_text(encoding="utf-8")
+        assert "new-dependency" in installed_requirements
+        assert "old-dependency" in installed_requirements
     assert "Previous version restored and service is active." in log
 
 

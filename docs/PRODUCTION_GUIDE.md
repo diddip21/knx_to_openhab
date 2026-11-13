@@ -2,7 +2,7 @@
 
 ## Overview
 
-A lightweight, browser-based web interface to execute the KNX-to-OpenHAB generator on a Raspberry Pi (DietPi) without Docker. Includes real-time progress streaming, automatic backups, rollback capability, retention policies, and password-based browser sessions.
+A lightweight, browser-based web interface to execute the KNX-to-OpenHAB generator on a Raspberry Pi (DietPi) without Docker. Includes real-time progress streaming, automatic backups, rollback capability, retention policies, and password-based browser authentication.
 
 **Technology Stack:**
 - **Backend:** Flask (Python) with Server-Sent Events (SSE) for live updates
@@ -21,7 +21,7 @@ A lightweight, browser-based web interface to execute the KNX-to-OpenHAB generat
 ✅ **Rollback Capability** — Restore any previous backup in one click  
 ✅ **Retention Policies** — Auto-cleanup by age (days), count (max backups), and size (MB)  
 ✅ **Service Management** — Restart OpenHAB from the UI  
-✅ **Protected Web Sessions** — Argon2id credentials, CSRF protection, session expiry and logout
+✅ **Protected Web UI** — HTTP Basic by default, Argon2id credentials, and optional revocable sessions
 ✅ **Job History** — Persistent JSON storage of all jobs and metadata  
 
 ### UI Dashboard
@@ -174,8 +174,10 @@ then open `http://127.0.0.1:8085`. Setup asks before retaining a legacy binding 
 allows LAN access. You can also deliberately set `bind_host` to a private interface
 address in `/etc/knx_to_openhab/config.json`, then restart `knxohui.service`.
 
-Sign in with the Web UI username and password configured during installation. The
-browser keeps a revocable session cookie; write requests include a CSRF token.
+HTTP Basic is the default authentication mode. Set `auth.mode` to `session` to
+keep the sign-in page and revocable sessions. Basic-mode writes must come from
+the application's same origin or an explicitly allowed HTTPS origin; session-
+mode writes include a CSRF token. Use HTTPS for access over a network.
 
 ### Upload and Process a KNX Project
 
@@ -223,6 +225,7 @@ Location: `/etc/knx_to_openhab/config.json`
   "session_max_age_seconds": 43200,
   "auth": {
     "enabled": true,
+    "mode": "basic",
     "user": "admin"
   },
   "retention": {
@@ -256,19 +259,40 @@ Cleanup happens:
 
 ### Endpoints (JSON)
 
-Browser endpoints require a signed-in session unless `auth.enabled` is `false`.
-The health endpoint `/api/status` remains public. For API writes, send the
-`X-CSRF-Token` header using the value exposed in the signed-in page's
-`csrf-token` meta tag. The browser UI does this automatically.
+Browser endpoints use HTTP Basic by default unless `auth.enabled` is `false`.
+Set `auth.mode` to `session` for revocable browser sessions. The health endpoint
+`/api/status` remains public. Session-mode API writes require the `X-CSRF-Token`
+header from the signed-in page's `csrf-token` meta tag. Basic-mode writes require
+a matching same-origin request or an explicitly allowed HTTPS origin. The
+browser UI supplies the required headers automatically.
 
 #### `POST /api/upload`
 Upload a KNX project file.
 
-**Request:**
+**Request (default Basic mode, `auth.mode: "basic"`):**
 ```
+Authorization: Basic <base64(username:password)>
+Origin: https://<web-ui-host>
 Content-Type: multipart/form-data
-Cookie: knx_session=…
+File field: "file" (binary)
+```
+The `Origin` must match the Web UI's origin (scheme, host, and port), or an
+HTTPS origin listed in `auth.allowed_origins`. With curl, for example:
+
+```bash
+curl --user '<username>:<password>' \
+  -H 'Origin: https://<web-ui-host>' \
+  -F 'file=@project.knxproj' \
+  'https://<web-ui-host>/api/upload'
+```
+
+For `auth.mode: "session"`, send the session and CSRF cookies and repeat the
+CSRF token in the header:
+
+```
+Cookie: knx_session=…; knx_csrf=<csrf-token>
 X-CSRF-Token: <csrf-token>
+Content-Type: multipart/form-data
 File field: "file" (binary)
 ```
 

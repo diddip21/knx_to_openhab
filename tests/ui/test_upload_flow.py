@@ -55,31 +55,23 @@ def test_upload_knx_project(page: Page, base_url, flask_server):
     )
 
 
-def test_upload_invalid_file(page: Page, base_url):
+def test_upload_invalid_file_is_rejected_by_backend(page: Page, base_url, flask_server, tmp_path):
     """Test uploading an invalid file type."""
     page.goto(base_url)
+    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
 
-    # Create a dummy txt file
-    dummy_file = "test.txt"
-    with open(dummy_file, "w") as f:
-        f.write("dummy content")
+    dummy_file = tmp_path / "invalid.txt"
+    dummy_file.write_text("not a KNX project", encoding="utf-8")
+    file_input = page.locator("#fileInput")
+    expect(file_input).to_be_visible()
+    file_input.set_input_files(str(dummy_file))
 
-    # Backend currently accepts all files and fails later in the job.
-    # This test expects immediate rejection which is not implemented.
-    pytest.skip("Backend does not validate file type on upload")
-
-    try:
-        file_input = page.locator("#fileInput")
-        expect(file_input).to_be_visible()
-
-        file_input.set_input_files(dummy_file)
-
-        # Submit
+    with page.expect_response(
+        lambda response: response.url.endswith("/api/upload") and response.request.method == "POST"
+    ) as upload_response:
         page.locator("button[type='submit']").click()
 
-        # Check for error message in status
-        # status_div = page.locator("#status")
-        # expect(status_div).to_contain_text("Error", ignore_case=True, timeout=5000)
-    finally:
-        if os.path.exists(dummy_file):
-            os.remove(dummy_file)
+    assert upload_response.value.status == 400
+    expect(page.locator("#status")).to_contain_text(
+        re.compile(r"not supported|not allowed|invalid", re.IGNORECASE), timeout=10000
+    )

@@ -20,6 +20,7 @@ def _enable_test_auth(monkeypatch, tmp_path, password="a-long-unique-password"):
                 "enabled": True,
                 "user": "operator",
                 "password_hash": hash_password(password),
+                "mode": "session",
             },
             "sessions_file": str(tmp_path / "sessions.sqlite3"),
         },
@@ -322,7 +323,7 @@ def test_load_config_rejects_invalid_login_csrf_origin_shape(
     monkeypatch.delenv("KNXOH_DATA_DIR", raising=False)
     monkeypatch.delenv("KNXOH_BACKUP_DIR", raising=False)
     config_file = tmp_path / "web_ui" / "backend" / "config.json"
-    config_file.parent.mkdir(parents=True)
+    config_file.parent.mkdir(parents=True, exist_ok=True)
     config_file.write_text(
         json.dumps({"login_csrf_allowed_origins": configured_origins}), encoding="utf-8"
     )
@@ -354,7 +355,7 @@ def test_login_redirect_when_auth_is_disabled_is_not_cacheable(monkeypatch, tmp_
     assert "no-store" in response.headers.get("Cache-Control", "")
 
 
-def test_basic_auth_configuration_defaults_to_session(tmp_path, monkeypatch):
+def test_auth_configuration_defaults_to_basic_and_preserves_explicit_session(tmp_path, monkeypatch):
     monkeypatch.setenv("KNXOH_PATHS_FILE", str(tmp_path / "missing-paths.env"))
     monkeypatch.delenv("KNXOH_CONFIG_DIR", raising=False)
     monkeypatch.delenv("KNXOH_DATA_DIR", raising=False)
@@ -362,8 +363,14 @@ def test_basic_auth_configuration_defaults_to_session(tmp_path, monkeypatch):
 
     config = load_config(tmp_path)
 
-    assert config["auth"]["mode"] == "session"
+    assert config["auth"]["mode"] == "basic"
     assert config["auth"]["allowed_origins"] == []
+
+    config_file = tmp_path / "web_ui" / "backend" / "config.json"
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text(json.dumps({"auth": {"mode": "session"}}), encoding="utf-8")
+
+    assert load_config(tmp_path)["auth"]["mode"] == "session"
 
 
 @pytest.mark.parametrize(
@@ -460,6 +467,7 @@ def test_basic_auth_allows_protected_page_and_api_without_cookies(monkeypatch, t
 
     assert page.status_code == 200
     assert api.status_code == 200
+    assert b'<meta name="auth-mode" content="basic">' in page.data
     assert client.get_cookie("knx_session") is None
     assert client.get_cookie("knx_csrf") is None
     assert not any(
@@ -533,6 +541,18 @@ def test_basic_auth_allows_write_with_exact_origin_or_referer(monkeypatch, tmp_p
         for cookie in with_origin.headers.getlist("Set-Cookie")
         + with_referer.headers.getlist("Set-Cookie")
     )
+
+
+def test_default_basic_auth_allows_same_origin_write_without_allowlist(monkeypatch, tmp_path):
+    _enable_basic_auth(monkeypatch, tmp_path)
+    app_module.cfg["auth"]["allowed_origins"] = []
+
+    response = app_module.app.test_client().post(
+        "/api/logout",
+        headers={**_basic_auth_header(), "Origin": "http://localhost"},
+    )
+
+    assert response.status_code == 200
 
 
 @pytest.mark.parametrize(
@@ -650,7 +670,10 @@ def test_first_run_without_credentials_fails_closed(monkeypatch, tmp_path):
     monkeypatch.setattr(
         app_module,
         "cfg",
-        {"auth": {"enabled": True, "user": "admin"}, "sessions_file": str(tmp_path / "s.db")},
+        {
+            "auth": {"enabled": True, "user": "admin", "mode": "session"},
+            "sessions_file": str(tmp_path / "s.db"),
+        },
     )
     monkeypatch.setattr(app_module, "get_session_secret", lambda project_root=None: b"k" * 32)
 
@@ -692,7 +715,12 @@ def test_update_requires_migrated_hash_before_starting_update(monkeypatch, tmp_p
         app_module,
         "cfg",
         {
-            "auth": {"enabled": True, "user": "operator", "legacy_password": "old-password"},
+            "auth": {
+                "enabled": True,
+                "user": "operator",
+                "legacy_password": "old-password",
+                "mode": "session",
+            },
             "sessions_file": str(tmp_path / "sessions.sqlite3"),
         },
     )

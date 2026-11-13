@@ -49,7 +49,7 @@ def _environment(tmp_path, *, python_version="3.11", free_kib=1048576):
         "fi\n"
         'if [ "${1:-}" = "rm" ]; then\n'
         '    if [ -f "$PREFLIGHT_PROBE_ROOT_LOG" ]; then chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"; fi\n'
-        '    shift\n'
+        "    shift\n"
         '    exec /bin/rm "$@"\n'
         "fi\n"
         'printf "called\\n" >> "$PREFLIGHT_SUDO_LOG"\n'
@@ -289,10 +289,10 @@ def test_venv_probe_accepts_usable_interpreter_and_cleans_up(tmp_path):
         "    exit 0\n"
         "fi\n"
         'if [ "${1:-}" = "python3" ]; then\n'
-        '    shift\n'
+        "    shift\n"
         '    chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"\n'
         '    "$PREFLIGHT_REAL_PYTHON" "$@"\n'
-        '    status=$?\n'
+        "    status=$?\n"
         '    chmod 000 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"\n'
         '    exit "$status"\n'
         "fi\n"
@@ -302,7 +302,7 @@ def test_venv_probe_accepts_usable_interpreter_and_cleans_up(tmp_path):
         "fi\n"
         'if [ "${1:-}" = "rm" ]; then\n'
         '    if [ -f "$PREFLIGHT_PROBE_ROOT_LOG" ]; then chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"; fi\n'
-        '    shift\n'
+        "    shift\n"
         '    exec /bin/rm "$@"\n'
         "fi\n"
         'exec "$@"\n',

@@ -261,3 +261,43 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
     )
     assert setup_log.read_text(encoding="utf-8") == ""
     assert not external_setup_marker.exists()
+
+
+def test_staged_checkout_activation_never_replaces_an_existing_target(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_executable(fake_bin / "sudo", '#!/bin/bash\nexec "$@"\n')
+
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    (staged / "checkout.txt").write_text("new release", encoding="utf-8")
+    target = tmp_path / "target"
+    target.mkdir()
+    sentinel = target / "user-data.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    environment = os.environ.copy()
+    environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+
+    def activate(target_name):
+        script = (
+            f"source {shlex.quote(str(INSTALLER))}; "
+            f"activate_staged_checkout {shlex.quote(str(tmp_path))} staged {target_name}"
+        )
+        return subprocess.run(
+            ["bash", "-c", script],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+
+    collision = activate("target")
+    assert collision.returncode != 0
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+    assert (staged / "checkout.txt").read_text(encoding="utf-8") == "new release"
+
+    success = activate("new-target")
+    assert success.returncode == 0, success.stdout + success.stderr
+    assert not staged.exists()
+    assert (tmp_path / "new-target" / "checkout.txt").read_text(encoding="utf-8") == "new release"

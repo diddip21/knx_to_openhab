@@ -189,6 +189,8 @@ beside the final installation path and moved into place only after the copy
 succeeds. If copying fails, the final path stays absent and `--install` can be
 retried. If the subsequent setup fails, the copied checkout remains in place;
 use `bash install.sh --repair` after correcting the reported cause.
+Activation uses Linux's atomic no-clobber rename; it refuses an installation
+path that appears during copying and never falls back to a cross-filesystem copy.
 
 The top-level installer resolves the GitHub release and checks out its exact
 tag. It does not yet stage a separate release directory or verify the published

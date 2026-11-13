@@ -571,6 +571,32 @@ update_repository() {
     log_success "Repository updated to $RELEASE_TAG"
 }
 
+activate_staged_checkout() {
+    sudo python3 - "$1" "$2" "$3" <<'PY'
+import ctypes
+import os
+import sys
+
+parent, staged_name, target_name = sys.argv[1:]
+if any(name in ("", ".", "..") or "/" in name for name in (staged_name, target_name)):
+    raise SystemExit("Invalid staged release or target name")
+
+directory = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+try:
+    try:
+        renameat2 = ctypes.CDLL(None, use_errno=True).renameat2
+    except AttributeError as error:
+        raise SystemExit("Atomic no-clobber rename is unavailable on this host") from error
+    renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    renameat2.restype = ctypes.c_int
+    if renameat2(directory, os.fsencode(staged_name), directory, os.fsencode(target_name), 1):
+        error_number = ctypes.get_errno()
+        raise OSError(error_number, os.strerror(error_number), target_name)
+finally:
+    os.close(directory)
+PY
+}
+
 clone_new_repository() (
     local temp_dir stage_dir="" install_target="$INSTALL_DIR" install_parent
     while [[ "$install_target" == */ ]]; do
@@ -601,6 +627,7 @@ clone_new_repository() (
 
     sudo mkdir -p -- "$install_parent"
     install_parent="$(cd -- "$install_parent" && pwd -P)"
+    install_target="$install_parent/$(basename -- "$install_target")"
     if ! stage_dir="$(sudo mktemp -d "$install_parent/.knxoh-install.XXXXXXXX")"; then
         log_error "Could not stage the release beside $install_target."
         exit 1
@@ -614,8 +641,8 @@ clone_new_repository() (
         log_error "Installation path appeared during checkout: $install_target. Existing files were left untouched."
         exit 2
     fi
-    if ! sudo mv -T -- "$stage_dir" "$install_target"; then
-        log_error "Could not activate the staged release at $install_target."
+    if ! activate_staged_checkout "$install_parent" "${stage_dir##*/}" "${install_target##*/}"; then
+        log_error "Could not atomically activate the staged release at $install_target."
         exit 1
     fi
     stage_dir=""

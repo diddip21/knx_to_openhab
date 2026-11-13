@@ -265,7 +265,9 @@ def test_setup_uses_a_saved_custom_maintenance_lock_path(tmp_path):
     )
     fake_sudo.chmod(0o755)
     (fake_bin / "getent").write_text(
-        '#!/usr/bin/env bash\n[[ "$1" == group && "$2" == knxohui ]]\n', encoding="utf-8"
+        '#!/usr/bin/env bash\nif [[ "$1" == passwd ]]; then exit 2; fi\n'
+        '[[ "$1" == group && "$2" == knxohui ]]\n',
+        encoding="utf-8",
     )
     (fake_bin / "getent").chmod(0o755)
     (fake_bin / "id").write_text(
@@ -362,7 +364,8 @@ def test_setup_rejects_unsafe_maintenance_lock_parent_before_privileged_steps(tm
     )
     fake_sudo.chmod(0o755)
     (fake_bin / "getent").write_text(
-        '#!/usr/bin/env bash\n[[ "$1" == group && "$2" == knxohui ]]\n',
+        '#!/usr/bin/env bash\nif [[ "$1" == passwd ]]; then exit 2; fi\n'
+        '[[ "$1" == group && "$2" == knxohui ]]\n',
         encoding="utf-8",
     )
     (fake_bin / "getent").chmod(0o755)

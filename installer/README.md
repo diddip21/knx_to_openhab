@@ -176,6 +176,21 @@ prereleases such as `1.3.0-rc.1` can be selected this way; they are never
 chosen by the default stable channel. If GitHub has no matching release, the
 installer stops instead of falling back to `main`.
 
+Before requesting sudo, the entry point checks for Python 3.11 or newer and at
+least 1 GiB of free space on the installation filesystem. `--install` and
+`--update` resolve the selected GitHub release before installing packages, so
+an unavailable release or network fails before package changes. After system
+packages are available, a temporary Python virtual environment is created and
+removed to verify venv support before cloning or running setup. `--repair`
+does not fetch a release, but its dependency and setup steps may still need
+network access. When all required system packages are installed, a repeated
+run skips `apt-get update`; Python package installation in setup may still
+access a package index. `--help` and `--cancel` work without Python.
+Before setup creates or reuses the `knxohui` service account, it checks that
+an existing account uses the matching primary group and a non-login shell.
+Incompatible accounts stop setup before services or file ownership change.
+When setup fails, the top-level installer returns its exit code to the caller.
+
 On a first install, running without a mode keeps `--install` as the default.
 For an existing installation, an interactive run asks for update, repair, or
 cancel; a non-interactive run stops with an explicit instruction instead of

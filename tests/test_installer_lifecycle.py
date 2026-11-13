@@ -105,8 +105,8 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
         'mkdir -p "$destination"\n'
         'if [[ "${FAKE_RSYNC_FAIL:-0}" == 1 ]]; then\n'
         '  printf "partial\\n" > "$destination/partial"\n'
-        '  exit 75\n'
-        'fi\n'
+        "  exit 75\n"
+        "fi\n"
         'cp -a "$source"/. "$destination"/\n',
     )
     _write_executable(

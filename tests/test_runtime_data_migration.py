@@ -285,6 +285,19 @@ def test_interrupted_file_copy_keeps_legacy_data_and_can_retry(monkeypatch, tmp_
     assert not old_backups.exists()
 
 
+def test_copy_retry_preserves_unrelated_file_with_temporary_prefix(tmp_path):
+    paths = _fixture(tmp_path)
+    target_jobs = paths[3] / "jobs"
+    target_jobs.mkdir(parents=True)
+    unrelated = target_jobs / ".knxoh-copy-unrelated"
+    unrelated.write_text("fixture upload", encoding="utf-8")
+
+    _run_migration(paths)
+
+    assert unrelated.read_text(encoding="utf-8") == "fixture upload"
+    assert (target_jobs / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+
+
 def test_copy_publication_works_without_hard_links(monkeypatch, tmp_path):
     paths = _fixture(tmp_path)
 
@@ -379,7 +392,16 @@ def test_no_hard_link_fallback_cleans_up_on_keyboard_interrupt(monkeypatch, tmp_
     assert not list((paths[3] / "jobs").glob(".knxoh-copy-*"))
 
 
-@pytest.mark.parametrize("crash_point", ["first-marker", "second-marker", "partial-copy"])
+@pytest.mark.parametrize(
+    "crash_point",
+    [
+        "marker-initial-write",
+        "fallback-prepared",
+        "fallback-copying",
+        "partial-copy",
+        "initial-copy",
+    ],
+)
 def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path, crash_point):
     paths = _fixture(tmp_path)
     source = paths[5]
@@ -388,7 +410,7 @@ def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path, crash_poi
     repository_root = Path(__file__).resolve().parents[1]
     child_code = "\n".join(
         (
-            "import errno, sys, time",
+            "import errno, json, sys, time",
             "from pathlib import Path",
             "import installer.migrate_runtime_data as migration",
             "crash_point = sys.argv[4]",
@@ -396,14 +418,17 @@ def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path, crash_poi
             "target = Path(sys.argv[2]) / 'upload.knxproj'",
             "marker = migration._fallback_copy_state_path(target)",
             "original_replace = migration.os.replace",
-            "replace_count = 0",
+            "def marker_state(path):",
+            "    try:",
+            "        return json.loads(Path(path).read_text(encoding='utf-8'))",
+            "    except (OSError, ValueError):",
+            "        return {}",
             "def interrupt_marker_update(source, destination):",
-            "    global replace_count",
             "    if Path(destination) == marker:",
-            "        replace_count += 1",
-            "        should_interrupt = (crash_point == 'first-marker' and replace_count == 1) or (crash_point == 'second-marker' and replace_count == 2)",
+            "        state = marker_state(source)",
+            "        should_interrupt = state.get('phase') == crash_point",
+            "        should_interrupt = should_interrupt or (crash_point == 'marker-initial-write' and state.get('phase') == 'staging' and 'temporary_identity' not in state)",
             "        if should_interrupt:",
-            "            Path(source).write_text('{', encoding='utf-8')",
             "            ready_path.write_text('ready', encoding='utf-8')",
             "            time.sleep(60)",
             "    return original_replace(source, destination)",
@@ -418,10 +443,18 @@ def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path, crash_poi
             "        ready_path.write_text('ready', encoding='utf-8')",
             "        time.sleep(60)",
             "    return original_copyfileobj(source, destination, *args, **kwargs)",
+            "original_copy2 = migration.shutil.copy2",
+            "def interrupt_initial_copy(source, destination, *args, **kwargs):",
+            "    if crash_point == 'initial-copy' and Path(destination).name.startswith('.knxoh-copy-'):",
+            "        Path(destination).write_bytes(b'partial')",
+            "        ready_path.write_text('ready', encoding='utf-8')",
+            "        time.sleep(60)",
+            "    return original_copy2(source, destination, *args, **kwargs)",
             "migration.os.link = reject_hard_links",
             "migration._rename_no_replace = no_replace_rename",
             "migration.os.replace = interrupt_marker_update",
             "migration.shutil.copyfileobj = interrupt_copy",
+            "migration.shutil.copy2 = interrupt_initial_copy",
             "migration._copy_missing_tree(Path(sys.argv[1]), Path(sys.argv[2]))",
         )
     )
@@ -446,16 +479,19 @@ def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path, crash_poi
     if not ready.exists():
         process.kill()
         stdout, stderr = process.communicate(timeout=10)
-        pytest.fail(f"fallback child did not reach its partial copy: {stdout}{stderr}")
+        pytest.fail(f"migration child did not reach {crash_point}: {stdout}{stderr}")
 
     partial_target = destination / "upload.knxproj"
     try:
-        if crash_point == "first-marker":
+        if crash_point in {"marker-initial-write", "fallback-prepared"}:
             assert not partial_target.exists()
-        elif crash_point == "second-marker":
+        elif crash_point == "fallback-copying":
             assert partial_target.read_bytes() == b""
-        else:
+        elif crash_point == "partial-copy":
             assert partial_target.read_bytes() == b"partial"
+        if crash_point == "initial-copy":
+            assert not partial_target.exists()
+            assert migration._copy_temporary_path(partial_target).read_bytes() == b"partial"
         assert migration._fallback_copy_state_path(partial_target).is_file()
     finally:
         if process.poll() is None:

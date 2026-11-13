@@ -10,8 +10,9 @@ import sys
 from pathlib import Path
 
 
-def check_web_port(config_path: Path) -> tuple[str, int]:
-    config = json.loads(config_path.read_text(encoding="utf-8"))
+def check_web_port(config_path: Path | None) -> tuple[str, int]:
+    raw_config = sys.stdin.read() if config_path is None else config_path.read_text(encoding="utf-8")
+    config = json.loads(raw_config)
     if not isinstance(config, dict):
         raise ValueError("Web UI configuration must be a JSON object")
     host = config.get("bind_host", "127.0.0.1")
@@ -51,9 +52,10 @@ def check_web_port(config_path: Path) -> tuple[str, int]:
 
 def main() -> None:
     if len(sys.argv) != 2:
-        raise SystemExit("usage: check_web_port.py CONFIG.json")
+        raise SystemExit("usage: check_web_port.py CONFIG.json|-")
     try:
-        check_web_port(Path(sys.argv[1]))
+        config_path = None if sys.argv[1] == "-" else Path(sys.argv[1])
+        check_web_port(config_path)
     except (OSError, ValueError, json.JSONDecodeError) as error:
         raise SystemExit(f"Web UI port preflight failed: {error}") from error
 

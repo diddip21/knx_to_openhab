@@ -24,8 +24,8 @@ def _run_dependency_step(tmp_path, missing_package=""):
         'package="${@: -1}"\n'
         'if [[ "$package" != "$MISSING_PACKAGE" ]]; then\n'
         '  printf "installed\\n"\n'
-        '  exit 0\n'
-        'fi\n'
+        "  exit 0\n"
+        "fi\n"
         "exit 1\n",
         encoding="utf-8",
     )

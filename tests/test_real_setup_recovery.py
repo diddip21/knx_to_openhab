@@ -75,6 +75,8 @@ def test_real_setup_restores_services_and_repairs_after_failure(tmp_path, monkey
     )
     for path in ("etc/systemd/system", "usr/local/sbin"):
         (tmp_path / "host" / path).mkdir(parents=True)
+    temporary = tmp_path / "tmp"
+    temporary.mkdir()
     initial_active = ["knxohui.service", "knxohui-backup-cleanup.timer"]
     (tmp_path / "active.json").write_text(json.dumps(initial_active))
     fake_bin = tmp_path / "bin"
@@ -84,6 +86,7 @@ def test_real_setup_restores_services_and_repairs_after_failure(tmp_path, monkey
     executable(fake_bin / "getent", "#!/bin/sh\necho knxohui:x:0:\n")
     executable(fake_bin / "id", "#!/bin/sh\necho 997\n")
     env = os.environ | {
+        "TMPDIR": str(temporary),
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
         "SETUP_SANDBOX": str(tmp_path),
         "KNXOH_PATHS_FILE": str(registry),
@@ -101,7 +104,9 @@ def test_real_setup_restores_services_and_repairs_after_failure(tmp_path, monkey
         )
 
     first = repair(fault)
-    assert first.returncode != 0, first.stdout + first.stderr
+    assert first.returncode == {"helpers": 71, "migration": 1, "restart": 73}[fault], (
+        first.stdout + first.stderr
+    )
     assert "restoring services" in first.stderr, first.stdout + first.stderr
     assert sorted(json.loads((tmp_path / "active.json").read_text())) == sorted(initial_active)
     assert (tmp_path / "host/usr/local/libexec/knx_to_openhab/launch_web.sh").is_file()

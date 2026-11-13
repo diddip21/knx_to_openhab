@@ -473,17 +473,17 @@ check_os() {
 check_installer_python() {
     local python_version python_major python_minor
     if ! command -v python3 >/dev/null 2>&1; then
-        log_error "Python 3.12 or newer is required, but python3 was not found."
+        log_error "Python 3.11 or newer is required, but python3 was not found."
         return 1
     fi
     if ! python_version="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" ||
        [[ ! "$python_version" =~ ^[0-9]+\.[0-9]+$ ]]; then
-        log_error "Could not determine the system Python version; install Python 3.12 or newer."
+        log_error "Could not determine the system Python version; install Python 3.11 or newer."
         return 1
     fi
     IFS=. read -r python_major python_minor <<<"$python_version"
-    if (( python_major < 3 || (python_major == 3 && python_minor < 12) )); then
-        log_error "Python 3.12 or newer is required; found Python $python_version."
+    if (( python_major < 3 || (python_major == 3 && python_minor < 11) )); then
+        log_error "Python 3.11 or newer is required; found Python $python_version."
         return 1
     fi
 }
@@ -560,8 +560,8 @@ check_sudo_installer_python() {
     fi
     python_major="${python_version%%.*}"
     python_minor="${python_version#*.}"
-    if (( python_major < 3 || (python_major == 3 && python_minor < 12) )); then
-        log_error "Python 3.12 or newer must be available through sudo as python3; found $python_version."
+    if (( python_major < 3 || (python_major == 3 && python_minor < 11) )); then
+        log_error "Python 3.11 or newer must be available through sudo as python3; found $python_version."
         return 1
     fi
     log_success "Sudo uses supported Python $python_version."

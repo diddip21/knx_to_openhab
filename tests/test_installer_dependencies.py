@@ -18,17 +18,18 @@ pytestmark = pytest.mark.skipif(
 def _run_dependency_step(tmp_path, missing_package=""):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
-    dpkg = fake_bin / "dpkg"
-    dpkg.write_text(
+    dpkg_query = fake_bin / "dpkg-query"
+    dpkg_query.write_text(
         "#!/bin/bash\n"
-        "for package in git python3 python3-venv python3-pip rsync curl; do\n"
-        '  if [[ "$package" != "$MISSING_PACKAGE" ]]; then\n'
-        '    printf "ii  %s 1.0 all installed\\n" "$package"\n'
-        "  fi\n"
-        "done\n",
+        'package="${@: -1}"\n'
+        'if [[ "$package" != "$MISSING_PACKAGE" ]]; then\n'
+        '  printf "installed\\n"\n'
+        '  exit 0\n'
+        'fi\n'
+        "exit 1\n",
         encoding="utf-8",
     )
-    dpkg.chmod(0o755)
+    dpkg_query.chmod(0o755)
     sudo = fake_bin / "sudo"
     sudo.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$APT_CALLS"\n', encoding="utf-8")
     sudo.chmod(0o755)

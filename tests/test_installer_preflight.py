@@ -41,10 +41,17 @@ def _environment(tmp_path, *, python_version="3.11", free_kib=1048576):
         "#!/bin/sh\n"
         'if [ "${1:-}" = "mktemp" ]; then\n'
         '    printf "%s\\n" "$3" > "$PREFLIGHT_PROBE_TEMPLATE_LOG"\n'
-        "    shift\n"
-        '    exec "$@"\n'
+        '    probe_root="$(command mktemp -d "$3")" || exit $?\n'
+        '    printf "%s\\n" "$probe_root" > "$PREFLIGHT_PROBE_ROOT_LOG"\n'
+        '    chmod 000 "$probe_root"\n'
+        '    printf "%s\\n" "$probe_root"\n'
+        "    exit 0\n"
         "fi\n"
-        'if [ "${1:-}" = "rm" ]; then shift; exec /bin/rm "$@"; fi\n'
+        'if [ "${1:-}" = "rm" ]; then\n'
+        '    if [ -f "$PREFLIGHT_PROBE_ROOT_LOG" ]; then chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"; fi\n'
+        '    shift\n'
+        '    exec /bin/rm "$@"\n'
+        "fi\n"
         'printf "called\\n" >> "$PREFLIGHT_SUDO_LOG"\n'
         "exit 99\n",
     )
@@ -61,6 +68,7 @@ def _environment(tmp_path, *, python_version="3.11", free_kib=1048576):
             "PREFLIGHT_DF_LOG": str(tmp_path / "df.log"),
             "PREFLIGHT_SUDO_LOG": str(tmp_path / "sudo.log"),
             "PREFLIGHT_PROBE_TEMPLATE_LOG": str(tmp_path / "probe-template.log"),
+            "PREFLIGHT_PROBE_ROOT_LOG": str(tmp_path / "probe-root.log"),
         }
     )
     return environment
@@ -274,12 +282,29 @@ def test_venv_probe_accepts_usable_interpreter_and_cleans_up(tmp_path):
         "#!/bin/sh\n"
         'if [ "${1:-}" = "mktemp" ]; then\n'
         '    printf "%s\\n" "$3" > "$PREFLIGHT_PROBE_TEMPLATE_LOG"\n'
-        "    shift\n"
+        '    probe_root="$(command mktemp -d "$3")" || exit $?\n'
+        '    printf "%s\\n" "$probe_root" > "$PREFLIGHT_PROBE_ROOT_LOG"\n'
+        '    chmod 000 "$probe_root"\n'
+        '    printf "%s\\n" "$probe_root"\n'
+        "    exit 0\n"
+        "fi\n"
+        'if [ "${1:-}" = "python3" ]; then\n'
+        '    shift\n'
+        '    chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"\n'
+        '    "$PREFLIGHT_REAL_PYTHON" "$@"\n'
+        '    status=$?\n'
+        '    chmod 000 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"\n'
+        '    exit "$status"\n'
+        "fi\n"
+        'if [ -f "$PREFLIGHT_PROBE_ROOT_LOG" ] && [ "$1" = "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")/venv/bin/python" ]; then\n'
+        '    chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"\n'
         '    exec "$@"\n'
         "fi\n"
-        'if [ "${1:-}" = "python3" ]; then shift; exec "$PREFLIGHT_REAL_PYTHON" "$@"; fi\n'
-        'if [ "${1:-}" = "-u" ]; then shift 2; fi\n'
-        'if [ "${1:-}" = "rm" ]; then shift; exec /bin/rm "$@"; fi\n'
+        'if [ "${1:-}" = "rm" ]; then\n'
+        '    if [ -f "$PREFLIGHT_PROBE_ROOT_LOG" ]; then chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"; fi\n'
+        '    shift\n'
+        '    exec /bin/rm "$@"\n'
+        "fi\n"
         'exec "$@"\n',
     )
 

@@ -540,8 +540,7 @@ verify_venv_support() (
         log_error "Could not create a temporary Python virtual environment; check the python3-venv package."
         exit 1
     fi
-    if [[ ! -x "$probe_root/venv/bin/python" ]] ||
-       ! sudo "$probe_root/venv/bin/python" -c 'import sys' >/dev/null 2>&1; then
+    if ! sudo "$probe_root/venv/bin/python" -c 'import sys' >/dev/null 2>&1; then
         log_error "The temporary Python virtual environment is not usable."
         exit 1
     fi

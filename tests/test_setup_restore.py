@@ -53,9 +53,9 @@ def test_setup_failure_restores_previous_service_and_preserves_data(tmp_path):
         'source "$1"\n'
         'release_setup_updater_locks() { echo updater-unlock >> "$RESTORE_EVENTS"; }\n'
         'release_maintenance_lock() { echo maintenance-unlock >> "$RESTORE_EVENTS"; }\n'
-        'PREVIOUSLY_ACTIVE_UNITS=(knxohui.service)\n'
+        "PREVIOUSLY_ACTIVE_UNITS=(knxohui.service)\n"
         "SETUP_COMPLETED=0\n"
-        'trap restore_previous_services EXIT\n'
+        "trap restore_previous_services EXIT\n"
         'bash "$2" knxohui.service || exit $?\n'
         '[[ "$(cat "$RESTORE_STATE")" == inactive ]] || exit 90\n'
         "exit 23\n"

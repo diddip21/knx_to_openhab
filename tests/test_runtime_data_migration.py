@@ -345,6 +345,27 @@ def test_no_hard_link_fallback_cleans_up_an_interrupted_copy(monkeypatch, tmp_pa
     assert not list((paths[3] / "jobs").glob(".knxoh-copy-*"))
 
 
+def test_no_hard_link_fallback_cleans_up_on_keyboard_interrupt(monkeypatch, tmp_path):
+    paths = _fixture(tmp_path)
+
+    def reject_hard_links(*_args):
+        raise OSError(errno.EPERM, "hard links are disabled")
+
+    def interrupt_after_partial_write(_source, destination, *_args, **_kwargs):
+        destination.write(b"partial")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(migration.os, "link", reject_hard_links)
+    monkeypatch.setattr(migration.shutil, "copyfileobj", interrupt_after_partial_write)
+
+    with pytest.raises(KeyboardInterrupt):
+        _run_migration(paths)
+
+    assert (paths[5] / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+    assert not (paths[3] / "jobs/upload.knxproj").exists()
+    assert not list((paths[3] / "jobs").glob(".knxoh-copy-*"))
+
+
 def test_migration_copies_valid_long_filename(tmp_path):
     paths = _fixture(tmp_path)
     old_jobs = paths[5]

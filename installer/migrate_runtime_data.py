@@ -63,7 +63,7 @@ def _copy_no_replace(source: Path, destination: Path) -> None:
             output.flush()
             shutil.copystat(source, destination, follow_symlinks=False)
             os.fsync(output.fileno())
-    except Exception:
+    except BaseException:
         destination.unlink(missing_ok=True)
         raise
 

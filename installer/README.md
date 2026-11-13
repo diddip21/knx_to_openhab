@@ -186,6 +186,9 @@ does not fetch a release, but its dependency and setup steps may still need
 network access. When all required system packages are installed, a repeated
 run skips `apt-get update`; Python package installation in setup may still
 access a package index. `--help` and `--cancel` work without Python.
+Before setup creates or reuses the `knxohui` service account, it checks that
+an existing account uses the matching primary group and a non-login shell.
+Incompatible accounts stop setup before services or file ownership change.
 
 On a first install, running without a mode keeps `--install` as the default.
 For an existing installation, an interactive run asks for update, repair, or

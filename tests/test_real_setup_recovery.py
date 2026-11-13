@@ -118,6 +118,9 @@ def test_real_setup_restores_services_and_repairs_after_failure(tmp_path, monkey
     if not surviving_backup.exists():
         surviving_backup = backups / "job-1.tar.gz"
     assert surviving_backup.read_bytes() == b"synthetic backup"
+    generator_config = data / "generator.json"
+    preserved_rules = generator_config if generator_config.exists() else base / "config.json"
+    assert json.loads(preserved_rules.read_text()) == {"rules": "custom"}
 
     second = repair("")
     assert second.returncode == 0, second.stdout + second.stderr
@@ -125,6 +128,7 @@ def test_real_setup_restores_services_and_repairs_after_failure(tmp_path, monkey
     assert sorted(json.loads((tmp_path / "active.json").read_text())) == sorted(initial_active)
     assert (data / "jobs/upload.knxproj").read_bytes() == b"synthetic upload"
     assert (backups / "job-1.tar.gz").read_bytes() == b"synthetic backup"
+    assert json.loads(generator_config.read_text()) == {"rules": "custom"}
     assert json.loads((data / "jobs/jobs.json").read_text())["job-1"]["input"] == str(
         data / "jobs/upload.knxproj"
     )

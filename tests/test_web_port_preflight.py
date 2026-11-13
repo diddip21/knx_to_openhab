@@ -6,7 +6,6 @@ import pytest
 
 from installer.check_web_port import check_web_port
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 

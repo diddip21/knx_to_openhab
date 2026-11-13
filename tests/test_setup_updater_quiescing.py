@@ -607,7 +607,8 @@ def test_update_unit_installer_preserves_a_systemd_mask(tmp_path):
     assert destination.is_symlink()
     assert os.readlink(destination) == "/dev/null"
     assert log_file.read_text(encoding="utf-8").splitlines() == [
-        "systemctl show --property=LoadState --value knxohui-update.service"
+        "systemctl show --property=LoadState --value knxohui-update.service",
+        "systemctl show --property=LoadState --value knxohui-update.service",
     ]
 
 

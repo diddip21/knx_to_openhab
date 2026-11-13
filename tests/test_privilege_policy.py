@@ -910,6 +910,8 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
             '    SETUP_TEST_PREFLIGHT_AS_SERVICE=1 exec "$@"\n'
             "  fi\n"
             "fi\n"
+            'if [ "$1" = systemctl ] && [ "$2" = show ]; then\n'
+            "  echo not-found\n  exit 0\nfi\n"
             'echo mutation >> "$SETUP_TEST_SUDO_LOG"\n'
             "exit 0\n",
             encoding="utf-8",

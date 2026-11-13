@@ -354,7 +354,7 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
             temporary_created = False
             temporary_identity = None
             try:
-                state = {
+                state: dict[str, object] = {
                     "name": target.name,
                     "temporary": temporary_path.name,
                     "phase": "staging",

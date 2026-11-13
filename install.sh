@@ -522,8 +522,16 @@ check_installer_disk_space() {
 }
 
 verify_venv_support() (
-    local probe_root
-    if ! probe_root="$(mktemp -d "${TMPDIR:-/tmp}/knxoh-preflight.XXXXXX")"; then
+    local probe_parent="$INSTALL_DIR" probe_root parent
+    while [[ ! -d "$probe_parent" ]]; do
+        parent="${probe_parent%/*}"
+        if [[ "$parent" == "$probe_parent" ]]; then
+            probe_parent="/"
+        else
+            probe_parent="${parent:-/}"
+        fi
+    done
+    if ! probe_root="$(sudo mktemp -d "$probe_parent/.knxoh-preflight.XXXXXX")"; then
         log_error "Could not create a temporary directory to test Python virtual environment support."
         exit 1
     fi

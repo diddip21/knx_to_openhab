@@ -39,6 +39,11 @@ def _environment(tmp_path, *, python_version="3.11", free_kib=1048576):
     _executable(
         fake_bin / "sudo",
         "#!/bin/sh\n"
+        'if [ "${1:-}" = "mktemp" ]; then\n'
+        '    printf "%s\\n" "$3" > "$PREFLIGHT_PROBE_TEMPLATE_LOG"\n'
+        "    shift\n"
+        '    exec "$@"\n'
+        "fi\n"
         'if [ "${1:-}" = "rm" ]; then shift; exec /bin/rm "$@"; fi\n'
         'printf "called\\n" >> "$PREFLIGHT_SUDO_LOG"\n'
         "exit 99\n",
@@ -55,6 +60,7 @@ def _environment(tmp_path, *, python_version="3.11", free_kib=1048576):
             "PREFLIGHT_FREE_KIB": str(free_kib),
             "PREFLIGHT_DF_LOG": str(tmp_path / "df.log"),
             "PREFLIGHT_SUDO_LOG": str(tmp_path / "sudo.log"),
+            "PREFLIGHT_PROBE_TEMPLATE_LOG": str(tmp_path / "probe-template.log"),
         }
     )
     return environment
@@ -235,7 +241,9 @@ def test_os_check_handles_missing_id_like(tmp_path):
 
 def test_venv_probe_fails_cleanly_before_setup(tmp_path):
     environment = _environment(tmp_path)
-    environment["TMPDIR"] = str(tmp_path)
+    different_tmp = tmp_path / "tmpdir"
+    different_tmp.mkdir()
+    environment["TMPDIR"] = str(different_tmp)
     _executable(tmp_path / "bin" / "python3", "#!/bin/sh\nexit 7\n")
 
     result = subprocess.run(
@@ -249,15 +257,26 @@ def test_venv_probe_fails_cleanly_before_setup(tmp_path):
 
     assert result.returncode == 1
     assert "Could not create a temporary Python virtual environment" in result.stdout
-    assert list(tmp_path.glob("knxoh-preflight.*")) == []
+    assert (tmp_path / "probe-template.log").read_text(encoding="utf-8").strip() == str(
+        tmp_path / ".knxoh-preflight.XXXXXX"
+    )
+    assert list(tmp_path.glob(".knxoh-preflight.*")) == []
+    assert list(different_tmp.iterdir()) == []
 
 
 def test_venv_probe_accepts_usable_interpreter_and_cleans_up(tmp_path):
     environment = _environment(tmp_path)
-    environment["TMPDIR"] = str(tmp_path)
+    different_tmp = tmp_path / "tmpdir"
+    different_tmp.mkdir()
+    environment["TMPDIR"] = str(different_tmp)
     _executable(
         tmp_path / "bin" / "sudo",
         "#!/bin/sh\n"
+        'if [ "${1:-}" = "mktemp" ]; then\n'
+        '    printf "%s\\n" "$3" > "$PREFLIGHT_PROBE_TEMPLATE_LOG"\n'
+        "    shift\n"
+        '    exec "$@"\n'
+        "fi\n"
         'if [ "${1:-}" = "python3" ]; then shift; exec "$PREFLIGHT_REAL_PYTHON" "$@"; fi\n'
         'if [ "${1:-}" = "-u" ]; then shift 2; fi\n'
         'if [ "${1:-}" = "rm" ]; then shift; exec /bin/rm "$@"; fi\n'
@@ -274,4 +293,8 @@ def test_venv_probe_accepts_usable_interpreter_and_cleans_up(tmp_path):
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert list(tmp_path.glob("knxoh-preflight.*")) == []
+    assert (tmp_path / "probe-template.log").read_text(encoding="utf-8").strip() == str(
+        tmp_path / ".knxoh-preflight.XXXXXX"
+    )
+    assert list(tmp_path.glob(".knxoh-preflight.*")) == []
+    assert list(different_tmp.iterdir()) == []

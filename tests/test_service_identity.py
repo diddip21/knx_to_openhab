@@ -99,6 +99,8 @@ def test_setup_checks_service_identity_before_privileged_changes():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
     validation = setup.index('bash "$REPO_ROOT/installer/validate_service_identity.sh"')
     group_creation = setup.index('sudo groupadd -r "$SERVICE_USER"')
-    service_quiescence = setup.index('echo "Stopping services and waiting for the updater to finish"')
+    service_quiescence = setup.index(
+        'echo "Stopping services and waiting for the updater to finish"'
+    )
 
     assert validation < group_creation < service_quiescence

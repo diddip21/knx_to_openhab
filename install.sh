@@ -689,10 +689,13 @@ run_setup_script() {
     fi
 
     cd "$SETUP_APP_DIR"
-    bash installer/setup.sh || {
-        log_error "Setup script failed"
-        exit 1
-    }
+    if bash installer/setup.sh; then
+        :
+    else
+        local setup_status=$?
+        log_error "Setup script failed (status $setup_status)"
+        return "$setup_status"
+    fi
     
     log_success "Setup completed successfully"
 }

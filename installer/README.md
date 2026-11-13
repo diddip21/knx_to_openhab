@@ -189,6 +189,7 @@ access a package index. `--help` and `--cancel` work without Python.
 Before setup creates or reuses the `knxohui` service account, it checks that
 an existing account uses the matching primary group and a non-login shell.
 Incompatible accounts stop setup before services or file ownership change.
+When setup fails, the top-level installer returns its exit code to the caller.
 
 On a first install, running without a mode keeps `--install` as the default.
 For an existing installation, an interactive run asks for update, repair, or

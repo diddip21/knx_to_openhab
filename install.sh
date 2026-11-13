@@ -13,7 +13,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 REPO_URL="https://github.com/diddip21/knx_to_openhab.git"
-PATHS_FILE="/etc/knx_to_openhab/paths.env"
+PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
 read_saved_install_dir() {
     python3 - "$PATHS_FILE" <<'PY'
 import shlex
@@ -749,8 +749,7 @@ main() {
     if [[ "$INSTALL_MODE" == "cancel" ]]; then
         select_install_mode
     fi
-    if ! command -v python3 >/dev/null 2>&1; then
-        log_error "Python 3.11 or newer is required, but python3 was not found."
+    if ! check_installer_python; then
         exit 1
     fi
     if [[ -z "$INSTALL_DIR" ]]; then
@@ -778,9 +777,6 @@ main() {
     echo ""
 
     log_info "Selected installer mode: $INSTALL_MODE"
-    if ! check_installer_python; then
-        exit 1
-    fi
     check_root
     check_os
     if ! check_installer_disk_space "$INSTALL_DIR"; then

@@ -115,6 +115,29 @@ def test_unsupported_python_stops_before_sudo(tmp_path):
     assert not (tmp_path / "sudo.log").exists()
 
 
+def test_unsupported_python_is_rejected_before_reading_saved_paths(tmp_path):
+    environment = _environment(tmp_path, python_version="3.10")
+    environment.pop("KNXOH_INSTALL_DIR")
+    environment.pop("KNXOH_CONFIG_DIR")
+    paths_file = tmp_path / "paths.env"
+    paths_file.write_text("KNXOH_INSTALL_DIR='unterminated\n", encoding="utf-8")
+    environment["KNXOH_PATHS_FILE"] = str(paths_file)
+
+    result = subprocess.run(
+        ["bash", str(INSTALLER), "--install"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 1
+    assert "Python 3.11 or newer is required" in result.stdout + result.stderr
+    assert "No closing quotation" not in result.stderr
+    assert not (tmp_path / "sudo.log").exists()
+
+
 def test_low_disk_space_stops_before_sudo_or_release_lookup(tmp_path):
     environment = _environment(tmp_path, free_kib=1048575)
 

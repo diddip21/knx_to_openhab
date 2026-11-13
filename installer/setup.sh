@@ -377,6 +377,12 @@ quiesce_setup_services
 echo "Acquiring exclusive maintenance lock and rechecking systemd state"
 acquire_setup_maintenance_lock quiesce_setup_services
 
+echo "Checking that the configured Web UI port is available"
+if ! python3 "$REPO_ROOT/installer/check_web_port.py" "$AUTH_PREFLIGHT_CONFIG"; then
+    echo "The Web UI address is unavailable after stopping knxohui.service; resolve the conflict before retrying setup." >&2
+    exit 2
+fi
+
 UPDATER_LOCK_PATHS=("$SAVED_DATA_DIR/updater.lock")
 if [[ "$DATA_DIR" != "$SAVED_DATA_DIR" ]]; then
     UPDATER_LOCK_PATHS+=("$DATA_DIR/updater.lock")

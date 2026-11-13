@@ -184,6 +184,13 @@ changing the system. An existing directory is never overwritten by
 every operation in `setup.sh` idempotent or add a reinstall flow (Issue #25
 remains open for those items).
 
+During setup, the installer stops its own Web UI service, then checks whether
+the configured bind address and port are available before copying files or
+migrating runtime data. If another process owns the address, setup exits with
+an error and attempts to restore services that were running before setup.
+Because a process can claim the port after this check, the final systemd start
+remains the definitive availability check.
+
 The top-level installer resolves the GitHub release and checks out its exact
 tag. It does not yet stage a separate release directory or verify the published
 archive checksum before activation; the transactional updater work in Issue #26

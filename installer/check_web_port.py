@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import socket
 import sys
@@ -22,11 +23,29 @@ def check_web_port(config_path: Path) -> tuple[str, int]:
     if not 1 <= port <= 65535:
         raise ValueError("Web UI port must be between 1 and 65535")
 
-    addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    for family, socktype, protocol, _, address in addresses:
-        with socket.socket(family, socktype, protocol) as listener:
-            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            listener.bind(address)
+    normalized_host = host.strip()
+    if normalized_host.startswith("[") and normalized_host.endswith("]"):
+        normalized_host = normalized_host[1:-1]
+    try:
+        is_ipv6_literal = ipaddress.ip_address(normalized_host).version == 6
+    except ValueError:
+        is_ipv6_literal = False
+    family = socket.AF_INET6 if is_ipv6_literal else socket.AF_INET
+    # Gunicorn selects AF_INET6 only for a literal IPv6 bind host. For IPv4
+    # literals and hostnames it binds one AF_INET endpoint, using the first
+    # address returned by the resolver.
+    addresses = socket.getaddrinfo(
+        normalized_host,
+        port,
+        family=family,
+        type=socket.SOCK_STREAM,
+    )
+    if not addresses:
+        raise OSError(f"No bind address resolved for {host}")
+    family, socktype, protocol, _, address = addresses[0]
+    with socket.socket(family, socktype, protocol) as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(address)
     return host, port
 
 

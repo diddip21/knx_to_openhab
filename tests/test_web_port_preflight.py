@@ -82,6 +82,30 @@ def test_selected_external_bind_does_not_require_loopback_port_free(tmp_path, mo
         assert check_web_port(_config(tmp_path, "lan-test", port)) == ("lan-test", port)
 
 
+def test_hostname_probe_matches_gunicorn_ipv4_selection(tmp_path, monkeypatch):
+    if not socket.has_ipv6:
+        pytest.skip("the host does not support IPv6")
+
+    with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as listener:
+        try:
+            listener.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+            listener.bind(("::1", 0))
+        except OSError as error:
+            pytest.skip(f"IPv6 loopback is unavailable: {error}")
+        listener.listen()
+        port = listener.getsockname()[1]
+        getaddrinfo = socket.getaddrinfo
+        families = []
+
+        def resolve_ipv4_endpoint(host, requested_port, *, family, **kwargs):
+            families.append(family)
+            return getaddrinfo(host, requested_port, family=family, **kwargs)
+
+        monkeypatch.setattr(socket, "getaddrinfo", resolve_ipv4_endpoint)
+        assert check_web_port(_config(tmp_path, "localhost", port)) == ("localhost", port)
+        assert families == [socket.AF_INET]
+
+
 def test_loopback_fallback_is_checked_after_bind_selection(tmp_path):
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))

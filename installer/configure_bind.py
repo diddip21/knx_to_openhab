@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import ipaddress
 import json
 import os
@@ -43,41 +44,55 @@ def _confirm_external_access(host: str, terminal_path: str | Path = "/dev/tty") 
 def configure_bind(
     config_path: Path,
     confirm_external: Callable[[str], bool] = _confirm_external_access,
+    *,
+    output_path: Path | None = None,
 ) -> bool:
     """Keep legacy external access only after confirmation; otherwise use localhost."""
     config_path = Path(config_path)
-    config = json.loads(config_path.read_text(encoding="utf-8"))
+    original_contents = config_path.read_bytes()
+    config_stat = config_path.stat()
+    config = json.loads(original_contents)
     if not isinstance(config, dict):
         raise ValueError("Web UI configuration must be a JSON object")
     host = str(config.get("bind_host", "127.0.0.1"))
-    if _is_loopback_bind(host) or confirm_external(host):
+    changed = not _is_loopback_bind(host) and not confirm_external(host)
+    if changed:
+        config["bind_host"] = "127.0.0.1"
+    if not changed and output_path is None:
         return False
 
-    config["bind_host"] = "127.0.0.1"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{config_path.name}.", dir=config_path.parent)
+    destination = Path(output_path) if output_path is not None else config_path
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    contents = (
+        (json.dumps(config, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+        if changed
+        else original_contents
+    )
+    fd, temp_name = tempfile.mkstemp(prefix=f".{destination.name}.", dir=destination.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as target:
-            json.dump(config, target, indent=2, ensure_ascii=False)
-            target.write("\n")
+            target.write(contents.decode("utf-8"))
             target.flush()
             os.fsync(target.fileno())
-        os.chmod(temp_name, config_path.stat().st_mode & 0o777)
-        os.replace(temp_name, config_path)
+        os.chown(temp_name, config_stat.st_uid, config_stat.st_gid)
+        os.chmod(temp_name, config_stat.st_mode & 0o777)
+        os.replace(temp_name, destination)
     except Exception:
         try:
             os.unlink(temp_name)
         except FileNotFoundError:
             pass
         raise
-    return True
+    return changed
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: configure_bind.py CONFIG.json")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("config", type=Path)
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
     try:
-        changed = configure_bind(Path(sys.argv[1]))
+        changed = configure_bind(args.config, output_path=args.output)
     except (OSError, ValueError, json.JSONDecodeError) as error:
         raise SystemExit(str(error)) from error
     if changed:

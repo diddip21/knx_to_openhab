@@ -233,6 +233,7 @@ echo "Using runtime data directory: $DATA_DIR"
 echo "Using backup directory: $BACKUP_DIR"
 
 AUTH_PREFLIGHT_CONFIG="$CONFIG_DIR/config.json"
+BIND_PREFLIGHT_CONFIG=""
 if [[ ! -f "$AUTH_PREFLIGHT_CONFIG" && -f "$BASE/web_ui/backend/config.json" ]]; then
     AUTH_PREFLIGHT_CONFIG="$BASE/web_ui/backend/config.json"
 elif [[ ! -f "$AUTH_PREFLIGHT_CONFIG" && -f "$REPO_ROOT/web_ui/backend/config.json" ]]; then
@@ -360,6 +361,11 @@ restore_previous_services() {
     if ! release_maintenance_lock; then
         echo "Could not release the setup maintenance lock." >&2
     fi
+    if [[ -n "$BIND_PREFLIGHT_CONFIG" ]]; then
+        sudo rm -f -- "$BIND_PREFLIGHT_CONFIG" || \
+            echo "Could not remove the staged Web UI configuration: $BIND_PREFLIGHT_CONFIG" >&2
+        BIND_PREFLIGHT_CONFIG=""
+    fi
     if (( exit_status != 0 && SETUP_COMPLETED == 0 && ${#PREVIOUSLY_ACTIVE_UNITS[@]} > 0 )); then
         echo "Setup failed; restoring services that were active before migration." >&2
         sudo systemctl daemon-reload || true
@@ -376,6 +382,20 @@ echo "Stopping services and waiting for the updater to finish"
 quiesce_setup_services
 echo "Acquiring exclusive maintenance lock and rechecking systemd state"
 acquire_setup_maintenance_lock quiesce_setup_services
+
+echo "Checking the Web UI network binding choice"
+BIND_PREFLIGHT_CONFIG="$(sudo mktemp "${AUTH_PREFLIGHT_CONFIG}.knxoh-preflight.XXXXXX")"
+sudo python3 "$REPO_ROOT/installer/configure_bind.py" \
+    "$AUTH_PREFLIGHT_CONFIG" --output "$BIND_PREFLIGHT_CONFIG"
+
+echo "Checking that the configured Web UI port is available"
+if ! sudo cat -- "$BIND_PREFLIGHT_CONFIG" | \
+    sudo -u "$SERVICE_USER" python3 "$REPO_ROOT/installer/check_web_port.py" -; then
+    echo "The Web UI address is unavailable after stopping knxohui.service; resolve the conflict before retrying setup." >&2
+    exit 2
+fi
+sudo mv -f -- "$BIND_PREFLIGHT_CONFIG" "$AUTH_PREFLIGHT_CONFIG"
+BIND_PREFLIGHT_CONFIG=""
 
 UPDATER_LOCK_PATHS=("$SAVED_DATA_DIR/updater.lock")
 if [[ "$DATA_DIR" != "$SAVED_DATA_DIR" ]]; then
@@ -447,10 +467,6 @@ sudo "$BASE/venv/bin/python" "$BASE/installer/migrate_runtime_data.py" \
     --install-dir "$BASE" \
     --paths-file "$PATHS_FILE" \
     --maintenance-lock-file "$KNXOH_MAINTENANCE_LOCK_FILE"
-
-echo "Checking the Web UI network binding"
-sudo "$BASE/venv/bin/python" "$BASE/installer/configure_bind.py" \
-    "$CONFIG_DIR/config.json"
 
 export KNXOH_INSTALL_DIR="$BASE"
 export KNXOH_CONFIG_DIR="$CONFIG_DIR"

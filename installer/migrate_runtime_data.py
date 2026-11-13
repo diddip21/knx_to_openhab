@@ -349,9 +349,7 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
             target.parent.mkdir(parents=True, exist_ok=True)
             marker = _fallback_copy_state_path(target)
             temporary_path = _copy_temporary_path(target)
-            marker_descriptor = os.open(
-                marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
-            )
+            marker_descriptor = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             os.close(marker_descriptor)
             temporary_created = False
             temporary_identity = None
@@ -362,9 +360,7 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
                     "phase": "staging",
                 }
                 _write_fallback_copy_state(marker, state)
-                descriptor = os.open(
-                    temporary_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
-                )
+                descriptor = os.open(temporary_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                 temporary_created = True
                 try:
                     temporary_info = os.fstat(descriptor)

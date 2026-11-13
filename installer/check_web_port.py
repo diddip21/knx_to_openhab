@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import socket
 import sys
@@ -15,18 +16,30 @@ def check_web_port(config_path: Path) -> tuple[str, int]:
         raise ValueError("Web UI configuration must be a JSON object")
     host = config.get("bind_host", "127.0.0.1")
     port = config.get("port", 8085)
+    if isinstance(port, str) and port.isascii() and port.isdecimal():
+        port = int(port)
     if not isinstance(host, str) or not host or isinstance(port, bool) or not isinstance(port, int):
         raise ValueError("Web UI bind_host and port must be a host string and integer port")
     if not 1 <= port <= 65535:
         raise ValueError("Web UI port must be between 1 and 65535")
 
-    addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    for family, socktype, protocol, _, address in addresses:
-        with socket.socket(family, socktype, protocol) as listener:
-            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            if family == socket.AF_INET6:
-                listener.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
-            listener.bind(address)
+    normalized_host = host.strip().lower().strip("[]")
+    try:
+        is_loopback = ipaddress.ip_address(normalized_host).is_loopback
+    except ValueError:
+        is_loopback = normalized_host in ("localhost", "localhost.localdomain")
+    hosts_to_check = [host]
+    if not is_loopback:
+        hosts_to_check.append("127.0.0.1")
+
+    for bind_host in hosts_to_check:
+        addresses = socket.getaddrinfo(bind_host, port, type=socket.SOCK_STREAM)
+        for family, socktype, protocol, _, address in addresses:
+            with socket.socket(family, socktype, protocol) as listener:
+                listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                if family == socket.AF_INET6:
+                    listener.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                listener.bind(address)
     return host, port
 
 

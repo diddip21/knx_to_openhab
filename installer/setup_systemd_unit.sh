@@ -20,6 +20,68 @@ setup_systemd_unit_load_state() {
     esac
 }
 
+setup_systemd_unit_is_managed() {
+    local unit="$1" destination="$2"
+    if grep -Fxq '# Managed by knx_to_openhab installer' "$destination"; then
+        return 0
+    fi
+    # Older releases did not mark their units. Recognize only their known
+    # descriptions and launch commands so that repair remains possible.
+    case "$unit" in
+        knxohui.service)
+            grep -Fxq 'Description=KNX to OpenHAB Web UI Service' "$destination" &&
+                grep -Fxq 'User=knxohui' "$destination" &&
+                grep -Fxq 'Group=knxohui' "$destination" &&
+                grep -Eq '^ExecStart=(/usr/local/libexec/knx_to_openhab/launch_web\.sh|/[^[:space:]]*/venv/bin/gunicorn .*web_ui\.backend\.app:app)$' "$destination"
+            ;;
+        knxohui-update.service)
+            grep -Fxq 'Description=KNX to OpenHAB Transactional Updater' "$destination" &&
+                grep -Fxq 'User=knxohui' "$destination" &&
+                grep -Fxq 'Group=knxohui' "$destination" &&
+                grep -Fxq 'ExecStart=/usr/local/libexec/knx_to_openhab/launch_update.sh' "$destination"
+            ;;
+        knxohui-backup-cleanup.service)
+            grep -Fxq 'Description=KNX to OpenHAB Backup Cleanup' "$destination" &&
+                grep -Fxq 'User=knxohui' "$destination" &&
+                grep -Fxq 'Group=knxohui' "$destination" &&
+                grep -Eq '^ExecStart=(/usr/local/libexec/knx_to_openhab/launch_backup_cleanup\.sh|/[^[:space:]]*/installer/backup_cleanup\.sh)$' "$destination"
+            ;;
+        knxohui-backup-cleanup.timer)
+            grep -Fxq 'Description=KNX to OpenHAB Daily Backup Cleanup Timer' "$destination" &&
+                grep -Fxq 'Unit=knxohui-backup-cleanup.service' "$destination" &&
+                grep -Fxq 'Documentation=https://github.com/diddip21/knx_to_openhab' "$destination"
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+preflight_setup_systemd_unit() {
+    local unit="$1" destination="$2" load_state fragment
+    if ! load_state=$(setup_systemd_unit_load_state "$unit"); then
+        return 1
+    fi
+    if [[ "$load_state" == masked ]]; then
+        return 0
+    fi
+    if [[ "$load_state" == loaded ]]; then
+        if ! fragment=$(sudo systemctl show --property=FragmentPath --value "$unit"); then
+            echo "ERROR: Could not inspect the unit file for $unit." >&2
+            return 1
+        fi
+        if [[ "$fragment" != "$destination" ]]; then
+            echo "ERROR: Refusing to replace a unit outside the managed location: $unit ($fragment)." >&2
+            return 1
+        fi
+    fi
+    if [[ -e "$destination" || -L "$destination" ]]; then
+        if [[ -L "$destination" || ! -f "$destination" ]] ||
+            ! setup_systemd_unit_is_managed "$unit" "$destination"; then
+            echo "ERROR: Refusing to replace an unrecognized systemd unit: $destination" >&2
+            return 1
+        fi
+    fi
+}
+
 install_setup_systemd_unit() {
     local source_unit="${1:-}" destination="${2:-}" unit="${3:-}"
     local paths_file="${4:-/etc/knx_to_openhab/paths.env}"
@@ -63,6 +125,10 @@ PY
             return 1
         fi
         source_unit="$rendered_source"
+    fi
+    if ! preflight_setup_systemd_unit "$unit" "$destination"; then
+        [[ -z "$rendered_source" ]] || rm -f -- "$rendered_source"
+        return 1
     fi
     if ! load_state=$(setup_systemd_unit_load_state "$unit"); then
         [[ -z "$rendered_source" ]] || rm -f -- "$rendered_source"

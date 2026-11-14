@@ -125,12 +125,16 @@ printf '%s\n' "openHAB REST API initialized." | tee "$REPORT/runtime-ready.txt"
 note "Register a temporary admin through openHAB's own CSRF-protected signup"
 export OPENHAB_SMOKE_USER="ci-openhab-smoke"
 export OPENHAB_SMOKE_PASSWORD="ci-only-password-not-for-real-systems"
-if ! python3 "$ROOT/tests/smoke/create_openhab_admin.py" \
-    "$OPENHAB_SMOKE_USER" "$OPENHAB_SMOKE_PASSWORD" \
-    > "$REPORT/openhab-test-admin.log" 2>&1; then
-    tail -n 35 "$REPORT/openhab-test-admin.log" >&2 || true
-    fail "Could not register the disposable openHAB administrator."
-fi
+ensure_openhab_admin() {
+    local phase="$1"
+    if ! python3 "$ROOT/tests/smoke/create_openhab_admin.py" \
+        "$OPENHAB_SMOKE_USER" "$OPENHAB_SMOKE_PASSWORD" \
+        > "$REPORT/openhab-admin-${phase}.log" 2>&1; then
+        tail -n 35 "$REPORT/openhab-admin-${phase}.log" >&2 || true
+        fail "The disposable openHAB admin was not ready after ${phase}."
+    fi
+}
+ensure_openhab_admin "first-start"
 echo "Authenticated REST access to Items, Things and links is ready."
 
 note "Generate live test configuration from the synthetic ETS Mini project"
@@ -145,6 +149,7 @@ install -d -o root -g openhab -m 0755 /etc/openhab/yaml
 install -o knxohui -g openhab -m 0640 \
     "$GENERATED/knx.yaml" /etc/openhab/yaml/knx.yaml
 systemctl restart openhab.service
+ensure_openhab_admin "yaml-restart"
 python3 "$ROOT/tests/smoke/verify_openhab_rest.py" \
     "$GENERATED/manifest.json" yaml "$REPORT/yaml-rest.json" ||
     fail "openHAB rejected or did not fully load the generated native YAML."
@@ -160,6 +165,7 @@ install -o knxohui -g openhab -m 0640 "$GENERATED/knx.things" /etc/openhab/thing
 install -o knxohui -g openhab -m 0640 \
     "$GENERATED/knx.sitemap" /etc/openhab/sitemaps/knx.sitemap
 systemctl start openhab.service
+ensure_openhab_admin "legacy-start"
 python3 "$ROOT/tests/smoke/verify_openhab_rest.py" \
     "$GENERATED/manifest.json" legacy "$REPORT/legacy-rest.json" ||
     fail "openHAB rejected or did not fully load the generated legacy Things/Items."
@@ -168,6 +174,7 @@ note "Ensure real services survived openHAB loading and a restart"
 systemctl restart openhab.service
 systemctl is-active --quiet knxohui.service
 systemctl is-active --quiet openhab.service
+ensure_openhab_admin "legacy-restart"
 python3 "$ROOT/tests/smoke/verify_openhab_rest.py" \
     "$GENERATED/manifest.json" legacy-after-restart "$REPORT/legacy-restart-rest.json"
 

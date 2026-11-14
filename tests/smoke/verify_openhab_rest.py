@@ -4,6 +4,7 @@
 The gateway in the Mini fixture is deliberately unreachable. Thing OFFLINE is
 acceptable; absent Things, channels, or Item links are not.
 """
+
 from __future__ import annotations
 
 import json
@@ -43,7 +44,8 @@ def verify(manifest: dict) -> tuple[bool, str, dict]:
         set(target_uid + ":" + name for name in manifest["channel_names"]) - channel_uids
     )
     missing_links = sorted(
-        name for name in manifest["linked_items"]
+        name
+        for name in manifest["linked_items"]
         if not any(item == name and channel in channel_uids for item, channel in link_pairs)
     )
     summary = {
@@ -58,9 +60,13 @@ def verify(manifest: dict) -> tuple[bool, str, dict]:
         "missing_links": missing_links,
     }
     if missing_items or missing_things or missing_channels or missing_links:
-        return False, json.dumps({
-            key: value for key, value in summary.items() if key.startswith("missing_")
-        }), summary
+        return (
+            False,
+            json.dumps(
+                {key: value for key, value in summary.items() if key.startswith("missing_")}
+            ),
+            summary,
+        )
     return True, "All generated openHAB Items, KNX Things, channels and links loaded", summary
 
 
@@ -80,8 +86,7 @@ def main() -> None:
             passed, last_error = False, f"{type(error).__name__}: {error}"
         if passed:
             report_file.write_text(
-                json.dumps({"mode": mode, "status": "passed", **last_summary}, indent=2)
-                + "\n",
+                json.dumps({"mode": mode, "status": "passed", **last_summary}, indent=2) + "\n",
                 encoding="utf-8",
             )
             print(f"PASS [{mode}]: {last_error}")

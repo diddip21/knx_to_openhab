@@ -127,11 +127,26 @@ export OPENHAB_SMOKE_USER="ci-openhab-smoke"
 export OPENHAB_SMOKE_PASSWORD="ci-only-password-not-for-real-systems"
 CLIENT="/usr/share/openhab/runtime/bin/client"
 [[ -x "$CLIENT" ]] || fail "Karaf CLI client is missing."
+# The raw Karaf client assumes a portable install layout unless the Debian
+# APT layout is supplied. Run as the real openhab OS account to avoid creating
+# root-owned files in /var/lib/openhab.
+OH_CLIENT_ENV=(
+    "OPENHAB_HOME=/usr/share/openhab"
+    "OPENHAB_CONF=/etc/openhab"
+    "OPENHAB_RUNTIME=/usr/share/openhab/runtime"
+    "OPENHAB_USERDATA=/var/lib/openhab"
+    "OPENHAB_LOGDIR=/var/log/openhab"
+    "KARAF_HOME=/usr/share/openhab/runtime"
+    "KARAF_BASE=/var/lib/openhab"
+    "KARAF_DATA=/var/lib/openhab"
+    "KARAF_ETC=/var/lib/openhab/etc"
+)
 ADMIN_READY=0
 for _ in $(seq 1 12); do
     # Karaf's local default console credentials are distinct from openHAB's
     # API user accounts. No password is logged or stored in the artifacts.
-    timeout 30 "$CLIENT" -u openhab -p habopen \
+    timeout 30 sudo -u openhab env "${OH_CLIENT_ENV[@]}" "$CLIENT" \
+        -u openhab -p habopen \
         "openhab:users add $OPENHAB_SMOKE_USER $OPENHAB_SMOKE_PASSWORD administrator" \
         > "$REPORT/openhab-test-admin.log" 2>&1 || true
     # A previous attempt may have created the account while REST auth was

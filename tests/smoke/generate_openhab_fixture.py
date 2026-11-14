@@ -4,6 +4,7 @@
 Uses the same generator entrypoints as the project regression tests, not
 handwritten Item/Thing records. No private ETS files or KNX gateway are needed.
 """
+
 from __future__ import annotations
 
 import json
@@ -78,9 +79,7 @@ def main() -> None:
             name for name, item in model["items"].items() if item.get("channel")
         ),
     }
-    (target / "manifest.json").write_text(
-        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
-    )
+    (target / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(
         f"Generated {len(item_names)} Items, {len(channels)} channels, "
         f"{len(model['things'])} Things from synthetic mini_project.json"

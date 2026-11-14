@@ -176,6 +176,45 @@ pytest -v
 ```
 
 
+## Real openHAB 5.2 integration in Debian 13
+
+[The openHAB integration workflow](../.github/workflows/openhab-real.yml)
+boots a **disposable Debian 13 VM** with real systemd, Java 21, and the
+official openHAB 5.2 APT packages (runtime plus matching add-ons). The
+installed package is restricted to the latest available **5.2.x** version so
+a later openHAB major/minor release cannot silently change the test target.
+
+It first runs the existing real Debian installer smoke, then installs openHAB
+and the KNX binding, reruns the KNX-to-openHAB setup against the actual
+`/etc/openhab` installation, and generates a small **synthetic ETS Mini**
+fixture using the project's real `gen_building()` and production output
+templates. The test loads native YAML, then legacy Things/Items/Sitemap files
+one at a time, and checks the actual openHAB REST collections for **all**
+generated Items, KNX Things, custom channels, and Item-channel links. It also
+checks the real services after restart. It does **not** count a running HTTP
+server alone as proof that generated configuration was accepted.
+
+Implementation:
+- [`tests/smoke/openhab_real_smoke.sh`](smoke/openhab_real_smoke.sh):
+  Debian+openHAB install and real integration lifecycle
+- [`tests/smoke/generate_openhab_fixture.py`](smoke/generate_openhab_fixture.py):
+  generate native YAML and legacy output from a synthetic ETS JSON fixture
+- [`tests/smoke/verify_openhab_rest.py`](smoke/verify_openhab_rest.py):
+  poll the actual openHAB API for Items, Things, channels and links
+
+The workflow runs for relevant changes on integration branches and relevant
+PRs targeting `main`. It also supports manual dispatch once the workflow
+exists on the repository's default branch. On failures it archives
+`test-results/openhab-real/` with package/Java versions, installation logs,
+openHAB service logs, and any partial REST inspection reports.
+
+**Limits:** The fictional gateway IP cannot connect to a real KNX bus;
+an OFFLINE KNX bridge is expected. This validates registration and linking,
+not bus telegram delivery or physical device behavior. It does not run the
+DietPi image, physical hardware, a complete end-to-end update from a published
+GitHub release, or actual KNX project files. This script contains deliberate
+host modifications and must **never** be run outside disposable GitHub CI VMs.
+
 ## Debian VM systemd smoke test
 
 The workflow at [`.github/workflows/debian-smoke.yml`](../.github/workflows/debian-smoke.yml)

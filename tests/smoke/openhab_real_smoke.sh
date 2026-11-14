@@ -86,6 +86,10 @@ mkdir -p /etc/openhab/services
 printf '%s\n' 'binding = knx' > /etc/openhab/services/addons.cfg
 chown openhab:openhab /etc/openhab/services/addons.cfg
 chmod 0644 /etc/openhab/services/addons.cfg
+# This setting and the synthetic CI admin account exist only inside the
+# throwaway VM. Production openHAB security configuration is not modified.
+printf '\n%s\n' 'org.openhab.restauth:allowBasicAuth=true' \
+    >> /etc/openhab/services/runtime.cfg
 
 note "Re-run the actual KNX-to-openHAB installer with /etc/openhab present"
 if ! bash "$APP/installer/setup.sh" > "$REPORT/generator-with-openhab-setup.log" 2>&1; then
@@ -117,6 +121,34 @@ done
 systemctl is-active --quiet openhab.service ||
     fail "openHAB died after initializing REST."
 printf '%s\n' "openHAB REST API initialized." | tee "$REPORT/runtime-ready.txt"
+
+note "Create a disposable openHAB admin for protected REST endpoints"
+export OPENHAB_SMOKE_USER="ci-openhab-smoke"
+export OPENHAB_SMOKE_PASSWORD="ci-only-password-not-for-real-systems"
+CLIENT="/usr/share/openhab/runtime/bin/client"
+[[ -x "$CLIENT" ]] || fail "Karaf CLI client is missing."
+ADMIN_READY=0
+for _ in $(seq 1 12); do
+    # Karaf's local default console credentials are distinct from openHAB's
+    # API user accounts. No password is logged or stored in the artifacts.
+    if timeout 30 "$CLIENT" -u openhab -p habopen \
+        "openhab:users add $OPENHAB_SMOKE_USER $OPENHAB_SMOKE_PASSWORD admin" \
+        > "$REPORT/openhab-test-admin.log" 2>&1; then
+        if curl --fail --silent --show-error --max-time 10 \
+            --user "$OPENHAB_SMOKE_USER:$OPENHAB_SMOKE_PASSWORD" \
+            'http://127.0.0.1:8080/rest/links' \
+            > "$REPORT/initial-links.json" 2>/dev/null; then
+            ADMIN_READY=1
+            break
+        fi
+    fi
+    sleep 5
+done
+[[ "$ADMIN_READY" == 1 ]] || {
+    tail -n 45 "$REPORT/openhab-test-admin.log" >&2 || true
+    fail "The test-only openHAB administrator could not access /rest/links."
+}
+echo "Authenticated REST access to Items, Things and links is ready."
 
 note "Generate live test configuration from the synthetic ETS Mini project"
 PYTHONPATH="$ROOT" "$APP/venv/bin/python" \

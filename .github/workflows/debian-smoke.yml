@@ -1,0 +1,71 @@
+name: Debian systemd smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "test/installer-integration-*"
+    paths:
+      - ".github/workflows/debian-smoke.yml"
+      - "tests/smoke/**"
+      - "installer/**"
+      - "install.sh"
+      - "requirements.txt"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/debian-smoke.yml"
+      - "tests/smoke/**"
+      - "installer/**"
+      - "install.sh"
+      - "requirements.txt"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: debian-systemd-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  debian-smoke:
+    name: Debian ${{ matrix.release }} (real systemd)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ["13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate smoke script syntax
+        run: bash -n tests/smoke/debian_smoke.sh
+
+      - name: Boot Debian VM and exercise actual installer
+        # vmactions/debian-vm v1.0.1, pinned to a reviewed commit.
+        uses: vmactions/debian-vm@626b64f9a6be64bbeaf3850f8bac2532d4e77db4
+        with:
+          release: ${{ matrix.release }}
+          arch: x86_64
+          mem: 4096
+          sync: rsync
+          copyback: true
+          prepare: |
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y --no-install-recommends \
+              bash ca-certificates curl git python3 python3-venv python3-pip \
+              rsync sudo systemd systemd-sysv iproute2 util-linux
+          run: |
+            bash tests/smoke/debian_smoke.sh
+
+      - name: Archive diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-${{ matrix.release }}-smoke-logs
+          path: test-results/debian-smoke/
+          if-no-files-found: ignore
+          retention-days: 7

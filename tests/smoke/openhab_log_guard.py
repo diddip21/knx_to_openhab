@@ -24,6 +24,17 @@ FATAL = re.compile(
     r"\b(?:parse|parsing|syntax|configuration|channel|item|thing|model)\s+error\b",
     flags=re.IGNORECASE,
 )
+
+# Exactly one known, intentionally unreachable gateway in the public Mini ETS
+# fixture. Record its KNXnet/IP handshake timeout as EXPECTED, not as a parser
+# success or an unexplained runtime error. No broad KNX/error suppression.
+EXPECTED_SYNTHETIC_GATEWAY_TIMEOUT = re.compile(
+    r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} "
+    r"\[ERROR\] \[/IP Tunneling udp://192\.168\.1\.1:3671\] - "
+    r"establishing connection failed, timeout connecting to control endpoint "
+    r"udp://192\.168\.1\.1:3671$"
+)
+
 SUSPICIOUS_WARNING = re.compile(
     r"\[\s*WARN\s*\].*?"
     r"(?:invalid\s+(?:channel|thing|item|config)|"
@@ -51,6 +62,7 @@ def check_since(baseline: dict[str, tuple[int, int]], label: str, output: Path) 
         raise AssertionError("openHAB log files are missing; cannot verify deploy logs")
     found = []
     warnings = []
+    expected_offline = []
     excerpts = {}
     for path in LOG_FILES:
         if not path.is_file():
@@ -68,7 +80,9 @@ def check_since(baseline: dict[str, tuple[int, int]], label: str, output: Path) 
         lines = delta.splitlines()
         excerpts[path.name] = {"new_lines": len(lines), "read_offset": offset}
         for line in lines:
-            if FATAL.search(line) or SUSPICIOUS_WARNING.search(line):
+            if EXPECTED_SYNTHETIC_GATEWAY_TIMEOUT.fullmatch(line):
+                expected_offline.append({"file": path.name, "line": line[:700]})
+            elif FATAL.search(line) or SUSPICIOUS_WARNING.search(line):
                 found.append({"file": path.name, "line": line[:700]})
             elif "[WARN" in line:
                 warnings.append({"file": path.name, "line": line[:350]})
@@ -77,6 +91,7 @@ def check_since(baseline: dict[str, tuple[int, int]], label: str, output: Path) 
         "status": "failed" if found else "passed",
         "log_segments": excerpts,
         "fatal_lines": found[:120],
+        "expected_gateway_timeouts": expected_offline[:120],
         "warnings": warnings[:70],
     }
     output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

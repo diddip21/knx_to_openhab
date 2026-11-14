@@ -272,8 +272,11 @@ After its existing direct-file checks, the script
 
 The [`openhab_log_guard.py`](smoke/openhab_log_guard.py) helper checks **only
 new lines** in real `/var/log/openhab/openhab.log` and `events.log` following
-each deployment. ERROR/FATAL/exception lines and warnings about parser,
-configuration or model loading fail the workflow. Captured REST responses,
+each deployment. New ERROR/FATAL/exception lines and warnings about parser,
+configuration or model loading fail the workflow. The single, exact
+KNXnet/IP handshake timeout from the deliberately unreachable fixture gateway
+`192.168.1.1:3671` is recorded separately as an expected test condition;
+all other errors still fail. Captured REST responses,
 log findings and step diagnostics are archived as artifacts for seven days.
 An unconnected *synthetic* KNX gateway being OFFLINE is expected, not a reason
 to fail the REST status assertion.

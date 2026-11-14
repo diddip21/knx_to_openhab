@@ -132,7 +132,7 @@ for _ in $(seq 1 12); do
     # Karaf's local default console credentials are distinct from openHAB's
     # API user accounts. No password is logged or stored in the artifacts.
     timeout 30 "$CLIENT" -u openhab -p habopen \
-        "openhab:users add $OPENHAB_SMOKE_USER $OPENHAB_SMOKE_PASSWORD admin" \
+        "openhab:users add $OPENHAB_SMOKE_USER $OPENHAB_SMOKE_PASSWORD administrator" \
         > "$REPORT/openhab-test-admin.log" 2>&1 || true
     # A previous attempt may have created the account while REST auth was
     # still starting. Always check API access even if a retry says "exists".

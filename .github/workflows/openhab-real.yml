@@ -1,0 +1,76 @@
+name: openHAB 5.2 real integration
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "test/installer-integration-*"
+    paths:
+      - ".github/workflows/openhab-real.yml"
+      - "tests/smoke/**"
+      - "installer/**"
+      - "install.sh"
+      - "openhab_yaml.py"
+      - "ets_to_openhab.py"
+      - "knxproject_to_openhab.py"
+      - "config.py"
+      - "requirements.txt"
+      - "tests/fixtures/mini_project.json"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/openhab-real.yml"
+      - "tests/smoke/**"
+      - "installer/**"
+      - "openhab_yaml.py"
+      - "ets_to_openhab.py"
+      - "knxproject_to_openhab.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openhab-real-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  openhab-52:
+    name: Debian 13 / Java 21 / real openHAB 5.2
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check shell syntax
+        run: bash -n tests/smoke/openhab_real_smoke.sh
+
+      - name: Boot disposable Debian 13 VM and run real openHAB integration
+        # Pinned reviewed vmactions/debian-vm v1.0.1 commit.
+        uses: vmactions/debian-vm@626b64f9a6be64bbeaf3850f8bac2532d4e77db4
+        with:
+          release: "13"
+          arch: x86_64
+          mem: 5120
+          sync: rsync
+          copyback: true
+          prepare: |
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y --no-install-recommends \
+              bash ca-certificates curl git gnupg python3 python3-venv python3-pip \
+              rsync sudo systemd systemd-sysv iproute2 util-linux \
+              openjdk-21-jre-headless
+          run: |
+            bash tests/smoke/openhab_real_smoke.sh
+
+      - name: Upload openHAB integration diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openhab-52-debian-13-logs
+          path: |
+            test-results/openhab-real/
+            test-results/debian-smoke/
+          if-no-files-found: ignore
+          retention-days: 7

@@ -87,8 +87,8 @@ def test_real_setup_restores_services_and_repairs_after_failure(tmp_path, monkey
         fake_bin / "getent",
         "#!/bin/sh\n"
         'case "$1" in\n'
-        '  passwd) echo "knxohui:x:997:997::/nonexistent:/usr/sbin/nologin" ;;\n'
-        '  group) echo "knxohui:x:997:" ;;\n'
+        '  passwd) echo "knxohui:x:997:0::/nonexistent:/usr/sbin/nologin" ;;\n'
+        '  group) echo "knxohui:x:0:" ;;\n'
         "  *) exit 2 ;;\n"
         "esac\n",
     )

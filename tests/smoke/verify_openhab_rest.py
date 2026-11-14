@@ -7,7 +7,9 @@ acceptable; absent Things, channels, or Item links are not.
 
 from __future__ import annotations
 
+import base64
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -20,7 +22,13 @@ POLL_SECONDS = 5
 
 
 def fetch(endpoint: str):
-    request = Request(BASE_URL + endpoint, headers={"Accept": "application/json"})
+    headers = {"Accept": "application/json"}
+    username = os.environ.get("OPENHAB_SMOKE_USER", "")
+    password = os.environ.get("OPENHAB_SMOKE_PASSWORD", "")
+    if username and password:
+        token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+        headers["Authorization"] = f"Basic {token}"
+    request = Request(BASE_URL + endpoint, headers=headers)
     with urlopen(request, timeout=10) as response:
         return json.loads(response.read().decode("utf-8"))
 
@@ -82,7 +90,14 @@ def main() -> None:
     while time.monotonic() < deadline:
         try:
             passed, last_error, last_summary = verify(manifest)
-        except (HTTPError, URLError, TimeoutError, ValueError, KeyError) as error:
+        except HTTPError as error:
+            if error.code in (401, 403):
+                raise SystemExit(
+                    "REST API access denied; verify temporary CI admin credentials "
+                    "and openHAB Basic Authentication configuration."
+                ) from error
+            passed, last_error = False, f"HTTPError: {error}"
+        except (URLError, TimeoutError, ValueError, KeyError) as error:
             passed, last_error = False, f"{type(error).__name__}: {error}"
         if passed:
             report_file.write_text(

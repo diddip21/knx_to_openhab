@@ -706,6 +706,7 @@ def test_job_manager_relative_paths_stay_at_the_stable_install_root(tmp_path, mo
     finally:
         manager.executor.shutdown(wait=True)
 
+
 @pytest.mark.parametrize("kind", ["directory", "file", "source_alias"])
 def test_migration_rejects_symlinked_destinations_without_deleting_legacy(tmp_path, kind):
     paths = _fixture(tmp_path)

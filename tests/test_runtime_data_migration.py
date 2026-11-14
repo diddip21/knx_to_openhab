@@ -705,3 +705,30 @@ def test_job_manager_relative_paths_stay_at_the_stable_install_root(tmp_path, mo
         assert manager.backups_dir == str(install_dir / "var/backups/knx_to_openhab")
     finally:
         manager.executor.shutdown(wait=True)
+
+@pytest.mark.parametrize("kind", ["directory", "file", "source_alias"])
+def test_migration_rejects_symlinked_destinations_without_deleting_legacy(tmp_path, kind):
+    paths = _fixture(tmp_path)
+    old_jobs = paths[5]
+    new_jobs = paths[3] / "jobs"
+    new_jobs.parent.mkdir(parents=True, exist_ok=True)
+    outside = tmp_path / "unrelated"
+    outside.mkdir()
+    sentinel = outside / "upload.knxproj"
+    sentinel.write_text("unrelated data", encoding="utf-8")
+
+    if kind == "directory":
+        new_jobs.symlink_to(outside, target_is_directory=True)
+    elif kind == "source_alias":
+        new_jobs.symlink_to(old_jobs, target_is_directory=True)
+    else:
+        new_jobs.mkdir()
+        (new_jobs / "upload.knxproj").symlink_to(sentinel)
+
+    with pytest.raises(ValueError, match="symlink.*migration destination"):
+        _run_migration(paths)
+
+    assert sentinel.read_text(encoding="utf-8") == "unrelated data"
+    assert (old_jobs / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+    assert old_jobs.is_dir()
+    assert not (paths[2].parent / "paths.env").exists()

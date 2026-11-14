@@ -46,9 +46,7 @@ def snapshot() -> dict[str, tuple[int, int]]:
     return result
 
 
-def check_since(
-    baseline: dict[str, tuple[int, int]], label: str, output: Path
-) -> None:
+def check_since(baseline: dict[str, tuple[int, int]], label: str, output: Path) -> None:
     if not any(path.is_file() for path in LOG_FILES):
         raise AssertionError("openHAB log files are missing; cannot verify deploy logs")
     found = []
@@ -59,7 +57,11 @@ def check_since(
             continue
         state = path.stat()
         previous_inode, previous_size = baseline.get(str(path), (-1, 0))
-        offset = previous_size if state.st_ino == previous_inode and state.st_size >= previous_size else 0
+        offset = (
+            previous_size
+            if state.st_ino == previous_inode and state.st_size >= previous_size
+            else 0
+        )
         with path.open("rb") as stream:
             stream.seek(offset)
             delta = stream.read().decode("utf-8", errors="replace")

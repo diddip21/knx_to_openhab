@@ -44,10 +44,14 @@ def request_json(
         boundary = "knxoh-ci-" + uuid.uuid4().hex
         headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
         body = (
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="{upload.name}"\r\n'
-            "Content-Type: application/json\r\n\r\n"
-        ).encode() + upload.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
+            (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="file"; filename="{upload.name}"\r\n'
+                "Content-Type: application/json\r\n\r\n"
+            ).encode()
+            + upload.read_bytes()
+            + f"\r\n--{boundary}--\r\n".encode()
+        )
     elif payload is not None:
         headers["Content-Type"] = "application/json"
         body = json.dumps(payload).encode()
@@ -97,7 +101,10 @@ def upload_project(project: Path, expected_format: str) -> dict:
     job_id = result.get("id")
     assert isinstance(job_id, str) and job_id, f"Invalid upload result: {result}"
     job = await_job(job_id, expected_format)
-    print(f"PASS upload + generator: {project.name}, format={expected_format}, job={job_id}", flush=True)
+    print(
+        f"PASS upload + generator: {project.name}, format={expected_format}, job={job_id}",
+        flush=True,
+    )
     return job
 
 

@@ -105,20 +105,25 @@ def test_setup_restore_cleans_up_staged_bind_config(tmp_path, exit_status):
     existing = tmp_path / "config.json"
     existing.write_text('{"bind_host":"192.0.2.10"}\n', encoding="utf-8")
     script = (
-        'set -euo pipefail\n'
+        "set -euo pipefail\n"
         'source "$1"\n'
-        'release_setup_updater_locks() { :; }\n'
-        'release_maintenance_lock() { :; }\n'
-        'PREVIOUSLY_ACTIVE_UNITS=()\n'
-        'SETUP_COMPLETED=0\n'
+        "release_setup_updater_locks() { :; }\n"
+        "release_maintenance_lock() { :; }\n"
+        "PREVIOUSLY_ACTIVE_UNITS=()\n"
+        "SETUP_COMPLETED=0\n"
         'BIND_PREFLIGHT_CONFIG="$2"\n'
-        'trap restore_previous_services EXIT\n'
+        "trap restore_previous_services EXIT\n"
         'exit "$3"\n'
     )
     result = subprocess.run(
         [
-            "bash", "-c", script, "cleanup-test",
-            str(ROOT / "installer/setup_restore.sh"), str(staged), str(exit_status),
+            "bash",
+            "-c",
+            script,
+            "cleanup-test",
+            str(ROOT / "installer/setup_restore.sh"),
+            str(staged),
+            str(exit_status),
         ],
         env={**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
         capture_output=True,

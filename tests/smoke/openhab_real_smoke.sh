@@ -171,6 +171,18 @@ systemctl is-active --quiet openhab.service
 python3 "$ROOT/tests/smoke/verify_openhab_rest.py" \
     "$GENERATED/manifest.json" legacy-after-restart "$REPORT/legacy-restart-rest.json"
 
+note "Exercise the REAL Web UI upload, generator, deploy, repeat and rollback"
+# Unlike the direct-file smoke checks above, this drives authenticated
+# /api/upload -> /api/job/<id> -> /api/job/<id>/deploy -> /rollback, verifies
+# actual managed file writes and checks only NEW openHAB parser/ERROR logs.
+if ! python3 "$ROOT/tests/smoke/web_deploy_e2e.py" \
+    "$ROOT/tests/fixtures/mini_project.json" "$REPORT" \
+    > "$REPORT/web-deploy.log" 2>&1; then
+    tail -n 140 "$REPORT/web-deploy.log" >&2
+    fail "Real Web UI upload/deploy/rollback or openHAB log validation failed."
+fi
+cat "$REPORT/web-deploy.log"
+
 printf '%s\n' \
-    "PASS: official openHAB $OH_VERSION on Debian 13, real KNX binding, generated YAML + legacy configuration, REST Items/Things/channels/links, actual systemd services" \
+    "PASS: openHAB $OH_VERSION + real Web upload, generation, repeated deploy, YAML transition, REST verification, log guard and rollback" \
     | tee "$REPORT/summary.txt"

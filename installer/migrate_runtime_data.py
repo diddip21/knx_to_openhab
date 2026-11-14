@@ -316,10 +316,16 @@ def _rename_no_replace(source: Path, destination: Path) -> None:
 
 def _copy_missing_tree(source: Path, destination: Path) -> None:
     """Copy regular files without following links or replacing existing data."""
-    if not source.exists() or source.resolve() == destination.resolve():
+    if not source.exists():
         return
     if source.is_symlink() or not source.is_dir():
         raise ValueError(f"Legacy data source must be a real directory: {source}")
+    # A destination symlink can make an apparent successful migration write to
+    # an unrelated directory, or leave dangling links when legacy data is removed.
+    if destination.is_symlink():
+        raise ValueError(f"Refusing to follow a symlink in migration destination: {destination}")
+    if source.resolve() == destination.resolve():
+        return
     destination.mkdir(parents=True, exist_ok=True)
     try:
         destination_relative = destination.resolve().relative_to(source.resolve())
@@ -339,6 +345,8 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
         if entry.is_dir():
             _copy_missing_tree(entry, target)
         elif entry.is_file():
+            if target.is_symlink():
+                raise ValueError(f"Refusing to follow a symlink in migration destination: {target}")
             _cleanup_interrupted_fallback_copy(target, entry)
             if target.exists():
                 if not target.is_file() or not filecmp.cmp(entry, target, shallow=False):

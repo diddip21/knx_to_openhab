@@ -17,6 +17,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from openhab_log_guard import check_since, snapshot
 from verify_openhab_rest import verify
 
 WEB = "http://127.0.0.1:8085"
@@ -171,19 +172,25 @@ def main() -> None:
         read_live("yaml/knx.yaml"),
     )
 
+    before_legacy = snapshot()
     first = deploy(upload_project(project, "legacy"))
     verify_files("legacy")
     verify_live(manifest, "web-deploy-legacy", reports)
+    time.sleep(8)
+    check_since(before_legacy, "web-deploy-legacy", reports / "web-deploy-legacy-logs.json")
     first_files = (read_live("items/knx.items"), read_live("things/knx.things"))
 
     # Browser's "rerun" calls the same endpoint; prove an unchanged project is
     # idempotent and creates a new pre-deploy backup.
+    before_repeat = snapshot()
     rerun = request_json(f"/api/job/{first['id']}/rerun", "POST", {})
     rerun_job_id = rerun.get("id")
     assert rerun_job_id, f"Rerun did not create a job: {rerun}"
     again = deploy(await_job(rerun_job_id, "legacy"))
     verify_files("legacy")
     verify_live(manifest, "web-deploy-repeat", reports)
+    time.sleep(8)
+    check_since(before_repeat, "web-deploy-repeat", reports / "web-deploy-repeat-logs.json")
     assert first_files == (
         read_live("items/knx.items"),
         read_live("things/knx.things"),
@@ -191,13 +198,17 @@ def main() -> None:
 
     # Now switch the generator via its actual Web UI settings API and deploy
     # native YAML. This exercises format retirement and openHAB's file watcher.
+    before_yaml = snapshot()
     set_format("yaml")
     yaml_job = deploy(upload_project(project, "yaml"))
     verify_files("yaml")
     verify_live(manifest, "web-deploy-yaml", reports)
+    time.sleep(8)
+    check_since(before_yaml, "web-deploy-yaml", reports / "web-deploy-yaml-logs.json")
 
     # Restore exactly the pre-YAML configuration through the production
     # rollback API, not by copying files in this test.
+    before_rollback = snapshot()
     rolled_back = request_json(f"/api/job/{yaml_job['id']}/rollback", "POST", {})
     assert rolled_back.get("ok") is True, f"Web rollback failed: {rolled_back}"
     verify_files("legacy")
@@ -206,6 +217,8 @@ def main() -> None:
         read_live("things/knx.things"),
     ), "Rollback did not restore earlier legacy files"
     verify_live(manifest, "web-deploy-rollback", reports)
+    time.sleep(8)
+    check_since(before_rollback, "web-deploy-rollback", reports / "web-deploy-rollback-logs.json")
     write_report(
         reports,
         "web-deploy-e2e.json",

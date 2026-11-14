@@ -44,15 +44,28 @@ def main() -> None:
     validate_model(model)
     if model["version"] != 1:
         raise ValueError("Generator did not emit openHAB YAML version 1")
-    for name, contents in {
-        "knx.yaml": render_yaml(model),
-        "knx.items": items_text,
-        "knx.things": things_text,
-        "knx.sitemap": sitemap_text,
-    }.items():
-        if not contents.strip():
+    yaml_text = render_yaml(model)
+    if not yaml_text.strip():
+        raise ValueError("Generated YAML is empty")
+    (target / "knx.yaml").write_text(yaml_text, encoding="utf-8")
+    # Use the production legacy export path, which adds Base, the KNX bridge,
+    # and Sitemap templates. Writing raw gen_building() strings would omit them.
+    import os
+
+    os.chdir(ROOT)
+    ets_to_openhab._export_legacy_model(
+        items_text,
+        sitemap_text,
+        things_text,
+        {
+            "items_path": str(target / "knx.items"),
+            "things_path": str(target / "knx.things"),
+            "sitemaps_path": str(target / "knx.sitemap"),
+        },
+    )
+    for name in ("knx.items", "knx.things", "knx.sitemap"):
+        if not (target / name).read_text(encoding="utf-8").strip():
             raise ValueError(f"Generated {name} is empty")
-        (target / name).write_text(contents, encoding="utf-8")
     channels = model["things"]["knx:device:bridge:generic"]["channels"]
     item_names = sorted(model["items"])
     if len(item_names) < 5 or len(channels) < 3:

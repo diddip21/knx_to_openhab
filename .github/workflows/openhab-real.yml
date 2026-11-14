@@ -62,7 +62,14 @@ jobs:
               rsync sudo systemd systemd-sysv iproute2 util-linux \
               openjdk-21-jre-headless
           run: |
+            # The VM action copies files back only after successful execution.
+            # Persist an exit-status marker so failed smoke logs are archived.
+            mkdir -p test-results/openhab-real
+            set +e
             bash tests/smoke/openhab_real_smoke.sh
+            smoke_status=$?
+            printf '%s\n' "$smoke_status" > test-results/openhab-real/exit-status.txt
+            exit 0
 
       - name: Upload openHAB integration diagnostics
         if: always()
@@ -72,5 +79,11 @@ jobs:
           path: |
             test-results/openhab-real/
             test-results/debian-smoke/
-          if-no-files-found: ignore
+          if-no-files-found: warn
           retention-days: 7
+
+      - name: Enforce the actual VM smoke result
+        if: always()
+        run: |
+          test -f test-results/openhab-real/exit-status.txt
+          test "$(cat test-results/openhab-real/exit-status.txt)" = 0

@@ -78,7 +78,7 @@ def main() -> None:
     report_file = Path(sys.argv[3])
     deadline = time.monotonic() + TIMEOUT_SECONDS
     last_error = ""
-    last_summary = {}
+    last_summary: dict[str, object] = {}
     while time.monotonic() < deadline:
         try:
             passed, last_error, last_summary = verify(manifest)

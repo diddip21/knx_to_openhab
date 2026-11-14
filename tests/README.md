@@ -175,6 +175,43 @@ pip install -r requirements.txt
 pytest -v
 ```
 
+
+## Debian VM systemd smoke test
+
+The workflow at [`.github/workflows/debian-smoke.yml`](../.github/workflows/debian-smoke.yml)
+boots disposable **Debian 12 and Debian 13** virtual machines using a pinned
+QEMU-based Debian VM action and official Debian cloud images. Unlike the
+mock-based setup tests, this exercises the real `systemctl`, Linux account and
+group management, filesystem ownership, TCP listeners, `pip`/venv, and sudoers
+policy.
+
+The test script at [`tests/smoke/debian_smoke.sh`](smoke/debian_smoke.sh):
+
+1. Verifies it is running as root in an isolated GitHub Actions Debian VM with
+   real `systemd` as PID 1 (refuses to run on ordinary machines).
+2. Stages the **checked-out commit**, not an unrelated published release, and
+   seeds only synthetic Web UI credentials, an example upload, and a backup.
+3. Checks that a foreign `knxohui.service` is rejected without being replaced.
+4. Runs the actual `installer/setup.sh`, checks its started timer/service,
+   authenticates to the Web UI, and verifies migration, password hashing,
+   stored settings and backup contents.
+5. Runs `install.sh --repair` and asserts preservation of the existing data.
+6. Forces a real dependency-install failure **after services were stopped** and
+   checks that the installer restores the previous service state.
+7. Starts a competing TCP listener and checks that setup refuses the occupied
+   Web UI port without losing data; then restarts the service via `systemctl`.
+
+**Triggers:** updates to installer/smoke-relevant files on integration branches,
+relevant PRs to `main`, and `workflow_dispatch` once the workflow is
+available on the default branch. The action archives a seven-day diagnostic
+artifact `debian-<release>-smoke-logs`.
+
+**Limitations:** this does not install the complete openHAB Java runtime,
+connect to a KNX gateway, reboot the VM, test DietPi-specific customizations,
+or exercise release downloads / the online updater. The fixture upload and
+backup are synthetic. Use a snapshot-backed DietPi/Raspberry Pi environment
+for those final acceptance checks. Never run this smoke script on a live host.
+
 ## Troubleshooting
 
 ### Tests Can't Find Modules

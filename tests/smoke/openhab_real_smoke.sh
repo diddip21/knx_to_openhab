@@ -122,48 +122,15 @@ systemctl is-active --quiet openhab.service ||
     fail "openHAB died after initializing REST."
 printf '%s\n' "openHAB REST API initialized." | tee "$REPORT/runtime-ready.txt"
 
-note "Create a disposable openHAB admin for protected REST endpoints"
+note "Register a temporary admin through openHAB's own CSRF-protected signup"
 export OPENHAB_SMOKE_USER="ci-openhab-smoke"
 export OPENHAB_SMOKE_PASSWORD="ci-only-password-not-for-real-systems"
-CLIENT="/usr/share/openhab/runtime/bin/client"
-[[ -x "$CLIENT" ]] || fail "Karaf CLI client is missing."
-# The raw Karaf client assumes a portable install layout unless the Debian
-# APT layout is supplied. Run as the real openhab OS account to avoid creating
-# root-owned files in /var/lib/openhab.
-OH_CLIENT_ENV=(
-    "OPENHAB_HOME=/usr/share/openhab"
-    "OPENHAB_CONF=/etc/openhab"
-    "OPENHAB_RUNTIME=/usr/share/openhab/runtime"
-    "OPENHAB_USERDATA=/var/lib/openhab"
-    "OPENHAB_LOGDIR=/var/log/openhab"
-    "KARAF_HOME=/usr/share/openhab/runtime"
-    "KARAF_BASE=/var/lib/openhab"
-    "KARAF_DATA=/var/lib/openhab"
-    "KARAF_ETC=/var/lib/openhab/etc"
-)
-ADMIN_READY=0
-for _ in $(seq 1 12); do
-    # Karaf's local default console credentials are distinct from openHAB's
-    # API user accounts. No password is logged or stored in the artifacts.
-    timeout 30 sudo -u openhab env "${OH_CLIENT_ENV[@]}" "$CLIENT" \
-        -u openhab -p habopen \
-        "openhab:users add $OPENHAB_SMOKE_USER $OPENHAB_SMOKE_PASSWORD administrator" \
-        > "$REPORT/openhab-test-admin.log" 2>&1 || true
-    # A previous attempt may have created the account while REST auth was
-    # still starting. Always check API access even if a retry says "exists".
-    if curl --fail --silent --show-error --max-time 10 \
-        --user "$OPENHAB_SMOKE_USER:$OPENHAB_SMOKE_PASSWORD" \
-        'http://127.0.0.1:8080/rest/links' \
-        > "$REPORT/initial-links.json" 2>/dev/null; then
-        ADMIN_READY=1
-        break
-    fi
-    sleep 5
-done
-[[ "$ADMIN_READY" == 1 ]] || {
-    tail -n 45 "$REPORT/openhab-test-admin.log" >&2 || true
-    fail "The test-only openHAB administrator could not access /rest/links."
-}
+if ! python3 "$ROOT/tests/smoke/create_openhab_admin.py" \
+    "$OPENHAB_SMOKE_USER" "$OPENHAB_SMOKE_PASSWORD" \
+    > "$REPORT/openhab-test-admin.log" 2>&1; then
+    tail -n 35 "$REPORT/openhab-test-admin.log" >&2 || true
+    fail "Could not register the disposable openHAB administrator."
+fi
 echo "Authenticated REST access to Items, Things and links is ready."
 
 note "Generate live test configuration from the synthetic ETS Mini project"

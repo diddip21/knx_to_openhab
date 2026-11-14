@@ -2,9 +2,10 @@
 """Register the first admin through openHAB's supported local OAuth signup page.
 
 Called only by the disposable VM systemd smoke test. This uses openHAB's own
-/ auth form and its server-issued CSRF token; it does not modify user storage,
+/auth form and its server-issued CSRF token; it does not modify user storage,
 disable authentication, or require Karaf console access.
 """
+
 from __future__ import annotations
 
 import base64
@@ -57,9 +58,11 @@ def assert_basic_auth(username: str, password: str) -> bool:
 def create_account(username: str, password: str) -> bool:
     # OAuth parameters are local-only and are required by the signup servlet.
     verifier = "knxoh-ci-smoke-verifier-46cc6e76cd957d05"
-    challenge = base64.urlsafe_b64encode(
-        hashlib.sha256(verifier.encode()).digest()
-    ).decode("ascii").rstrip("=")
+    challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+        .decode("ascii")
+        .rstrip("=")
+    )
     params = {
         "response_type": "code",
         "redirect_uri": REDIRECT_URI,
@@ -69,9 +72,7 @@ def create_account(username: str, password: str) -> bool:
         "code_challenge_method": "S256",
     }
     opener = build_opener(StopRedirect)
-    request = Request(
-        ORIGIN + "/auth?" + urlencode(params), headers={"Accept": "text/html"}
-    )
+    request = Request(ORIGIN + "/auth?" + urlencode(params), headers={"Accept": "text/html"})
     with opener.open(request, timeout=15) as response:
         if response.status != 200:
             raise RuntimeError(f"Signup form returned HTTP {response.status}")

@@ -33,7 +33,7 @@ class HiddenFormInputs(html.parser.HTMLParser):
             return
         values = dict(attrs)
         name = values.get("name")
-        if name and values.get("type", "").lower() == "hidden":
+        if name and (values.get("type") or "").lower() == "hidden":
             self.inputs[name] = values.get("value") or ""
 
 

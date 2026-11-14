@@ -251,6 +251,39 @@ or exercise release downloads / the online updater. The fixture upload and
 backup are synthetic. Use a snapshot-backed DietPi/Raspberry Pi environment
 for those final acceptance checks. Never run this smoke script on a live host.
 
+## Real Web UI deploy -> openHAB 5.2 regression check
+
+On the integration branch, [`.github/workflows/openhab-real.yml`](../.github/workflows/openhab-real.yml)
+boots Debian 13 with a real openHAB 5.2 installation, Java 21 and KNX binding.
+After its existing direct-file checks, the script
+[`tests/smoke/web_deploy_e2e.py`](smoke/web_deploy_e2e.py) uses the
+**live, authenticated Web UI HTTP endpoints**, rather than mocked responses:
+
+1. Upload the public synthetic ETS Mini JSON fixture using `POST /api/upload`
+   and wait for actual background generator completion.
+2. Deploy staged legacy Items, Things and sitemap through
+   `POST /api/job/<id>/deploy`; verify managed files, backup and REST objects.
+3. Trigger `POST /api/job/<id>/rerun`, deploy the unchanged project again,
+   and compare the actual deployed files for idempotency.
+4. Change the generator setting through `POST /api/config`, upload/deploy as
+   native YAML and verify that legacy output files are retired.
+5. Call `POST /api/job/<id>/rollback`, verify legacy file restoration and
+   reload via openHAB's REST API.
+
+The [`openhab_log_guard.py`](smoke/openhab_log_guard.py) helper checks **only
+new lines** in real `/var/log/openhab/openhab.log` and `events.log` following
+each deployment. ERROR/FATAL/exception lines and warnings about parser,
+configuration or model loading fail the workflow. Captured REST responses,
+log findings and step diagnostics are archived as artifacts for seven days.
+An unconnected *synthetic* KNX gateway being OFFLINE is expected, not a reason
+to fail the REST status assertion.
+
+The same live upload and deploy endpoints are used by the Web UI's Deploy
+button. This test covers the backend end-to-end; separate Playwright tests
+cover the UI controls but currently mock the deployment response. It does not
+guarantee correctness for arbitrary ETS files, real KNX hardware, HomeKit,
+Alexa, all metadata combinations or future openHAB versions.
+
 ## Troubleshooting
 
 ### Tests Can't Find Modules

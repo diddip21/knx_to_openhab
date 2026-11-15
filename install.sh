@@ -545,8 +545,8 @@ is_trusted_probe_directory_chain() {
 }
 
 verify_venv_support() (
-    local probe_parent="$INSTALL_DIR" probe_root parent target_device
-    local candidate_uid candidate_mode candidate_device trusted_parent=0
+    local probe_parent="$INSTALL_DIR" probe_anchor probe_root parent target_device
+    local candidate_uid candidate_mode candidate_device service_uid trusted_parent=0
     while [[ ! -d "$probe_parent" ]]; do
         parent="${probe_parent%/*}"
         if [[ "$parent" == "$probe_parent" ]]; then
@@ -560,6 +560,7 @@ verify_venv_support() (
         log_error "Could not identify the installation filesystem for a safe Python probe."
         exit 1
     fi
+    probe_anchor="$probe_parent"
     while [[ -n "$probe_parent" ]]; do
         if ! read -r candidate_uid candidate_mode candidate_device < <(
             stat -c '%u %a %d' -- "$probe_parent"
@@ -584,6 +585,29 @@ verify_venv_support() (
         fi
     done
     if (( !trusted_parent )); then
+        if read -r candidate_uid candidate_mode < <(
+            stat -c '%u %a' -- "$probe_anchor"
+        ) &&
+           service_uid="$(id -u knxohui 2>/dev/null || true)" &&
+           [[ -n "$service_uid" && "$candidate_uid" == "$service_uid" ]] &&
+           (( (8#$candidate_mode & 8#200) != 0 )) &&
+           (( (8#$candidate_mode & 8#022) == 0 )); then
+            if ! probe_root="$(sudo -u knxohui mktemp -d "$probe_anchor/.knxoh-preflight.XXXXXX")"; then
+                log_error "Could not create a temporary directory to test Python virtual environment support."
+                exit 1
+            fi
+            trap 'sudo -u knxohui rm -rf -- "$probe_root"' EXIT
+            if ! sudo -u knxohui python3 -m venv "$probe_root/venv" >/dev/null 2>&1; then
+                log_error "Could not create a temporary Python virtual environment; check the python3-venv package."
+                exit 1
+            fi
+            if ! sudo -u knxohui "$probe_root/venv/bin/python" -c 'import sys' >/dev/null 2>&1; then
+                log_error "The temporary Python virtual environment is not usable."
+                exit 1
+            fi
+            log_success "Python virtual environment support is available."
+            return 0
+        fi
         log_error "No root-owned, non-writable directory is available on the installation filesystem for a safe Python probe."
         exit 1
     fi

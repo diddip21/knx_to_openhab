@@ -390,3 +390,56 @@ def test_venv_probe_checks_the_complete_ancestor_chain(tmp_path):
     assert list(install_dir.iterdir()) == []
     assert list(tmp_path.glob(".knxoh-preflight.*")) == []
     assert list(different_tmp.iterdir()) == []
+
+
+def test_venv_probe_supports_service_owned_mount_root(tmp_path):
+    environment = _environment(tmp_path)
+    mount_root = tmp_path / "mount-root"
+    mount_root.mkdir()
+    environment["KNXOH_INSTALL_DIR"] = str(mount_root)
+    environment["PREFLIGHT_SERVICE_WRITABLE_DIR"] = str(mount_root)
+    environment["PREFLIGHT_MOUNT_ROOT_DIR"] = str(mount_root)
+    environment["PREFLIGHT_PROBE_USER_LOG"] = str(tmp_path / "probe-user.log")
+    _executable(
+        tmp_path / "bin" / "id",
+        '#!/bin/sh\n'
+        'if [ "${1:-}" = "-u" ] && [ "${2:-}" = "knxohui" ]; then echo 1001; exit 0; fi\n'
+        "exit 1\n",
+    )
+    _executable(
+        tmp_path / "bin" / "stat",
+        "#!/bin/sh\n"
+        'if [ "$2" = "%d" ]; then\n'
+        '    if [ "$4" = "$PREFLIGHT_MOUNT_ROOT_DIR" ]; then echo 2; else echo 1; fi\n'
+        "    exit 0\n"
+        "fi\n"
+        'if [ "$4" = "$PREFLIGHT_MOUNT_ROOT_DIR" ]; then echo "1001 755 2"; else echo "0 755 1"; fi\n',
+    )
+    _executable(
+        tmp_path / "bin" / "sudo",
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = "-u" ] && [ "${2:-}" = "knxohui" ]; then\n'
+        "    shift 2\n"
+        '    printf "%s\\n" "$*" >> "$PREFLIGHT_PROBE_USER_LOG"\n'
+        '    exec "$@"\n'
+        "fi\n"
+        'printf "Unexpected root sudo call: %s\\n" "$*" >&2\n'
+        "exit 99\n",
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", 'source "$1"; verify_venv_support', "preflight", str(INSTALLER)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=40,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    probe_calls = (tmp_path / "probe-user.log").read_text(encoding="utf-8").splitlines()
+    assert probe_calls[0].startswith("mktemp -d ")
+    assert probe_calls[1].startswith("python3 -m venv ")
+    assert probe_calls[2].endswith("/venv/bin/python -c import sys")
+    assert probe_calls[3].startswith("rm -rf -- ")
+    assert list(mount_root.iterdir()) == []

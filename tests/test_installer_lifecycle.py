@@ -42,10 +42,13 @@ def _write_executable(path: Path, content: str) -> None:
     path.chmod(0o755)
 
 
-@pytest.mark.parametrize("install_path_style", ["plain", "trailing-slash", "symlinked-ancestor"])
+@pytest.mark.parametrize(
+    "install_path_style",
+    ["plain", "trailing-slash", "symlinked-ancestor", "symlinked-ancestor-retargeted"],
+)
 def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_path_style):
     install_dir = tmp_path / "install"
-    if install_path_style == "symlinked-ancestor":
+    if install_path_style.startswith("symlinked-ancestor"):
         install_parent_alias = tmp_path / "install-parent-alias"
         install_parent_alias.symlink_to(tmp_path, target_is_directory=True)
         install_dir = install_parent_alias / "install"
@@ -77,6 +80,7 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
         "#!/bin/bash\n"
         "set -euo pipefail\n"
         'printf "setup\\n" >> "$SETUP_LOG"\n'
+        'if [[ -n "${SETUP_APP_DIR_LOG:-}" ]]; then printf "%s\\n" "$PWD" >> "$SETUP_APP_DIR_LOG"; fi\n'
         'mkdir -p "$KNXOH_DATA_DIR"\n'
         'if [[ ! -e "$KNXOH_DATA_DIR/user-data.json" ]]; then\n'
         '  printf \'{"created":true}\\n\' > "$KNXOH_DATA_DIR/user-data.json"\n'
@@ -107,7 +111,11 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
         '  printf "partial\\n" > "$destination/partial"\n'
         "  exit 75\n"
         "fi\n"
-        'cp -a "$source"/. "$destination"/\n',
+        'cp -a "$source"/. "$destination"/\n'
+        'if [[ -n "${RETARGET_INSTALL_PARENT_ALIAS:-}" ]]; then\n'
+        '  rm -- "$RETARGET_INSTALL_PARENT_ALIAS"\n'
+        '  ln -s "$RETARGET_INSTALL_PARENT_TARGET" "$RETARGET_INSTALL_PARENT_ALIAS"\n'
+        'fi\n',
     )
     _write_executable(
         fake_bin / "chmod",
@@ -145,12 +153,22 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
             "KNXOH_CONFIG_DIR": str(config_dir),
             "KNXOH_DATA_DIR": str(data_dir),
             "SETUP_LOG": str(setup_log),
+            "SETUP_APP_DIR_LOG": str(tmp_path / "setup-app-dir.log"),
             "PRIVILEGED_LOG": str(privileged_log),
             "CURL_LOG": str(curl_log),
             "CLONE_LOG": str(clone_log),
             "PATH": str(fake_bin) + os.pathsep + environment["PATH"],
         }
     )
+    if install_path_style == "symlinked-ancestor-retargeted":
+        alternate_parent = tmp_path / "alternate-install-parent"
+        alternate_parent.mkdir()
+        environment.update(
+            {
+                "RETARGET_INSTALL_PARENT_ALIAS": str(install_parent_alias),
+                "RETARGET_INSTALL_PARENT_TARGET": str(alternate_parent),
+            }
+        )
 
     def run_installer(*arguments):
         return subprocess.run(
@@ -177,6 +195,16 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
     assert setup_log.read_text(encoding="utf-8").splitlines() == ["setup"]
     assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 2
     assert "--branch v1.2.3" in clone_log.read_text(encoding="utf-8")
+
+    if install_path_style == "symlinked-ancestor-retargeted":
+        activated_install_dir = tmp_path / "install"
+        assert activated_install_dir.is_dir()
+        assert not (alternate_parent / "install").exists()
+        assert (tmp_path / "setup-app-dir.log").read_text(encoding="utf-8").splitlines() == [
+            str(activated_install_dir.resolve())
+        ]
+        assert str(activated_install_dir.resolve()) in fresh_install.stdout
+        return
 
     user_data = data_dir / "user-data.json"
     user_data.write_text(json.dumps({"created": True, "custom": "keep"}), encoding="utf-8")

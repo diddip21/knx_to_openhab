@@ -778,7 +778,7 @@ PY
 }
 
 clone_new_repository() (
-    local temp_dir stage_dir="" install_target="$INSTALL_DIR" install_parent
+    local result_file="$1" temp_dir stage_dir="" install_target="$INSTALL_DIR" install_parent
     while [[ "$install_target" == */ ]]; do
         install_target="${install_target%/}"
     done
@@ -826,6 +826,7 @@ clone_new_repository() (
         exit 1
     fi
     stage_dir=""
+    printf '%s\n' "$install_target" > "$result_file"
     log_success "Release $RELEASE_TAG cloned successfully"
 )
 
@@ -840,7 +841,22 @@ clone_repository() {
         return 0
     fi
 
-    clone_new_repository
+    local activated_target_file
+    if ! activated_target_file="$(mktemp)"; then
+        log_error "Could not create a temporary file for the activated installation path."
+        return 1
+    fi
+    if ! clone_new_repository "$activated_target_file"; then
+        rm -f -- "$activated_target_file"
+        return 1
+    fi
+    if ! IFS= read -r INSTALL_DIR < "$activated_target_file" || [[ -z "$INSTALL_DIR" ]]; then
+        rm -f -- "$activated_target_file"
+        log_error "Could not determine the activated installation path."
+        return 1
+    fi
+    rm -f -- "$activated_target_file"
+    SETUP_APP_DIR="$INSTALL_DIR"
 }
 
 run_setup_script() {

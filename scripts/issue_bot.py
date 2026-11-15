@@ -125,7 +125,7 @@ def choose(
                 "comment": (
                     "⚠️ Der Issue-Titel oder die Beschreibung hat sich seit Plan "
                     f"v{approved_version} geändert. Bitte erst mit "
-                    "\`/ai answer Bitte Plan aktualisieren\` neu planen."
+                    "`/ai answer Bitte Plan aktualisieren` neu planen."
                 ),
             }
         if "ai:waiting" not in labels:
@@ -248,10 +248,10 @@ def render_agent_comment(decision: dict[str, Any], response: dict[str, str]) -> 
     marker = "<!-- knx-issue-bot-state " + json.dumps(state, separators=(",", ":")) + " -->"
     heading = "Rückfragen" if kind == "questions" else "Implementierungsplan"
     next_step = (
-        "Antworte mit \`/ai answer DEINE ANTWORT\`, auch über mehrere Zeilen."
+        "Antworte mit `/ai answer DEINE ANTWORT`, auch über mehrere Zeilen."
         if kind == "questions"
-        else f"Gib diesen Plan mit \`/ai approve v{version}\` frei, "
-        "oder korrigiere ihn mit \`/ai answer DEIN HINWEIS\`."
+        else f"Gib diesen Plan mit `/ai approve v{version}` frei, "
+        "oder korrigiere ihn mit `/ai answer DEIN HINWEIS`."
     )
     return (
         f"{marker}\n"

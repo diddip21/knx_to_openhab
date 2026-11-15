@@ -108,7 +108,7 @@ Run security tests:
 pytest tests/test_upload_security.py -v
 
 # UI tests with Playwright
-pytest tests/ui/test_upload_security.py -v -o addopts=
+pytest tests/ui/test_upload_security.py -v -m ui
 ```
 
 ## Implementation Details

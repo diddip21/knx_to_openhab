@@ -34,6 +34,7 @@ EXCLUDED_TOP_LEVEL = {
     "venv",
 }
 EXCLUDED_NAMES = {
+    "AGENTS.md",
     ".coverage",
     ".env",
     "Dockerfile.test",
@@ -79,7 +80,9 @@ def _is_excluded(relative_path: PurePosixPath) -> bool:
     basename = relative_path.name
     if not parts or parts[0] in EXCLUDED_TOP_LEVEL or basename in EXCLUDED_NAMES:
         return True
-    if parts[:2] == ("docs", "screenshots"):
+    if parts[:2] in {("docs", "screenshots"), ("docs", "superpowers")}:
+        return True
+    if relative_path == PurePosixPath("docs/REPO_CLEANUP_INVENTORY.md"):
         return True
     if any(part in {"__pycache__", "node_modules"} for part in parts):
         return True

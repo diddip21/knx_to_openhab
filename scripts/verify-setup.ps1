@@ -32,8 +32,22 @@ function Show-CheckResult {
 
 # Check 1: Python Version
 Write-Host "1. Checking Python..." -ForegroundColor Cyan
+$venvPython = Join-Path (Get-Location) ".venv\Scripts\python.exe"
+$pythonExecutable = $null
+if (Test-Path $venvPython) {
+    $pythonExecutable = (Resolve-Path $venvPython).Path
+} else {
+    $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+    if ($pythonCommand) {
+        $pythonExecutable = $pythonCommand.Source
+    }
+}
+
 try {
-    $pythonVersion = python --version 2>&1
+    if (-not $pythonExecutable) {
+        throw "Python was not found in PATH or the existing virtual environment."
+    }
+    $pythonVersion = & $pythonExecutable --version 2>&1
     if ($pythonVersion -match "Python (\d+)\.(\d+)\.(\d+)") {
         $major = [int]$matches[1]
         $minor = [int]$matches[2]
@@ -58,19 +72,16 @@ $venvExists = Test-Path ".venv"
 Show-CheckResult "Virtual environment exists" $venvExists "Run .\scripts\dev-setup.ps1 if missing"
 
 # Check 3: Dependencies (if venv exists)
-if ($venvExists) {
+if ($venvExists -and (Test-Path $venvPython)) {
     Write-Host ""
     Write-Host "3. Checking dependencies..." -ForegroundColor Cyan
-    
-    # Activate venv
-    & .\.venv\Scripts\Activate.ps1
-    
-    $requiredPackages = @("flask", "werkzeug", "xknxproject", "lark-parser")
+
+    $requiredPackages = @("flask", "werkzeug", "xknxproject")
     $allDepsInstalled = $true
     
     foreach ($package in $requiredPackages) {
-        $installed = pip show $package 2>$null
-        if ($installed) {
+        $installed = & $venvPython -m pip show $package 2>$null
+        if ($LASTEXITCODE -eq 0) {
             # Extract version
             $version = ($installed | Select-String "Version:").ToString().Split(":")[1].Trim()
             Show-CheckResult "$package" $true "v$version"
@@ -83,6 +94,8 @@ if ($venvExists) {
     if (-not $allDepsInstalled) {
         Write-Host "   Run: pip install -r requirements.txt" -ForegroundColor Yellow
     }
+} elseif ($venvExists) {
+    Show-CheckResult "Virtual environment Python" $false "Run .\scripts\dev-setup.ps1 to repair the environment"
 }
 
 # Check 4: Project Structure

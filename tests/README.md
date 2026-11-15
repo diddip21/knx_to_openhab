@@ -51,10 +51,13 @@ python -m playwright install chromium
 
 ## Running Tests
 
-### Core Tests (CI command, Linux)
+### Core Tests (default)
 ```bash
-pytest -q --cov=. --cov-report=xml -m "not ui" --ignore=tests/ui
+pytest -q
 ```
+
+The default configuration skips the Playwright UI suite. To run the UI tests,
+install Chromium and use the command below.
 
 ### Root-Level Tests
 ```bash
@@ -70,10 +73,13 @@ pytest tests/integration -v
 
 ### UI Tests
 ```bash
+python -m playwright install chromium
 pytest tests/ui/ -v -m ui
 ```
 
-The main UI fixture starts an isolated Flask subprocess on port 8085 by default. Keep that port free or set `UI_BASE_URL` and the matching fixture configuration. Authenticated screenshot tests use a temporary port.
+The UI fixture starts an isolated Flask subprocess on port 8085 by default. Keep
+that port free or set `UI_BASE_URL`. Authenticated screenshot tests use a
+temporary port; no production or development server needs to be running.
 
 ### Tests with Coverage
 ```bash
@@ -86,8 +92,10 @@ pytest --cov=. --cov-report=html
 # Filter by name
 pytest -k "test_login"
 
-# By marker (UI tests are marked)
-pytest tests/ui -m ui
+# By marker
+pytest -m unit
+pytest -m integration
+pytest tests/ui/ -m ui
 ```
 
 ## CI/CD Pipeline

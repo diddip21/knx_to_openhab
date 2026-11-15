@@ -195,6 +195,8 @@ class Updater:
             release_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
             release_response = requests.get(release_url, timeout=10)
 
+            if release_response.status_code == 404:
+                return False, {"error": "No stable GitHub release has been published yet"}
             if release_response.status_code != 200:
                 return False, {
                     "error": f"GitHub Releases API returned status {release_response.status_code}"
@@ -334,7 +336,8 @@ class Updater:
                 pass  # If we can't write, we can't write. Popen might fail too then.
 
             # Execute update script in background
-            # The script will handle git pull, dependency updates, and service restart
+            # The script fetches the selected stable tag, updates dependencies,
+            # and restarts the service with rollback if health checks fail.
             # We redirect output to the log file
 
             # We need to keep the file handle open just long enough to pass it to Popen

@@ -1065,6 +1065,7 @@ def test_service_responses_are_cached_when_language_change_supersedes_refresh(
 ):
     _stub_background_apis(page)
     page.add_init_script("window.setInterval = () => 0")
+    page.add_init_script(f"window.localStorage.setItem('{LANGUAGE_KEY}', 'de')")
     page.add_init_script("""(() => {
       window.pendingServiceResponses = []
       const originalFetch = window.fetch.bind(window)
@@ -1092,8 +1093,11 @@ def test_service_responses_are_cached_when_language_change_supersedes_refresh(
     page.goto(flask_server, wait_until="domcontentloaded")
     page.wait_for_function("window.pendingServiceResponses.length === 2")
 
-    page.get_by_role("combobox", name="Sprache / Language").select_option("en")
-    page.wait_for_function("window.pendingServiceResponses.length === 4")
+    language_select = page.get_by_role("combobox", name="Sprache / Language")
+    expect(language_select).to_have_value("de")
+    language_select.select_option("en")
+    expect(page.locator("html")).to_have_attribute("lang", "en")
+    page.wait_for_function("window.pendingServiceResponses.length >= 4")
 
     page.evaluate("""() => {
       const response = (data, status = 200) => new Response(JSON.stringify(data), {

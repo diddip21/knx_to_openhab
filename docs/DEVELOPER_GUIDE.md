@@ -1,6 +1,6 @@
-# Development Guide — KNX to OpenHAB Web UI
+# Development Guide — KNX to OpenHAB
 
-This guide helps you set up a local development environment to work on the KNX to OpenHAB Web UI.
+This guide covers local development on the generator, CLI, and Web UI.
 
 > **Note:** For production installation on Raspberry Pi/DietPi, see [Production Guide](PRODUCTION_GUIDE.md)
 
@@ -16,7 +16,7 @@ This guide helps you set up a local development environment to work on the KNX t
 
 ## Quick Start
 
-> **Note:** Default test runs ignore `tests/ui` (Playwright). See **Running Tests** for how to enable UI tests.
+> **Note:** The default pytest run selects core tests and excludes the `ui` marker. See **Running Tests** to run the Playwright suite explicitly.
 
 ### Windows
 
@@ -48,6 +48,52 @@ chmod +x scripts/dev-setup.sh scripts/dev-run.sh
 ```
 
 The Web UI will be available at **`http://localhost:5000`**
+
+---
+
+## Testing `main` or `dev` in a Separate Checkout
+
+The installed Web UI updater follows published stable releases. It does not
+switch an installation to a moving `main` or `dev` branch. To try either branch,
+run its development server from a separate Git worktree on a development
+computer or disposable test host. Do not run this branch-test server on the
+production Raspberry Pi: service controls in the UI address services on the
+machine running the server.
+
+On Linux or macOS:
+
+```bash
+git fetch origin
+git worktree add --detach ../knxoh-test-main origin/main
+# For the development branch, use:
+# git worktree add --detach ../knxoh-test-dev origin/dev
+cd ../knxoh-test-main
+unset KNXOH_INSTALL_DIR KNXOH_CONFIG_DIR KNXOH_DATA_DIR KNXOH_BACKUP_DIR
+export KNXOH_PATHS_FILE="$PWD/.test-paths-file-not-created"
+./scripts/dev-setup.sh
+./scripts/dev-run.sh
+```
+
+On Windows, use the same `git worktree add` command from PowerShell, then:
+
+```powershell
+cd ..\knxoh-test-main
+Remove-Item Env:KNXOH_INSTALL_DIR,Env:KNXOH_CONFIG_DIR,Env:KNXOH_DATA_DIR,Env:KNXOH_BACKUP_DIR -ErrorAction SilentlyContinue
+$env:KNXOH_PATHS_FILE = Join-Path $PWD ".test-paths-file-not-created"
+.\scripts\dev-setup.ps1
+.\scripts\dev-run.ps1
+```
+
+Use `origin/dev` and the matching worktree directory name instead when testing
+that branch. The test server is available at `http://127.0.0.1:5000`; its
+repository-local configuration, jobs, and generated files stay in that
+worktree. `KNXOH_PATHS_FILE` points to a deliberately absent file so the
+development process does not load the host's installed-system paths. Refresh a
+worktree after fetching with
+`git -C ../knxoh-test-main checkout --detach origin/main`. For `dev`, use
+`git -C ../knxoh-test-dev checkout --detach origin/dev`. Stop its server, return
+to the original checkout, and remove the test worktree with
+`git worktree remove ../knxoh-test-main` (or `../knxoh-test-dev`).
 
 ---
 
@@ -146,7 +192,8 @@ knx_to_openhab/
     ├── items/
     ├── things/
     ├── sitemaps/
-    └── persistence/
+    ├── persistence/
+    └── yaml/                       # Optional openHAB 5.2 model
 ```
 
 ---
@@ -163,16 +210,27 @@ Parses `.knxproj`, `.knxprojarchive`, or `.json` files and extracts:
 
 **Usage:**
 ```bash
-python knxproject_to_openhab.py --input project.knxproj
+python knxproject_to_openhab.py --file_path project.knxproj
+# For a password-protected project:
+python knxproject_to_openhab.py --file_path project.knxproj --knxPW "password"
 ```
+
+If `--file_path` is omitted, the CLI opens a file picker when Tk is available.
 
 ### 2. OpenHAB Generator (`ets_to_openhab.py`)
 
-Generates OpenHAB configuration files from parsed KNX data:
-- `items/*.items` - Item definitions
-- `things/*.things` - Thing definitions
-- `sitemaps/*.sitemap` - UI sitemaps
-- `persistence/*.persist` - Persistence rules
+Generates OpenHAB configuration files from parsed KNX data. The default
+`output_format` is `legacy`; its configured paths default to:
+
+- `openhab/items/knx.items` — Item definitions
+- `openhab/things/knx.things` — KNX Thing definitions
+- `openhab/sitemaps/knx.sitemap` — Sitemap
+- `openhab/persistence/influxdb.persist` — Persistence rules
+
+Setting `output_format` to `yaml` writes the combined openHAB 5.2 model to
+`openhab/yaml/knx.yaml` instead of the three legacy model files. Persistence
+remains a separate text file. The paths can be changed in `config.json` or
+through Web UI settings.
 
 ### 3. Web UI Backend (`web_ui/backend/`)
 
@@ -243,7 +301,8 @@ file. Restart the Flask server after changing local development config.
 
 ## Running Tests
 
-The test suite contains core and browser tests. `pytest.ini` discovers both; use an explicit selection for core tests.
+The test suite contains core and browser tests. The default pytest configuration
+excludes UI tests; select the Playwright suite explicitly when Chromium is installed.
 
 ### Prerequisites
 
@@ -276,19 +335,23 @@ pytest tests/integration -v
 
 ### UI Tests (optional)
 
-UI tests use Playwright. The main fixture starts its own Flask subprocess at `UI_BASE_URL` (default `http://127.0.0.1:8085`). A separately running server is not required, but port 8085 must be free. The authenticated screenshot fixture uses a temporary port.
+UI tests use Playwright and start an isolated Flask subprocess at `UI_BASE_URL`
+(default `http://127.0.0.1:8085`) with authentication disabled. A separately
+running server is not required, but port 8085 must be free. Authenticated
+screenshot tests use a temporary port.
 
 ```bash
 python -m playwright install chromium
 pytest tests/ui -v -m ui
 ```
 
-### Running Everything + Coverage
+### Core Test Coverage
 
 ```bash
-pytest -v
-pytest --cov=. --cov-report=html
+pytest -q --cov=. --cov-report=html
 ```
+
+The Playwright suite is run separately with the UI command above.
 
 ### Generating Golden Files
 
@@ -377,7 +440,10 @@ come from the root `config.json`. The Web UI does not load a `config.dev.json`
 overlay. For local Web UI changes, edit the tracked backend config and restore
 temporary changes before committing. An installed service reads its Web UI
 settings from `/etc/knx_to_openhab/config.json` and generator rules from
-`/var/lib/knx_to_openhab/generator.json`.
+`/var/lib/knx_to_openhab/generator.json`. The installer records active paths in
+`/etc/knx_to_openhab/paths.env`; do not edit repository defaults to change
+production settings. The application does not load a `config.dev.json` override.
+Set `FLASK_ENV=testing` only for local tests that need authentication disabled.
 
 ### Debug Logging
 

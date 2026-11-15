@@ -131,6 +131,7 @@ Production runtime config in `/etc/knx_to_openhab/config.json`:
   "session_max_age_seconds": 43200,
   "auth": {
     "enabled": true,
+    "mode": "basic",
     "user": "admin"
   },
   "retention": {
@@ -146,9 +147,11 @@ LAN-wide bind. To allow direct LAN access, deliberately set `bind_host` to the
 device's private interface address and restart the service. For HTTPS, keep the
 application on loopback behind a reverse proxy and set `trusted_proxy_hops` to
 the exact number of trusted proxies (usually `1`). The proxy must set
-`X-Forwarded-Proto`; cookies are marked `Secure` when the request is recognized
-as HTTPS. Write API requests require the signed-in session cookie and
-`X-CSRF-Token` header.
+`X-Forwarded-Proto`; session cookies are marked `Secure` when the request is
+recognized as HTTPS. HTTP Basic is the default; set `auth.mode` to `session` to
+keep the sign-in page and revocable sessions. Basic-mode writes accept the
+application's same origin and explicitly allowed HTTPS origins. Session-mode
+writes use the session cookie and `X-CSRF-Token`. Use HTTPS for network access.
 
 ## Troubleshooting
 

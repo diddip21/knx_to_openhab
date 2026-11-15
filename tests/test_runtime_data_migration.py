@@ -512,11 +512,15 @@ def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path, crash_poi
             process.kill()
         process.communicate(timeout=10)
 
+    marker_temps = {
+        path: path.read_bytes() for path in destination.glob(".knxoh-copy-state-*.tmp-*")
+    }
+
     _run_migration(paths)
 
     assert partial_target.read_text(encoding="utf-8") == "fixture upload"
     assert not migration._fallback_copy_state_path(partial_target).exists()
-    assert not list(destination.glob(".knxoh-copy-state-*.tmp-*"))
+    assert all(path.read_bytes() == content for path, content in marker_temps.items())
     assert not list(destination.glob(".knxoh-copy-*"))
     assert not paths[5].exists()
 
@@ -544,6 +548,56 @@ def test_unrecorded_staging_file_must_be_private_and_empty_before_cleanup(tmp_pa
 
     assert temporary.read_text(encoding="utf-8") == "unrelated data"
     assert paths[5].exists()
+
+
+@pytest.mark.parametrize("competing_content", [b"", b"fixture"])
+def test_fallback_prepared_recovery_preserves_unverified_competing_target(
+    tmp_path, competing_content
+):
+    paths = _fixture(tmp_path)
+    source = paths[5] / "upload.knxproj"
+    target = paths[3] / "jobs" / "upload.knxproj"
+    target.parent.mkdir(parents=True)
+    temporary = migration._copy_temporary_path(target)
+    temporary.write_bytes(source.read_bytes())
+    temporary_info = temporary.stat()
+    target.write_bytes(competing_content)
+    marker = migration._fallback_copy_state_path(target)
+    marker.write_text(
+        json.dumps(
+            {
+                "name": target.name,
+                "temporary": temporary.name,
+                "temporary_identity": {
+                    "device": temporary_info.st_dev,
+                    "inode": temporary_info.st_ino,
+                },
+                "phase": "fallback-prepared",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(FileExistsError, match="without a recorded identity"):
+        _run_migration(paths)
+
+    assert target.read_bytes() == competing_content
+    assert marker.is_file()
+    assert temporary.read_bytes() == source.read_bytes()
+    assert source.exists()
+
+
+def test_unrelated_marker_state_temporary_is_preserved(tmp_path):
+    paths = _fixture(tmp_path)
+    target = paths[3] / "jobs" / "upload.knxproj"
+    target.parent.mkdir(parents=True)
+    marker = migration._fallback_copy_state_path(target)
+    unrelated_temporary = target.parent / f"{marker.name}.tmp-unrelated"
+    unrelated_temporary.write_text("valuable unrelated state", encoding="utf-8")
+
+    _run_migration(paths)
+
+    assert unrelated_temporary.read_text(encoding="utf-8") == "valuable unrelated state"
 
 
 def test_migration_copies_valid_long_filename(tmp_path):

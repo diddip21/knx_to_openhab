@@ -82,26 +82,6 @@ def _write_fallback_copy_state(marker: Path, state: dict) -> None:
         raise
 
 
-def _cleanup_fallback_state_temps(marker: Path) -> None:
-    for temporary in marker.parent.glob(f"{marker.name}.tmp-*"):
-        try:
-            temporary_info = temporary.lstat()
-        except FileNotFoundError:
-            continue
-        if stat.S_ISREG(temporary_info.st_mode) or stat.S_ISLNK(temporary_info.st_mode):
-            temporary.unlink(missing_ok=True)
-
-
-def _file_is_prefix(candidate: Path, complete: Path) -> bool:
-    if candidate.stat().st_size > complete.stat().st_size:
-        return False
-    with candidate.open("rb") as partial, complete.open("rb") as original:
-        while chunk := partial.read(64 * 1024):
-            if original.read(len(chunk)) != chunk:
-                return False
-    return True
-
-
 def _cleanup_interrupted_fallback_copy(destination: Path, source: Path) -> None:
     """Recover files and markers left by a killed migration process."""
     marker = _fallback_copy_state_path(destination)
@@ -109,7 +89,6 @@ def _cleanup_interrupted_fallback_copy(destination: Path, source: Path) -> None:
     try:
         marker_info = marker.lstat()
     except FileNotFoundError:
-        _cleanup_fallback_state_temps(marker)
         return
     if not stat.S_ISREG(marker_info.st_mode):
         raise ValueError(f"Refusing to follow an unsafe fallback-copy marker: {marker}")
@@ -130,7 +109,6 @@ def _cleanup_interrupted_fallback_copy(destination: Path, source: Path) -> None:
             except (json.JSONDecodeError, UnicodeDecodeError):
                 if destination_info is None and not temporary_source.exists():
                     marker.unlink()
-                    _cleanup_fallback_state_temps(marker)
                     return
                 raise ValueError(f"The fallback-copy marker is invalid: {marker}") from None
     finally:
@@ -146,7 +124,6 @@ def _cleanup_interrupted_fallback_copy(destination: Path, source: Path) -> None:
     ):
         if destination_info is None and not temporary_source.exists():
             marker.unlink()
-            _cleanup_fallback_state_temps(marker)
             return
         raise ValueError(f"The fallback-copy marker does not match its target: {marker}")
 
@@ -180,7 +157,6 @@ def _cleanup_interrupted_fallback_copy(destination: Path, source: Path) -> None:
                 )
             temporary_source.unlink()
         marker.unlink()
-        _cleanup_fallback_state_temps(marker)
         return
 
     if not stat.S_ISREG(destination_info.st_mode):
@@ -188,28 +164,18 @@ def _cleanup_interrupted_fallback_copy(destination: Path, source: Path) -> None:
 
     phase = state["phase"]
     if phase == "staging":
-        if not filecmp.cmp(source, destination, shallow=False):
+        identity_matches = _same_file_identity(destination_info, state.get("temporary_identity"))
+        contents_match = filecmp.cmp(source, destination, shallow=False)
+        if not identity_matches or not contents_match:
             raise FileExistsError(
                 f"The interrupted primary copy target changed; refusing to remove it: {destination}"
             )
+        destination.unlink()
     elif phase == "fallback-prepared":
-        if (
-            temporary_info is None
-            or not stat.S_ISREG(temporary_info.st_mode)
-            or not _same_file_identity(temporary_info, state.get("temporary_identity"))
-            or not filecmp.cmp(source, temporary_source, shallow=False)
-        ):
-            raise FileExistsError(
-                f"The interrupted fallback-copy source is missing or changed: {temporary_source}"
-            )
-        if not filecmp.cmp(source, destination, shallow=False) and not _file_is_prefix(
-            destination, temporary_source
-        ):
-            raise FileExistsError(
-                f"The interrupted fallback-copy target changed; refusing to remove it: {destination}"
-            )
-        if not filecmp.cmp(source, destination, shallow=False):
-            destination.unlink()
+        raise FileExistsError(
+            f"An interrupted fallback copy left a target without a recorded identity; "
+            f"inspect it before retrying: {destination}"
+        )
     else:
         if not _same_file_identity(destination_info, state.get("destination_identity")):
             raise FileExistsError(
@@ -229,7 +195,6 @@ def _cleanup_interrupted_fallback_copy(destination: Path, source: Path) -> None:
                 f"The interrupted migration temporary changed; refusing to remove it: {temporary_source}"
             )
     marker.unlink()
-    _cleanup_fallback_state_temps(marker)
 
 
 def _same_file_identity(info, identity) -> bool:
@@ -422,7 +387,6 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
                         if _same_file_identity(temporary_info, temporary_identity):
                             temporary_path.unlink()
                 marker.unlink(missing_ok=True)
-                _cleanup_fallback_state_temps(marker)
 
 
 def _validate_legacy_source(path: Path, kind: str, source_root: Path) -> None:

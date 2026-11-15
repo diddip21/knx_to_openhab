@@ -108,10 +108,7 @@ def test_finish_preserves_digest_for_live_plan_check(tmp_path):
 
 def test_publish_workflow_revalidates_live_issue_digest_before_label_changes():
     workflow = (
-        Path(__file__).resolve().parents[1]
-        / ".github"
-        / "workflows"
-        / "opencode-issue-planner.yml"
+        Path(__file__).resolve().parents[1] / ".github" / "workflows" / "opencode-issue-planner.yml"
     ).read_text(encoding="utf-8")
     digest_check = workflow.index("const liveDigest = crypto.createHash('sha256')")
     approval_label = workflow.index("labels: ['ai:approved']")

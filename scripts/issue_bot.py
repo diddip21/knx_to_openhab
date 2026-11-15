@@ -73,11 +73,7 @@ def choose(
 ) -> dict[str, Any]:
     """Decide the event operation without using a language model."""
     issue = event.get("issue") or {}
-    if (
-        not issue
-        or issue.get("pull_request")
-        or issue.get("state") != "open"
-    ):
+    if not issue or issue.get("pull_request") or issue.get("state") != "open":
         return {"operation": "noop", "reason": "Not an open issue"}
 
     labels = {

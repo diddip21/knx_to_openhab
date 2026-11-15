@@ -386,7 +386,7 @@ def test_no_hard_link_fallback_does_not_replace_a_racing_target(monkeypatch, tmp
     assert not list(raced_target.parent.glob(".knxoh-copy-*"))
 
 
-def test_no_hard_link_fallback_preserves_an_interrupted_copy(monkeypatch, tmp_path):
+def test_no_hard_link_fallback_cleans_up_an_interrupted_copy(monkeypatch, tmp_path):
     paths = _fixture(tmp_path)
     original_copyfileobj = migration.shutil.copyfileobj
 
@@ -409,21 +409,12 @@ def test_no_hard_link_fallback_preserves_an_interrupted_copy(monkeypatch, tmp_pa
     with pytest.raises(OSError, match="simulated fallback copy interruption"):
         _run_migration(paths)
 
-    source = paths[5] / "upload.knxproj"
-    target = paths[3] / "jobs/upload.knxproj"
-    assert source.read_text(encoding="utf-8") == "fixture upload"
-    assert target.read_bytes() == b"partial"
-    assert migration._fallback_copy_state_path(target).is_file()
-    assert _marked_copy_temporary(target).read_bytes() == b"fixture upload"
-
-    with pytest.raises(FileExistsError, match="incomplete or ambiguous target"):
-        _run_migration(paths)
-
-    assert target.read_bytes() == b"partial"
-    assert source.read_text(encoding="utf-8") == "fixture upload"
+    assert (paths[5] / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+    assert not (paths[3] / "jobs/upload.knxproj").exists()
+    assert not list((paths[3] / "jobs").glob(".knxoh-copy-*"))
 
 
-def test_no_hard_link_fallback_preserves_partial_copy_on_keyboard_interrupt(monkeypatch, tmp_path):
+def test_no_hard_link_fallback_cleans_up_on_keyboard_interrupt(monkeypatch, tmp_path):
     paths = _fixture(tmp_path)
 
     def reject_hard_links(*_args):
@@ -443,18 +434,9 @@ def test_no_hard_link_fallback_preserves_partial_copy_on_keyboard_interrupt(monk
     with pytest.raises(KeyboardInterrupt):
         _run_migration(paths)
 
-    source = paths[5] / "upload.knxproj"
-    target = paths[3] / "jobs/upload.knxproj"
-    assert source.read_text(encoding="utf-8") == "fixture upload"
-    assert target.read_bytes() == b"partial"
-    assert migration._fallback_copy_state_path(target).is_file()
-    assert _marked_copy_temporary(target).read_bytes() == b"fixture upload"
-
-    with pytest.raises(FileExistsError, match="incomplete or ambiguous target"):
-        _run_migration(paths)
-
-    assert target.read_bytes() == b"partial"
-    assert source.read_text(encoding="utf-8") == "fixture upload"
+    assert (paths[5] / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+    assert not (paths[3] / "jobs/upload.knxproj").exists()
+    assert not list((paths[3] / "jobs").glob(".knxoh-copy-*"))
 
 
 @pytest.mark.parametrize(
@@ -606,6 +588,20 @@ def test_interrupted_fallback_copy_is_recovered_or_preserved(tmp_path, crash_poi
         assert all(path.read_bytes() == content for path, content in marker_temps.items())
         return
 
+    if crash_point in {"fallback-prepared", "initial-copy"}:
+        with pytest.raises(FileExistsError, match="tracked temporary without a destination"):
+            _run_migration(paths)
+        assert not partial_target.exists()
+        assert migration._fallback_copy_state_path(partial_target).is_file()
+        assert interrupted_temporary.exists()
+        if crash_point == "initial-copy":
+            assert interrupted_temporary.read_bytes() == b"partial"
+        else:
+            assert interrupted_temporary.read_bytes() == b"fixture upload"
+        assert source.joinpath("upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+        assert all(path.read_bytes() == content for path, content in marker_temps.items())
+        return
+
     if crash_point == "fallback-copying":
         with pytest.raises(FileExistsError, match="without a recorded identity"):
             _run_migration(paths)
@@ -671,6 +667,39 @@ def test_fallback_copying_recovery_preserves_target_with_reused_inode(tmp_path):
     assert target.read_bytes() == b"competing file after inode reuse"
     assert marker.is_file()
     assert temporary.read_bytes() == source.read_bytes()
+    assert source.exists()
+
+
+def test_tracked_temporary_recovery_preserves_file_with_reused_inode(tmp_path):
+    paths = _fixture(tmp_path)
+    source = paths[5] / "upload.knxproj"
+    target = paths[3] / "jobs" / "upload.knxproj"
+    target.parent.mkdir(parents=True)
+    temporary = target.parent / f"{migration._copy_temporary_prefix(target)}reused"
+    temporary.write_bytes(b"competing temporary after inode reuse")
+    temporary_info = temporary.stat()
+    marker = migration._fallback_copy_state_path(target)
+    marker.write_text(
+        json.dumps(
+            {
+                "name": target.name,
+                "temporary": temporary.name,
+                "temporary_identity": {
+                    "device": temporary_info.st_dev,
+                    "inode": temporary_info.st_ino,
+                },
+                "phase": "staging",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(FileExistsError, match="tracked temporary without a destination"):
+        _run_migration(paths)
+
+    assert not target.exists()
+    assert temporary.read_bytes() == b"competing temporary after inode reuse"
+    assert marker.is_file()
     assert source.exists()
 
 

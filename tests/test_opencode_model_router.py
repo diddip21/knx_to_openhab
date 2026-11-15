@@ -107,9 +107,7 @@ def test_rank_quality_and_stable_tie_breaker():
 
 def test_no_free_model_fails_closed():
     with pytest.raises(RuntimeError, match="No approved free model"):
-        router.choose_model(
-            [{"model": "openai/gpt-6", "passed": True, "score": 999}]
-        )
+        router.choose_model([{"model": "openai/gpt-6", "passed": True, "score": 999}])
 
 
 def test_discovery_intersects_with_allowlist(monkeypatch):
@@ -118,11 +116,7 @@ def test_discovery_intersects_with_allowlist(monkeypatch):
         assert kwargs["timeout"] == router.DISCOVERY_TIMEOUT
         return SimpleNamespace(
             returncode=0,
-            stdout=(
-                "opencode/glm-5.3-flash-free\n"
-                "opencode/fake-free\n"
-                "openai/gpt-6\n"
-            ),
+            stdout=("opencode/glm-5.3-flash-free\n" "opencode/fake-free\n" "openai/gpt-6\n"),
         )
 
     monkeypatch.setattr(router.subprocess, "run", fake_run)

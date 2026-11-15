@@ -95,9 +95,7 @@ def test_prepare_preserves_digest_for_live_approval_check(tmp_path, monkeypatch)
 
 def test_finish_preserves_digest_for_live_plan_check(tmp_path):
     decision = decide("issues", "labeled")
-    (tmp_path / "issue-decision.json").write_text(
-        json.dumps(decision), encoding="utf-8"
-    )
+    (tmp_path / "issue-decision.json").write_text(json.dumps(decision), encoding="utf-8")
     model_response = {"kind": "plan", "markdown": "## Prüfen\n\nKonfiguration validieren."}
     event = {"type": "text", "part": {"text": json.dumps(model_response)}}
     (tmp_path / "opencode-events.jsonl").write_text(json.dumps(event) + "\n", encoding="utf-8")

@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 
-
 MODULE = Path(__file__).resolve().parents[1] / "scripts" / "issue_bot.py"
 SPEC = importlib.util.spec_from_file_location("issue_bot", MODULE)
 assert SPEC and SPEC.loader
@@ -50,7 +49,9 @@ def test_labeled_issue_triggers_version_one():
 
 def test_reply_increments_version():
     result = decide(
-        "issue_comment", "created", "/ai answer Beide Ausgabeformate",
+        "issue_comment",
+        "created",
+        "/ai answer Beide Ausgabeformate",
         comments=[state_comment()],
     )
     assert result["operation"] == "plan"
@@ -60,7 +61,9 @@ def test_reply_increments_version():
 
 def test_no_automatic_implementation_on_approval():
     result = decide(
-        "issue_comment", "created", "/ai approve v1",
+        "issue_comment",
+        "created",
+        "/ai approve v1",
         comments=[state_comment()],
     )
     assert result["operation"] == "approve"
@@ -77,9 +80,7 @@ def test_no_automatic_implementation_on_approval():
     ],
 )
 def test_bad_commands_are_not_executed(message, expected):
-    result = decide(
-        "issue_comment", "created", message, comments=[state_comment()]
-    )
+    result = decide("issue_comment", "created", message, comments=[state_comment()])
     assert result["operation"] == "noop"
     assert result["reason"] == expected
 
@@ -87,23 +88,26 @@ def test_bad_commands_are_not_executed(message, expected):
 def test_approval_requires_current_issue_digest():
     changed = issue(body="Changed acceptance criteria")
     event = {"action": "created", "issue": changed, "comment": {"body": "/ai approve v1"}}
-    result = bot.choose(
-        "issue_comment", event, "diddip21", "diddip21", [state_comment()]
-    )
+    result = bot.choose("issue_comment", event, "diddip21", "diddip21", [state_comment()])
     assert result["operation"] == "notice"
 
 
 def test_approval_requires_waiting_label():
     result = decide(
-        "issue_comment", "created", "/ai approve v1",
-        labels=["ai:plan"], comments=[state_comment()],
+        "issue_comment",
+        "created",
+        "/ai approve v1",
+        labels=["ai:plan"],
+        comments=[state_comment()],
     )
     assert result["operation"] == "noop"
 
 
 def test_untrusted_comment_is_not_a_plan_state():
     result = decide(
-        "issue_comment", "created", "/ai approve v1",
+        "issue_comment",
+        "created",
+        "/ai approve v1",
         comments=[state_comment(user="external-user")],
     )
     assert result["operation"] == "noop"
@@ -111,25 +115,35 @@ def test_untrusted_comment_is_not_a_plan_state():
 
 def test_only_repo_owner_may_trigger():
     result = decide(
-        "issue_comment", "created", "/ai approve v1",
-        comments=[state_comment()], actor="random-contributor",
+        "issue_comment",
+        "created",
+        "/ai approve v1",
+        comments=[state_comment()],
+        actor="random-contributor",
     )
     assert result["operation"] == "noop"
 
 
 def test_pr_events_cannot_trigger():
-    event = {"action": "labeled", "label": {"name": "ai:plan"},
-             "issue": issue(pull_request={"url": "https://example.com"})}
+    event = {
+        "action": "labeled",
+        "label": {"name": "ai:plan"},
+        "issue": issue(pull_request={"url": "https://example.com"}),
+    }
     result = bot.choose("issues", event, "diddip21", "diddip21", [])
     assert result["operation"] == "noop"
 
 
 def test_parse_json_response_and_comment():
     d = decide("issues", "labeled")
-    output = bot.parse_model_text(json.dumps({
-        "kind": "plan",
-        "markdown": "## Tests\n\nBitte alle YAML Golden Tests ausführen.",
-    }))
+    output = bot.parse_model_text(
+        json.dumps(
+            {
+                "kind": "plan",
+                "markdown": "## Tests\n\nBitte alle YAML Golden Tests ausführen.",
+            }
+        )
+    )
     rendered = bot.render_agent_comment(d, output)
     assert "knx-issue-bot-state" in rendered
     assert "/ai approve v1" in rendered
@@ -137,7 +151,9 @@ def test_parse_json_response_and_comment():
 
 def test_oversized_answer_does_not_trigger_model():
     result = decide(
-        "issue_comment", "created", "/ai answer " + "x" * 4001,
+        "issue_comment",
+        "created",
+        "/ai answer " + "x" * 4001,
         comments=[state_comment()],
     )
     assert result["operation"] == "noop"
@@ -145,7 +161,9 @@ def test_oversized_answer_does_not_trigger_model():
 
 def test_questions_cannot_be_approved():
     result = decide(
-        "issue_comment", "created", "/ai approve v1",
+        "issue_comment",
+        "created",
+        "/ai approve v1",
         comments=[state_comment(kind="questions")],
     )
     assert result["operation"] == "noop"
@@ -156,9 +174,9 @@ def test_rendered_comment_has_version_and_digest():
     comment = bot.render_agent_comment(
         d, {"kind": "questions", "markdown": "Soll der Legacy-Export erhalten bleiben?"}
     )
-    state = bot.last_bot_state([{
-        "id": 1, "user": {"login": "github-actions[bot]"}, "body": comment
-    }])
+    state = bot.last_bot_state(
+        [{"id": 1, "user": {"login": "github-actions[bot]"}, "body": comment}]
+    )
     assert state is not None
     assert state["state"]["version"] == 1
     assert state["state"]["issue_digest"] == bot.issue_digest(issue())

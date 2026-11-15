@@ -227,6 +227,10 @@ if ! validate_maintenance_lock_location \
     exit 2
 fi
 
+if ! bash "$REPO_ROOT/installer/validate_service_identity.sh" "$SERVICE_USER"; then
+    exit 2
+fi
+
 echo "Using application directory: $BASE"
 echo "Using configuration directory: $CONFIG_DIR"
 echo "Using runtime data directory: $DATA_DIR"

@@ -494,7 +494,7 @@ def test_interrupted_fallback_copy_is_recovered_or_preserved(tmp_path, crash_poi
             "    raise OSError(errno.ENOTSUP, 'no-replace rename is unavailable')",
             "original_copyfileobj = migration.shutil.copyfileobj",
             "def interrupt_copy(source, destination, *args, **kwargs):",
-            "    if crash_point == 'partial-copy' and source.name.startswith(temporary_prefix):",
+            "    if crash_point == 'partial-copy' and Path(source.name).name.startswith(temporary_prefix):",
             "        destination.write(b'partial')",
             "        destination.flush()",
             "        ready_path.write_text('ready', encoding='utf-8')",

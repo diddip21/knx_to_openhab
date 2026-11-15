@@ -87,8 +87,7 @@ def authorize(
     if issue.get("state") != "open" or issue.get("pull_request"):
         raise ValueError("Target must be an open issue")
     labels = {
-        label.get("name") if isinstance(label, dict) else label
-        for label in issue.get("labels", [])
+        label.get("name") if isinstance(label, dict) else label for label in issue.get("labels", [])
     }
     if not {"ai:plan", "ai:approved"}.issubset(labels) or "ai:waiting" in labels:
         raise ValueError("The current plan is not approved")
@@ -125,9 +124,7 @@ def authorize(
     confirmed = any(
         int(approval["id"]) < int(comment.get("id") or 0) < cmd_id
         and (comment.get("user") or {}).get("login", "").casefold() == BOT_LOGIN
-        and (comment.get("body") or "").startswith(
-            f"\u2705 **Plan v{version} freigegeben.**"
-        )
+        and (comment.get("body") or "").startswith(f"\u2705 **Plan v{version} freigegeben.**")
         for comment in comments
     )
     if not confirmed:
@@ -216,9 +213,7 @@ def event_context(temp: Path) -> tuple[dict[str, Any], dict[str, Any]]:
         os.environ.get("GITHUB_ACTOR", ""),
         os.environ.get("GITHUB_REPOSITORY_OWNER", ""),
     )
-    if issue.get("number", issue.get("issue_number")) != event.get("issue", {}).get(
-        "number"
-    ):
+    if issue.get("number", issue.get("issue_number")) != event.get("issue", {}).get("number"):
         raise ValueError("Issue event and live API issue differ")
     return issue, context
 
@@ -230,9 +225,7 @@ def prepare(temp: Path) -> None:
     (temp / "implementation-context.json").write_text(
         json.dumps(context, ensure_ascii=False), encoding="utf-8"
     )
-    (temp / "implementation-prompt.txt").write_text(
-        make_prompt(issue, context), encoding="utf-8"
-    )
+    (temp / "implementation-prompt.txt").write_text(make_prompt(issue, context), encoding="utf-8")
     print(f"Authorized issue #{ISSUE_NUMBER}, plan v{context['version']}")
 
 

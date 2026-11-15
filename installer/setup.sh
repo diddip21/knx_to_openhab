@@ -234,6 +234,7 @@ echo "Using backup directory: $BACKUP_DIR"
 
 AUTH_PREFLIGHT_CONFIG="$CONFIG_DIR/config.json"
 BIND_PREFLIGHT_CONFIG=""
+BIND_PREFLIGHT_CHECKER=""
 if [[ ! -f "$AUTH_PREFLIGHT_CONFIG" && -f "$BASE/web_ui/backend/config.json" ]]; then
     AUTH_PREFLIGHT_CONFIG="$BASE/web_ui/backend/config.json"
 elif [[ ! -f "$AUTH_PREFLIGHT_CONFIG" && -f "$REPO_ROOT/web_ui/backend/config.json" ]]; then
@@ -370,6 +371,11 @@ restore_previous_services() {
             echo "Could not remove the staged Web UI configuration: $BIND_PREFLIGHT_CONFIG" >&2
         BIND_PREFLIGHT_CONFIG=""
     fi
+    if [[ -n "$BIND_PREFLIGHT_CHECKER" ]]; then
+        sudo rm -f -- "$BIND_PREFLIGHT_CHECKER" || \
+            echo "Could not remove the Web UI port checker: $BIND_PREFLIGHT_CHECKER" >&2
+        BIND_PREFLIGHT_CHECKER=""
+    fi
     if (( exit_status != 0 && SETUP_COMPLETED == 0 && ${#PREVIOUSLY_ACTIVE_UNITS[@]} > 0 )); then
         echo "Setup failed; restoring services that were active before migration." >&2
         sudo systemctl daemon-reload || true
@@ -391,10 +397,12 @@ echo "Checking the Web UI network binding choice"
 BIND_PREFLIGHT_CONFIG="$(sudo mktemp "${AUTH_PREFLIGHT_CONFIG}.knxoh-preflight.XXXXXX")"
 sudo python3 "$REPO_ROOT/installer/configure_bind.py" \
     "$AUTH_PREFLIGHT_CONFIG" --output "$BIND_PREFLIGHT_CONFIG"
+BIND_PREFLIGHT_CHECKER="$(sudo mktemp /tmp/knxoh-check-web-port.XXXXXX)"
+sudo install -m 0644 -- "$REPO_ROOT/installer/check_web_port.py" "$BIND_PREFLIGHT_CHECKER"
 
 echo "Checking that the configured Web UI port is available"
 if ! sudo cat -- "$BIND_PREFLIGHT_CONFIG" | \
-    sudo -u "$SERVICE_USER" python3 "$REPO_ROOT/installer/check_web_port.py" -; then
+    sudo -u "$SERVICE_USER" python3 "$BIND_PREFLIGHT_CHECKER" -; then
     echo "The Web UI address is unavailable after stopping knxohui.service; resolve the conflict before retrying setup." >&2
     exit 2
 fi

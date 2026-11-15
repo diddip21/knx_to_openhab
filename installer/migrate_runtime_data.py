@@ -205,6 +205,36 @@ def _require_fallback_target_identity(destination: Path, identity: dict) -> None
         )
 
 
+def _copy_fallback_metadata(source: Path, destination_descriptor: int) -> None:
+    """Copy file metadata through the open descriptor, never through its path."""
+    source_info = source.stat(follow_symlinks=False)
+    if all(hasattr(os, name) for name in ("listxattr", "getxattr", "setxattr")):
+        unsupported_xattr_errors = {
+            errno.ENOTSUP,
+            errno.EOPNOTSUPP,
+            errno.ENOSYS,
+            errno.EPERM,
+        }
+        try:
+            attributes = os.listxattr(source, follow_symlinks=False)
+        except OSError as error:
+            if error.errno not in unsupported_xattr_errors:
+                raise
+            attributes = []
+        for attribute in attributes:
+            try:
+                value = os.getxattr(source, attribute, follow_symlinks=False)
+                os.setxattr(destination_descriptor, attribute, value)
+            except OSError as error:
+                if error.errno not in unsupported_xattr_errors:
+                    raise
+    os.utime(
+        destination_descriptor,
+        ns=(source_info.st_atime_ns, source_info.st_mtime_ns),
+    )
+    os.fchmod(destination_descriptor, stat.S_IMODE(source_info.st_mode))
+
+
 def _copy_no_replace(source: Path, destination: Path, marker: Path) -> None:
     """Copy a completed temporary file only if its target does not exist."""
     source_info = source.lstat()
@@ -240,7 +270,7 @@ def _copy_no_replace(source: Path, destination: Path, marker: Path) -> None:
             output.flush()
             os.fsync(output.fileno())
             _require_fallback_target_identity(destination, target_identity)
-            shutil.copystat(source, destination, follow_symlinks=False)
+            _copy_fallback_metadata(source, target_descriptor)
             _require_fallback_target_identity(destination, target_identity)
         os.fsync(target_descriptor)
     except BaseException:

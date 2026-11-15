@@ -415,6 +415,43 @@ def test_no_hard_link_fallback_revalidates_target_before_success(monkeypatch, tm
     assert (paths[5] / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
 
 
+def test_no_hard_link_fallback_does_not_change_replaced_target_metadata(monkeypatch, tmp_path):
+    paths = _fixture(tmp_path)
+    target = paths[3] / "jobs/upload.knxproj"
+    original_copy_metadata = migration._copy_fallback_metadata
+    competing_metadata = {}
+
+    def reject_hard_links(*_args):
+        raise OSError(errno.EPERM, "hard links are disabled")
+
+    def no_replace_rename_unavailable(*_args):
+        raise OSError(errno.ENOTSUP, "no-replace rename is unavailable")
+
+    def replace_target_before_metadata(source, destination_descriptor):
+        if Path(source.name).name.startswith(migration._copy_temporary_prefix(target)):
+            target.unlink()
+            target.write_text("concurrent data", encoding="utf-8")
+            target.chmod(0o600)
+            os.utime(target, ns=(1_000_000_000, 1_000_000_000))
+            target_info = target.stat()
+            competing_metadata["mode"] = target_info.st_mode & 0o777
+            competing_metadata["mtime_ns"] = target_info.st_mtime_ns
+        original_copy_metadata(source, destination_descriptor)
+
+    monkeypatch.setattr(migration.os, "link", reject_hard_links)
+    monkeypatch.setattr(migration, "_rename_no_replace", no_replace_rename_unavailable)
+    monkeypatch.setattr(migration, "_copy_fallback_metadata", replace_target_before_metadata)
+
+    with pytest.raises(FileExistsError, match="changed before publication completed"):
+        _run_migration(paths)
+
+    target_info = target.stat()
+    assert target.read_text(encoding="utf-8") == "concurrent data"
+    assert target_info.st_mode & 0o777 == competing_metadata["mode"] == 0o600
+    assert target_info.st_mtime_ns == competing_metadata["mtime_ns"]
+    assert (paths[5] / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+
+
 def test_no_hard_link_fallback_cleans_up_an_interrupted_copy(monkeypatch, tmp_path):
     paths = _fixture(tmp_path)
     original_copyfileobj = migration.shutil.copyfileobj

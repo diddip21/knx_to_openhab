@@ -28,7 +28,7 @@ def _source_environment(tmp_path):
 
 def _run_sourced_installer(environment, command, *args):
     return subprocess.run(
-        ["bash", "-c", 'source "$INSTALLER_PATH"; ' + command, "knxoh-test", *args],
+        ["/bin/bash", "-c", 'source "$INSTALLER_PATH"; ' + command, "knxoh-test", *args],
         env=environment,
         capture_output=True,
         text=True,

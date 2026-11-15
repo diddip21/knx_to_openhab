@@ -336,7 +336,7 @@ def test_venv_probe_checks_the_complete_ancestor_chain(tmp_path):
     untrusted_parent = tmp_path / "writable-parent"
     trusted_candidate = untrusted_parent / "root-owned"
     install_dir = trusted_candidate / "install"
-    install_dir.mkdir()
+    install_dir.mkdir(parents=True)
     environment["KNXOH_INSTALL_DIR"] = str(install_dir)
     environment["PREFLIGHT_SERVICE_WRITABLE_DIR"] = str(install_dir)
     environment["PREFLIGHT_UNTRUSTED_PARENT"] = str(untrusted_parent)

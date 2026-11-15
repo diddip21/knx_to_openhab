@@ -53,8 +53,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/opencode_model_router.py select --task "${{ matrix.task }}" --report "$RUNNER_TEMP/model-router.json"
-          python -c 'import json,os; data=json.load(open(os.environ["RUNNER_TEMP"]+"/model-router.json")); assert data["selected"] in ("opencode/glm-5.3-flash-free","opencode/deepseek-v4.1-flash-free")'
+          if python scripts/opencode_model_router.py select --task "${{ matrix.task }}" --report "$RUNNER_TEMP/model-router.json"; then
+            python -c 'import json,os; data=json.load(open(os.environ["RUNNER_TEMP"]+"/model-router.json")); assert data["selected"] in ("opencode/glm-5.3-flash-free","opencode/deepseek-v4.1-flash-free")'
+          else
+            echo "Free-model selection diagnostics (no prompts, tokens or secrets):"
+            cat "$RUNNER_TEMP/model-router.json"
+            exit 1
+          fi
       - name: Upload probe report
         if: always()
         uses: actions/upload-artifact@v4

@@ -53,11 +53,18 @@ jobs:
           set -euo pipefail
           npm install --global @opencode/cli
           opencode --version
-      - name: Implement README with free model and Superpowers
+      - name: Select an approved working free model
+        id: model
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/opencode_model_router.py select --task implement --report "$RUNNER_TEMP/model-router.json"
+
+      - name: Implement README with selected free model and Superpowers
         shell: bash
         env:
           CI: "true"
-          MODEL: opencode/glm-5.3-flash-free
+          MODEL: ${{ steps.model.outputs.model }}
         run: |
           set -euo pipefail
           timeout --signal=TERM --kill-after=10s 660s \

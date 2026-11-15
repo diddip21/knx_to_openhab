@@ -229,14 +229,14 @@ def write_summary(task: str, models: list[dict[str, Any]], selected: str | None)
     lines = [
         "### OpenCode free-model router",
         "",
-        f"Task: \`{task}\`. Only the two audited zero-retention free models are eligible.",
+        f"Task: `{task}`. Only the two audited zero-retention free models are eligible.",
         "",
         "| Candidate | Tool/response probe | Fact check | Seconds | Score |",
         "|---|---|---|---:|---:|",
     ]
     for model in models:
         lines.append(
-            "| \`{}\` | {} | {} | {} | {} |".format(
+            "| `{}` | {} | {} | {} | {} |".format(
                 model["model"],
                 "pass" if model.get("passed") else "fail",
                 "pass" if model.get("factual") else "n/a",
@@ -244,7 +244,7 @@ def write_summary(task: str, models: list[dict[str, Any]], selected: str | None)
                 model.get("score", 0),
             )
         )
-    lines.extend(["", f"**Selected:** \`{selected}\`" if selected else "**No eligible model passed.**"])
+    lines.extend(["", f"**Selected:** `{selected}`" if selected else "**No eligible model passed.**"])
     with Path(target).open("a", encoding="utf-8") as out:
         out.write("\n".join(lines) + "\n")
 

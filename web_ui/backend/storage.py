@@ -238,7 +238,7 @@ def save_jobs(jobs_dir, jobs):
     # Try to replace, and if it fails on Windows, use a fallback strategy
     try:
         os.replace(tmp_file, jf)
-    except (PermissionError, OSError) as e:
+    except (PermissionError, OSError):
         import sys
 
         if sys.platform == "win32":

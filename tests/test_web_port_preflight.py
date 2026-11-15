@@ -161,3 +161,14 @@ def test_setup_checks_port_after_quiescing_and_before_migration():
     migration = setup.index("migrate_runtime_data.py")
 
     assert quiesce < bind_selection < port_check < bind_publish < migration
+
+
+def test_setup_rejects_a_symlinked_configuration_before_quiescing():
+    setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+    symlink_guard = setup.index(
+        'if [[ -L "$CONFIG_DIR/config.json" || -L "$AUTH_PREFLIGHT_CONFIG" ]]'
+    )
+    refusal = setup.index("Refusing to use a symlinked Web UI configuration file.")
+    quiesce = setup.index("acquire_setup_maintenance_lock quiesce_setup_services")
+
+    assert symlink_guard < refusal < quiesce

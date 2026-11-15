@@ -239,6 +239,10 @@ if [[ ! -f "$AUTH_PREFLIGHT_CONFIG" && -f "$BASE/web_ui/backend/config.json" ]];
 elif [[ ! -f "$AUTH_PREFLIGHT_CONFIG" && -f "$REPO_ROOT/web_ui/backend/config.json" ]]; then
     AUTH_PREFLIGHT_CONFIG="$REPO_ROOT/web_ui/backend/config.json"
 fi
+if [[ -L "$CONFIG_DIR/config.json" || -L "$AUTH_PREFLIGHT_CONFIG" ]]; then
+    echo "Refusing to use a symlinked Web UI configuration file." >&2
+    exit 2
+fi
 AUTH_PREFLIGHT_STATUS=3
 if [[ -x "$BASE/venv/bin/python" ]]; then
     if [[ "$EUID" -eq 0 ]]; then

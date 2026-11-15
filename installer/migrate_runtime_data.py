@@ -107,9 +107,6 @@ def _cleanup_interrupted_fallback_copy(destination: Path, source: Path) -> None:
             try:
                 state = json.load(marker_file)
             except (json.JSONDecodeError, UnicodeDecodeError):
-                if destination_info is None and not temporary_source.exists():
-                    marker.unlink()
-                    return
                 raise ValueError(f"The fallback-copy marker is invalid: {marker}") from None
     finally:
         if marker_descriptor >= 0:
@@ -122,9 +119,6 @@ def _cleanup_interrupted_fallback_copy(destination: Path, source: Path) -> None:
         or state.get("temporary") != expected_name
         or state.get("phase") not in {"staging", "fallback-prepared", "fallback-copying"}
     ):
-        if destination_info is None and not temporary_source.exists():
-            marker.unlink()
-            return
         raise ValueError(f"The fallback-copy marker does not match its target: {marker}")
 
     try:
@@ -135,22 +129,7 @@ def _cleanup_interrupted_fallback_copy(destination: Path, source: Path) -> None:
     if destination_info is None:
         identity = state.get("temporary_identity")
         if temporary_info is not None:
-            identity_matches = isinstance(identity, dict) and (
-                temporary_info.st_dev,
-                temporary_info.st_ino,
-            ) == (identity.get("device"), identity.get("inode"))
-            unrecorded_staging_file = (
-                state["phase"] == "staging"
-                and "temporary_identity" not in state
-                and stat.S_ISREG(temporary_info.st_mode)
-                and temporary_info.st_uid == os.geteuid()
-                and temporary_info.st_nlink == 1
-                and temporary_info.st_size == 0
-                and stat.S_IMODE(temporary_info.st_mode) & 0o077 == 0
-            )
-            if not stat.S_ISREG(temporary_info.st_mode) or not (
-                identity_matches or unrecorded_staging_file
-            ):
+            if not _same_file_identity(temporary_info, identity):
                 raise FileExistsError(
                     f"An interrupted migration left an unverified temporary file; inspect it before retrying: {temporary_source}"
                 )

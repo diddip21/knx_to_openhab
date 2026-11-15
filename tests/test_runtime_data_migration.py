@@ -403,7 +403,7 @@ def test_no_hard_link_fallback_cleans_up_on_keyboard_interrupt(monkeypatch, tmp_
         "initial-copy",
     ],
 )
-def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path, crash_point):
+def test_interrupted_fallback_copy_is_recovered_or_preserved(tmp_path, crash_point):
     paths = _fixture(tmp_path)
     source = paths[5]
     destination = paths[3] / "jobs"
@@ -516,6 +516,24 @@ def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path, crash_poi
         path: path.read_bytes() for path in destination.glob(".knxoh-copy-state-*.tmp-*")
     }
 
+    if crash_point == "marker-initial-write":
+        with pytest.raises(ValueError, match="fallback-copy marker is invalid"):
+            _run_migration(paths)
+        assert migration._fallback_copy_state_path(partial_target).read_bytes() == b""
+        assert not migration._copy_temporary_path(partial_target).exists()
+        assert paths[5].exists()
+        assert all(path.read_bytes() == content for path, content in marker_temps.items())
+        return
+
+    if crash_point == "temporary-created":
+        with pytest.raises(FileExistsError, match="unverified temporary file"):
+            _run_migration(paths)
+        assert migration._copy_temporary_path(partial_target).read_bytes() == b""
+        assert migration._fallback_copy_state_path(partial_target).is_file()
+        assert paths[5].exists()
+        assert all(path.read_bytes() == content for path, content in marker_temps.items())
+        return
+
     if crash_point == "fallback-copying":
         with pytest.raises(FileExistsError, match="without a recorded identity"):
             _run_migration(paths)
@@ -535,13 +553,15 @@ def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path, crash_poi
     assert not paths[5].exists()
 
 
-def test_unrecorded_staging_file_must_be_private_and_empty_before_cleanup(tmp_path):
+@pytest.mark.parametrize("contents", [b"unrelated data", b""])
+def test_unrecorded_staging_file_is_preserved(tmp_path, contents):
     paths = _fixture(tmp_path)
     target = paths[3] / "jobs" / "upload.knxproj"
     target.parent.mkdir(parents=True)
     temporary = migration._copy_temporary_path(target)
     marker = migration._fallback_copy_state_path(target)
-    temporary.write_text("unrelated data", encoding="utf-8")
+    temporary.write_bytes(contents)
+    temporary.chmod(0o600)
     marker.write_text(
         json.dumps(
             {
@@ -556,7 +576,22 @@ def test_unrecorded_staging_file_must_be_private_and_empty_before_cleanup(tmp_pa
     with pytest.raises(FileExistsError, match="unverified temporary file"):
         _run_migration(paths)
 
-    assert temporary.read_text(encoding="utf-8") == "unrelated data"
+    assert temporary.read_bytes() == contents
+    assert paths[5].exists()
+
+
+def test_invalid_marker_collision_is_preserved(tmp_path):
+    paths = _fixture(tmp_path)
+    target = paths[3] / "jobs" / "upload.knxproj"
+    target.parent.mkdir(parents=True)
+    marker = migration._fallback_copy_state_path(target)
+    marker.write_text("valuable unrelated marker", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="fallback-copy marker is invalid"):
+        _run_migration(paths)
+
+    assert marker.read_text(encoding="utf-8") == "valuable unrelated marker"
+    assert not target.exists()
     assert paths[5].exists()
 
 

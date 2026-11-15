@@ -2,7 +2,7 @@ name: OpenCode issue planner
 
 on:
   issues:
-    types: [labeled]
+    types: [labeled, edited]
   issue_comment:
     types: [created]
 
@@ -17,14 +17,17 @@ concurrency:
 jobs:
   plan:
     if: >-
-      github.actor == github.repository_owner &&
       github.event.issue.state == 'open' &&
       !github.event.issue.pull_request &&
       (
         (github.event_name == 'issues' &&
-         github.event.label.name == 'ai:plan') ||
+         ((github.actor == github.repository_owner &&
+           github.event.action == 'labeled' &&
+           github.event.label.name == 'ai:plan') ||
+          (github.event.action == 'edited' &&
+           contains(github.event.issue.labels.*.name, 'ai:approved'))) ||
         (github.event_name == 'issue_comment' &&
-         startsWith(github.event.comment.body, '/ai '))
+         github.actor == github.repository_owner)
       )
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -101,12 +104,13 @@ jobs:
               return;
             }
             const labels = new Set(details.data.labels.map(x => x.name));
-            if (!labels.has('ai:plan')) {
+            if (result.operation !== 'invalidate' && !labels.has('ai:plan')) {
               core.setFailed('ai:plan label removed while processing');
               return;
             }
-            if (result.operation === 'approve' || result.operation === 'plan') {
-              const liveDigest = crypto.createHash('sha256')
+            let liveDigest;
+            if (['approve', 'invalidate', 'plan'].includes(result.operation)) {
+              liveDigest = crypto.createHash('sha256')
                 .update(JSON.stringify([details.data.title ?? '', details.data.body ?? '']), 'utf8')
                 .digest('hex');
               if (!result.digest || liveDigest !== result.digest) {
@@ -126,6 +130,9 @@ jobs:
                 ...repo, issue_number, name: 'ai:waiting'
               });
             } else if (result.operation === 'plan') {
+              await github.rest.issues.createComment({
+                ...repo, issue_number, body: result.comment
+              });
               await github.rest.issues.addLabels({
                 ...repo, issue_number, labels: ['ai:waiting']
               });
@@ -134,6 +141,24 @@ jobs:
                   ...repo, issue_number, name: 'ai:approved'
                 });
               }
+              return;
+            } else if (result.operation === 'invalidate') {
+              if (!labels.has('ai:approved') || liveDigest === result.approved_digest) {
+                core.info('The approved state changed while processing; keeping current labels.');
+                return;
+              }
+              await github.rest.issues.removeLabel({
+                ...repo, issue_number, name: 'ai:approved'
+              });
+              if (labels.has('ai:plan') && !labels.has('ai:waiting')) {
+                await github.rest.issues.addLabels({
+                  ...repo, issue_number, labels: ['ai:waiting']
+                });
+              }
+              await github.rest.issues.createComment({
+                ...repo, issue_number, body: result.comment
+              });
+              return;
             }
             await github.rest.issues.createComment({
               ...repo, issue_number, body: result.comment

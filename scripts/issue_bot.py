@@ -74,13 +74,11 @@ def choose(
     """Decide the event operation without using a language model."""
     issue = event.get("issue") or {}
     if (
-        not actor
-        or actor.casefold() != owner.casefold()
-        or not issue
+        not issue
         or issue.get("pull_request")
         or issue.get("state") != "open"
     ):
-        return {"operation": "noop", "reason": "Not an open issue or repository owner"}
+        return {"operation": "noop", "reason": "Not an open issue"}
 
     labels = {
         label["name"] if isinstance(label, dict) else label for label in issue.get("labels", [])
@@ -91,6 +89,29 @@ def choose(
     sha = issue_digest(issue)
 
     if event_name == "issues":
+        if event.get("action") == "edited":
+            if "ai:approved" not in labels:
+                return {"operation": "noop", "reason": "No approved plan to invalidate"}
+            approved_digest = (
+                previous_state.get("issue_digest")
+                if previous_state and previous_state.get("kind") == "plan"
+                else None
+            )
+            if approved_digest == sha:
+                return {"operation": "noop", "reason": "Approved plan still matches issue"}
+            return {
+                "operation": "invalidate",
+                "issue": issue,
+                "digest": sha,
+                "approved_digest": approved_digest,
+                "comment": (
+                    "⚠️ Titel oder Beschreibung des Issues wurden seit der Freigabe geändert. "
+                    "Die Freigabe wird entfernt. Wenn `ai:plan` aktiv ist, aktualisiere den Plan "
+                    "mit `/ai answer ...`; andernfalls aktiviere das Label zuerst erneut."
+                ),
+            }
+        if not actor or actor.casefold() != owner.casefold():
+            return {"operation": "noop", "reason": "Only the repository owner may request a plan"}
         if event.get("action") != "labeled" or (event.get("label") or {}).get("name") != "ai:plan":
             return {"operation": "noop", "reason": "Unrelated label"}
         return {
@@ -104,6 +125,8 @@ def choose(
 
     if event_name != "issue_comment":
         return {"operation": "noop", "reason": "Unrelated event"}
+    if not actor or actor.casefold() != owner.casefold():
+        return {"operation": "noop", "reason": "Only the repository owner may request a plan"}
     if event.get("action") != "created" or "ai:plan" not in labels:
         return {"operation": "noop", "reason": "Issue planning is not enabled"}
 
@@ -221,13 +244,16 @@ def parse_model_text(text: str) -> dict[str, str]:
             result = json.loads(candidate)
         except (TypeError, ValueError):
             continue
+        markdown = result.get("markdown") if isinstance(result, dict) else None
+        if isinstance(markdown, str):
+            markdown = markdown.strip()
         if (
             isinstance(result, dict)
             and result.get("kind") in ("questions", "plan")
-            and isinstance(result.get("markdown"), str)
-            and 20 <= len(result["markdown"]) <= MAX_PLAN_CHARS
+            and isinstance(markdown, str)
+            and 20 <= len(markdown) <= MAX_PLAN_CHARS
         ):
-            return {"kind": result["kind"], "markdown": result["markdown"].strip()}
+            return {"kind": result["kind"], "markdown": markdown}
     raise ValueError("OpenCode did not return a valid JSON plan/questions response")
 
 
@@ -284,7 +310,7 @@ def prepare(temp: Path) -> None:
     )
     if operation == "plan":
         (temp / "issue-prompt.txt").write_text(make_prompt(decision), encoding="utf-8")
-    elif operation in ("approve", "notice"):
+    elif operation in ("approve", "invalidate", "notice"):
         result = {
             "operation": operation,
             "comment": decision["comment"],
@@ -292,6 +318,8 @@ def prepare(temp: Path) -> None:
         }
         if "digest" in decision:
             result["digest"] = decision["digest"]
+        if "approved_digest" in decision:
+            result["approved_digest"] = decision["approved_digest"]
         (temp / "issue-result.json").write_text(
             json.dumps(result, ensure_ascii=False), encoding="utf-8"
         )

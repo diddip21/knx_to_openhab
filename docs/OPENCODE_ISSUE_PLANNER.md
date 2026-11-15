@@ -36,16 +36,21 @@ uses the same Superpowers plugin tested in draft PR #94.
 ## Safety and behavior
 
 - Only the repository owner (`github.actor == github.repository_owner`)
-  can trigger planning and approval. Contributor commands are ignored.
+  can trigger planning and approval. Other issue edits can only run the
+  deterministic stale-approval invalidation; they cannot call the model.
 - Issue comments and title/body are untrusted data. All interpretation of
   `/ai` commands and plan versions is deterministic Python, not LLM reasoning.
 - No external issue event is checked out; only default-branch source is used.
 - Planning model and Superpowers skills have **read-only tool permissions**.
 - The model receives no GitHub write token or external provider API key.
 - GitHub's own action step performs comments and label updates.
+- The command filter accepts the same trimmed, case-insensitive `/ai` grammar
+  as the Python controller; unrelated owner comments are deterministic no-ops.
 - The workflow never runs on pull-request comments.
 - A plan's SHA-256 issue digest must still match before publication and approval.
 - A new plan invalidates the previously approved label.
+- Editing an approved issue's title or body removes the stale approval and
+  returns it to `ai:waiting` when planning is still enabled.
 - The action group serializes runs for one issue to reduce race conditions.
 - Free models are external services with changing availability and data terms;
   don't put private ETS project data or secrets in public issues.
@@ -70,7 +75,9 @@ validate successful end-to-end AI planning. After merge/bootstrap, assign
 - Issue titles and descriptions are each limited to 12,000 characters. Larger
   issues are rejected before calling the model so no acceptance criteria are
   silently omitted from the plan.
-- If a GitHub write API call fails after another succeeded, the issue can have
-  partially updated labels. A follow-up planning round can recover.
+- The revised plan comment is published before changing approval labels, so a
+  failed comment write cannot reopen approval of the old plan. A later label
+  write can still fail after the new plan is published; rerun planning to
+  restore the waiting labels.
 - The next stage will implement authorized plans on a separate branch with
   a draft PR and the existing CI. That stage is NOT enabled by these files.

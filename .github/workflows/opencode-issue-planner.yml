@@ -91,6 +91,7 @@ jobs:
         with:
           script: |
             const fs = require('node:fs');
+            const crypto = require('node:crypto');
             const result = JSON.parse(fs.readFileSync(process.env.RESULT_FILE, 'utf8'));
             const repo = { owner: context.repo.owner, repo: context.repo.repo };
             const issue_number = result.issue;
@@ -103,6 +104,15 @@ jobs:
             if (!labels.has('ai:plan')) {
               core.setFailed('ai:plan label removed while processing');
               return;
+            }
+            if (result.operation === 'approve' || result.operation === 'plan') {
+              const liveDigest = crypto.createHash('sha256')
+                .update(JSON.stringify([details.data.title ?? '', details.data.body ?? '']), 'utf8')
+                .digest('hex');
+              if (!result.digest || liveDigest !== result.digest) {
+                core.setFailed('Issue title or body changed while processing; rerun the plan or approval against the current issue.');
+                return;
+              }
             }
             if (result.operation === 'approve') {
               if (!labels.has('ai:waiting')) {

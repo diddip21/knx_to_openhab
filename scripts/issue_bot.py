@@ -131,6 +131,7 @@ def choose(
             "operation": "approve",
             "issue": issue,
             "version": approved_version,
+            "digest": sha,
             "comment": (
                 f"✅ **Plan v{approved_version} freigegeben.**\n\n"
                 "Der Plan ist dokumentiert. **In Stufe 2 wird noch kein Code "
@@ -277,16 +278,15 @@ def prepare(temp: Path) -> None:
     if operation == "plan":
         (temp / "issue-prompt.txt").write_text(make_prompt(decision), encoding="utf-8")
     elif operation in ("approve", "notice"):
+        result = {
+            "operation": operation,
+            "comment": decision["comment"],
+            "issue": decision["issue"]["number"],
+        }
+        if "digest" in decision:
+            result["digest"] = decision["digest"]
         (temp / "issue-result.json").write_text(
-            json.dumps(
-                {
-                    "operation": operation,
-                    "comment": decision["comment"],
-                    "issue": decision["issue"]["number"],
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
+            json.dumps(result, ensure_ascii=False), encoding="utf-8"
         )
     with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
         output.write(f"operation={operation}\n")
@@ -307,6 +307,7 @@ def finish(temp: Path) -> None:
                 "issue": decision["issue"]["number"],
                 "version": decision["version"],
                 "kind": response["kind"],
+                "digest": decision["digest"],
             },
             ensure_ascii=False,
         ),

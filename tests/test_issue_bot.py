@@ -68,6 +68,62 @@ def test_no_automatic_implementation_on_approval():
     )
     assert result["operation"] == "approve"
     assert "kein Code" in result["comment"]
+    assert result["digest"] == bot.issue_digest(issue())
+
+
+def test_prepare_preserves_digest_for_live_approval_check(tmp_path, monkeypatch):
+    event = {
+        "action": "created",
+        "issue": issue(),
+        "comment": {"body": "/ai approve v1"},
+    }
+    (tmp_path / "issue-comments.json").write_text(json.dumps([state_comment()]), encoding="utf-8")
+    event_path = tmp_path / "event.json"
+    event_path.write_text(json.dumps(event), encoding="utf-8")
+    output_path = tmp_path / "github-output.txt"
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "issue_comment")
+    monkeypatch.setenv("GITHUB_ACTOR", "diddip21")
+    monkeypatch.setenv("GITHUB_REPOSITORY_OWNER", "diddip21")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output_path))
+
+    bot.prepare(tmp_path)
+
+    result = json.loads((tmp_path / "issue-result.json").read_text(encoding="utf-8"))
+    assert result["digest"] == bot.issue_digest(issue())
+
+
+def test_finish_preserves_digest_for_live_plan_check(tmp_path):
+    decision = decide("issues", "labeled")
+    (tmp_path / "issue-decision.json").write_text(
+        json.dumps(decision), encoding="utf-8"
+    )
+    model_response = {"kind": "plan", "markdown": "## Prüfen\n\nKonfiguration validieren."}
+    event = {"type": "text", "part": {"text": json.dumps(model_response)}}
+    (tmp_path / "opencode-events.jsonl").write_text(json.dumps(event) + "\n", encoding="utf-8")
+
+    bot.finish(tmp_path)
+
+    result = json.loads((tmp_path / "issue-result.json").read_text(encoding="utf-8"))
+    assert result["digest"] == bot.issue_digest(issue())
+
+
+def test_publish_workflow_revalidates_live_issue_digest_before_label_changes():
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "opencode-issue-planner.yml"
+    ).read_text(encoding="utf-8")
+    digest_check = workflow.index("const liveDigest = crypto.createHash('sha256')")
+    approval_label = workflow.index("labels: ['ai:approved']")
+    waiting_label = workflow.index("labels: ['ai:waiting']")
+
+    assert "details.data.title ?? ''" in workflow
+    assert "details.data.body ?? ''" in workflow
+    assert "liveDigest !== result.digest" in workflow
+    assert digest_check < approval_label
+    assert digest_check < waiting_label
 
 
 @pytest.mark.parametrize(

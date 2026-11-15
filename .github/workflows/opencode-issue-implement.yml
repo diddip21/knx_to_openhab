@@ -1,0 +1,187 @@
+name: OpenCode approved issue implementation (README pilot)
+
+on:
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: ai-implement-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    if: >-
+      github.actor == github.repository_owner &&
+      github.event.issue.number == 96 &&
+      !github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/ai implement v')
+    permissions:
+      contents: read
+      issues: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout trusted main (without token persistence)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Read live issue and comments
+        uses: actions/github-script@v7
+        env:
+          OUT: ${{ runner.temp }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const base = {owner: context.repo.owner, repo: context.repo.repo};
+            const issue_number = context.issue.number;
+            const {data: issue} = await github.rest.issues.get({...base, issue_number});
+            const comments = await github.paginate(github.rest.issues.listComments,
+              {...base, issue_number, per_page:100});
+            fs.writeFileSync(process.env.OUT + '/issue-current.json', JSON.stringify(issue));
+            fs.writeFileSync(process.env.OUT + '/issue-comments.json', JSON.stringify(comments));
+      - name: Verify owner approval and prepare isolated prompt
+        shell: bash
+        run: python scripts/issue_impl.py prepare
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install OpenCode
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global @opencode/cli
+          opencode --version
+      - name: Implement README with free model and Superpowers
+        shell: bash
+        env:
+          CI: "true"
+          MODEL: opencode/glm-5.3-flash-free
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=10s 660s \
+            opencode run --standalone --archived --format json \
+              --agent issue-implementer --model "$MODEL" \
+              "$(cat "$RUNNER_TEMP/implementation-prompt.txt")" \
+            < /dev/null > "$RUNNER_TEMP/implementation-events.jsonl" \
+            2> "$RUNNER_TEMP/implementation-stderr.log"
+      - name: Check README-only diff and build bounded artifact
+        run: python scripts/issue_impl.py collect
+      - name: Upload validated artifact only
+        uses: actions/upload-artifact@v4
+        with:
+          name: readme-issue-96-${{ github.run_id }}
+          path: ${{ runner.temp }}/implementation-artifact.json
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    needs: implement
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: read
+      actions: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted main without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Download validated candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: readme-issue-96-${{ github.run_id }}
+          path: ${{ runner.temp }}
+      - name: Re-fetch live issue and comments
+        uses: actions/github-script@v7
+        env:
+          OUT: ${{ runner.temp }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const base = {owner: context.repo.owner, repo: context.repo.repo};
+            const issue_number = context.issue.number;
+            const {data: issue} = await github.rest.issues.get({...base, issue_number});
+            const comments = await github.paginate(github.rest.issues.listComments,
+              {...base, issue_number, per_page:100});
+            fs.writeFileSync(process.env.OUT + '/issue-current.json', JSON.stringify(issue));
+            fs.writeFileSync(process.env.OUT + '/issue-comments.json', JSON.stringify(comments));
+      - name: Revalidate version, owner, issue digest, scope and artifact
+        run: python scripts/issue_impl.py recheck
+      - name: Publish one README commit and draft PR
+        uses: actions/github-script@v7
+        env:
+          ARTIFACT: ${{ runner.temp }}/implementation-artifact.json
+        with:
+          script: |
+            const fs = require('node:fs');
+            const crypto = require('node:crypto');
+            const a = JSON.parse(fs.readFileSync(process.env.ARTIFACT, 'utf8'));
+            if (a.issue_number !== 96 || a.path !== 'README.md') {
+              core.setFailed('Unexpected issue or file in artifact');
+              return;
+            }
+            const repo = {owner: context.repo.owner, repo: context.repo.repo};
+            const branch = `ai/issue-96-plan-v${a.version}-run-${context.runId}`;
+            const {data: main} = await github.rest.repos.getBranch({
+              ...repo, branch: context.payload.repository.default_branch
+            });
+            if (main.commit.sha !== a.base_commit_sha) {
+              core.setFailed('Main changed since validation; please retry');
+              return;
+            }
+            const bytes = Buffer.from(a.readme_b64, 'base64');
+            const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+            if (digest !== a.readme_sha256) {
+              core.setFailed('Artifact digest mismatch');
+              return;
+            }
+            const {data: prList} = await github.rest.pulls.list({
+              ...repo, state:'open', head: `${repo.owner}:${branch}`, per_page:50
+            });
+            if (prList.length) {
+              core.info(`Draft PR already exists: ${prList[0].html_url}`);
+              return;
+            }
+            const {data: blob} = await github.rest.git.createBlob({
+              ...repo, content:a.readme_b64, encoding:'base64'
+            });
+            const {data: baseCommit} = await github.rest.git.getCommit({
+              ...repo, commit_sha:a.base_commit_sha
+            });
+            const {data: tree} = await github.rest.git.createTree({
+              ...repo, base_tree:baseCommit.tree.sha, tree:[
+                {path:'README.md',mode:'100644',type:'blob',sha:blob.sha}
+              ]
+            });
+            const {data: commit} = await github.rest.git.createCommit({
+              ...repo,
+              message:'docs: clarify output formats and fix YAML guide link (refs #96)',
+              tree:tree.sha,
+              parents:[a.base_commit_sha]
+            });
+            await github.rest.git.createRef({
+              ...repo, ref:`refs/heads/${branch}`, sha:commit.sha
+            });
+            const {data: pr} = await github.rest.pulls.create({
+              ...repo,
+              title:'docs: clarify legacy/YAML outputs (approved issue #96)',
+              head:branch,
+              base:context.payload.repository.default_branch,
+              draft:true,
+              body:`Implements approved plan v${a.version} in #96.\n\n` +
+                `Only README.md changed; no generator, test or configuration edits.\n` +
+                `Approval command: ${a.command_comment_id}; planning comment: ${a.plan_comment_id}.\n\n` +
+                `Tests: gated README diff/scope validated, CI dispatched separately. No auto-merge.\n\nCloses no issue automatically.`
+            });
+            core.info(`Draft PR: ${pr.html_url}`);
+            core.summary.addRaw(`Draft PR: ${pr.html_url}`).write();
+            // GITHUB_TOKEN-generated pushes/PRs do not reliably trigger CI.
+            await github.rest.actions.createWorkflowDispatch({
+              ...repo, workflow_id:'ci.yml', ref:branch
+            });
+            core.info(`Explicit CI dispatch for ${branch}`);

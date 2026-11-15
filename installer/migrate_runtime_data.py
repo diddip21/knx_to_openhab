@@ -158,11 +158,22 @@ def _cleanup_interrupted_fallback_copy(destination: Path, source: Path) -> None:
     if destination_info is None:
         identity = state.get("temporary_identity")
         if temporary_info is not None:
-            if (
-                not stat.S_ISREG(temporary_info.st_mode)
-                or not isinstance(identity, dict)
-                or (temporary_info.st_dev, temporary_info.st_ino)
-                != (identity.get("device"), identity.get("inode"))
+            identity_matches = (
+                isinstance(identity, dict)
+                and (temporary_info.st_dev, temporary_info.st_ino)
+                == (identity.get("device"), identity.get("inode"))
+            )
+            unrecorded_staging_file = (
+                state["phase"] == "staging"
+                and "temporary_identity" not in state
+                and stat.S_ISREG(temporary_info.st_mode)
+                and temporary_info.st_uid == os.geteuid()
+                and temporary_info.st_nlink == 1
+                and temporary_info.st_size == 0
+                and stat.S_IMODE(temporary_info.st_mode) & 0o077 == 0
+            )
+            if not stat.S_ISREG(temporary_info.st_mode) or not (
+                identity_matches or unrecorded_staging_file
             ):
                 raise FileExistsError(
                     f"An interrupted migration left an unverified temporary file; inspect it before retrying: {temporary_source}"

@@ -396,6 +396,7 @@ def test_no_hard_link_fallback_cleans_up_on_keyboard_interrupt(monkeypatch, tmp_
     "crash_point",
     [
         "marker-initial-write",
+        "temporary-created",
         "fallback-prepared",
         "fallback-copying",
         "partial-copy",
@@ -417,7 +418,15 @@ def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path, crash_poi
             "ready_path = Path(sys.argv[3])",
             "target = Path(sys.argv[2]) / 'upload.knxproj'",
             "marker = migration._fallback_copy_state_path(target)",
+            "temporary = migration._copy_temporary_path(target)",
             "original_replace = migration.os.replace",
+            "original_open = migration.os.open",
+            "def interrupt_temporary_creation(path, flags, *args, **kwargs):",
+            "    descriptor = original_open(path, flags, *args, **kwargs)",
+            "    if crash_point == 'temporary-created' and Path(path) == temporary:",
+            "        ready_path.write_text('ready', encoding='utf-8')",
+            "        time.sleep(60)",
+            "    return descriptor",
             "def marker_state(path):",
             "    try:",
             "        return json.loads(Path(path).read_text(encoding='utf-8'))",
@@ -454,6 +463,7 @@ def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path, crash_poi
             "migration.os.link = reject_hard_links",
             "migration._rename_no_replace = no_replace_rename",
             "migration.os.replace = interrupt_marker_update",
+            "migration.os.open = interrupt_temporary_creation",
             "migration.shutil.copyfileobj = interrupt_copy",
             "migration.shutil.copy2 = interrupt_initial_copy",
             "migration._copy_missing_tree(Path(sys.argv[1]), Path(sys.argv[2]))",
@@ -490,6 +500,9 @@ def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path, crash_poi
             assert partial_target.read_bytes() == b""
         elif crash_point == "partial-copy":
             assert partial_target.read_bytes() == b"partial"
+        elif crash_point == "temporary-created":
+            assert not partial_target.exists()
+            assert migration._copy_temporary_path(partial_target).read_bytes() == b""
         if crash_point == "initial-copy":
             assert not partial_target.exists()
             assert migration._copy_temporary_path(partial_target).read_bytes() == b"partial"
@@ -506,6 +519,31 @@ def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path, crash_poi
     assert not list(destination.glob(".knxoh-copy-state-*.tmp-*"))
     assert not list(destination.glob(".knxoh-copy-*"))
     assert not paths[5].exists()
+
+
+def test_unrecorded_staging_file_must_be_private_and_empty_before_cleanup(tmp_path):
+    paths = _fixture(tmp_path)
+    target = paths[3] / "jobs" / "upload.knxproj"
+    target.parent.mkdir(parents=True)
+    temporary = migration._copy_temporary_path(target)
+    marker = migration._fallback_copy_state_path(target)
+    temporary.write_text("unrelated data", encoding="utf-8")
+    marker.write_text(
+        json.dumps(
+            {
+                "name": target.name,
+                "temporary": temporary.name,
+                "phase": "staging",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(FileExistsError, match="unverified temporary file"):
+        _run_migration(paths)
+
+    assert temporary.read_text(encoding="utf-8") == "unrelated data"
+    assert paths[5].exists()
 
 
 def test_migration_copies_valid_long_filename(tmp_path):

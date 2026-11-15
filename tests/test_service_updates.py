@@ -1,5 +1,6 @@
 """The package update UI must never install arbitrary names or unrelated packages."""
 
+import base64
 import secrets
 import subprocess
 from pathlib import Path
@@ -113,7 +114,12 @@ def auth_credentials(monkeypatch, tmp_path):
     monkeypatch.setitem(
         app_module.cfg,
         "auth",
-        {"enabled": True, "user": "test-operator", "password_hash": hash_password(password)},
+        {
+            "enabled": True,
+            "user": "test-operator",
+            "password_hash": hash_password(password),
+            "mode": "session",
+        },
     )
     monkeypatch.setitem(app_module.cfg, "sessions_file", str(tmp_path / "sessions.sqlite3"))
     monkeypatch.setattr(app_module, "_session_store", None)
@@ -167,3 +173,27 @@ def test_api_rejects_default_password_and_unlisted_package(client, auth_credenti
     assert client.post("/api/service/updates/ssh", headers=headers).status_code == 404
     assert client.post("/api/service/updates/openhab", headers=headers).status_code == 403
     start.assert_not_called()
+
+
+def test_basic_auth_can_start_update_from_same_origin_without_allowlist(
+    client, auth_credentials, monkeypatch
+):
+    app_module.cfg["auth"].update(mode="basic", allowed_origins=[])
+    start = Mock(return_value=(True, "Package operation started."))
+    monkeypatch.setattr(app_module.service_updates, "start", start)
+    encoded = base64.b64encode(
+        f"{auth_credentials['username']}:{auth_credentials['password']}".encode("utf-8")
+    ).decode("ascii")
+
+    response = client.post(
+        "/api/service/updates/evcc",
+        headers={
+            "Authorization": f"Basic {encoded}",
+            "Origin": "http://localhost",
+            "X-Requested-With": "XMLHttpRequest",
+        },
+        json={"version": "0.205.1"},
+    )
+
+    assert response.status_code == 202
+    start.assert_called_once_with("evcc", "0.205.1")

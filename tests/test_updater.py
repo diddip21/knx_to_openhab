@@ -62,6 +62,18 @@ def test_check_github_version_resolves_latest_stable_release_commit(monkeypatch)
     assert get.call_args_list[1].args[0].endswith("/commits/v1.4.0")
 
 
+def test_check_github_version_reports_when_no_stable_release_is_published(monkeypatch):
+    response = Mock(status_code=404)
+    get = Mock(return_value=response)
+    monkeypatch.setattr("web_ui.backend.updater.requests.get", get)
+
+    success, result = Updater().check_github_version()
+
+    assert success is False
+    assert result["error"] == "No stable GitHub release has been published yet"
+    get.assert_called_once()
+
+
 def test_get_current_version_includes_exact_release_tag(monkeypatch):
     updater = Updater()
     commands = [

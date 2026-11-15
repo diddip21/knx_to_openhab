@@ -48,7 +48,7 @@ Target audience: German-speaking smart home users running OpenHAB on Raspberry P
 
 ## Coding Conventions
 
-- **Python 3.12/3.13** in CI; installer preflight accepts Python 3.11+
+- **Python 3.11/3.12/3.13** in CI; installer preflight accepts Python 3.11+
 - **Black**: line-length 100, target py312
 - **isort**: profile="black", line_length=100
 - **flake8**: see `.flake8` for actual ignores (`E203`, `W503`, `E501` plus per-file rules)
@@ -104,7 +104,7 @@ python scripts/regenerate_golden.py
 ### CI Pipeline (GitHub Actions)
 
 1. **Lint and typecheck**: `black --check .` + `isort --check-only .` + `flake8 .` + `mypy .`
-2. **Core Tests**: Python 3.12 + 3.13 matrix on ubuntu-latest
+2. **Core Tests**: Python 3.11 + 3.12 + 3.13 matrix on ubuntu-latest
 3. **UI Tests**: Playwright with Chromium (depends on core tests passing)
 
 ## Critical Pitfalls

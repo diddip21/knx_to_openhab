@@ -2,8 +2,12 @@
 
 The browser suite in this directory exercises the Flask Web UI with pytest and
 Playwright. It uses the `ui` marker and Chromium (configured in `pytest.ini`).
-Most tests stub API responses so that browser assertions are deterministic and
-do not deploy or modify a real OpenHAB installation.
+Most tests stub API responses so that browser assertions are deterministic. The
+`test_application_emulator.py` journey starts an isolated Flask instance and
+uses the real upload validator, ETS parser, generator, staging, preview, deploy,
+rollback and job deletion. Its OpenHAB root, job data and backups live under a
+temporary directory; browser routes emulate only host services, package-manager
+operations and GitHub update metadata.
 
 ## Setup and execution
 
@@ -17,8 +21,9 @@ python -m playwright install chromium
 pytest tests/ui/ -v -m ui
 
 # Focused test or module
-pytest tests/ui/test_ui_smoke.py::test_homepage_loads -v
-pytest tests/ui/test_job_lifecycle_e2e.py -v
+pytest tests/ui/test_ui_smoke.py::test_homepage_loads -v -m ui
+pytest tests/ui/test_job_lifecycle_e2e.py -v -m ui
+pytest tests/ui/test_application_emulator.py -v -m ui
 
 # Run with a visible browser
 pytest tests/ui/ -v -m ui --headed
@@ -44,6 +49,9 @@ Authentication/session behavior also has isolated test-client coverage, and
 - `test_job_actions.py`, `test_job_lifecycle_e2e.py`,
   `test_upload_job_happy_path.py`: upload, job state, deploy, rollback,
   reprocessing and deletion flows.
+- `test_application_emulator.py`: real end-to-end generation and deployment
+  against an isolated server, plus emulated service restart, package refresh
+  and application-update discovery.
 - `test_sse_streaming.py`: event-stream delivery, status updates and log
   filtering.
 - `test_settings_config.py`, `test_settings_advanced.py`: configuration tabs,
@@ -75,6 +83,9 @@ test UI, not screenshots of a user's live OpenHAB instance.
   details.
 - Mock external API behavior with `page.route(...)`; keep each test independent.
 - Use the `page`, `base_url` and `flask_server` fixtures where appropriate.
+- Use `emulator_server` for a full-stack browser journey. It redirects all
+  generated files, job data and backups into `tmp_path`; keep OS service,
+  package installation and self-update actions behind browser route stubs.
 - For auth-specific UI, use the isolated authenticated preview fixture rather
   than changing the shared unauthenticated test server.
 - Store intentional screenshot evidence under `test-results/` so CI can upload

@@ -191,6 +191,20 @@ def _same_file_identity(info, identity) -> bool:
     )
 
 
+def _require_fallback_target_identity(destination: Path, identity: dict) -> None:
+    """Fail closed if another process replaced the exclusive-copy target."""
+    try:
+        destination_info = destination.lstat()
+    except FileNotFoundError:
+        raise FileExistsError(
+            f"The fallback-copy target disappeared before publication completed: {destination}"
+        ) from None
+    if not _same_file_identity(destination_info, identity):
+        raise FileExistsError(
+            f"The fallback-copy target changed before publication completed: {destination}"
+        )
+
+
 def _copy_no_replace(source: Path, destination: Path, marker: Path) -> None:
     """Copy a completed temporary file only if its target does not exist."""
     source_info = source.lstat()
@@ -220,16 +234,16 @@ def _copy_no_replace(source: Path, destination: Path, marker: Path) -> None:
                 "phase": "fallback-copying",
             },
         )
-        with os.fdopen(target_descriptor, "wb") as output:
-            target_descriptor = -1
+        with os.fdopen(os.dup(target_descriptor), "wb") as output:
             with source.open("rb") as input_file:
                 shutil.copyfileobj(input_file, output)
             output.flush()
-            shutil.copystat(source, destination, follow_symlinks=False)
             os.fsync(output.fileno())
+            _require_fallback_target_identity(destination, target_identity)
+            shutil.copystat(source, destination, follow_symlinks=False)
+            _require_fallback_target_identity(destination, target_identity)
+        os.fsync(target_descriptor)
     except BaseException:
-        if target_descriptor >= 0:
-            os.close(target_descriptor)
         if target_identity is not None:
             try:
                 destination_info = destination.lstat()
@@ -242,6 +256,9 @@ def _copy_no_replace(source: Path, destination: Path, marker: Path) -> None:
                 ):
                     destination.unlink()
         raise
+    finally:
+        if target_descriptor >= 0:
+            os.close(target_descriptor)
 
 
 def _rename_no_replace(source: Path, destination: Path) -> None:

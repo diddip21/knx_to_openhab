@@ -386,6 +386,35 @@ def test_no_hard_link_fallback_does_not_replace_a_racing_target(monkeypatch, tmp
     assert not list(raced_target.parent.glob(".knxoh-copy-*"))
 
 
+def test_no_hard_link_fallback_revalidates_target_before_success(monkeypatch, tmp_path):
+    paths = _fixture(tmp_path)
+    target = paths[3] / "jobs/upload.knxproj"
+    original_copyfileobj = migration.shutil.copyfileobj
+
+    def reject_hard_links(*_args):
+        raise OSError(errno.EPERM, "hard links are disabled")
+
+    def no_replace_rename_unavailable(*_args):
+        raise OSError(errno.ENOTSUP, "no-replace rename is unavailable")
+
+    def replace_target_after_copy(source, destination, *args, **kwargs):
+        result = original_copyfileobj(source, destination, *args, **kwargs)
+        if Path(source.name).name.startswith(".knxoh-copy-"):
+            target.unlink()
+            target.write_text("concurrent data", encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(migration.os, "link", reject_hard_links)
+    monkeypatch.setattr(migration, "_rename_no_replace", no_replace_rename_unavailable)
+    monkeypatch.setattr(migration.shutil, "copyfileobj", replace_target_after_copy)
+
+    with pytest.raises(FileExistsError, match="changed before publication completed"):
+        _run_migration(paths)
+
+    assert target.read_text(encoding="utf-8") == "concurrent data"
+    assert (paths[5] / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
+
+
 def test_no_hard_link_fallback_cleans_up_an_interrupted_copy(monkeypatch, tmp_path):
     paths = _fixture(tmp_path)
     original_copyfileobj = migration.shutil.copyfileobj

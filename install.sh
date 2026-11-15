@@ -522,7 +522,8 @@ check_installer_disk_space() {
 }
 
 verify_venv_support() (
-    local probe_parent="$INSTALL_DIR" probe_root parent
+    local probe_parent="$INSTALL_DIR" probe_root parent target_device
+    local candidate_uid candidate_mode candidate_device trusted_parent=0
     while [[ ! -d "$probe_parent" ]]; do
         parent="${probe_parent%/*}"
         if [[ "$parent" == "$probe_parent" ]]; then
@@ -531,6 +532,36 @@ verify_venv_support() (
             probe_parent="${parent:-/}"
         fi
     done
+    if ! probe_parent="$(cd -- "$probe_parent" && pwd -P)" ||
+       ! target_device="$(stat -c '%d' -- "$probe_parent")"; then
+        log_error "Could not identify the installation filesystem for a safe Python probe."
+        exit 1
+    fi
+    while [[ -n "$probe_parent" ]]; do
+        if ! read -r candidate_uid candidate_mode candidate_device < <(
+            stat -c '%u %a %d' -- "$probe_parent"
+        ); then
+            log_error "Could not inspect a directory on the installation filesystem."
+            exit 1
+        fi
+        if [[ "$candidate_device" != "$target_device" ]]; then
+            break
+        fi
+        if [[ "$candidate_uid" == "0" ]] && (( (8#$candidate_mode & 8#022) == 0 )); then
+            trusted_parent=1
+            break
+        fi
+        parent="${probe_parent%/*}"
+        if [[ "$parent" == "$probe_parent" ]]; then
+            probe_parent=""
+        else
+            probe_parent="${parent:-/}"
+        fi
+    done
+    if (( !trusted_parent )); then
+        log_error "No root-owned, non-writable directory is available on the installation filesystem for a safe Python probe."
+        exit 1
+    fi
     if ! probe_root="$(sudo mktemp -d "$probe_parent/.knxoh-preflight.XXXXXX")"; then
         log_error "Could not create a temporary directory to test Python virtual environment support."
         exit 1

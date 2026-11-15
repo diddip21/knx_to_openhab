@@ -37,6 +37,12 @@ def _environment(tmp_path, *, python_version="3.11", free_kib=1048576):
         'printf "/dev/test 99999999 0 %s 0%% /\\n" "$PREFLIGHT_FREE_KIB"\n',
     )
     _executable(
+        fake_bin / "stat",
+        "#!/bin/sh\n"
+        'if [ "$2" = "%d" ]; then printf "1\\n"; exit 0; fi\n'
+        'if [ "$4" = "$PREFLIGHT_SERVICE_WRITABLE_DIR" ]; then printf "1001 755 1\\n"; else printf "0 755 1\\n"; fi\n',
+    )
+    _executable(
         fake_bin / "sudo",
         "#!/bin/sh\n"
         'if [ "${1:-}" = "mktemp" ]; then\n'
@@ -321,5 +327,63 @@ def test_venv_probe_accepts_usable_interpreter_and_cleans_up(tmp_path):
     assert (tmp_path / "probe-template.log").read_text(encoding="utf-8").strip() == str(
         tmp_path / ".knxoh-preflight.XXXXXX"
     )
+    assert list(tmp_path.glob(".knxoh-preflight.*")) == []
+    assert list(different_tmp.iterdir()) == []
+
+
+def test_venv_probe_uses_a_trusted_parent_for_service_writable_install_dir(tmp_path):
+    environment = _environment(tmp_path)
+    install_dir = tmp_path / "install"
+    install_dir.mkdir()
+    environment["KNXOH_INSTALL_DIR"] = str(install_dir)
+    environment["PREFLIGHT_SERVICE_WRITABLE_DIR"] = str(install_dir)
+    different_tmp = tmp_path / "tmpdir"
+    different_tmp.mkdir()
+    environment["TMPDIR"] = str(different_tmp)
+    _executable(
+        tmp_path / "bin" / "sudo",
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = "mktemp" ]; then\n'
+        '    printf "%s\\n" "$3" > "$PREFLIGHT_PROBE_TEMPLATE_LOG"\n'
+        '    probe_root="$(command mktemp -d "$3")" || exit $?\n'
+        '    printf "%s\\n" "$probe_root" > "$PREFLIGHT_PROBE_ROOT_LOG"\n'
+        '    chmod 000 "$probe_root"\n'
+        '    printf "%s\\n" "$probe_root"\n'
+        "    exit 0\n"
+        "fi\n"
+        'if [ "${1:-}" = "python3" ]; then\n'
+        "    shift\n"
+        '    chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"\n'
+        '    "$PREFLIGHT_REAL_PYTHON" "$@"\n'
+        "    status=$?\n"
+        '    chmod 000 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"\n'
+        '    exit "$status"\n'
+        "fi\n"
+        'if [ -f "$PREFLIGHT_PROBE_ROOT_LOG" ] && [ "$1" = "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")/venv/bin/python" ]; then\n'
+        '    chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"\n'
+        '    exec "$@"\n'
+        "fi\n"
+        'if [ "${1:-}" = "rm" ]; then\n'
+        '    if [ -f "$PREFLIGHT_PROBE_ROOT_LOG" ]; then chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"; fi\n'
+        "    shift\n"
+        '    exec /bin/rm "$@"\n'
+        "fi\n"
+        'exec "$@"\n',
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", 'source "$1"; verify_venv_support', "preflight", str(INSTALLER)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=40,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "probe-template.log").read_text(encoding="utf-8").strip() == str(
+        tmp_path / ".knxoh-preflight.XXXXXX"
+    )
+    assert list(install_dir.iterdir()) == []
     assert list(tmp_path.glob(".knxoh-preflight.*")) == []
     assert list(different_tmp.iterdir()) == []

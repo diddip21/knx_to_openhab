@@ -163,10 +163,17 @@ def choose(
 
 def make_prompt(decision: dict[str, Any]) -> str:
     issue = decision["issue"]
+    title = str(issue.get("title") or "")
+    description = str(issue.get("body") or "")
+    if len(title) > MAX_ISSUE_CHARS or len(description) > MAX_ISSUE_CHARS:
+        raise ValueError(
+            f"Issue title and body must each be at most {MAX_ISSUE_CHARS} characters; "
+            "shorten the issue before requesting an AI plan."
+        )
     data = {
         "issue_number": issue["number"],
-        "title": str(issue.get("title") or "")[:MAX_ISSUE_CHARS],
-        "description": str(issue.get("body") or "")[:MAX_ISSUE_CHARS],
+        "title": title,
+        "description": description,
         "previous_agent_comment": decision["previous"][:MAX_PLAN_CHARS],
         "maintainer_reply": decision["answer"][:MAX_REPLY_CHARS],
         "plan_version": decision["version"],

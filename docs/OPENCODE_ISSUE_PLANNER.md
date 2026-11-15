@@ -44,7 +44,7 @@ uses the same Superpowers plugin tested in draft PR #94.
 - The model receives no GitHub write token or external provider API key.
 - GitHub's own action step performs comments and label updates.
 - The workflow never runs on pull-request comments.
-- A plan's SHA-256 issue digest must still match at approval time.
+- A plan's SHA-256 issue digest must still match before publication and approval.
 - A new plan invalidates the previously approved label.
 - The action group serializes runs for one issue to reduce race conditions.
 - Free models are external services with changing availability and data terms;
@@ -67,6 +67,9 @@ validate successful end-to-end AI planning. After merge/bootstrap, assign
   yet. This avoids trusting a model to authorize itself.
 - If an issue is changed during a planning run, its output can be stale; the
   approval digest catches it, requiring a fresh plan.
+- Issue titles and descriptions are each limited to 12,000 characters. Larger
+  issues are rejected before calling the model so no acceptance criteria are
+  silently omitted from the plan.
 - If a GitHub write API call fails after another succeeded, the issue can have
   partially updated labels. A follow-up planning round can recover.
 - The next stage will implement authorized plans on a separate branch with

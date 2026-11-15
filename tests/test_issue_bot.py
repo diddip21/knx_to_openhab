@@ -59,6 +59,14 @@ def test_reply_increments_version():
     assert "Beide Ausgabeformate" in result["answer"]
 
 
+def test_make_prompt_rejects_issue_body_that_would_be_truncated():
+    decision = decide("issues", "labeled")
+    decision["issue"]["body"] = "x" * (bot.MAX_ISSUE_CHARS + 1)
+
+    with pytest.raises(ValueError, match="shorten the issue before requesting an AI plan"):
+        bot.make_prompt(decision)
+
+
 def test_no_automatic_implementation_on_approval():
     result = decide(
         "issue_comment",

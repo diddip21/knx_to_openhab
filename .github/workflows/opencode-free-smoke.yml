@@ -118,18 +118,16 @@ jobs:
             echo "::error::No completed brainstorming skill call found."
             exit 1
           fi
-          if ! jq -e '
+          if ! jq -e --arg workspace "$GITHUB_WORKSPACE" '
             select(
               .type == "tool_use"
               and .part.tool == "read"
               and .part.state.status == "completed"
               and (
-                .part.state.input.filePath == "AGENTS.md"
-                or .part.state.input.path == "AGENTS.md"
-                or (
-                  (.part.state.input.filePath // .part.state.input.path // "")
-                  | endswith("/AGENTS.md")
-                )
+                .part.state.input.path == "AGENTS.md"
+                or .part.state.input.path == ($workspace + "/AGENTS.md")
+                or .part.state.input.filePath == "AGENTS.md"
+                or .part.state.input.filePath == ($workspace + "/AGENTS.md")
               )
             )
           ' "$RUNNER_TEMP/opencode-events.jsonl" > /dev/null; then

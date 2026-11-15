@@ -22,9 +22,9 @@ tool to load `brainstorming` and read the existing `AGENTS.md`.
 The job is successful only if the model returns a standalone response line
 containing exactly `SMOKE_OK`. The structured event stream must also record a
 completed `skill` call requesting `brainstorming` and a completed `read` call
-whose path names `AGENTS.md`. OpenCode V2 declares the skill argument as
-`name` and the read argument as `filePath`; the smoke validator also accepts
-the legacy event aliases `id` and `path`. OpenCode loads the JSONC
+whose path resolves exactly to the checked-out `AGENTS.md`. OpenCode V2
+declares the skill argument as `name` and the read argument as `filePath`; the
+smoke validator also accepts legacy event aliases `id` and `path`. OpenCode loads the JSONC
 configuration itself; the workflow does not parse it as strict JSON. The
 response and event stream are available in the run's artifacts/summary for
 inspection.

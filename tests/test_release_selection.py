@@ -179,6 +179,16 @@ def test_missing_release_fails_without_falling_back_to_main(tmp_path):
     assert "latest stable GitHub release" in result.stderr
 
 
+def test_missing_curl_has_an_actionable_release_selection_error(tmp_path):
+    fake_bin, environment = _source_environment(tmp_path)
+    environment["PATH"] = str(fake_bin)
+
+    result = _run_sourced_installer(environment, 'resolve_release_version ""')
+
+    assert result.returncode != 0
+    assert "curl is required to query GitHub releases" in result.stderr
+
+
 @pytest.mark.parametrize(
     "args",
     [

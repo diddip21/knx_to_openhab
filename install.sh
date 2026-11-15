@@ -150,6 +150,10 @@ PY
 resolve_release_version() {
     local requested_version="${1:-}"
     local endpoint="/releases/latest"
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "curl is required to query GitHub releases; install the curl package and retry." >&2
+        return 1
+    fi
     if [[ -n "$requested_version" ]]; then
         endpoint="/releases/tags/v$requested_version"
     fi
@@ -521,6 +525,25 @@ check_installer_disk_space() {
     fi
 }
 
+is_trusted_probe_directory_chain() {
+    local directory="$1" parent candidate_uid candidate_mode
+    while [[ -n "$directory" ]]; do
+        if ! read -r candidate_uid candidate_mode < <(
+            stat -c '%u %a' -- "$directory"
+        ); then
+            return 1
+        fi
+        if [[ "$candidate_uid" != "0" ]] || (( (8#$candidate_mode & 8#022) != 0 )); then
+            return 1
+        fi
+        if [[ "$directory" == "/" ]]; then
+            break
+        fi
+        parent="${directory%/*}"
+        directory="${parent:-/}"
+    done
+}
+
 verify_venv_support() (
     local probe_parent="$INSTALL_DIR" probe_root parent target_device
     local candidate_uid candidate_mode candidate_device trusted_parent=0
@@ -547,7 +570,9 @@ verify_venv_support() (
         if [[ "$candidate_device" != "$target_device" ]]; then
             break
         fi
-        if [[ "$candidate_uid" == "0" ]] && (( (8#$candidate_mode & 8#022) == 0 )); then
+        if [[ "$candidate_uid" == "0" ]] &&
+           (( (8#$candidate_mode & 8#022) == 0 )) &&
+           is_trusted_probe_directory_chain "$probe_parent"; then
             trusted_parent=1
             break
         fi

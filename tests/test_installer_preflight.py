@@ -40,7 +40,7 @@ def _environment(tmp_path, *, python_version="3.11", free_kib=1048576):
         fake_bin / "stat",
         "#!/bin/sh\n"
         'if [ "$2" = "%d" ]; then printf "1\\n"; exit 0; fi\n'
-        'if [ "$4" = "$PREFLIGHT_SERVICE_WRITABLE_DIR" ]; then printf "1001 755 1\\n"; else printf "0 755 1\\n"; fi\n',
+        'if [ "$4" = "$PREFLIGHT_SERVICE_WRITABLE_DIR" ] || [ "$4" = "$PREFLIGHT_UNTRUSTED_PARENT" ]; then printf "1001 755 1\\n"; else printf "0 755 1\\n"; fi\n',
     )
     _executable(
         fake_bin / "sudo",
@@ -331,12 +331,15 @@ def test_venv_probe_accepts_usable_interpreter_and_cleans_up(tmp_path):
     assert list(different_tmp.iterdir()) == []
 
 
-def test_venv_probe_uses_a_trusted_parent_for_service_writable_install_dir(tmp_path):
+def test_venv_probe_checks_the_complete_ancestor_chain(tmp_path):
     environment = _environment(tmp_path)
-    install_dir = tmp_path / "install"
+    untrusted_parent = tmp_path / "writable-parent"
+    trusted_candidate = untrusted_parent / "root-owned"
+    install_dir = trusted_candidate / "install"
     install_dir.mkdir()
     environment["KNXOH_INSTALL_DIR"] = str(install_dir)
     environment["PREFLIGHT_SERVICE_WRITABLE_DIR"] = str(install_dir)
+    environment["PREFLIGHT_UNTRUSTED_PARENT"] = str(untrusted_parent)
     different_tmp = tmp_path / "tmpdir"
     different_tmp.mkdir()
     environment["TMPDIR"] = str(different_tmp)

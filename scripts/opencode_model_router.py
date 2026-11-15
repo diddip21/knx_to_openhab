@@ -53,11 +53,7 @@ def isolated_environment() -> dict[str, str]:
 
 def parse_catalog(stdout: str) -> set[str]:
     """Use exact, full-line IDs; never trust substring/free text matches."""
-    return {
-        line.strip()
-        for line in stdout.splitlines()
-        if MODEL_LINE.fullmatch(line.strip())
-    }
+    return {line.strip() for line in stdout.splitlines() if MODEL_LINE.fullmatch(line.strip())}
 
 
 def discover_models() -> set[str]:
@@ -244,7 +240,9 @@ def write_summary(task: str, models: list[dict[str, Any]], selected: str | None)
                 model.get("score", 0),
             )
         )
-    lines.extend(["", f"**Selected:** `{selected}`" if selected else "**No eligible model passed.**"])
+    lines.extend(
+        ["", f"**Selected:** `{selected}`" if selected else "**No eligible model passed.**"]
+    )
     with Path(target).open("a", encoding="utf-8") as out:
         out.write("\n".join(lines) + "\n")
 

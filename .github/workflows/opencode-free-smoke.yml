@@ -96,7 +96,7 @@ jobs:
               .type == "tool_use"
               and .part.tool == "skill"
               and .part.state.status == "completed"
-              and .part.state.input.id == "brainstorming"
+              and .part.state.input.name == "brainstorming"
             )
           ' "$RUNNER_TEMP/opencode-events.jsonl" > /dev/null; then
             echo "::error::No completed brainstorming skill call found."
@@ -108,8 +108,8 @@ jobs:
               and .part.tool == "read"
               and .part.state.status == "completed"
               and (
-                .part.state.input.path == "AGENTS.md"
-                or ((.part.state.input.path // "") | endswith("/AGENTS.md"))
+                .part.state.input.filePath == "AGENTS.md"
+                or ((.part.state.input.filePath // "") | endswith("/AGENTS.md"))
               )
             )
           ' "$RUNNER_TEMP/opencode-events.jsonl" > /dev/null; then

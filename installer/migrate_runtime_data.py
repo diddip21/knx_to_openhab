@@ -63,9 +63,9 @@ def _fallback_copy_state_path(destination: Path) -> Path:
     return destination.parent / f".knxoh-copy-state-{name_hash}"
 
 
-def _copy_temporary_path(destination: Path) -> Path:
+def _copy_temporary_prefix(destination: Path) -> str:
     name_hash = hashlib.sha256(os.fsencode(destination.name)).hexdigest()
-    return destination.parent / f".knxoh-copy-{name_hash}"
+    return f".knxoh-copy-{name_hash}-"
 
 
 def _write_fallback_copy_state(marker: Path, state: dict) -> None:
@@ -85,7 +85,6 @@ def _write_fallback_copy_state(marker: Path, state: dict) -> None:
 def _cleanup_interrupted_fallback_copy(destination: Path, source: Path) -> None:
     """Recover files and markers left by a killed migration process."""
     marker = _fallback_copy_state_path(destination)
-    temporary_source = _copy_temporary_path(destination)
     try:
         marker_info = marker.lstat()
     except FileNotFoundError:
@@ -112,14 +111,17 @@ def _cleanup_interrupted_fallback_copy(destination: Path, source: Path) -> None:
         if marker_descriptor >= 0:
             os.close(marker_descriptor)
 
-    expected_name = temporary_source.name
+    temporary_name = state.get("temporary") if isinstance(state, dict) else None
     if (
         not isinstance(state, dict)
         or state.get("name") != destination.name
-        or state.get("temporary") != expected_name
+        or not isinstance(temporary_name, str)
+        or Path(temporary_name).name != temporary_name
+        or not temporary_name.startswith(_copy_temporary_prefix(destination))
         or state.get("phase") not in {"staging", "fallback-prepared", "fallback-copying"}
     ):
         raise ValueError(f"The fallback-copy marker does not match its target: {marker}")
+    temporary_source = destination.parent / temporary_name
 
     try:
         temporary_info = temporary_source.lstat()
@@ -310,30 +312,32 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
             marker = _fallback_copy_state_path(target)
-            temporary_path = _copy_temporary_path(target)
-            marker_descriptor = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            os.close(marker_descriptor)
+            temporary_descriptor, temporary_name = tempfile.mkstemp(
+                prefix=_copy_temporary_prefix(target), dir=target.parent
+            )
+            temporary_path = Path(temporary_name)
             temporary_created = False
             temporary_identity = None
+            marker_created = False
             try:
+                temporary_info = os.fstat(temporary_descriptor)
+                temporary_identity = {
+                    "device": temporary_info.st_dev,
+                    "inode": temporary_info.st_ino,
+                }
+                temporary_created = True
+                marker_descriptor = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                marker_created = True
+                os.close(marker_descriptor)
                 state: dict[str, object] = {
                     "name": target.name,
                     "temporary": temporary_path.name,
+                    "temporary_identity": temporary_identity,
                     "phase": "staging",
                 }
                 _write_fallback_copy_state(marker, state)
-                descriptor = os.open(temporary_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                temporary_created = True
-                try:
-                    temporary_info = os.fstat(descriptor)
-                    temporary_identity = {
-                        "device": temporary_info.st_dev,
-                        "inode": temporary_info.st_ino,
-                    }
-                    state["temporary_identity"] = temporary_identity
-                    _write_fallback_copy_state(marker, state)
-                finally:
-                    os.close(descriptor)
+                os.close(temporary_descriptor)
+                temporary_descriptor = -1
                 shutil.copy2(entry, temporary_path)
                 # Link publishes the complete file only if no target appeared
                 # while it was copied. Some filesystems disable hard links;
@@ -356,6 +360,8 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
                             raise
                         _copy_no_replace(temporary_path, target, marker)
             finally:
+                if temporary_descriptor >= 0:
+                    os.close(temporary_descriptor)
                 if temporary_created:
                     try:
                         temporary_info = temporary_path.lstat()
@@ -364,7 +370,8 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
                     else:
                         if _same_file_identity(temporary_info, temporary_identity):
                             temporary_path.unlink()
-                marker.unlink(missing_ok=True)
+                if marker_created:
+                    marker.unlink(missing_ok=True)
 
 
 def _validate_legacy_source(path: Path, kind: str, source_root: Path) -> None:

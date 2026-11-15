@@ -70,6 +70,12 @@ def _fixture(tmp_path):
     return source_root, template_root, config_dir, data_dir, backup_dir, legacy_jobs, legacy_backups
 
 
+def _marked_copy_temporary(destination):
+    marker = migration._fallback_copy_state_path(destination)
+    state = json.loads(marker.read_text(encoding="utf-8"))
+    return destination.parent / state["temporary"]
+
+
 def _run_migration(paths, maintenance_lock_file=None):
     source_root, template_root, config_dir, data_dir, backup_dir, *_ = paths
     paths_file = config_dir.parent / "paths.env"
@@ -298,6 +304,47 @@ def test_copy_retry_preserves_unrelated_file_with_temporary_prefix(tmp_path):
     assert (target_jobs / "upload.knxproj").read_text(encoding="utf-8") == "fixture upload"
 
 
+def test_copy_temporary_collision_uses_a_new_name(monkeypatch, tmp_path):
+    paths = _fixture(tmp_path)
+    target = paths[3] / "jobs" / "upload.knxproj"
+    target.parent.mkdir(parents=True)
+    prefix = migration._copy_temporary_prefix(target)
+    collision = target.parent / f"{prefix}collision"
+    collision.write_text("valuable unrelated data", encoding="utf-8")
+
+    original_mkstemp = migration.tempfile.mkstemp
+    original_get_candidate_names = migration.tempfile._get_candidate_names
+    injected_collision = False
+
+    def inject_copy_temp_collision(*args, **kwargs):
+        nonlocal injected_collision
+        if kwargs.get("prefix") == prefix and not injected_collision:
+            injected_collision = True
+            monkeypatch.setattr(
+                migration.tempfile,
+                "_get_candidate_names",
+                lambda: iter(("collision", "available")),
+            )
+            try:
+                return original_mkstemp(*args, **kwargs)
+            finally:
+                monkeypatch.setattr(
+                    migration.tempfile,
+                    "_get_candidate_names",
+                    original_get_candidate_names,
+                )
+        return original_mkstemp(*args, **kwargs)
+
+    monkeypatch.setattr(migration.tempfile, "mkstemp", inject_copy_temp_collision)
+
+    _run_migration(paths)
+
+    assert injected_collision
+    assert collision.read_text(encoding="utf-8") == "valuable unrelated data"
+    assert target.read_text(encoding="utf-8") == "fixture upload"
+    assert list(target.parent.glob(f"{prefix}*")) == [collision]
+
+
 def test_copy_publication_works_without_hard_links(monkeypatch, tmp_path):
     paths = _fixture(tmp_path)
 
@@ -418,12 +465,12 @@ def test_interrupted_fallback_copy_is_recovered_or_preserved(tmp_path, crash_poi
             "ready_path = Path(sys.argv[3])",
             "target = Path(sys.argv[2]) / 'upload.knxproj'",
             "marker = migration._fallback_copy_state_path(target)",
-            "temporary = migration._copy_temporary_path(target)",
+            "temporary_prefix = migration._copy_temporary_prefix(target)",
             "original_replace = migration.os.replace",
             "original_open = migration.os.open",
             "def interrupt_temporary_creation(path, flags, *args, **kwargs):",
             "    descriptor = original_open(path, flags, *args, **kwargs)",
-            "    if crash_point == 'temporary-created' and Path(path) == temporary:",
+            "    if crash_point == 'temporary-created' and Path(path).name.startswith(temporary_prefix):",
             "        ready_path.write_text('ready', encoding='utf-8')",
             "        time.sleep(60)",
             "    return descriptor",
@@ -436,7 +483,7 @@ def test_interrupted_fallback_copy_is_recovered_or_preserved(tmp_path, crash_poi
             "    if Path(destination) == marker:",
             "        state = marker_state(source)",
             "        should_interrupt = state.get('phase') == crash_point",
-            "        should_interrupt = should_interrupt or (crash_point == 'marker-initial-write' and state.get('phase') == 'staging' and 'temporary_identity' not in state)",
+            "        should_interrupt = should_interrupt or (crash_point == 'marker-initial-write' and state.get('phase') == 'staging')",
             "        if should_interrupt:",
             "            ready_path.write_text('ready', encoding='utf-8')",
             "            time.sleep(60)",
@@ -447,7 +494,7 @@ def test_interrupted_fallback_copy_is_recovered_or_preserved(tmp_path, crash_poi
             "    raise OSError(errno.ENOTSUP, 'no-replace rename is unavailable')",
             "original_copyfileobj = migration.shutil.copyfileobj",
             "def interrupt_copy(source, destination, *args, **kwargs):",
-            "    if crash_point == 'partial-copy' and Path(source.name) == migration._copy_temporary_path(target):",
+            "    if crash_point == 'partial-copy' and source.name.startswith(temporary_prefix):",
             "        destination.write(b'partial')",
             "        destination.flush()",
             "        ready_path.write_text('ready', encoding='utf-8')",
@@ -455,7 +502,7 @@ def test_interrupted_fallback_copy_is_recovered_or_preserved(tmp_path, crash_poi
             "    return original_copyfileobj(source, destination, *args, **kwargs)",
             "original_copy2 = migration.shutil.copy2",
             "def interrupt_initial_copy(source, destination, *args, **kwargs):",
-            "    if crash_point == 'initial-copy' and Path(destination) == migration._copy_temporary_path(target):",
+            "    if crash_point == 'initial-copy' and Path(destination).name.startswith(temporary_prefix):",
             "        Path(destination).write_bytes(b'partial')",
             "        ready_path.write_text('ready', encoding='utf-8')",
             "        time.sleep(60)",
@@ -493,6 +540,10 @@ def test_interrupted_fallback_copy_is_recovered_or_preserved(tmp_path, crash_poi
         pytest.fail(f"migration child did not reach {crash_point}: {stdout}{stderr}")
 
     partial_target = destination / "upload.knxproj"
+    temporary_prefix = migration._copy_temporary_prefix(partial_target)
+    temporary_paths = list(destination.glob(f"{temporary_prefix}*"))
+    assert len(temporary_paths) == 1
+    interrupted_temporary = temporary_paths[0]
     try:
         if crash_point in {"marker-initial-write", "fallback-prepared"}:
             assert not partial_target.exists()
@@ -502,11 +553,14 @@ def test_interrupted_fallback_copy_is_recovered_or_preserved(tmp_path, crash_poi
             assert partial_target.read_bytes() == b"partial"
         elif crash_point == "temporary-created":
             assert not partial_target.exists()
-            assert migration._copy_temporary_path(partial_target).read_bytes() == b""
+            assert interrupted_temporary.read_bytes() == b""
         if crash_point == "initial-copy":
             assert not partial_target.exists()
-            assert migration._copy_temporary_path(partial_target).read_bytes() == b"partial"
-        assert migration._fallback_copy_state_path(partial_target).is_file()
+            assert interrupted_temporary.read_bytes() == b"partial"
+        if crash_point == "temporary-created":
+            assert not migration._fallback_copy_state_path(partial_target).exists()
+        else:
+            assert migration._fallback_copy_state_path(partial_target).is_file()
     finally:
         if process.poll() is None:
             process.kill()
@@ -520,17 +574,17 @@ def test_interrupted_fallback_copy_is_recovered_or_preserved(tmp_path, crash_poi
         with pytest.raises(ValueError, match="fallback-copy marker is invalid"):
             _run_migration(paths)
         assert migration._fallback_copy_state_path(partial_target).read_bytes() == b""
-        assert not migration._copy_temporary_path(partial_target).exists()
+        assert interrupted_temporary.read_bytes() == b""
         assert paths[5].exists()
         assert all(path.read_bytes() == content for path, content in marker_temps.items())
         return
 
     if crash_point == "temporary-created":
-        with pytest.raises(FileExistsError, match="unverified temporary file"):
-            _run_migration(paths)
-        assert migration._copy_temporary_path(partial_target).read_bytes() == b""
-        assert migration._fallback_copy_state_path(partial_target).is_file()
-        assert paths[5].exists()
+        _run_migration(paths)
+        assert partial_target.read_text(encoding="utf-8") == "fixture upload"
+        assert interrupted_temporary.read_bytes() == b""
+        assert not migration._fallback_copy_state_path(partial_target).exists()
+        assert not paths[5].exists()
         assert all(path.read_bytes() == content for path, content in marker_temps.items())
         return
 
@@ -539,7 +593,7 @@ def test_interrupted_fallback_copy_is_recovered_or_preserved(tmp_path, crash_poi
             _run_migration(paths)
         assert partial_target.read_bytes() == b""
         assert migration._fallback_copy_state_path(partial_target).is_file()
-        assert migration._copy_temporary_path(partial_target).read_bytes() == b"fixture upload"
+        assert _marked_copy_temporary(partial_target).read_bytes() == b"fixture upload"
         assert paths[5].exists()
         assert all(path.read_bytes() == content for path, content in marker_temps.items())
         return
@@ -549,7 +603,7 @@ def test_interrupted_fallback_copy_is_recovered_or_preserved(tmp_path, crash_poi
     assert partial_target.read_text(encoding="utf-8") == "fixture upload"
     assert not migration._fallback_copy_state_path(partial_target).exists()
     assert all(path.read_bytes() == content for path, content in marker_temps.items())
-    assert not list(destination.glob(".knxoh-copy-[0-9a-f]*"))
+    assert not list(destination.glob(f"{temporary_prefix}*"))
     assert not paths[5].exists()
 
 
@@ -558,7 +612,7 @@ def test_unrecorded_staging_file_is_preserved(tmp_path, contents):
     paths = _fixture(tmp_path)
     target = paths[3] / "jobs" / "upload.knxproj"
     target.parent.mkdir(parents=True)
-    temporary = migration._copy_temporary_path(target)
+    temporary = target.parent / f"{migration._copy_temporary_prefix(target)}unrelated"
     marker = migration._fallback_copy_state_path(target)
     temporary.write_bytes(contents)
     temporary.chmod(0o600)
@@ -603,7 +657,7 @@ def test_fallback_prepared_recovery_preserves_unverified_competing_target(
     source = paths[5] / "upload.knxproj"
     target = paths[3] / "jobs" / "upload.knxproj"
     target.parent.mkdir(parents=True)
-    temporary = migration._copy_temporary_path(target)
+    temporary = target.parent / f"{migration._copy_temporary_prefix(target)}recovery"
     temporary.write_bytes(source.read_bytes())
     temporary_info = temporary.stat()
     target.write_bytes(competing_content)

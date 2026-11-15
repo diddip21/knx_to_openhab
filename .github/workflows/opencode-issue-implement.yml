@@ -140,11 +140,34 @@ jobs:
               core.setFailed('Artifact digest mismatch');
               return;
             }
+            // Prevent duplicate draft PRs when the command is posted twice.
             const {data: prList} = await github.rest.pulls.list({
-              ...repo, state:'open', head: `${repo.owner}:${branch}`, per_page:50
+              ...repo, state:'open', per_page:100
             });
-            if (prList.length) {
-              core.info(`Draft PR already exists: ${prList[0].html_url}`);
+            const prefix = `ai/issue-96-plan-v${a.version}-run-`;
+            const earlier = prList.find(pr =>
+              pr.head.repo?.full_name === context.repo.owner + '/' + context.repo.repo &&
+              pr.head.ref.startsWith(prefix)
+            );
+            if (earlier) {
+              core.info(`Existing implementation PR: ${earlier.html_url}`);
+              return;
+            }
+            // Defense in depth: check issue digest and approval state as close
+            // as possible to the branch write. The Python gate ran first.
+            const {data: liveIssue} = await github.rest.issues.get({
+              ...repo, issue_number:96
+            });
+            const liveLabels = new Set(liveIssue.labels.map(label => label.name));
+            const liveDigest = crypto.createHash('sha256')
+              .update(JSON.stringify([liveIssue.title ?? '', liveIssue.body ?? '']), 'utf8')
+              .digest('hex');
+            if (liveIssue.state !== 'open' ||
+                !liveLabels.has('ai:plan') ||
+                !liveLabels.has('ai:approved') ||
+                liveLabels.has('ai:waiting') ||
+                liveDigest !== a.digest) {
+              core.setFailed('Issue approval or requirements changed; refusing publish');
               return;
             }
             const {data: blob} = await github.rest.git.createBlob({

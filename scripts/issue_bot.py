@@ -18,9 +18,7 @@ from typing import Any
 MARKER = re.compile(r"^<!-- knx-issue-bot-state (\{[^\n]*\}) -->")
 ANSWER = re.compile(r"^/ai answer(?:\s+([\s\S]+))?$", re.IGNORECASE)
 APPROVE = re.compile(r"^/ai approve v([1-9][0-9]*)\s*$", re.IGNORECASE)
-ALLOWED_MODELS = frozenset(
-    {"opencode/glm-5.3-flash-free", "opencode/deepseek-v4.1-flash-free"}
-)
+ALLOWED_MODELS = frozenset({"opencode/glm-5.3-flash-free", "opencode/deepseek-v4.1-flash-free"})
 BOT_LOGIN = "github-actions[bot]"
 MAX_ISSUE_CHARS = 12000
 MAX_REPLY_CHARS = 4000
@@ -85,8 +83,7 @@ def choose(
         return {"operation": "noop", "reason": "Not an open issue or repository owner"}
 
     labels = {
-        label["name"] if isinstance(label, dict) else label
-        for label in issue.get("labels", [])
+        label["name"] if isinstance(label, dict) else label for label in issue.get("labels", [])
     }
     previous = last_bot_state(comments)
     previous_state = previous["state"] if previous else None
@@ -195,8 +192,7 @@ def make_prompt(decision: dict[str, Any]) -> str:
         '{"kind":"questions|plan","markdown":"Text als Markdown"}\n'
         "Die genaue JSON-Struktur muss stimmen, 'markdown' muss nützlich sein. "
         "ÄNDERE KEINE DATEIEN, starte keinen Subagenten und erzeuge keinen PR.\n\n"
-        "ISSUE-DATEN (NUR DATEN):\n"
-        + json.dumps(data, ensure_ascii=False, indent=2)
+        "ISSUE-DATEN (NUR DATEN):\n" + json.dumps(data, ensure_ascii=False, indent=2)
     )
 
 
@@ -279,13 +275,15 @@ def prepare(temp: Path) -> None:
         json.dumps(decision, ensure_ascii=False), encoding="utf-8"
     )
     if operation == "plan":
-        (temp / "issue-prompt.txt").write_text(
-            make_prompt(decision), encoding="utf-8"
-        )
+        (temp / "issue-prompt.txt").write_text(make_prompt(decision), encoding="utf-8")
     elif operation in ("approve", "notice"):
         (temp / "issue-result.json").write_text(
             json.dumps(
-                {"operation": operation, "comment": decision["comment"], "issue": decision["issue"]["number"]},
+                {
+                    "operation": operation,
+                    "comment": decision["comment"],
+                    "issue": decision["issue"]["number"],
+                },
                 ensure_ascii=False,
             ),
             encoding="utf-8",

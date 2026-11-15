@@ -402,7 +402,7 @@ def test_venv_probe_supports_service_owned_mount_root(tmp_path):
     environment["PREFLIGHT_PROBE_USER_LOG"] = str(tmp_path / "probe-user.log")
     _executable(
         tmp_path / "bin" / "id",
-        '#!/bin/sh\n'
+        "#!/bin/sh\n"
         'if [ "${1:-}" = "-u" ] && [ "${2:-}" = "knxohui" ]; then echo 1001; exit 0; fi\n'
         "exit 1\n",
     )

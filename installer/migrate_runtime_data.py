@@ -135,11 +135,10 @@ def _cleanup_interrupted_fallback_copy(destination: Path, source: Path) -> None:
     if destination_info is None:
         identity = state.get("temporary_identity")
         if temporary_info is not None:
-            identity_matches = (
-                isinstance(identity, dict)
-                and (temporary_info.st_dev, temporary_info.st_ino)
-                == (identity.get("device"), identity.get("inode"))
-            )
+            identity_matches = isinstance(identity, dict) and (
+                temporary_info.st_dev,
+                temporary_info.st_ino,
+            ) == (identity.get("device"), identity.get("inode"))
             unrecorded_staging_file = (
                 state["phase"] == "staging"
                 and "temporary_identity" not in state

@@ -516,12 +516,22 @@ def test_retry_recovers_when_fallback_copy_process_is_killed(tmp_path, crash_poi
         path: path.read_bytes() for path in destination.glob(".knxoh-copy-state-*.tmp-*")
     }
 
+    if crash_point == "fallback-copying":
+        with pytest.raises(FileExistsError, match="without a recorded identity"):
+            _run_migration(paths)
+        assert partial_target.read_bytes() == b""
+        assert migration._fallback_copy_state_path(partial_target).is_file()
+        assert migration._copy_temporary_path(partial_target).read_bytes() == b"fixture upload"
+        assert paths[5].exists()
+        assert all(path.read_bytes() == content for path, content in marker_temps.items())
+        return
+
     _run_migration(paths)
 
     assert partial_target.read_text(encoding="utf-8") == "fixture upload"
     assert not migration._fallback_copy_state_path(partial_target).exists()
     assert all(path.read_bytes() == content for path, content in marker_temps.items())
-    assert not list(destination.glob(".knxoh-copy-*"))
+    assert not list(destination.glob(".knxoh-copy-[0-9a-f]*"))
     assert not paths[5].exists()
 
 

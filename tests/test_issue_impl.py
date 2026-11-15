@@ -182,9 +182,7 @@ def test_artifact_bound_to_readme_bytes():
         "readme_b64": base64.b64encode(blob).decode(),
         "readme_sha256": hashlib.sha256(blob).hexdigest(),
     }
-    assert hashlib.sha256(base64.b64decode(obj["readme_b64"])).hexdigest() == obj[
-        "readme_sha256"
-    ]
+    assert hashlib.sha256(base64.b64decode(obj["readme_b64"])).hexdigest() == obj["readme_sha256"]
 
 
 def test_workflow_has_isolated_model_and_privileged_jobs():

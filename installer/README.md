@@ -49,12 +49,13 @@ the application directory.
 the active paths. It checks for conflicting files and refuses symlinked or
 system-wide legacy source directories. Only after a successful copy does it
 remove legacy job or backup directories inside the application tree. Runtime
-files are copied through temporary files, so an interrupted copy does not leave
-a partial destination file and most interrupted copies can be retried. If the
-process stops in the brief interval between creating a file and recording its
-identity, setup preserves the ambiguous marker or target and stops for manual
-inspection rather than deleting a file it cannot prove it created. Do not remove
-such files until their ownership and contents are verified. The old root
+files are copied through temporary files, so most interrupted copies leave no
+partial final destination and can be retried. On filesystems that require the
+exclusive-copy fallback, an interrupted partial destination may remain. If its
+ownership cannot be proven after restart, setup preserves the marker, temporary,
+and target for manual inspection rather than risking deletion of a competing
+file whose device/inode identity was reused. Do not remove such files until
+their ownership and contents are verified. The old root
 `config.json` is copied to `generator.json` before the application tree is
 reset to the packaged defaults. Existing user-chosen Web UI passwords are converted to
 Argon2id hashes in the restricted secrets file. If no usable password exists, setup

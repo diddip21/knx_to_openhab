@@ -156,13 +156,16 @@ def _cleanup_interrupted_fallback_copy(destination: Path, source: Path) -> None:
             f"An interrupted fallback copy left a target without a recorded identity; "
             f"inspect it before retrying: {destination}"
         )
-    else:
+    elif phase == "fallback-copying":
         if not _same_file_identity(destination_info, state.get("destination_identity")):
             raise FileExistsError(
                 f"The interrupted fallback-copy target changed; refusing to remove it: {destination}"
             )
         if not filecmp.cmp(source, destination, shallow=False):
-            destination.unlink()
+            raise FileExistsError(
+                f"An interrupted fallback copy left an incomplete or ambiguous target; "
+                f"inspect it before retrying: {destination}"
+            )
 
     if temporary_info is not None:
         identity = state.get("temporary_identity")
@@ -224,17 +227,6 @@ def _copy_no_replace(source: Path, destination: Path, marker: Path) -> None:
     except BaseException:
         if target_descriptor >= 0:
             os.close(target_descriptor)
-        if target_identity is not None:
-            try:
-                destination_info = destination.lstat()
-            except FileNotFoundError:
-                pass
-            else:
-                if (destination_info.st_dev, destination_info.st_ino) == (
-                    target_identity["device"],
-                    target_identity["inode"],
-                ):
-                    destination.unlink()
         raise
 
 
@@ -319,6 +311,7 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
             temporary_created = False
             temporary_identity = None
             marker_created = False
+            preserve_fallback_state = False
             try:
                 temporary_info = os.fstat(temporary_descriptor)
                 temporary_identity = {
@@ -358,11 +351,15 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
                             errno.ENOTSUP,
                         }:
                             raise
-                        _copy_no_replace(temporary_path, target, marker)
+                        try:
+                            _copy_no_replace(temporary_path, target, marker)
+                        except BaseException:
+                            preserve_fallback_state = True
+                            raise
             finally:
                 if temporary_descriptor >= 0:
                     os.close(temporary_descriptor)
-                if temporary_created:
+                if temporary_created and not preserve_fallback_state:
                     try:
                         temporary_info = temporary_path.lstat()
                     except FileNotFoundError:
@@ -370,7 +367,7 @@ def _copy_missing_tree(source: Path, destination: Path) -> None:
                     else:
                         if _same_file_identity(temporary_info, temporary_identity):
                             temporary_path.unlink()
-                if marker_created:
+                if marker_created and not preserve_fallback_state:
                     marker.unlink(missing_ok=True)
 
 

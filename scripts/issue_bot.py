@@ -146,7 +146,7 @@ def choose(
             return {"operation": "noop", "reason": "Missing answer"}
         if len(text) > MAX_REPLY_CHARS:
             return {"operation": "noop", "reason": "Answer too long"}
-        if previous_state is None:
+        if previous is None:
             return {"operation": "noop", "reason": "No previous plan or question"}
         return {
             "operation": "plan",

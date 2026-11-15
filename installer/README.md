@@ -199,6 +199,14 @@ changing the system. An existing directory is never overwritten by
 every operation in `setup.sh` idempotent or add a reinstall flow (Issue #25
 remains open for those items).
 
+During first installation, the checkout is copied into a temporary directory
+beside the final installation path and moved into place only after the copy
+succeeds. If copying fails, the final path stays absent and `--install` can be
+retried. If the subsequent setup fails, the copied checkout remains in place;
+use `bash install.sh --repair` after correcting the reported cause.
+Activation uses Linux's atomic no-clobber rename; it refuses an installation
+path that appears during copying and never falls back to a cross-filesystem copy.
+
 During setup, the installer stops its own Web UI service, then checks whether
 the configured bind address and port are available before copying files or
 migrating runtime data. If another process owns the address, setup exits with

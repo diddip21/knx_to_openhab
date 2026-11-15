@@ -805,9 +805,20 @@ clone_new_repository() (
         exit 1
     fi
 
-    sudo mkdir -p -- "$install_parent"
-    install_parent="$(cd -- "$install_parent" && pwd -P)"
-    install_target="$install_parent/$(basename -- "$install_target")"
+    if ! sudo mkdir -p -- "$install_parent"; then
+        log_error "Could not create installation parent: $install_parent"
+        exit 1
+    fi
+    if ! install_parent="$(cd -- "$install_parent" && pwd -P)" || [[ -z "$install_parent" ]]; then
+        log_error "Could not resolve installation parent: $install_parent"
+        exit 1
+    fi
+    local install_basename
+    if ! install_basename="$(basename -- "$install_target")" || [[ -z "$install_basename" ]]; then
+        log_error "Could not determine the installation directory name."
+        exit 1
+    fi
+    install_target="${install_parent%/}/$install_basename"
     if ! stage_dir="$(sudo mktemp -d "$install_parent/.knxoh-install.XXXXXXXX")"; then
         log_error "Could not stage the release beside $install_target."
         exit 1
@@ -816,7 +827,10 @@ clone_new_repository() (
         log_error "Could not copy the release; $install_target was left untouched."
         exit 1
     fi
-    sudo chmod 0755 "$stage_dir"
+    if ! sudo chmod 0755 "$stage_dir"; then
+        log_error "Could not set the staged checkout permissions; $install_target was left untouched."
+        exit 1
+    fi
     if [[ -e "$install_target" || -L "$install_target" ]]; then
         log_error "Installation path appeared during checkout: $install_target. Existing files were left untouched."
         exit 2
@@ -826,7 +840,10 @@ clone_new_repository() (
         exit 1
     fi
     stage_dir=""
-    printf '%s\n' "$install_target" > "$result_file"
+    if ! printf '%s\n' "$install_target" > "$result_file"; then
+        log_error "Could not record the activated installation path."
+        exit 1
+    fi
     log_success "Release $RELEASE_TAG cloned successfully"
 )
 

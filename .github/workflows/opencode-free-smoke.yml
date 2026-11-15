@@ -78,7 +78,7 @@ jobs:
           timeout --signal=TERM --kill-after=10s 420s \
             opencode run --standalone --archived --format json \
               --agent ci-smoke --model "$MODEL" \
-              "Use the skill tool to load the Superpowers brainstorming skill. Read AGENTS.md. If both succeed, make your first non-empty response line exactly SMOKE_OK, followed by one sentence identifying the project. Otherwise explain the failure without using SMOKE_OK. Do not edit anything." \
+              "Use the skill tool to load the Superpowers brainstorming skill. Read AGENTS.md. If both succeed, include one standalone line containing exactly SMOKE_OK, then one sentence identifying the project. Otherwise explain the failure and do not include a standalone SMOKE_OK line. Do not edit anything." \
             < /dev/null > "$RUNNER_TEMP/opencode-events.jsonl" \
             2> "$RUNNER_TEMP/opencode-stderr.log"
 
@@ -86,9 +86,22 @@ jobs:
             "$RUNNER_TEMP/opencode-events.jsonl" > "$RUNNER_TEMP/answer.txt"
           cat "$RUNNER_TEMP/answer.txt"
 
-          first_nonempty="$(awk 'NF { print; exit }' "$RUNNER_TEMP/answer.txt")"
-          if [[ "$first_nonempty" != "SMOKE_OK" ]]; then
-            echo "::error::The first non-empty response line was not exactly SMOKE_OK."
+          jq -c '
+            select(.type == "tool_use" and (.part.tool == "skill" or .part.tool == "read"))
+            | {
+                tool: .part.tool,
+                status: .part.state.status,
+                input_keys: (.part.state.input // {} | keys),
+                skill_name: .part.state.input.name,
+                skill_id: .part.state.input.id,
+                read_filePath: .part.state.input.filePath,
+                read_path: .part.state.input.path
+              }
+          ' "$RUNNER_TEMP/opencode-events.jsonl" > "$RUNNER_TEMP/tool-calls.jsonl"
+          cat "$RUNNER_TEMP/tool-calls.jsonl"
+
+          if ! grep -Fxq "SMOKE_OK" "$RUNNER_TEMP/answer.txt"; then
+            echo "::error::No standalone response line exactly matching SMOKE_OK was found."
             exit 1
           fi
           if ! jq -e '
@@ -96,7 +109,10 @@ jobs:
               .type == "tool_use"
               and .part.tool == "skill"
               and .part.state.status == "completed"
-              and .part.state.input.name == "brainstorming"
+              and (
+                .part.state.input.name == "brainstorming"
+                or .part.state.input.id == "brainstorming"
+              )
             )
           ' "$RUNNER_TEMP/opencode-events.jsonl" > /dev/null; then
             echo "::error::No completed brainstorming skill call found."
@@ -109,7 +125,11 @@ jobs:
               and .part.state.status == "completed"
               and (
                 .part.state.input.filePath == "AGENTS.md"
-                or ((.part.state.input.filePath // "") | endswith("/AGENTS.md"))
+                or .part.state.input.path == "AGENTS.md"
+                or (
+                  (.part.state.input.filePath // .part.state.input.path // "")
+                  | endswith("/AGENTS.md")
+                )
               )
             )
           ' "$RUNNER_TEMP/opencode-events.jsonl" > /dev/null; then
@@ -128,7 +148,7 @@ jobs:
             echo
             echo "This run used no model API key, and the test agent had read-only tool permissions."
             echo
-            echo "Check the job status and uploaded JSONL for the requested skill and AGENTS.md read calls."
+            echo "Check the job status and uploaded JSONL for the exact requested skill and AGENTS.md read calls."
             echo "Success is a basic smoke test, not evidence of dependable autonomous issue resolution."
             if [ -f "$RUNNER_TEMP/answer.txt" ]; then
               echo

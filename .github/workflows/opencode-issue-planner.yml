@@ -71,11 +71,19 @@ jobs:
           npm install --global @opencode/cli
           opencode --version
 
-      - name: Generate plan with free model
+      - name: Select an approved working free model
+        id: model
+        if: steps.decision.outputs.operation == 'plan'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/opencode_model_router.py select --task plan --report "$RUNNER_TEMP/model-router.json"
+
+      - name: Generate plan with selected free model
         if: steps.decision.outputs.operation == 'plan'
         shell: bash
         env:
-          MODEL: opencode/glm-5.3-flash-free
+          MODEL: ${{ steps.model.outputs.model }}
           CI: "true"
         run: |
           set -euo pipefail

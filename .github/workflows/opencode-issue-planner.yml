@@ -87,7 +87,11 @@ jobs:
           python scripts/issue_bot.py finish
 
       - name: Publish plan, questions or approval
-        if: steps.decision.outputs.operation == 'plan' || steps.decision.outputs.operation == 'approve' || steps.decision.outputs.operation == 'notice'
+        if: >-
+          steps.decision.outputs.operation == 'plan' ||
+          steps.decision.outputs.operation == 'approve' ||
+          steps.decision.outputs.operation == 'invalidate' ||
+          steps.decision.outputs.operation == 'notice'
         uses: actions/github-script@v7
         env:
           RESULT_FILE: ${{ runner.temp }}/issue-result.json

@@ -399,7 +399,7 @@ def test_no_hard_link_fallback_revalidates_target_before_success(monkeypatch, tm
 
     def replace_target_after_copy(source, destination, *args, **kwargs):
         result = original_copyfileobj(source, destination, *args, **kwargs)
-        if Path(source.name).name.startswith(".knxoh-copy-"):
+        if Path(source.name).name.startswith(migration._copy_temporary_prefix(target)):
             target.unlink()
             target.write_text("concurrent data", encoding="utf-8")
         return result

@@ -413,6 +413,10 @@ def test_venv_probe_supports_service_owned_mount_root(tmp_path):
         '    if [ "$4" = "$PREFLIGHT_MOUNT_ROOT_DIR" ]; then echo 2; else echo 1; fi\n'
         "    exit 0\n"
         "fi\n"
+        'if [ "$2" = "%u %a" ]; then\n'
+        '    if [ "$4" = "$PREFLIGHT_MOUNT_ROOT_DIR" ]; then echo "1001 755"; else echo "0 755"; fi\n'
+        "    exit 0\n"
+        "fi\n"
         'if [ "$4" = "$PREFLIGHT_MOUNT_ROOT_DIR" ]; then echo "1001 755 2"; else echo "0 755 1"; fi\n',
     )
     _executable(

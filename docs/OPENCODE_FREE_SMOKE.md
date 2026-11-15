@@ -20,8 +20,12 @@ Superpowers is installed as an OpenCode V2 plugin from the pinned upstream
 tool to load `brainstorming` and read the existing `AGENTS.md`.
 
 The job is successful only if the model answers with `SMOKE_OK` and the
-structured event stream records a completed `skill` tool call. The response
-and event stream are available in the run's artifacts/summary for inspection.
+first non-empty response line is exactly `SMOKE_OK`. The structured event
+stream must also record a completed `skill` call with the `brainstorming` ID
+and a completed `read` call for `AGENTS.md`. OpenCode loads the JSONC
+configuration itself; the workflow does not parse it as strict JSON. The
+response and event stream are available in the run's artifacts/summary for
+inspection.
 
 ## Costs and limits
 

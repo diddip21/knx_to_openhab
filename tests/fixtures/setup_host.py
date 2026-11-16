@@ -143,7 +143,7 @@ elif command == "python3" or command.endswith("/venv/bin/python"):
         local(args[3])  # The fixture already supplies the interpreter and pip stub.
     else:
         script = local(args[1])
-        if script.name in {"migrate_runtime_data.py", "configure_auth.py"}:
+        if script.name in {"migrate_runtime_data.py", "configure_auth.py", "configure_bind.py"}:
             registry = root / "registry" / "paths.env"
             if fault == "migration" and script.name == "migrate_runtime_data.py":
                 previous = registry.read_bytes()
@@ -157,7 +157,6 @@ elif command == "python3" or command.endswith("/venv/bin/python"):
             execute(args)
         elif script.name not in {
             "write_maintenance_lock_tmpfiles.py",
-            "configure_bind.py",
             "provision_managed_files.py",
         } and not script.name.startswith("knxoh-check-web-port."):
             raise RuntimeError(f"Unexpected Python script: {script}")

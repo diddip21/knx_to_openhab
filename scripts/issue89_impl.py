@@ -76,6 +76,8 @@ def resolve_event(temp: Path) -> tuple[dict[str, Any], dict[str, Any]]:
         os.environ.get("GITHUB_REPOSITORY_OWNER", ""),
         expected_issue_number=ISSUE_NUMBER,
     )
+    if approved["version"] != 2:
+        raise ValueError("HomeKit pilot requires exact approved plan v2")
     return issue, approved
 
 

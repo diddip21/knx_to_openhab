@@ -26,7 +26,10 @@ MAX_FILES_PER_REPAIR = 12
 MAX_CHANGED_LINES = 650
 MAX_TOTAL_BYTES = 900_000
 PR_BRANCH = re.compile(r"^ai/issue-89-plan-v2-run-[1-9][0-9]*$")
-APPROVAL_REF = re.compile(r"implementation command:\s*([1-9][0-9]*)", re.IGNORECASE)
+APPROVAL_REF = re.compile(
+    r"(?:implementation command:|<!--\s*ai-implementation-command:)\s*([1-9][0-9]*)",
+    re.IGNORECASE,
+)
 REPAIR_COMMIT = re.compile(r"^fix\(ai-ci\): issue89 attempt ([12])$")
 SHA = re.compile(r"^[0-9a-f]{40}$")
 

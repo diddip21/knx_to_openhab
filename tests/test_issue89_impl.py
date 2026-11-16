@@ -67,9 +67,7 @@ def test_other_issues_cannot_use_issue89_scope(number):
     item["number"] = number
     history = comments(item)
     with pytest.raises(ValueError, match="restricted to issue #89"):
-        implementation.authorize(
-            item, history, history[-1], OWNER, OWNER, expected_issue_number=89
-        )
+        implementation.authorize(item, history, history[-1], OWNER, OWNER, expected_issue_number=89)
 
 
 def test_stale_approval_is_refused():
@@ -77,9 +75,7 @@ def test_stale_approval_is_refused():
     item["body"] += " post-approval change"
     history = comments()
     with pytest.raises(ValueError, match="stale"):
-        implementation.authorize(
-            item, history, history[-1], OWNER, OWNER, expected_issue_number=89
-        )
+        implementation.authorize(item, history, history[-1], OWNER, OWNER, expected_issue_number=89)
 
 
 @pytest.mark.parametrize("actor", ["external", "github-actions[bot]", ""])
@@ -191,9 +187,7 @@ def test_wrong_event_or_issue_cannot_trigger(tmp_path, monkeypatch):
 
 
 def test_agent_permissions_do_not_include_bash_or_repository_workflows():
-    agent = (ROOT / ".opencode/agents/issue89-implementer.md").read_text(
-        encoding="utf-8"
-    )
+    agent = (ROOT / ".opencode/agents/issue89-implementer.md").read_text(encoding="utf-8")
     assert "action: bash" not in agent
     assert "action: skill" in agent
     assert ".github/workflows/" not in [

@@ -25,7 +25,7 @@ Allowed extensions:
 
 **Protection against:** Disk exhaustion, denial of service
 
-- **Maximum upload size:** 100 MB (configurable via `max_upload_size_bytes` in `config.json`)
+- **Maximum upload size:** 100 MB (configurable via `max_upload_size_bytes` in the Web UI runtime config, `/etc/knx_to_openhab/config.json` when installed)
 - **Enforced at two levels:**
   1. Flask `MAX_CONTENT_LENGTH` configuration
   2. Application-level validation before processing
@@ -108,7 +108,7 @@ Run security tests:
 pytest tests/test_upload_security.py -v
 
 # UI tests with Playwright
-pytest tests/ui/test_upload_security.py -v -o addopts=
+pytest tests/ui/test_upload_security.py -v -m ui
 ```
 
 ## Implementation Details

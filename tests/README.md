@@ -46,34 +46,40 @@ pip install -r requirements-dev.txt
 
 ### For UI Tests
 ```bash
-playwright install chromium
+python -m playwright install chromium
 ```
 
 ## Running Tests
 
-### All Tests
+### Core Tests (default)
 ```bash
-pytest
+pytest -q
 ```
 
-### Unit Tests Only
+The default configuration skips the Playwright UI suite. To run the UI tests,
+install Chromium and use the command below.
+
+### Root-Level Tests
 ```bash
-pytest -m unit -v
+pytest -q --ignore=tests/ui --ignore=tests/integration
 ```
+
+The `unit` and `integration` markers are declared in `pytest.ini` but no current tests use them (`rg -l '@pytest.mark.unit|@pytest.mark.integration' tests` returned no files). Select directories instead.
 
 ### Integration Tests Only
 ```bash
 pytest tests/integration -v
 ```
 
-### UI Tests (server must be running!)
+### UI Tests
 ```bash
-# Terminal 1: Start server
-flask --app web_ui.backend.app:app run --debug
-
-# Terminal 2: Run UI tests
-pytest tests/ui/ -v -o addopts=
+python -m playwright install chromium
+pytest tests/ui/ -v -m ui
 ```
+
+The UI fixture starts an isolated Flask subprocess on port 8085 by default. Keep
+that port free or set `UI_BASE_URL`. Authenticated screenshot tests use a
+temporary port; no production or development server needs to be running.
 
 ### Tests with Coverage
 ```bash
@@ -89,18 +95,18 @@ pytest -k "test_login"
 # By marker
 pytest -m unit
 pytest -m integration
-pytest -m ui
+pytest tests/ui/ -m ui
 ```
 
 ## CI/CD Pipeline
 
 Tests run automatically on every push via GitHub Actions:
 
-- **Lint:** Black + isort + flake8
-- **Core Tests:** Python 3.12 + 3.13 matrix on ubuntu-latest
+- **Lint:** Black + isort + flake8 + mypy
+- **Core Tests:** Python 3.11 + 3.12 + 3.13 matrix on ubuntu-latest
 - **UI Tests:** Playwright with Chromium (depends on core tests passing)
 
-Status: [![CI Tests](https://github.com/diddip21/knx_to_openhab/workflows/CI%20Tests/badge.svg)](https://github.com/diddip21/knx_to_openhab/actions)
+Status: [GitHub Actions](https://github.com/diddip21/knx_to_openhab/actions/workflows/ci.yml)
 
 ## Golden File Testing
 
@@ -171,8 +177,8 @@ docker run --platform linux/arm64 knx-test:arm64
 ssh pi@raspberrypi.local
 git clone https://github.com/diddip21/knx_to_openhab.git
 cd knx_to_openhab
-pip install -r requirements.txt
-pytest -v
+pip install -r requirements-dev.txt
+pytest -q -m "not ui" --ignore=tests/ui
 ```
 
 ## Troubleshooting

@@ -16,22 +16,30 @@ hard-coded, separately reviewable file whitelist.
 
 ## How to run the pilot
 
-1. Review and merge the PR that introduces
+1. First reconcile `dev` with `main` (see
+   [dev quickstart](AI_DEV_TO_MERGE_QUICKSTART.md)); `dev` must contain the
+   current `main` commit without losing its unique work.
+2. Review and merge the PR that introduces
    `.github/workflows/opencode-issue89-implement.yml`.
-2. In Issue #89, the repository owner posts the exact comment
+3. In Issue #89, the repository owner posts the exact comment
    `/ai implement v2` **after** the merge. The existing `/ai approve v2`
    and `ai:approved` label are necessary but do not automatically start
    implementation.
-3. Observe the GitHub Actions workflow `OpenCode approved HomeKit issue 89
+4. Observe the GitHub Actions workflow `OpenCode approved HomeKit issue 89
    implementation`.
-4. The read-only-token `implement` job verifies the owner, approval receipt,
+5. The read-only-token `implement` job verifies the owner, approval receipt,
    latest plan version, unchanged issue title/body and valid command.
-5. A dynamically selected **allowlisted free OpenCode model** uses the
+6. A dynamically selected **allowlisted free OpenCode model** uses the
    restricted `issue89-implementer` agent and Superpowers. It may edit only
    whitelisted HomeKit, settings, UI and test files. No GitHub write token.
-6. A separate publisher independently rechecks issue approval and file
-   allowlist, then creates **one Draft PR** on a new branch and explicitly
+7. A separate publisher independently rechecks issue approval and file
+   allowlist, then creates **one Draft PR against `dev`** on a new branch and explicitly
    dispatches the project's CI workflow. It **never auto-merges**.
+
+The Actions definitions and validators remain on `main` (GitHub Default Branch),
+while the agent reads source from `dev`. The workflow fails closed if `dev`
+does not include the current `main` revision or uses an altered OpenCode
+configuration/agent policy. It does not change `main` or merge into `dev`.
 
 The runner allows a bounded set of text files and rejects changes to
 scripts, actions, dependencies and arbitrary paths. At least one regression

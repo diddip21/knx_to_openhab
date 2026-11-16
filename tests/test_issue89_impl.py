@@ -205,7 +205,7 @@ def test_workflow_keeps_implementation_and_publishing_separate():
     assert "  implement:" in workflow
     assert "  publish:" in workflow
     assert "needs: implement" in workflow
-    assert "python scripts/issue89_impl.py recheck" in workflow
+    assert "python ../trusted/scripts/issue89_impl.py recheck" in workflow
     assert "draft: true" in workflow
     assert "createWorkflowDispatch" in workflow
     assert "auto_merge" not in workflow

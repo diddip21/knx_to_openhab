@@ -525,6 +525,19 @@ check_installer_disk_space() {
     fi
 }
 
+run_installer_preflight() {
+    local mode="$1" install_dir="$2"
+    check_installer_python || return
+    check_installer_disk_space "$install_dir" || return
+    if [[ "$mode" == "install" || "$mode" == "update" ]]; then
+        if ! curl --fail --silent --show-error --location --connect-timeout 5 --max-time 15 \
+            --output /dev/null https://github.com/diddip21/knx_to_openhab; then
+            log_error "Could not reach GitHub; check the network connection and try again."
+            return 1
+        fi
+    fi
+}
+
 is_trusted_probe_directory_chain() {
     local directory="$1" parent candidate_uid candidate_mode
     while [[ -n "$directory" ]]; do
@@ -984,7 +997,7 @@ main() {
     log_info "Selected installer mode: $INSTALL_MODE"
     check_root
     check_os
-    if ! check_installer_disk_space "$INSTALL_DIR"; then
+    if ! run_installer_preflight "$INSTALL_MODE" "$INSTALL_DIR"; then
         exit 1
     fi
     check_sudo

@@ -7,7 +7,6 @@ import os
 import queue
 import re
 import stat as stat_module
-import subprocess
 import sys
 import tarfile
 import threading

@@ -32,9 +32,15 @@ python knxproject_to_openhab.py --file_path "MyHouse.knxproj"
 
 **Parameters:**
 
-- `--file_path`: Path to your `.knxproj` file (or `.json` dump). If omitted, a file picker opens.
+- `--file_path`: Path to your `.knxproj` file or JSON dump. If omitted, a file picker opens.
 - `--knxPW`: Password for protected KNX project files.
 - `--readDump`: Read from JSON dump instead of `.knxproj`.
+
+For an explicitly named JSON file, `--readDump` is required. The CLI detects `.json` automatically only when you choose it through the file picker:
+
+```bash
+python knxproject_to_openhab.py --file_path "project.knxproj.json" --readDump
+```
 
 **Example with password:**
 
@@ -94,8 +100,8 @@ The `config.json` file controls global settings for the generator.
   - If running on the OpenHAB server, this might point to `/etc/openhab`.
 
 - **`general.auto_place_unknown`**: Automatically creates missing floors/rooms for unknown group addresses.
-  - `false` (default): Unknowns remain in the report so you can fix naming/structure in ETS.
-  - `true`: Unknowns get auto-placed into newly created floor/room nodes.
+  - The Web UI default is `false` (`web_ui/backend/storage.py`). Unknowns remain in the report so you can fix naming/structure in ETS.
+  - The checked-in CLI `config.json` default is `true` (`config.json`). Unknowns get auto-placed into newly created floor/room nodes.
 
 - **`dimmer`**: Configuration for dimmer detection.
   - `absolut_suffix`: Suffixes in the GA name identifying the absolute dimming value (e.g., "Dimmen absolut", "Helligkeitswert").

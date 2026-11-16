@@ -260,7 +260,9 @@ def test_setup_uses_a_saved_custom_maintenance_lock_path(tmp_path):
     sudo_log = tmp_path / "sudo.log"
     fake_sudo = fake_bin / "sudo"
     fake_sudo.write_text(
-        '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$SETUP_SUDO_LOG"\nexit 1\n',
+        '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$SETUP_SUDO_LOG"\n'
+        'if [[ "${1:-}" == systemctl && "${2:-}" == show ]]; then\n'
+        "  echo not-found\n  exit 0\nfi\nexit 1\n",
         encoding="utf-8",
     )
     fake_sudo.chmod(0o755)

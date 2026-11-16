@@ -48,11 +48,14 @@ if command == "systemctl":
     if action == "is-active":
         sys.exit(0 if unit in active else 3)
     if action == "show":
-        print(
-            "loaded"
-            if "--property=LoadState" in args
-            else "active" if unit in active else "inactive"
-        )
+        if "--property=LoadState" in args:
+            # This adapter records installed files in the sandbox but does not
+            # load units into systemd. Active state is modeled separately above.
+            print("not-found")
+        elif "--property=FragmentPath" in args:
+            print(f"/etc/systemd/system/{unit}")
+        else:
+            print("active" if unit in active else "inactive")
     elif action in {"start", "restart", "stop"}:
         if action == "restart" and fault == "restart":
             sys.exit(73)

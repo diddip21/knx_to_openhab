@@ -32,6 +32,14 @@ The installation directories can be selected with `KNXOH_INSTALL_DIR`,
 reused on later setup runs. The paths must be absolute, separate, and outside
 the application directory.
 
+Before changing services, setup checks all four `knxohui` systemd unit names.
+An existing unmasked unit at another location or an unrecognized unit file in
+`/etc/systemd/system` stops setup with an error. Existing project units from
+older releases are recognized by their known description and launch command.
+Administrator-masked units remain untouched. Resolve a name collision with
+the unit's owner before retrying setup; do not remove a unit solely to make
+the installer pass.
+
 ### Runtime paths and migration
 
 | Data | Default location |

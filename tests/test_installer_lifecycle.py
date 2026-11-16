@@ -42,10 +42,23 @@ def _write_executable(path: Path, content: str) -> None:
     path.chmod(0o755)
 
 
-@pytest.mark.parametrize("install_path_style", ["plain", "trailing-slash", "symlinked-ancestor"])
+@pytest.mark.parametrize(
+    "install_path_style",
+    [
+        "plain",
+        "trailing-slash",
+        "symlinked-ancestor",
+        "symlinked-ancestor-retargeted",
+        "non-directory-parent",
+    ],
+)
 def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_path_style):
     install_dir = tmp_path / "install"
-    if install_path_style == "symlinked-ancestor":
+    if install_path_style == "non-directory-parent":
+        install_parent_file = tmp_path / "install-parent-file"
+        install_parent_file.write_text("existing file", encoding="utf-8")
+        install_dir = install_parent_file / "app"
+    elif install_path_style.startswith("symlinked-ancestor"):
         install_parent_alias = tmp_path / "install-parent-alias"
         install_parent_alias.symlink_to(tmp_path, target_is_directory=True)
         install_dir = install_parent_alias / "install"
@@ -77,6 +90,9 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
         "#!/bin/bash\n"
         "set -euo pipefail\n"
         'printf "setup\\n" >> "$SETUP_LOG"\n'
+        'if [[ -n "${SETUP_APP_DIR_LOG:-}" ]]; then\n'
+        '  printf "%s\\n" "$PWD" >> "$SETUP_APP_DIR_LOG"\n'
+        "fi\n"
         'mkdir -p "$KNXOH_DATA_DIR"\n'
         'if [[ ! -e "$KNXOH_DATA_DIR/user-data.json" ]]; then\n'
         '  printf \'{"created":true}\\n\' > "$KNXOH_DATA_DIR/user-data.json"\n'
@@ -95,6 +111,9 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
         'if [[ "$1" == "-n" && "$2" == "true" ]]; then exit 0; fi\n'
         'if [[ "$1" == "-n" ]]; then shift; fi\n'
         'if [[ "$1" == "apt-get" ]]; then printf "apt-get\\n" >> "$PRIVILEGED_LOG"; exit 0; fi\n'
+        'if [[ "$1" == "mktemp" && "$*" == *".knxoh-install."* ]]; then\n'
+        '  printf "stage\\n" >> "$STAGE_LOG"\n'
+        "fi\n"
         'exec "$@"\n',
     )
     _write_executable(
@@ -103,7 +122,15 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
         'source="${@: -2:1}"\n'
         'destination="${@: -1}"\n'
         'mkdir -p "$destination"\n'
-        'cp -a "$source"/. "$destination"/\n',
+        'if [[ "${FAKE_RSYNC_FAIL:-0}" == 1 ]]; then\n'
+        '  printf "partial\\n" > "$destination/partial"\n'
+        "  exit 75\n"
+        "fi\n"
+        'cp -a "$source"/. "$destination"/\n'
+        'if [[ -n "${RETARGET_INSTALL_PARENT_ALIAS:-}" ]]; then\n'
+        '  rm -- "$RETARGET_INSTALL_PARENT_ALIAS"\n'
+        '  ln -s "$RETARGET_INSTALL_PARENT_TARGET" "$RETARGET_INSTALL_PARENT_ALIAS"\n'
+        "fi\n",
     )
     _write_executable(
         fake_bin / "chmod",
@@ -141,12 +168,23 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
             "KNXOH_CONFIG_DIR": str(config_dir),
             "KNXOH_DATA_DIR": str(data_dir),
             "SETUP_LOG": str(setup_log),
+            "SETUP_APP_DIR_LOG": str(tmp_path / "setup-app-dir.log"),
             "PRIVILEGED_LOG": str(privileged_log),
+            "STAGE_LOG": str(tmp_path / "stage.log"),
             "CURL_LOG": str(curl_log),
             "CLONE_LOG": str(clone_log),
             "PATH": str(fake_bin) + os.pathsep + environment["PATH"],
         }
     )
+    if install_path_style == "symlinked-ancestor-retargeted":
+        alternate_parent = tmp_path / "alternate-install-parent"
+        alternate_parent.mkdir()
+        environment.update(
+            {
+                "RETARGET_INSTALL_PARENT_ALIAS": str(install_parent_alias),
+                "RETARGET_INSTALL_PARENT_TARGET": str(alternate_parent),
+            }
+        )
 
     def run_installer(*arguments):
         return subprocess.run(
@@ -158,12 +196,39 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
             check=False,
         )
 
+    environment["FAKE_RSYNC_FAIL"] = "1"
+    interrupted_install = run_installer("--install")
+    if install_path_style == "non-directory-parent":
+        assert interrupted_install.returncode != 0
+        assert "could not create installation parent" in interrupted_install.stdout.lower()
+        assert not (tmp_path / "stage.log").exists()
+        assert not setup_log.exists()
+        assert install_parent_file.read_text(encoding="utf-8") == "existing file"
+        return
+
+    assert interrupted_install.returncode != 0
+    assert "left untouched" in interrupted_install.stdout
+    assert not install_dir.exists()
+    assert not list(tmp_path.glob(".knxoh-install.*"))
+    assert not setup_log.exists()
+    environment.pop("FAKE_RSYNC_FAIL")
+
     fresh_install = run_installer("--install")
     assert fresh_install.returncode == 0, fresh_install.stdout + fresh_install.stderr
     assert "Cloning release v1.2.3" in fresh_install.stdout
     assert setup_log.read_text(encoding="utf-8").splitlines() == ["setup"]
-    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 1
+    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 2
     assert "--branch v1.2.3" in clone_log.read_text(encoding="utf-8")
+
+    if install_path_style == "symlinked-ancestor-retargeted":
+        activated_install_dir = tmp_path / "install"
+        assert activated_install_dir.is_dir()
+        assert not (alternate_parent / "install").exists()
+        assert (tmp_path / "setup-app-dir.log").read_text(encoding="utf-8").splitlines() == [
+            str(activated_install_dir.resolve())
+        ]
+        assert str(activated_install_dir.resolve()) in fresh_install.stdout
+        return
 
     user_data = data_dir / "user-data.json"
     user_data.write_text(json.dumps({"created": True, "custom": "keep"}), encoding="utf-8")
@@ -172,15 +237,15 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
     assert "existing files were left untouched" in second_install.stdout
     assert user_data.read_text(encoding="utf-8") == '{"created": true, "custom": "keep"}'
     assert setup_log.read_text(encoding="utf-8").splitlines() == ["setup"]
-    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 1
+    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 2
 
     repair = run_installer("--repair")
     assert repair.returncode == 0, repair.stdout + repair.stderr
     assert "Repairing the existing installation without pulling source" in repair.stdout
     assert setup_log.read_text(encoding="utf-8").splitlines() == ["setup", "setup"]
     assert user_data.read_text(encoding="utf-8") == '{"created": true, "custom": "keep"}'
-    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 1
-    assert len(clone_log.read_text(encoding="utf-8").splitlines()) == 1
+    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 2
+    assert len(clone_log.read_text(encoding="utf-8").splitlines()) == 2
 
     active_release = install_dir / "releases" / "v2.0.0"
     (active_release / "installer").mkdir(parents=True)
@@ -205,8 +270,8 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
         "setup",
         f"active setup:{active_release.resolve()}",
     ]
-    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 1
-    assert len(clone_log.read_text(encoding="utf-8").splitlines()) == 1
+    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 2
+    assert len(clone_log.read_text(encoding="utf-8").splitlines()) == 2
     environment.pop("FAKE_CHMOD_DENY")
 
     outside_release = tmp_path / "outside-release"
@@ -248,3 +313,43 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
     )
     assert setup_log.read_text(encoding="utf-8") == ""
     assert not external_setup_marker.exists()
+
+
+def test_staged_checkout_activation_never_replaces_an_existing_target(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_executable(fake_bin / "sudo", '#!/bin/bash\nexec "$@"\n')
+
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    (staged / "checkout.txt").write_text("new release", encoding="utf-8")
+    target = tmp_path / "target"
+    target.mkdir()
+    sentinel = target / "user-data.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    environment = os.environ.copy()
+    environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+
+    def activate(target_name):
+        script = (
+            f"source {shlex.quote(str(INSTALLER))}; "
+            f"activate_staged_checkout {shlex.quote(str(tmp_path))} staged {target_name}"
+        )
+        return subprocess.run(
+            ["bash", "-c", script],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+
+    collision = activate("target")
+    assert collision.returncode != 0
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+    assert (staged / "checkout.txt").read_text(encoding="utf-8") == "new release"
+
+    success = activate("new-target")
+    assert success.returncode == 0, success.stdout + success.stderr
+    assert not staged.exists()
+    assert (tmp_path / "new-target" / "checkout.txt").read_text(encoding="utf-8") == "new release"

@@ -117,7 +117,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm .opencode/agents/issue89-ci-repair.md
+          # New dev-based candidates already track this policy after #109.
+          # Restore their original file; deleting it would fail our own scope guard.
+          if git ls-files --error-unmatch -- .opencode/agents/issue89-ci-repair.md >/dev/null 2>&1; then
+            git restore --source=HEAD --worktree -- .opencode/agents/issue89-ci-repair.md
+          else
+            rm -- .opencode/agents/issue89-ci-repair.md
+          fi
           python ../trusted/scripts/ci_repair.py collect
 
       - name: Upload bounded, validated repair artifact

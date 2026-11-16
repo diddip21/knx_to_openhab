@@ -158,10 +158,14 @@ elif command == "python3" or command.endswith("/venv/bin/python"):
                     registry.rmdir()
                     registry.write_bytes(previous)
             execute(args)
+        elif script.name.startswith("knxoh-check-web-port."):
+            # Model the checker's input consumption as well as its success.
+            # Closing the pipe early races the upstream cat under pipefail.
+            sys.stdin.buffer.read()
         elif script.name not in {
             "write_maintenance_lock_tmpfiles.py",
             "provision_managed_files.py",
-        } and not script.name.startswith("knxoh-check-web-port."):
+        }:
             raise RuntimeError(f"Unexpected Python script: {script}")
 elif command.endswith("/venv/bin/pip"):
     local(command)

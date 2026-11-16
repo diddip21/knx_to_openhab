@@ -75,3 +75,14 @@ def test_source_and_review_gates_remain_separate():
     assert "draft: true" in impl
     assert "createWorkflowDispatch" in impl
     assert "createWorkflowDispatch" in repair
+
+
+def test_shared_ci_preserves_development_validation_and_evidence():
+    text = workflow("ci.yml")
+    assert 'python-version: ["3.11", "3.12", "3.13"]' in text
+    assert 'SAVE_UI_SCREENSHOTS: "1"' in text
+    assert "--browser=chromium" in text
+    assert "--screenshot=only-on-failure" in text
+    assert "--video=retain-on-failure" in text
+    assert "--tracing=retain-on-failure" in text
+    assert 'branches: ["**"]' in text

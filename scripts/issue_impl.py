@@ -78,12 +78,13 @@ def authorize(
     command_comment: dict[str, Any],
     actor: str,
     owner: str,
+    expected_issue_number: int = ISSUE_NUMBER,
 ) -> dict[str, Any]:
     """Require the owner, latest plan, exact approval and unchanged issue."""
     if not actor or actor.casefold() != owner.casefold():
         raise ValueError("Only the repository owner may authorize implementation")
-    if issue.get("number", issue.get("issue_number")) != ISSUE_NUMBER:
-        raise ValueError("Pilot implementation is restricted to issue #96")
+    if issue.get("number", issue.get("issue_number")) != expected_issue_number:
+        raise ValueError(f"Implementation is restricted to issue #{expected_issue_number}")
     if issue.get("state") != "open" or issue.get("pull_request"):
         raise ValueError("Target must be an open issue")
     labels = {
@@ -130,7 +131,7 @@ def authorize(
     if not confirmed:
         raise ValueError("The planning workflow has not confirmed approval")
     return {
-        "issue_number": ISSUE_NUMBER,
+        "issue_number": expected_issue_number,
         "version": version,
         "digest": marker["issue_digest"],
         "plan_comment_id": plan["id"],

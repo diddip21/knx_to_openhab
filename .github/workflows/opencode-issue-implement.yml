@@ -27,7 +27,7 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - name: Read live issue and comments
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           OUT: ${{ runner.temp }}
         with:
@@ -104,7 +104,7 @@ jobs:
           name: readme-issue-96-${{ github.run_id }}
           path: ${{ runner.temp }}
       - name: Re-fetch live issue and comments
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           OUT: ${{ runner.temp }}
         with:
@@ -120,7 +120,7 @@ jobs:
       - name: Revalidate version, owner, issue digest, scope and artifact
         run: python scripts/issue_impl.py recheck
       - name: Publish one README commit and draft PR
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           ARTIFACT: ${{ runner.temp }}/implementation-artifact.json
         with:

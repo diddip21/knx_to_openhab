@@ -1,0 +1,33 @@
+name: Approved issue89 CI auto-repair guard tests
+
+on:
+  pull_request:
+    paths:
+      - "scripts/ci_repair.py"
+      - "tests/test_ci_repair.py"
+      - ".github/workflows/opencode-ci-self-repair.yml"
+      - ".github/workflows/ai-ci-repair-tests.yml"
+      - ".opencode/agents/issue89-ci-repair.md"
+      - "docs/OPENCODE_CI_REPAIR.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pytest
+        run: python -m pip install "pytest>=8,<10"
+      - name: Run event and artifact validation tests
+        run: python -m pytest tests/test_ci_repair.py -q -o addopts=
+      - name: Syntax check trusted script
+        run: python -m py_compile scripts/ci_repair.py

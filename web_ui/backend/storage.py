@@ -14,6 +14,7 @@ from .auth import is_password_hash
 
 def load_config(project_root=None):
     paths = get_paths(project_root)
+    config_root = paths.install_dir if paths.secrets_file else paths.project_root
     config = {
         "openhab_path": "openhab",
         "jobs_dir": str(paths.jobs_dir),
@@ -73,12 +74,12 @@ def load_config(project_root=None):
         value = config.get(key, str(fallback))
         value = os.path.expanduser(os.fspath(value))
         if not os.path.isabs(value):
-            value = os.path.join(str(paths.project_root), value)
+            value = os.path.join(str(config_root), value)
         config[key] = os.path.abspath(value)
 
     openhab_path = os.path.expanduser(os.fspath(config.get("openhab_path", "openhab")))
     if not os.path.isabs(openhab_path):
-        openhab_path = os.path.join(str(paths.project_root), openhab_path)
+        openhab_path = os.path.join(str(config_root), openhab_path)
     config["openhab_path"] = os.path.abspath(openhab_path)
 
     if paths.secrets_file and paths.secrets_file.is_file():

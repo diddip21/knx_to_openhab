@@ -1,0 +1,361 @@
+"""Isolated lifecycle coverage for the top-level Linux installer."""
+
+import json
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+INSTALLER = ROOT / "install.sh"
+
+
+def _is_debian_based_linux() -> bool:
+    if not sys.platform.startswith("linux") or shutil.which("bash") is None:
+        return False
+    try:
+        os_release = Path("/etc/os-release").read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+    release_values = {}
+    for line in os_release.splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            release_values[key] = value.strip().strip('"').strip("'")
+    release_ids = {release_values.get("ID", ""), *release_values.get("ID_LIKE", "").split()}
+    return "debian" in release_ids
+
+
+pytestmark = pytest.mark.skipif(
+    not _is_debian_based_linux(),
+    reason="the installer lifecycle harness requires Debian-based Linux utilities",
+)
+
+
+def _write_executable(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+    path.chmod(0o755)
+
+
+@pytest.mark.parametrize(
+    "install_path_style",
+    [
+        "plain",
+        "trailing-slash",
+        "symlinked-ancestor",
+        "symlinked-ancestor-retargeted",
+        "non-directory-parent",
+    ],
+)
+def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_path_style):
+    install_dir = tmp_path / "install"
+    if install_path_style == "non-directory-parent":
+        install_parent_file = tmp_path / "install-parent-file"
+        install_parent_file.write_text("existing file", encoding="utf-8")
+        install_dir = install_parent_file / "app"
+    elif install_path_style.startswith("symlinked-ancestor"):
+        install_parent_alias = tmp_path / "install-parent-alias"
+        install_parent_alias.symlink_to(tmp_path, target_is_directory=True)
+        install_dir = install_parent_alias / "install"
+    config_dir = tmp_path / "config"
+    data_dir = tmp_path / "data"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    setup_log = tmp_path / "setup.log"
+    curl_log = tmp_path / "curl.log"
+    clone_log = tmp_path / "clone.log"
+    privileged_log = tmp_path / "privileged.log"
+
+    _write_executable(
+        fake_bin / "curl",
+        "#!/bin/bash\n"
+        'printf "%s\\n" "$*" >> "$CURL_LOG"\n'
+        "cat <<'JSON'\n"
+        '{"tag_name":"v1.2.3","draft":false,"prerelease":false}\n'
+        "JSON\n",
+    )
+    _write_executable(
+        fake_bin / "git",
+        "#!/bin/bash\n"
+        'if [[ "$1" != "clone" ]]; then exit 91; fi\n'
+        'printf "%s\\n" "$*" >> "$CLONE_LOG"\n'
+        'target="${@: -1}"\n'
+        'mkdir -p "$target/.git" "$target/installer"\n'
+        "cat > \"$target/installer/setup.sh\" <<'SETUP'\n"
+        "#!/bin/bash\n"
+        "set -euo pipefail\n"
+        'printf "setup\\n" >> "$SETUP_LOG"\n'
+        'if [[ -n "${SETUP_APP_DIR_LOG:-}" ]]; then\n'
+        '  printf "%s\\n" "$PWD" >> "$SETUP_APP_DIR_LOG"\n'
+        "fi\n"
+        'mkdir -p "$KNXOH_DATA_DIR"\n'
+        'if [[ ! -e "$KNXOH_DATA_DIR/user-data.json" ]]; then\n'
+        '  printf \'{"created":true}\\n\' > "$KNXOH_DATA_DIR/user-data.json"\n'
+        "fi\n"
+        "SETUP\n"
+        "cat > \"$target/installer/backup_cleanup.sh\" <<'CLEANUP'\n"
+        "#!/bin/bash\nexit 0\n"
+        "CLEANUP\n"
+        "cat > \"$target/installer/web_ui_endpoint.py\" <<'ENDPOINT'\n"
+        "# endpoint helper is handled by the isolated python shim\n"
+        "ENDPOINT\n",
+    )
+    _write_executable(
+        fake_bin / "sudo",
+        "#!/bin/bash\n"
+        'if [[ "$1" == "-n" && "$2" == "true" ]]; then exit 0; fi\n'
+        'if [[ "$1" == "-n" ]]; then shift; fi\n'
+        'if [[ "$1" == "apt-get" ]]; then printf "apt-get\\n" >> "$PRIVILEGED_LOG"; exit 0; fi\n'
+        'if [[ "$1" == "mktemp" && "$*" == *".knxoh-install."* ]]; then\n'
+        '  printf "stage\\n" >> "$STAGE_LOG"\n'
+        "fi\n"
+        'exec "$@"\n',
+    )
+    _write_executable(
+        fake_bin / "rsync",
+        "#!/bin/bash\n"
+        'source="${@: -2:1}"\n'
+        'destination="${@: -1}"\n'
+        'mkdir -p "$destination"\n'
+        'if [[ "${FAKE_RSYNC_FAIL:-0}" == 1 ]]; then\n'
+        '  printf "partial\\n" > "$destination/partial"\n'
+        "  exit 75\n"
+        "fi\n"
+        'cp -a "$source"/. "$destination"/\n'
+        'if [[ -n "${RETARGET_INSTALL_PARENT_ALIAS:-}" ]]; then\n'
+        '  rm -- "$RETARGET_INSTALL_PARENT_ALIAS"\n'
+        '  ln -s "$RETARGET_INSTALL_PARENT_TARGET" "$RETARGET_INSTALL_PARENT_ALIAS"\n'
+        "fi\n",
+    )
+    _write_executable(
+        fake_bin / "chmod",
+        "#!/bin/bash\n"
+        'if [[ "${FAKE_CHMOD_DENY:-0}" == 1 ]]; then exit 1; fi\n'
+        'exec /bin/chmod "$@"\n',
+    )
+    _write_executable(
+        fake_bin / "dpkg",
+        "#!/bin/bash\n"
+        "for package in git python3 python3-venv python3-pip rsync curl; do\n"
+        '  printf "ii  %s 1.0 all installed\\n" "$package"\n'
+        "done\n",
+    )
+    _write_executable(fake_bin / "hostname", "#!/bin/sh\nprintf '127.0.0.1\\n'\n")
+    _write_executable(
+        fake_bin / "python3",
+        "#!/bin/bash\n"
+        'for argument in "$@"; do\n'
+        '  if [[ "$argument" == *"web_ui_endpoint.py" ]]; then\n'
+        "    printf 'loopback\\n127.0.0.1\\n8085\\n'\n"
+        "    exit 0\n"
+        "  fi\n"
+        "done\n"
+        f'exec {shlex.quote(sys.executable)} "$@"\n',
+    )
+
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "ALLOW_ROOT": "1",
+            "KNXOH_INSTALL_DIR": (
+                f"{install_dir}/" if install_path_style == "trailing-slash" else str(install_dir)
+            ),
+            "KNXOH_CONFIG_DIR": str(config_dir),
+            "KNXOH_DATA_DIR": str(data_dir),
+            "SETUP_LOG": str(setup_log),
+            "SETUP_APP_DIR_LOG": str(tmp_path / "setup-app-dir.log"),
+            "PRIVILEGED_LOG": str(privileged_log),
+            "STAGE_LOG": str(tmp_path / "stage.log"),
+            "CURL_LOG": str(curl_log),
+            "CLONE_LOG": str(clone_log),
+            "PATH": str(fake_bin) + os.pathsep + environment["PATH"],
+        }
+    )
+    if install_path_style == "symlinked-ancestor-retargeted":
+        alternate_parent = tmp_path / "alternate-install-parent"
+        alternate_parent.mkdir()
+        environment.update(
+            {
+                "RETARGET_INSTALL_PARENT_ALIAS": str(install_parent_alias),
+                "RETARGET_INSTALL_PARENT_TARGET": str(alternate_parent),
+            }
+        )
+
+    def run_installer(*arguments):
+        return subprocess.run(
+            ["bash", str(INSTALLER), *arguments],
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+    environment["FAKE_RSYNC_FAIL"] = "1"
+    interrupted_install = run_installer("--install")
+    if install_path_style == "non-directory-parent":
+        assert interrupted_install.returncode != 0
+        assert "could not create installation parent" in interrupted_install.stdout.lower()
+        assert not (tmp_path / "stage.log").exists()
+        assert not setup_log.exists()
+        assert install_parent_file.read_text(encoding="utf-8") == "existing file"
+        return
+
+    assert interrupted_install.returncode != 0
+    assert "left untouched" in interrupted_install.stdout
+    assert not install_dir.exists()
+    assert not list(tmp_path.glob(".knxoh-install.*"))
+    assert not setup_log.exists()
+    environment.pop("FAKE_RSYNC_FAIL")
+
+    fresh_install = run_installer("--install")
+    assert fresh_install.returncode == 0, fresh_install.stdout + fresh_install.stderr
+    assert "Cloning release v1.2.3" in fresh_install.stdout
+    assert setup_log.read_text(encoding="utf-8").splitlines() == ["setup"]
+    expected_curl_calls = curl_log.read_text(encoding="utf-8").splitlines()
+    assert [shlex.split(call)[-1] for call in expected_curl_calls] == [
+        "https://github.com/diddip21/knx_to_openhab",
+        "https://api.github.com/repos/diddip21/knx_to_openhab/releases/latest",
+    ] * 2
+    for call in expected_curl_calls[::2]:
+        assert "--connect-timeout 5 --max-time 15 --output /dev/null" in call
+    assert "--branch v1.2.3" in clone_log.read_text(encoding="utf-8")
+
+    if install_path_style == "symlinked-ancestor-retargeted":
+        activated_install_dir = tmp_path / "install"
+        assert activated_install_dir.is_dir()
+        assert not (alternate_parent / "install").exists()
+        assert (tmp_path / "setup-app-dir.log").read_text(encoding="utf-8").splitlines() == [
+            str(activated_install_dir.resolve())
+        ]
+        assert str(activated_install_dir.resolve()) in fresh_install.stdout
+        return
+
+    user_data = data_dir / "user-data.json"
+    user_data.write_text(json.dumps({"created": True, "custom": "keep"}), encoding="utf-8")
+    second_install = run_installer("--install")
+    assert second_install.returncode == 2
+    assert "existing files were left untouched" in second_install.stdout
+    assert user_data.read_text(encoding="utf-8") == '{"created": true, "custom": "keep"}'
+    assert setup_log.read_text(encoding="utf-8").splitlines() == ["setup"]
+    assert curl_log.read_text(encoding="utf-8").splitlines() == expected_curl_calls
+
+    repair = run_installer("--repair")
+    assert repair.returncode == 0, repair.stdout + repair.stderr
+    assert "Repairing the existing installation without pulling source" in repair.stdout
+    assert setup_log.read_text(encoding="utf-8").splitlines() == ["setup", "setup"]
+    assert user_data.read_text(encoding="utf-8") == '{"created": true, "custom": "keep"}'
+    assert curl_log.read_text(encoding="utf-8").splitlines() == expected_curl_calls
+    assert len(clone_log.read_text(encoding="utf-8").splitlines()) == 2
+
+    active_release = install_dir / "releases" / "v2.0.0"
+    (active_release / "installer").mkdir(parents=True)
+    (active_release / "installer" / "setup.sh").write_text(
+        '#!/bin/bash\nprintf \'active setup:%s\\n\' "$PWD" >> "$SETUP_LOG"\n',
+        encoding="utf-8",
+    )
+    (active_release / "installer" / "setup.sh").chmod(0o755)
+    (active_release / "installer" / "backup_cleanup.sh").write_text(
+        "#!/bin/bash\nexit 0\n", encoding="utf-8"
+    )
+    (install_dir / "current").symlink_to(active_release)
+    environment["FAKE_CHMOD_DENY"] = "1"
+
+    transactional_repair = run_installer("--repair")
+
+    assert transactional_repair.returncode == 0, (
+        transactional_repair.stdout + transactional_repair.stderr
+    )
+    assert setup_log.read_text(encoding="utf-8").splitlines() == [
+        "setup",
+        "setup",
+        f"active setup:{active_release.resolve()}",
+    ]
+    assert curl_log.read_text(encoding="utf-8").splitlines() == expected_curl_calls
+    assert len(clone_log.read_text(encoding="utf-8").splitlines()) == 2
+    environment.pop("FAKE_CHMOD_DENY")
+
+    outside_release = tmp_path / "outside-release"
+    (outside_release / "installer").mkdir(parents=True)
+    (outside_release / "installer" / "setup.sh").write_text(
+        f"#!/bin/bash\n: > {tmp_path / 'external-setup-ran'}\n",
+        encoding="utf-8",
+    )
+    (install_dir / "current").unlink()
+    (install_dir / "current").symlink_to(outside_release)
+    privileged_log.write_text("", encoding="utf-8")
+    setup_log.write_text("", encoding="utf-8")
+
+    invalid_repair = run_installer("--repair")
+
+    assert invalid_repair.returncode == 2
+    assert (
+        "active release link points outside"
+        in (invalid_repair.stdout + invalid_repair.stderr).lower()
+    )
+    assert setup_log.read_text(encoding="utf-8") == ""
+    assert privileged_log.read_text(encoding="utf-8") == ""
+
+    (install_dir / "current").unlink()
+    (install_dir / "current").symlink_to(active_release)
+    shutil.rmtree(active_release / "installer")
+    (active_release / "installer").symlink_to(
+        outside_release / "installer", target_is_directory=True
+    )
+    external_setup_marker = tmp_path / "external-setup-ran"
+    external_setup_marker.unlink(missing_ok=True)
+
+    symlinked_installer_repair = run_installer("--repair")
+
+    assert symlinked_installer_repair.returncode == 2
+    assert (
+        "safe installer/setup.sh"
+        in (symlinked_installer_repair.stdout + symlinked_installer_repair.stderr).lower()
+    )
+    assert setup_log.read_text(encoding="utf-8") == ""
+    assert not external_setup_marker.exists()
+
+
+def test_staged_checkout_activation_never_replaces_an_existing_target(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_executable(fake_bin / "sudo", '#!/bin/bash\nexec "$@"\n')
+
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    (staged / "checkout.txt").write_text("new release", encoding="utf-8")
+    target = tmp_path / "target"
+    target.mkdir()
+    sentinel = target / "user-data.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    environment = os.environ.copy()
+    environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+
+    def activate(target_name):
+        script = (
+            f"source {shlex.quote(str(INSTALLER))}; "
+            f"activate_staged_checkout {shlex.quote(str(tmp_path))} staged {target_name}"
+        )
+        return subprocess.run(
+            ["bash", "-c", script],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+
+    collision = activate("target")
+    assert collision.returncode != 0
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+    assert (staged / "checkout.txt").read_text(encoding="utf-8") == "new release"
+
+    success = activate("new-target")
+    assert success.returncode == 0, success.stdout + success.stderr
+    assert not staged.exists()
+    assert (tmp_path / "new-target" / "checkout.txt").read_text(encoding="utf-8") == "new release"

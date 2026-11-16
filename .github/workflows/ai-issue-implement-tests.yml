@@ -1,0 +1,33 @@
+name: Approved issue implementation guard tests
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/opencode-issue-implement.yml"
+      - ".github/workflows/ai-issue-implement-tests.yml"
+      - "scripts/issue_impl.py"
+      - "tests/test_issue_impl.py"
+      - ".opencode/agents/issue-implementer.md"
+      - "docs/OPENCODE_ISSUE_IMPLEMENTATION.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guard-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install test runner
+        run: python -m pip install "pytest>=8,<10"
+      - name: Verify implementation approval gates
+        run: python -m pytest tests/test_issue_impl.py -q -o addopts=
+      - name: Verify syntax
+        run: python -m py_compile scripts/issue_impl.py

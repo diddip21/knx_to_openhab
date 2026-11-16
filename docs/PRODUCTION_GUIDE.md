@@ -141,6 +141,43 @@ before continuing; setup does not need a terminal password prompt. If setup fail
 stopping services, it attempts to restart the services that were active before migration.
 Retry the Web UI update after setup completes.
 
+Before changing files, setup waits for any running updater to finish and cancels
+queued starts. Service launchers take a non-blocking shared maintenance lock;
+setup takes that lock exclusively, rechecks unit states and queued jobs (including
+units whose systemd fragment is missing), and retries quiescence if a service wins
+the lock race. The Web UI is checked again after the updater exits because the
+updater's health check may restart it. Setup preserves an administrator-masked
+updater unit rather than replacing the mask. If a service cannot be confirmed
+quiescent or setup cannot acquire the lock within 15 minutes, it stops before
+application or runtime-data changes; resolve the service issue and run setup again.
+
+If an active transactional release has a missing or unusable Python environment,
+the updater prints a recovery command. When the stable repair helper is already
+installed, run that command from an interactive SSH terminal. If it is not yet
+installed, the command runs setup with the configured application, configuration,
+runtime-data, backup, and paths-file locations; setup installs the stable helper
+and launcher, repairs the active release, and only then restarts the Web UI.
+
+An updater installed before this recovery guidance cannot print the new command.
+For that one-time bootstrap, use an updated source checkout (not the old active
+release) and pass the paths shown in the configured `paths.env` file:
+
+```bash
+git clone https://github.com/diddip21/knx_to_openhab.git /tmp/knx_to_openhab-bootstrap
+sudo env \
+  KNXOH_INSTALL_DIR=/opt/knx_to_openhab \
+  KNXOH_CONFIG_DIR=/etc/knx_to_openhab \
+  KNXOH_DATA_DIR=/var/lib/knx_to_openhab \
+  KNXOH_BACKUP_DIR=/var/backups/knx_to_openhab \
+  KNXOH_PATHS_FILE=/etc/knx_to_openhab/paths.env \
+  bash /tmp/knx_to_openhab-bootstrap/installer/setup.sh
+```
+
+Replace these defaults with the values from your paths file if the installation
+uses custom locations, and quote any values containing spaces. Setup refreshes
+the root-owned launcher and repair helper;
+normal Web UI updates do not overwrite those protected files.
+
 The updater checks that `knxohui.service` stays active across three checks after
 restart. If the updated service fails to start or remain active, it restores the
 previous application commit and dependencies, then attempts to restart that
@@ -157,6 +194,13 @@ bash uninstall.sh
 ```
 
 This stops services and removes the installation and managed service files. It preserves the external configuration, runtime data, backups, and service account. To remove those too, use `bash uninstall.sh --purge` and type `PURGE` at the prompt. A non-interactive run requires `--yes`.
+
+The uninstaller waits for systemd jobs to settle, then takes the same exclusive
+maintenance lock used by setup and service launchers before disabling services
+or removing files. It checks the Web UI again after updater shutdown and preserves
+administrator-created unit-mask symlinks. If it reports that the coordination
+helpers are missing, run the current setup once to install them, then retry
+uninstallation.
 
 ---
 

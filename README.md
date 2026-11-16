@@ -7,7 +7,7 @@ Includes a **Web UI** for browser-based management and a **CLI** for automated w
 ## Features
 
 - **Automated Generation** — Creates Things, Items, Sitemaps, and Persistence rules in one step
-- **openHAB 5.2 YAML** — Optionally combines Things, Items, semantic metadata, channels, and the Sitemap in one native, versioned YAML file
+- **Two Output Formats** — Legacy DSL (`.things`/`.items`/`.sitemap`, default) or a native openHAB 5.2 YAML model (`yaml/knx.yaml`) combining Things, Items, semantic metadata, channels, and the Sitemap in one versioned file; switch via `output_format` in `config.json` or the Web UI
 - **Smart Detection** — Identifies Dimmers, Rollershutters, Thermostats, and multi-address components by DPT analysis and naming conventions
 - **Web Interface** — Drag-and-drop upload, live progress streaming (SSE), job history, diff viewer, deploy/rollback
 - **Backup & Rollback** — Automatic tar.gz backup before each generation; rollback restores generated files and preserves manual OpenHAB configuration
@@ -100,7 +100,7 @@ For each KNX project, the generator produces:
 | `knx.sitemap` | Sitemap with floor/room hierarchy and labeled widgets |
 | `influxdb.persist` | InfluxDB persistence rules for items tagged with `influx` |
 
-The three legacy model files are mutually exclusive with `yaml/knx.yaml`. Persistence remains textual because openHAB 5.2 does not expose persistence as a YAML top-level entity. See the [YAML migration guide](docs/USER_GUIDE.md#openhab-52-yaml-output).
+The three legacy model files are mutually exclusive with `yaml/knx.yaml`. The default format is legacy DSL; setting `output_format: yaml` writes `yaml/knx.yaml` instead and deactivates the previous generator-owned legacy model files during deployment. Persistence remains textual because openHAB 5.2 does not expose persistence as a YAML top-level entity. See the [YAML migration guide](docs/USER_GUIDE.md#model-format-and-live-gateway-ip).
 
 ### Reports & Auto-Placement
 

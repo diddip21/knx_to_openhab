@@ -392,11 +392,8 @@ def test_setup_quiesces_updater_after_web_ui_stop_and_before_mutations():
     assert release_for_restart < restart
     assert release_for_restart < timer_start
 
-    trap_body = setup[
-        setup.index("restore_previous_services() {") : setup.index(
-            "trap restore_previous_services EXIT"
-        )
-    ]
+    assert 'source "$SCRIPT_DIR/setup_restore.sh"' in setup
+    trap_body = (ROOT / "installer" / "setup_restore.sh").read_text(encoding="utf-8")
     assert trap_body.index("release_maintenance_lock") < trap_body.index(
         'sudo systemctl start "$unit"'
     )

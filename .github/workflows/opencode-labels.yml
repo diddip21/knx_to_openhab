@@ -1,0 +1,39 @@
+name: Set up AI issue labels
+
+on:
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  labels:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Create or update workflow labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = [
+              { name: 'ai:plan', color: '7057FF',
+                description: 'OpenCode soll das Issue analysieren und einen Plan erstellen' },
+              { name: 'ai:waiting', color: 'FBCA04',
+                description: 'OpenCode wartet auf Rückfragen oder Freigabe' },
+              { name: 'ai:approved', color: '0E8A16',
+                description: 'Plan wurde vom Repository-Maintainer freigegeben; noch keine Implementierung' }
+            ];
+            const base = {owner: context.repo.owner, repo: context.repo.repo};
+            for (const label of labels) {
+              try {
+                await github.rest.issues.createLabel({...base, ...label});
+                core.info('Created: ' + label.name);
+              } catch (err) {
+                if (err.status !== 422) throw err;
+                await github.rest.issues.updateLabel({
+                  ...base, name: label.name,
+                  color: label.color, description: label.description
+                });
+                core.info('Updated: ' + label.name);
+              }
+            }

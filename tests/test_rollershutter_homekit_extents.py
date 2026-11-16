@@ -126,7 +126,7 @@ def _generate(
     monkeypatch,
     *,
     project=None,
-    homekit_enabled=None,
+    homekit_enabled=True,  # Fixture has no ETS HomeKit flag; enable it for HomeKit cases.
     send_up_down=True,
     stop=False,
     stop_same=False,
@@ -210,9 +210,7 @@ def test_explicit_extents_false_is_preserved(monkeypatch):
         (True, True, ['stop="true"', 'stopSameDirection="true"']),
     ],
 )
-def test_optional_stop_switches_are_independent(
-    monkeypatch, stop, stop_same, expected_options
-):
+def test_optional_stop_switches_are_independent(monkeypatch, stop, stop_same, expected_options):
     items, _sitemap, _things, model = _generate(
         monkeypatch, send_up_down=False, stop=stop, stop_same=stop_same
     )

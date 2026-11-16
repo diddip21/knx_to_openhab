@@ -93,9 +93,7 @@ def _expand_settings(page: Page):
     page.wait_for_timeout(300)
 
 
-def test_homekit_defaults_are_shown_when_keys_are_missing(
-    page: Page, base_url, flask_server
-):
+def test_homekit_defaults_are_shown_when_keys_are_missing(page: Page, base_url, flask_server):
     _setup_routes(page)
     page.goto(base_url)
     _expand_settings(page)

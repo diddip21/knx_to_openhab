@@ -176,6 +176,16 @@ def test_changed_issue_fails_closed(tmp_path, monkeypatch):
         ci.check_authorization(source, OWNER)
 
 
+def test_hidden_implementation_reference_survives_description_rewrites(tmp_path, monkeypatch):
+    make_event(tmp_path, monkeypatch)
+    source = live_source()
+    source["pr"]["body"] = (
+        "Deutsche PR-Beschreibung mit Zusammenfassung.\n"
+        "<!-- ai-implementation-command: 40 -->"
+    )
+    assert ci.check_authorization(source, OWNER)["command_comment_id"] == 40
+
+
 def test_untrusted_pr_body_cannot_invent_command(tmp_path, monkeypatch):
     make_event(tmp_path, monkeypatch)
     source = live_source()

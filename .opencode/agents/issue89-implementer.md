@@ -22,58 +22,115 @@ permissions:
     resource: "config.json"
     effect: allow
   - action: edit
+    resource: "*/config.json"
+    effect: allow
+  - action: edit
     resource: "knxproject_to_openhab.py"
+    effect: allow
+  - action: edit
+    resource: "*/knxproject_to_openhab.py"
     effect: allow
   - action: edit
     resource: "ets_to_openhab.py"
     effect: allow
   - action: edit
+    resource: "*/ets_to_openhab.py"
+    effect: allow
+  - action: edit
     resource: "web_ui/backend/jobs.py"
+    effect: allow
+  - action: edit
+    resource: "*/web_ui/backend/jobs.py"
     effect: allow
   - action: edit
     resource: "web_ui/backend/project_preview.py"
     effect: allow
   - action: edit
+    resource: "*/web_ui/backend/project_preview.py"
+    effect: allow
+  - action: edit
     resource: "web_ui/backend/app.py"
+    effect: allow
+  - action: edit
+    resource: "*/web_ui/backend/app.py"
     effect: allow
   - action: edit
     resource: "web_ui/templates/index.html"
     effect: allow
   - action: edit
+    resource: "*/web_ui/templates/index.html"
+    effect: allow
+  - action: edit
     resource: "web_ui/static/app.js"
+    effect: allow
+  - action: edit
+    resource: "*/web_ui/static/app.js"
     effect: allow
   - action: edit
     resource: "web_ui/static/i18n.js"
     effect: allow
   - action: edit
+    resource: "*/web_ui/static/i18n.js"
+    effect: allow
+  - action: edit
     resource: "web_ui/api_schema.json"
+    effect: allow
+  - action: edit
+    resource: "*/web_ui/api_schema.json"
     effect: allow
   - action: edit
     resource: "tests/test_rollershutter_homekit_extents.py"
     effect: allow
   - action: edit
+    resource: "*/tests/test_rollershutter_homekit_extents.py"
+    effect: allow
+  - action: edit
     resource: "tests/test_homekit_config_override.py"
     effect: allow
   - action: edit
+    resource: "*/tests/test_homekit_config_override.py"
+    effect: allow
+  - action: edit
     resource: "tests/ui/test_homekit_settings.py"
+    effect: allow
+  - action: edit
+    resource: "*/tests/ui/test_homekit_settings.py"
     effect: allow
   - action: edit
     resource: "docs/USER_GUIDE.md"
     effect: allow
   - action: edit
+    resource: "*/docs/USER_GUIDE.md"
+    effect: allow
+  - action: edit
     resource: "README.md"
     effect: allow
   - action: edit
+    resource: "*/README.md"
+    effect: allow
+  - action: edit
     resource: "CHANGELOG.md"
+    effect: allow
+  - action: edit
+    resource: "*/CHANGELOG.md"
     effect: allow
   - action: write
     resource: "tests/test_rollershutter_homekit_extents.py"
     effect: allow
   - action: write
+    resource: "*/tests/test_rollershutter_homekit_extents.py"
+    effect: allow
+  - action: write
     resource: "tests/test_homekit_config_override.py"
     effect: allow
   - action: write
+    resource: "*/tests/test_homekit_config_override.py"
+    effect: allow
+  - action: write
     resource: "tests/ui/test_homekit_settings.py"
+    effect: allow
+  - action: write
+    resource: "*/tests/ui/test_homekit_settings.py"
     effect: allow
 ---
 

@@ -17,8 +17,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from issue_impl import BOT_LOGIN, authorize, git
 from issue89_impl import ALLOWED_FILES, file_bytes
+from issue_impl import BOT_LOGIN, authorize, git
 
 ISSUE_NUMBER = 89
 MAX_REPAIRS = 2

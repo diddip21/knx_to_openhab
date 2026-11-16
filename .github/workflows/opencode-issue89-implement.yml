@@ -21,11 +21,36 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - name: Checkout trusted default branch without credentials
+      - name: Checkout trusted default-branch validators
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.repository.default_branch }}
+          path: trusted
           persist-credentials: false
+
+      - name: Checkout development source branch
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require dev to contain main and match trusted OpenCode policies
+        working-directory: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$(git -C ../trusted rev-parse HEAD)" HEAD || {
+            echo "::error::dev does not contain main: reconcile dev first"
+            exit 1
+          }
+          for file in opencode.jsonc .opencode/agents/issue89-implementer.md .opencode/agents/ci-smoke.md; do
+            cmp -s "../trusted/$file" "$file" || {
+              echo "::error::dev OpenCode policy differs from trusted main: $file"
+              exit 1
+            }
+          done
 
       - name: Fetch live issue and all comments
         uses: actions/github-script@v9
@@ -43,7 +68,8 @@ jobs:
             fs.writeFileSync(process.env.OUT + '/issue-comments.json', JSON.stringify(comments));
 
       - name: Verify owner approval and plan version
-        run: python scripts/issue89_impl.py prepare
+        working-directory: candidate
+        run: python ../trusted/scripts/issue89_impl.py prepare
 
       - name: Install OpenCode for isolated runner
         uses: actions/setup-node@v7
@@ -57,12 +83,14 @@ jobs:
 
       - name: Find best working approved free model
         id: model
+        working-directory: candidate
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/opencode_model_router.py select --task implement --report "$RUNNER_TEMP/issue89-model.json"
+          python ../trusted/scripts/opencode_model_router.py select --task implement --report "$RUNNER_TEMP/issue89-model.json"
 
       - name: Implement approved HomeKit changes in limited workspace
+        working-directory: candidate
         shell: bash
         env:
           CI: "true"
@@ -77,7 +105,8 @@ jobs:
             2> "$RUNNER_TEMP/issue89-stderr.log"
 
       - name: Validate exact changed file set and build candidate artifact
-        run: python scripts/issue89_impl.py collect
+        working-directory: candidate
+        run: python ../trusted/scripts/issue89_impl.py collect
 
       - name: Upload bounded code candidate only
         uses: actions/upload-artifact@v4
@@ -97,11 +126,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - name: Checkout trusted default branch without credentials
+      - name: Checkout trusted default-branch validators
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.repository.default_branch }}
+          path: trusted
           persist-credentials: false
+
+      - name: Checkout current development base
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          path: target
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require dev base to contain current main
+        working-directory: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$(git -C ../trusted rev-parse HEAD)" HEAD || {
+            echo "::error::dev does not contain main at publishing time"
+            exit 1
+          }
 
       - name: Download validated candidate
         uses: actions/download-artifact@v4
@@ -125,7 +173,8 @@ jobs:
             fs.writeFileSync(process.env.OUT + '/issue-comments.json', JSON.stringify(comments));
 
       - name: Revalidate current plan approval and every candidate file
-        run: python scripts/issue89_impl.py recheck
+        working-directory: target
+        run: python ../trusted/scripts/issue89_impl.py recheck
 
       - name: Open Draft PR with approved changes only
         uses: actions/github-script@v9
@@ -159,12 +208,19 @@ jobs:
               return;
             }
 
-            // Recheck main and approved issue just before any GitHub write.
-            const {data: main} = await github.rest.repos.getBranch({
-              ...repo, branch: context.payload.repository.default_branch
+            // Recheck dev and default-branch ancestry before writing.
+            const {data: dev} = await github.rest.repos.getBranch({
+              ...repo, branch: 'dev'
             });
-            if (main.commit.sha !== item.base_commit_sha) {
-              core.setFailed('Main advanced since the candidate was validated');
+            if (dev.commit.sha !== item.base_commit_sha) {
+              core.setFailed('dev changed since the AI candidate was validated');
+              return;
+            }
+            const {data: comparison} = await github.rest.repos.compareCommits({
+              ...repo, base: context.payload.repository.default_branch, head: 'dev'
+            });
+            if (comparison.behind_by !== 0) {
+              core.setFailed('dev must contain all current main commits');
               return;
             }
             const {data: issue} = await github.rest.issues.get({...repo, issue_number: 89});
@@ -228,9 +284,9 @@ jobs:
             const {data: pr} = await github.rest.pulls.create({
               ...repo,
               title: 'feat(homekit): implement approved blind extents settings (#89)',
-              head, base: context.payload.repository.default_branch, draft: true,
+              head, base: 'dev', draft: true,
               body: `Implements owner-approved issue #89 plan v${version}.\n\n` +
-                `Automated OpenCode/Superpowers candidate; changed paths validated against an issue-specific allowlist.\n` +
+                `Automated OpenCode/Superpowers candidate, based on dev; changed paths validated against an issue-specific allowlist.\n` +
                 `**Review required:** group vs item metadata scope, CLI/Web UI default, saved false, translation, regression tests, UI screenshots, and hardware behavior.\n` +
                 `The actual KNX actuator has NOT been verified by CI. No auto-merge.\n\n` +
                 `Approval comment: ${item.approval_comment_id}; implementation command: ${item.command_comment_id}.\n\n` +

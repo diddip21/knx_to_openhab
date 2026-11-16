@@ -1,3 +1,5 @@
+"""Host checks that must stop the installer before system changes."""
+
 import os
 import shutil
 import subprocess
@@ -6,247 +8,87 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-INSTALLER = ROOT / "install.sh"
-KIB_FLOOR = 1024 * 1024
-
+INSTALLER = Path(__file__).resolve().parents[1] / "install.sh"
 pytestmark = pytest.mark.skipif(
-    os.name != "posix" or shutil.which("bash") is None,
-    reason="installer shell integration tests require a POSIX Bash environment",
+    not sys.platform.startswith("linux") or shutil.which("bash") is None,
+    reason="the installer preflight requires Linux and Bash",
 )
 
 
-def make_preflight_environment(
-    tmp_path, *, free_kib=KIB_FLOOR, python_version="3.11", curl_status=0
-):
+def _executable(path, contents):
+    path.write_text(contents, encoding="utf-8")
+    path.chmod(0o755)
+
+
+def _environment(tmp_path, *, python_version="3.11", free_kib=1048576):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
-    df = fake_bin / "df"
-    df.write_text(
-        '#!/bin/sh\nprintf \'%s\\n\' "$2" >> "$PREFLIGHT_DF_PATH_LOG"\n'
-        "printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n'\n"
-        "printf '/dev/test 99999999 0 %s 0%% /\\n' \"$PREFLIGHT_FREE_KIB\"\n",
-        encoding="utf-8",
-    )
-    df.chmod(0o755)
-    python = fake_bin / "python3"
-    python.write_text(
+    _executable(
+        fake_bin / "python3",
         "#!/bin/sh\n"
-        "if [ \"$1\" = '-c' ]; then printf '%s\\n' \"$PREFLIGHT_PYTHON_VERSION\"; exit 0; fi\n"
-        "if [ \"$1\" = '-m' ] && [ \"$2\" = 'venv' ]; then\n"
-        '  if [ "$PREFLIGHT_VENV_STATUS" != 0 ]; then exit "$PREFLIGHT_VENV_STATUS"; fi\n'
-        '  "$PREFLIGHT_REAL_PYTHON" "$@"\n'
-        "  result=$?\n"
-        '  if [ "$result" = 0 ] && [ "$PREFLIGHT_VENV_BROKEN_EXEC" = 1 ]; then\n'
-        '    rm -f "$3/bin/python"\n'
-        "    printf '#!/bin/sh\\nexit 1\\n' > \"$3/bin/python\"\n"
-        '    /bin/chmod +x "$3/bin/python"\n'
-        "  fi\n"
-        '  exit "$result"\n'
-        "fi\n"
+        'if [ "${1:-}" = "-c" ]; then printf "%s\\n" "$PREFLIGHT_PYTHON_VERSION"; exit 0; fi\n'
         'exec "$PREFLIGHT_REAL_PYTHON" "$@"\n',
-        encoding="utf-8",
     )
-    python.chmod(0o755)
-    curl = fake_bin / "curl"
-    curl.write_text(
-        '#!/bin/sh\nprintf called >> "$PREFLIGHT_CURL_LOG"\n' 'exit "$PREFLIGHT_CURL_STATUS"\n',
-        encoding="utf-8",
+    _executable(
+        fake_bin / "df",
+        "#!/bin/sh\n"
+        'printf "%s\\n" "$2" >> "$PREFLIGHT_DF_LOG"\n'
+        "printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n'\n"
+        'printf "/dev/test 99999999 0 %s 0%% /\\n" "$PREFLIGHT_FREE_KIB"\n',
     )
-    curl.chmod(0o755)
-
+    _executable(
+        fake_bin / "stat",
+        "#!/bin/sh\n"
+        'if [ "$2" = "%d" ]; then printf "1\\n"; exit 0; fi\n'
+        'if [ "$4" = "$PREFLIGHT_SERVICE_WRITABLE_DIR" ] || [ "$4" = "$PREFLIGHT_UNTRUSTED_PARENT" ]; then printf "1001 755 1\\n"; else printf "0 755 1\\n"; fi\n',
+    )
+    _executable(
+        fake_bin / "sudo",
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = "mktemp" ]; then\n'
+        '    printf "%s\\n" "$3" > "$PREFLIGHT_PROBE_TEMPLATE_LOG"\n'
+        '    probe_root="$(command mktemp -d "$3")" || exit $?\n'
+        '    printf "%s\\n" "$probe_root" > "$PREFLIGHT_PROBE_ROOT_LOG"\n'
+        '    chmod 000 "$probe_root"\n'
+        '    printf "%s\\n" "$probe_root"\n'
+        "    exit 0\n"
+        "fi\n"
+        'if [ "${1:-}" = "rm" ]; then\n'
+        '    if [ -f "$PREFLIGHT_PROBE_ROOT_LOG" ]; then chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"; fi\n'
+        "    shift\n"
+        '    exec /bin/rm "$@"\n'
+        "fi\n"
+        'printf "called\\n" >> "$PREFLIGHT_SUDO_LOG"\n'
+        "exit 99\n",
+    )
     environment = os.environ.copy()
     environment.update(
         {
-            "PATH": str(fake_bin),
-            "KNXOH_INSTALL_DIR": str(tmp_path / "install"),
+            "ALLOW_ROOT": "1",
+            "KNXOH_INSTALL_DIR": str(tmp_path / "not-created" / "install"),
             "KNXOH_CONFIG_DIR": str(tmp_path / "config"),
-            "PREFLIGHT_DF_PATH_LOG": str(tmp_path / "df-paths"),
-            "PREFLIGHT_FREE_KIB": str(free_kib),
+            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
             "PREFLIGHT_PYTHON_VERSION": python_version,
             "PREFLIGHT_REAL_PYTHON": sys.executable,
-            "PREFLIGHT_VENV_STATUS": "0",
-            "PREFLIGHT_VENV_BROKEN_EXEC": "0",
-            "PREFLIGHT_CURL_LOG": str(tmp_path / "curl-calls"),
-            "PREFLIGHT_CURL_STATUS": str(curl_status),
+            "PREFLIGHT_FREE_KIB": str(free_kib),
+            "PREFLIGHT_DF_LOG": str(tmp_path / "df.log"),
+            "PREFLIGHT_SUDO_LOG": str(tmp_path / "sudo.log"),
+            "PREFLIGHT_PROBE_TEMPLATE_LOG": str(tmp_path / "probe-template.log"),
+            "PREFLIGHT_PROBE_ROOT_LOG": str(tmp_path / "probe-root.log"),
         }
     )
-    return environment, tmp_path
+    return environment
 
 
-def run_preflight(environment, mode, install_dir):
-    return subprocess.run(
-        [
-            "/bin/bash",
-            "-c",
-            'source "$1" && run_installer_preflight "$2" "$3"',
-            "preflight-test",
-            str(INSTALLER),
-            mode,
-            str(install_dir),
-        ],
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=10,
-    )
-
-
-def run_venv_check(environment):
-    return subprocess.run(
-        [
-            "/bin/bash",
-            "-c",
-            'source "$1" && verify_venv_support python3',
-            "venv-test",
-            str(INSTALLER),
-        ],
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=30,
-    )
-
-
-def test_preflight_accepts_supported_host_python_disk_and_release_network(tmp_path):
-    environment, root = make_preflight_environment(tmp_path)
-
-    result = run_preflight(environment, "install", root / "install")
-
-    assert result.returncode == 0, result.stderr
-    assert (root / "curl-calls").read_text(encoding="utf-8")
-
-
-@pytest.mark.parametrize(
-    ("python_version", "expected_message"),
-    [
-        (None, "Python 3.11 or newer is required"),
-        ("3.10", "Python 3.11 or newer is required"),
-    ],
-)
-def test_preflight_rejects_missing_or_too_old_python_before_network(
-    tmp_path, python_version, expected_message
-):
-    environment, root = make_preflight_environment(
-        tmp_path, python_version=python_version or "3.10"
-    )
-    if python_version is None:
-        (root / "bin" / "python3").unlink()
-
-    result = run_preflight(environment, "install", root / "install")
-
-    assert result.returncode != 0
-    assert expected_message in result.stdout + result.stderr
-    assert not (root / "curl-calls").exists()
-
-
-@pytest.mark.parametrize("free_kib", [KIB_FLOOR - 1, KIB_FLOOR])
-def test_preflight_enforces_documented_disk_floor_on_existing_parent(tmp_path, free_kib):
-    environment, root = make_preflight_environment(tmp_path, free_kib=free_kib)
-    install_dir = root / "not-created" / "yet" / "install"
-
-    result = run_preflight(environment, "install", install_dir)
-
-    if free_kib < KIB_FLOOR:
-        assert result.returncode != 0
-        assert "At least 1 GiB of free space" in result.stdout + result.stderr
-        assert not (root / "curl-calls").exists()
-    else:
-        assert result.returncode == 0, result.stderr
-        checked_path = Path((root / "df-paths").read_text(encoding="utf-8").splitlines()[0])
-        assert checked_path == root
-
-
-def test_preflight_reports_unreachable_github_before_package_changes(tmp_path):
-    environment, root = make_preflight_environment(tmp_path, curl_status=28)
-
-    result = run_preflight(environment, "update", root / "install")
-
-    assert result.returncode != 0
-    assert "Could not reach GitHub" in result.stdout + result.stderr
-    assert (root / "curl-calls").is_file()
-
-
-def test_repair_preflight_does_not_probe_release_network(tmp_path):
-    environment, root = make_preflight_environment(tmp_path)
-
-    result = run_preflight(environment, "repair", root / "install")
-
-    assert result.returncode == 0, result.stderr
-    assert not (root / "curl-calls").exists()
-
-
-def test_failed_preflight_stops_before_apt_dependency_installation(tmp_path):
-    environment, root = make_preflight_environment(tmp_path, free_kib=KIB_FLOOR - 1)
-    install_dir = root / "existing-install"
-    (install_dir / "installer").mkdir(parents=True)
-    (install_dir / "installer" / "setup.sh").write_text("#!/bin/sh\n", encoding="utf-8")
-    sudo = root / "bin" / "sudo"
-    sudo.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    sudo.chmod(0o755)
-    apt_log = root / "apt-called"
-    apt_get = root / "bin" / "apt-get"
-    apt_get.write_text(
-        '#!/bin/sh\nprintf called >> "$PREFLIGHT_APT_LOG"\nexit 0\n',
-        encoding="utf-8",
-    )
-    apt_get.chmod(0o755)
-    environment.update(
-        {
-            "ALLOW_ROOT": "1",
-            "KNXOH_INSTALL_DIR": str(install_dir),
-            "PREFLIGHT_APT_LOG": str(apt_log),
-            "PATH": f"{root / 'bin'}:/usr/bin:/bin",
-        }
-    )
+@pytest.mark.parametrize("option", ["--help", "--cancel"])
+def test_help_and_cancel_work_without_python(tmp_path, option):
+    environment = _environment(tmp_path)
+    (tmp_path / "bin" / "python3").unlink()
+    _executable(tmp_path / "bin" / "cat", '#!/bin/sh\nexec /bin/cat "$@"\n')
+    environment["PATH"] = str(tmp_path / "bin")
 
     result = subprocess.run(
-        ["/bin/bash", str(INSTALLER), "--repair"],
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=10,
-    )
-
-    assert result.returncode != 0
-    assert "At least 1 GiB of free space" in result.stdout + result.stderr
-    assert not apt_log.exists()
-
-
-def test_missing_python_is_reported_before_path_configuration_uses_python(tmp_path):
-    environment, root = make_preflight_environment(tmp_path)
-    (root / "bin" / "python3").unlink()
-    environment.pop("KNXOH_INSTALL_DIR")
-    environment.pop("KNXOH_CONFIG_DIR")
-
-    result = subprocess.run(
-        ["/bin/bash", str(INSTALLER), "--repair"],
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=10,
-    )
-
-    assert result.returncode != 0
-    assert "Python 3.11 or newer is required" in result.stdout + result.stderr
-
-
-@pytest.mark.parametrize("arguments", [["--help"], ["--cancel"]])
-def test_help_and_cancel_work_without_python_or_path_overrides(tmp_path, arguments):
-    environment, root = make_preflight_environment(tmp_path)
-    (root / "bin" / "python3").unlink()
-    environment.pop("KNXOH_INSTALL_DIR")
-    environment.pop("KNXOH_CONFIG_DIR")
-    cat = root / "bin" / "cat"
-    cat.write_text('#!/bin/sh\nexec /bin/cat "$@"\n', encoding="utf-8")
-    cat.chmod(0o755)
-
-    result = subprocess.run(
-        ["/bin/bash", str(INSTALLER), *arguments],
+        ["/bin/bash", str(INSTALLER), option],
         env=environment,
         capture_output=True,
         text=True,
@@ -255,16 +97,15 @@ def test_help_and_cancel_work_without_python_or_path_overrides(tmp_path, argumen
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "Python 3.11 or newer is required" not in result.stdout + result.stderr
-    assert not (root / "curl-calls").exists()
+    assert not (tmp_path / "sudo.log").exists()
 
 
-def test_unsupported_python_is_rejected_before_release_resolution(tmp_path):
-    environment, root = make_preflight_environment(tmp_path, python_version="3.10")
-    environment["ALLOW_ROOT"] = "1"
-    sudo = root / "bin" / "sudo"
-    sudo.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    sudo.chmod(0o755)
+def test_missing_python_has_explicit_error_before_path_resolution(tmp_path):
+    environment = _environment(tmp_path)
+    (tmp_path / "bin" / "python3").unlink()
+    environment["PATH"] = str(tmp_path / "bin")
+    environment.pop("KNXOH_INSTALL_DIR")
+    environment.pop("KNXOH_CONFIG_DIR")
 
     result = subprocess.run(
         ["/bin/bash", str(INSTALLER), "--install"],
@@ -275,25 +116,41 @@ def test_unsupported_python_is_rejected_before_release_resolution(tmp_path):
         timeout=10,
     )
 
-    assert result.returncode != 0
+    assert result.returncode == 1
+    assert "python3 was not found" in result.stdout + result.stderr
+    assert not (tmp_path / "sudo.log").exists()
+
+
+def test_unsupported_python_stops_before_sudo(tmp_path):
+    environment = _environment(tmp_path, python_version="3.10")
+
+    result = subprocess.run(
+        ["bash", str(INSTALLER), "--install"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 1
     assert "Python 3.11 or newer is required" in result.stdout + result.stderr
-    assert not (root / "curl-calls").exists()
+    assert not (tmp_path / "sudo.log").exists()
 
 
-def test_installer_runs_bounded_connectivity_probe_before_release_lookup(tmp_path):
-    environment, root = make_preflight_environment(tmp_path, curl_status=28)
-    environment.update(
-        {
-            "ALLOW_ROOT": "1",
-            "PATH": f"{root / 'bin'}:/usr/bin:/bin",
-        }
+def test_sudo_python_must_meet_installer_minimum(tmp_path):
+    environment = _environment(tmp_path)
+    environment["PREFLIGHT_SUDO_PYTHON_VERSION"] = "3.10"
+    _executable(
+        tmp_path / "bin" / "sudo",
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = "python3" ]; then printf "%s\\n" "$PREFLIGHT_SUDO_PYTHON_VERSION"; exit 0; fi\n'
+        'printf "called\\n" >> "$PREFLIGHT_SUDO_LOG"\n'
+        "exit 99\n",
     )
-    sudo = root / "bin" / "sudo"
-    sudo.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    sudo.chmod(0o755)
 
     result = subprocess.run(
-        ["/bin/bash", str(INSTALLER), "--install"],
+        ["bash", "-c", 'source "$1"; check_sudo_installer_python', "preflight", str(INSTALLER)],
         env=environment,
         capture_output=True,
         text=True,
@@ -301,16 +158,79 @@ def test_installer_runs_bounded_connectivity_probe_before_release_lookup(tmp_pat
         timeout=10,
     )
 
-    output = result.stdout + result.stderr
-    assert result.returncode != 0
-    assert "Could not reach GitHub" in output
-    assert "Could not retrieve the latest stable GitHub release" not in output
-    assert (root / "curl-calls").read_text(encoding="utf-8").count("called") == 1
+    assert result.returncode == 1
+    assert "must be available through sudo as python3" in result.stdout + result.stderr
 
 
-def test_os_preflight_handles_missing_id_like_without_unbound_variable(tmp_path):
-    environment, root = make_preflight_environment(tmp_path)
-    os_release = root / "unsupported-os-release"
+def test_unsupported_python_is_rejected_before_reading_saved_paths(tmp_path):
+    environment = _environment(tmp_path, python_version="3.10")
+    environment.pop("KNXOH_INSTALL_DIR")
+    environment.pop("KNXOH_CONFIG_DIR")
+    paths_file = tmp_path / "paths.env"
+    paths_file.write_text("KNXOH_INSTALL_DIR='unterminated\n", encoding="utf-8")
+    environment["KNXOH_PATHS_FILE"] = str(paths_file)
+
+    result = subprocess.run(
+        ["bash", str(INSTALLER), "--install"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 1
+    assert "Python 3.11 or newer is required" in result.stdout + result.stderr
+    assert "No closing quotation" not in result.stderr
+    assert not (tmp_path / "sudo.log").exists()
+
+
+def test_installed_dependencies_do_not_refresh_package_lists(tmp_path):
+    environment = _environment(tmp_path)
+    dpkg_query = """#!/bin/sh
+printf "installed\\n" >> "$PREFLIGHT_DPKG_LOG"
+printf "installed\\n"
+"""
+    _executable(
+        tmp_path / "bin" / "dpkg-query",
+        dpkg_query,
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", 'source "$1"; install_dependencies', "preflight", str(INSTALLER)],
+        env={**environment, "PREFLIGHT_DPKG_LOG": str(tmp_path / "dpkg.log")},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len((tmp_path / "dpkg.log").read_text(encoding="utf-8").splitlines()) == 6
+    assert not (tmp_path / "sudo.log").exists()
+
+
+def test_low_disk_space_stops_before_sudo_or_release_lookup(tmp_path):
+    environment = _environment(tmp_path, free_kib=1048575)
+
+    result = subprocess.run(
+        ["bash", str(INSTALLER), "--install"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 1
+    assert "At least 1 GiB of free space" in result.stdout + result.stderr
+    assert (tmp_path / "df.log").read_text(encoding="utf-8").splitlines() == [str(tmp_path)]
+    assert not (tmp_path / "sudo.log").exists()
+
+
+def test_os_check_handles_missing_id_like(tmp_path):
+    environment = _environment(tmp_path)
+    os_release = tmp_path / "os-release"
     os_release.write_text('ID=example\nPRETTY_NAME="Example Linux"\n', encoding="utf-8")
 
     result = subprocess.run(
@@ -318,7 +238,7 @@ def test_os_preflight_handles_missing_id_like_without_unbound_variable(tmp_path)
             "/bin/bash",
             "-c",
             'source "$1"; check_os "$2"',
-            "os-check-test",
+            "preflight",
             str(INSTALLER),
             str(os_release),
         ],
@@ -333,102 +253,197 @@ def test_os_preflight_handles_missing_id_like_without_unbound_variable(tmp_path)
     assert "unbound variable" not in result.stderr
 
 
-def test_venv_preflight_creates_and_removes_temporary_environment(tmp_path):
-    environment, root = make_preflight_environment(tmp_path)
-    environment.update({"PATH": f"{root / 'bin'}:/usr/bin:/bin", "TMPDIR": str(root)})
-
-    result = run_venv_check(environment)
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert list(root.glob("knxoh-preflight.*")) == []
-
-
-def test_venv_preflight_reports_creation_failure_and_cleans_up(tmp_path):
-    environment, root = make_preflight_environment(tmp_path)
-    environment.update(
-        {
-            "PATH": f"{root / 'bin'}:/usr/bin:/bin",
-            "TMPDIR": str(root),
-            "PREFLIGHT_VENV_STATUS": "7",
-        }
-    )
-
-    result = run_venv_check(environment)
-
-    assert result.returncode != 0
-    assert (
-        "Could not create a temporary Python virtual environment" in result.stdout + result.stderr
-    )
-    assert list(root.glob("knxoh-preflight.*")) == []
-
-
-def test_venv_preflight_reports_unusable_interpreter_and_cleans_up(tmp_path):
-    environment, root = make_preflight_environment(tmp_path)
-    environment.update(
-        {
-            "PATH": f"{root / 'bin'}:/usr/bin:/bin",
-            "TMPDIR": str(root),
-            "PREFLIGHT_VENV_BROKEN_EXEC": "1",
-        }
-    )
-
-    result = run_venv_check(environment)
-
-    assert result.returncode != 0
-    assert "The temporary Python virtual environment is not usable" in result.stdout + result.stderr
-    assert list(root.glob("knxoh-preflight.*")) == []
-
-
-def test_installer_checks_venv_after_packages_but_before_setup(tmp_path):
-    environment, root = make_preflight_environment(tmp_path)
-    install_dir = root / "existing-install"
-    installer_dir = install_dir / "installer"
-    installer_dir.mkdir(parents=True)
-    setup_marker = root / "setup-ran"
-    (installer_dir / "setup.sh").write_text(
-        f"#!/bin/sh\nprintf called > '{setup_marker}'\n", encoding="utf-8"
-    )
-    (installer_dir / "backup_cleanup.sh").write_text("#!/bin/sh\n", encoding="utf-8")
-    sudo = root / "bin" / "sudo"
-    sudo.write_text(
-        "#!/bin/sh\n"
-        "if [ \"$1\" = '-n' ]; then exit 0; fi\n"
-        'if [ "$1" = \'apt-get\' ]; then shift; exec apt-get "$@"; fi\n'
-        "exit 0\n",
-        encoding="utf-8",
-    )
-    sudo.chmod(0o755)
-    apt_log = root / "apt-called"
-    apt_get = root / "bin" / "apt-get"
-    apt_get.write_text(
-        '#!/bin/sh\nprintf called >> "$PREFLIGHT_APT_LOG"\nexit 0\n',
-        encoding="utf-8",
-    )
-    apt_get.chmod(0o755)
-    environment.update(
-        {
-            "ALLOW_ROOT": "1",
-            "KNXOH_INSTALL_DIR": str(install_dir),
-            "PREFLIGHT_APT_LOG": str(apt_log),
-            "PREFLIGHT_VENV_STATUS": "7",
-            "TMPDIR": str(root),
-            "PATH": f"{root / 'bin'}:/usr/bin:/bin",
-        }
-    )
+def test_venv_probe_fails_cleanly_before_setup(tmp_path):
+    environment = _environment(tmp_path)
+    different_tmp = tmp_path / "tmpdir"
+    different_tmp.mkdir()
+    environment["TMPDIR"] = str(different_tmp)
+    _executable(tmp_path / "bin" / "python3", "#!/bin/sh\nexit 7\n")
 
     result = subprocess.run(
-        ["/bin/bash", str(INSTALLER), "--repair"],
+        ["bash", "-c", 'source "$1"; verify_venv_support', "preflight", str(INSTALLER)],
         env=environment,
         capture_output=True,
         text=True,
         check=False,
-        timeout=15,
+        timeout=10,
     )
 
-    assert result.returncode != 0
-    assert apt_log.is_file()
-    assert (
-        "Could not create a temporary Python virtual environment" in result.stdout + result.stderr
+    assert result.returncode == 1
+    assert "Could not create a temporary Python virtual environment" in result.stdout
+    assert (tmp_path / "probe-template.log").read_text(encoding="utf-8").strip() == str(
+        tmp_path / ".knxoh-preflight.XXXXXX"
     )
-    assert not setup_marker.exists()
-    assert list(root.glob("knxoh-preflight.*")) == []
+    assert list(tmp_path.glob(".knxoh-preflight.*")) == []
+    assert list(different_tmp.iterdir()) == []
+
+
+def test_venv_probe_accepts_usable_interpreter_and_cleans_up(tmp_path):
+    environment = _environment(tmp_path)
+    different_tmp = tmp_path / "tmpdir"
+    different_tmp.mkdir()
+    environment["TMPDIR"] = str(different_tmp)
+    _executable(
+        tmp_path / "bin" / "sudo",
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = "mktemp" ]; then\n'
+        '    printf "%s\\n" "$3" > "$PREFLIGHT_PROBE_TEMPLATE_LOG"\n'
+        '    probe_root="$(command mktemp -d "$3")" || exit $?\n'
+        '    printf "%s\\n" "$probe_root" > "$PREFLIGHT_PROBE_ROOT_LOG"\n'
+        '    chmod 000 "$probe_root"\n'
+        '    printf "%s\\n" "$probe_root"\n'
+        "    exit 0\n"
+        "fi\n"
+        'if [ "${1:-}" = "python3" ]; then\n'
+        "    shift\n"
+        '    chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"\n'
+        '    "$PREFLIGHT_REAL_PYTHON" "$@"\n'
+        "    status=$?\n"
+        '    chmod 000 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"\n'
+        '    exit "$status"\n'
+        "fi\n"
+        'if [ -f "$PREFLIGHT_PROBE_ROOT_LOG" ] && [ "$1" = "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")/venv/bin/python" ]; then\n'
+        '    chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"\n'
+        '    exec "$@"\n'
+        "fi\n"
+        'if [ "${1:-}" = "rm" ]; then\n'
+        '    if [ -f "$PREFLIGHT_PROBE_ROOT_LOG" ]; then chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"; fi\n'
+        "    shift\n"
+        '    exec /bin/rm "$@"\n'
+        "fi\n"
+        'exec "$@"\n',
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", 'source "$1"; verify_venv_support', "preflight", str(INSTALLER)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=40,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "probe-template.log").read_text(encoding="utf-8").strip() == str(
+        tmp_path / ".knxoh-preflight.XXXXXX"
+    )
+    assert list(tmp_path.glob(".knxoh-preflight.*")) == []
+    assert list(different_tmp.iterdir()) == []
+
+
+def test_venv_probe_checks_the_complete_ancestor_chain(tmp_path):
+    environment = _environment(tmp_path)
+    untrusted_parent = tmp_path / "writable-parent"
+    trusted_candidate = untrusted_parent / "root-owned"
+    install_dir = trusted_candidate / "install"
+    install_dir.mkdir(parents=True)
+    environment["KNXOH_INSTALL_DIR"] = str(install_dir)
+    environment["PREFLIGHT_SERVICE_WRITABLE_DIR"] = str(install_dir)
+    environment["PREFLIGHT_UNTRUSTED_PARENT"] = str(untrusted_parent)
+    different_tmp = tmp_path / "tmpdir"
+    different_tmp.mkdir()
+    environment["TMPDIR"] = str(different_tmp)
+    _executable(
+        tmp_path / "bin" / "sudo",
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = "mktemp" ]; then\n'
+        '    printf "%s\\n" "$3" > "$PREFLIGHT_PROBE_TEMPLATE_LOG"\n'
+        '    probe_root="$(command mktemp -d "$3")" || exit $?\n'
+        '    printf "%s\\n" "$probe_root" > "$PREFLIGHT_PROBE_ROOT_LOG"\n'
+        '    chmod 000 "$probe_root"\n'
+        '    printf "%s\\n" "$probe_root"\n'
+        "    exit 0\n"
+        "fi\n"
+        'if [ "${1:-}" = "python3" ]; then\n'
+        "    shift\n"
+        '    chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"\n'
+        '    "$PREFLIGHT_REAL_PYTHON" "$@"\n'
+        "    status=$?\n"
+        '    chmod 000 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"\n'
+        '    exit "$status"\n'
+        "fi\n"
+        'if [ -f "$PREFLIGHT_PROBE_ROOT_LOG" ] && [ "$1" = "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")/venv/bin/python" ]; then\n'
+        '    chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"\n'
+        '    exec "$@"\n'
+        "fi\n"
+        'if [ "${1:-}" = "rm" ]; then\n'
+        '    if [ -f "$PREFLIGHT_PROBE_ROOT_LOG" ]; then chmod 700 "$(cat "$PREFLIGHT_PROBE_ROOT_LOG")"; fi\n'
+        "    shift\n"
+        '    exec /bin/rm "$@"\n'
+        "fi\n"
+        'exec "$@"\n',
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", 'source "$1"; verify_venv_support', "preflight", str(INSTALLER)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=40,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "probe-template.log").read_text(encoding="utf-8").strip() == str(
+        tmp_path / ".knxoh-preflight.XXXXXX"
+    )
+    assert list(install_dir.iterdir()) == []
+    assert list(tmp_path.glob(".knxoh-preflight.*")) == []
+    assert list(different_tmp.iterdir()) == []
+
+
+def test_venv_probe_supports_service_owned_mount_root(tmp_path):
+    environment = _environment(tmp_path)
+    mount_root = tmp_path / "mount-root"
+    mount_root.mkdir()
+    environment["KNXOH_INSTALL_DIR"] = str(mount_root)
+    environment["PREFLIGHT_SERVICE_WRITABLE_DIR"] = str(mount_root)
+    environment["PREFLIGHT_MOUNT_ROOT_DIR"] = str(mount_root)
+    environment["PREFLIGHT_PROBE_USER_LOG"] = str(tmp_path / "probe-user.log")
+    _executable(
+        tmp_path / "bin" / "id",
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = "-u" ] && [ "${2:-}" = "knxohui" ]; then echo 1001; exit 0; fi\n'
+        "exit 1\n",
+    )
+    _executable(
+        tmp_path / "bin" / "stat",
+        "#!/bin/sh\n"
+        'if [ "$2" = "%d" ]; then\n'
+        '    if [ "$4" = "$PREFLIGHT_MOUNT_ROOT_DIR" ]; then echo 2; else echo 1; fi\n'
+        "    exit 0\n"
+        "fi\n"
+        'if [ "$2" = "%u %a" ]; then\n'
+        '    if [ "$4" = "$PREFLIGHT_MOUNT_ROOT_DIR" ]; then echo "1001 755"; else echo "0 755"; fi\n'
+        "    exit 0\n"
+        "fi\n"
+        'if [ "$4" = "$PREFLIGHT_MOUNT_ROOT_DIR" ]; then echo "1001 755 2"; else echo "0 755 1"; fi\n',
+    )
+    _executable(
+        tmp_path / "bin" / "sudo",
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = "-u" ] && [ "${2:-}" = "knxohui" ]; then\n'
+        "    shift 2\n"
+        '    printf "%s\\n" "$*" >> "$PREFLIGHT_PROBE_USER_LOG"\n'
+        '    exec "$@"\n'
+        "fi\n"
+        'printf "Unexpected root sudo call: %s\\n" "$*" >&2\n'
+        "exit 99\n",
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", 'source "$1"; verify_venv_support', "preflight", str(INSTALLER)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=40,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    probe_calls = (tmp_path / "probe-user.log").read_text(encoding="utf-8").splitlines()
+    assert probe_calls[0].startswith("mktemp -d ")
+    assert probe_calls[1].startswith("python3 -m venv ")
+    assert probe_calls[2].endswith("/venv/bin/python -c import sys")
+    assert probe_calls[3].startswith("rm -rf -- ")
+    assert list(mount_root.iterdir()) == []

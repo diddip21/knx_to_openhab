@@ -12,12 +12,24 @@ INSTALLER = ROOT / "install.sh"
 pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="Bash is required")
 
 
-def run_installer(tmp_path, args, *, existing=False, git_checkout=False, setup_script=False):
+def run_installer(
+    tmp_path,
+    args,
+    *,
+    existing=False,
+    git_checkout=False,
+    setup_script=False,
+    transactional=False,
+    curl_sentinel=False,
+):
     install_dir = tmp_path / "install"
     if existing:
         install_dir.mkdir(exist_ok=True)
     if git_checkout:
         (install_dir / ".git").mkdir()
+    if transactional:
+        (install_dir / "releases").mkdir(parents=True, exist_ok=True)
+        (install_dir / "current").symlink_to("releases/v1.0.0")
     if setup_script:
         setup_path = install_dir / "installer" / "setup.sh"
         setup_path.parent.mkdir(parents=True, exist_ok=True)
@@ -32,6 +44,14 @@ def run_installer(tmp_path, args, *, existing=False, git_checkout=False, setup_s
         encoding="utf-8",
     )
     fake_sudo.chmod(0o755)
+    curl_marker = tmp_path / "curl-called"
+    if curl_sentinel:
+        fake_curl = fake_bin / "curl"
+        fake_curl.write_text(
+            '#!/bin/sh\nprintf called >> "$CURL_MARKER"\nexit 97\n',
+            encoding="utf-8",
+        )
+        fake_curl.chmod(0o755)
 
     environment = os.environ.copy()
     environment.update(
@@ -40,6 +60,7 @@ def run_installer(tmp_path, args, *, existing=False, git_checkout=False, setup_s
             "KNXOH_INSTALL_DIR": str(install_dir),
             "KNXOH_CONFIG_DIR": str(tmp_path / "config"),
             "SUDO_MARKER": str(sudo_marker),
+            "CURL_MARKER": str(curl_marker),
             "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
         }
     )
@@ -117,6 +138,23 @@ def test_update_requires_an_existing_installation(tmp_path):
 
     assert result.returncode == 2
     assert "No existing installation found" in result.stdout + result.stderr
+    assert not sudo_marker.exists()
+
+
+def test_transactional_update_is_rejected_before_network_or_sudo(tmp_path):
+    result, _, sudo_marker = run_installer(
+        tmp_path,
+        ["--update"],
+        existing=True,
+        git_checkout=True,
+        transactional=True,
+        curl_sentinel=True,
+    )
+
+    assert result.returncode != 0
+    assert "transactional releases" in result.stdout + result.stderr
+    assert "Web UI" in result.stdout + result.stderr
+    assert not (tmp_path / "curl-called").exists()
     assert not sudo_marker.exists()
 
 

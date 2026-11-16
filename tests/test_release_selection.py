@@ -28,7 +28,7 @@ def _source_environment(tmp_path):
 
 def _run_sourced_installer(environment, command, *args):
     return subprocess.run(
-        ["bash", "-c", 'source "$INSTALLER_PATH"; ' + command, "knxoh-test", *args],
+        ["/bin/bash", "-c", 'source "$INSTALLER_PATH"; ' + command, "knxoh-test", *args],
         env=environment,
         capture_output=True,
         text=True,
@@ -179,6 +179,16 @@ def test_missing_release_fails_without_falling_back_to_main(tmp_path):
     assert "latest stable GitHub release" in result.stderr
 
 
+def test_missing_curl_has_an_actionable_release_selection_error(tmp_path):
+    fake_bin, environment = _source_environment(tmp_path)
+    environment["PATH"] = str(fake_bin)
+
+    result = _run_sourced_installer(environment, 'resolve_release_version ""')
+
+    assert result.returncode != 0
+    assert "curl is required to query GitHub releases" in result.stderr
+
+
 @pytest.mark.parametrize(
     "args",
     [
@@ -283,6 +293,24 @@ def test_update_fetches_and_checks_out_the_selected_tag(tmp_path):
     assert "checkout --detach v1.2.3" in commands
     assert "pull" not in commands
     assert "main" not in commands
+
+
+def test_update_refuses_to_modify_legacy_checkout_when_current_release_is_active(tmp_path):
+    fake_bin, environment = _source_environment(tmp_path)
+    git_log = _fake_update_commands(fake_bin, environment)
+    install_dir = Path(environment["KNXOH_INSTALL_DIR"])
+    install_dir.mkdir()
+    (install_dir / "releases").mkdir()
+    (install_dir / "current").symlink_to("releases/v1.0.0")
+
+    result = _run_sourced_installer(
+        environment,
+        "INSTALL_MODE=update; RELEASE_TAG=v1.2.3; update_repository",
+    )
+
+    assert result.returncode == 1
+    assert "transactional releases" in result.stdout
+    assert not git_log.exists()
 
 
 def test_update_stops_before_fetch_when_tracked_files_are_dirty(tmp_path):

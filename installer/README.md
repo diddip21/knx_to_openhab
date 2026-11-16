@@ -7,6 +7,7 @@ This directory contains installation and maintenance scripts for the web UI.
 - **`setup.sh`** — Main setup/repair script (run as sudo from a checkout)
 - **`backup_cleanup.sh`** — Backup retention enforcement script
 - **`knxohui.service`** — systemd unit for Flask web server
+- **`knxohui-update.service`** — independent systemd unit for release updates
 - **`knxohui-backup-cleanup.service`** — systemd unit for cleanup oneshot
 - **`knxohui-backup-cleanup.timer`** — systemd timer (runs cleanup daily)
 
@@ -25,7 +26,7 @@ This will:
 1. Install the application under `/opt/knx_to_openhab` by default
 2. Migrate settings and runtime data out of the application tree
 3. Provision the service user and only the generated OpenHAB output files
-4. Install systemd launchers and the backup-cleanup timer
+4. Install systemd launchers, the update worker, and the backup-cleanup timer
 5. Install and validate the restricted sudoers policy with `visudo`
 6. Start the Flask web server on the configured port (8085 by default)
 
@@ -34,6 +35,14 @@ The installation directories can be selected with `KNXOH_INSTALL_DIR`,
 `setup.sh`. Existing values are saved in `/etc/knx_to_openhab/paths.env` and
 reused on later setup runs. The paths must be absolute, separate, and outside
 the application directory.
+
+Before changing services, setup checks all four `knxohui` systemd unit names.
+An existing unmasked unit at another location or an unrecognized unit file in
+`/etc/systemd/system` stops setup with an error. Existing project units from
+older releases are recognized by their known description and launch command.
+Administrator-masked units remain untouched. Resolve a name collision with
+the unit's owner before retrying setup; do not remove a unit solely to make
+the installer pass.
 
 ### Runtime paths and migration
 
@@ -51,8 +60,14 @@ the application directory.
 `setup.sh` copies existing settings, jobs, uploads, and backups before changing
 the active paths. It checks for conflicting files and refuses symlinked or
 system-wide legacy source directories. Only after a successful copy does it
-remove legacy job or backup directories inside the application tree. The old
-root `config.json` is copied to `generator.json` before the application tree is
+remove legacy job or backup directories inside the application tree. Runtime
+files are copied through temporary files, so most interrupted copies leave no
+partial final destination and can be retried. If a restart finds a tracked
+temporary without its final destination, or an incomplete exclusive-copy
+fallback target, setup preserves the marker and files for manual inspection
+rather than trusting a device/inode identity that may have been reused. Do not
+remove such files until their ownership and contents are verified. The old root
+`config.json` is copied to `generator.json` before the application tree is
 reset to the packaged defaults. Existing user-chosen Web UI passwords are converted to
 Argon2id hashes in the restricted secrets file. If no usable password exists, setup
 generates a random password, stores only its hash, and prints the new password once. This
@@ -143,17 +158,21 @@ covers ETS preparation and generator settings.
 
 ## Service user privileges
 
-The web UI runs as the unprivileged `knxohui` service user. Git-based application
-updates run as that user; Git is not granted through sudo. The sudoers policy in
+The web UI runs as the unprivileged `knxohui` service user. Application updates
+are queued by that user and run in the separate `knxohui-update.service`, so a
+restart of the web service cannot kill the updater before its health check or
+rollback completes. Git is not granted through sudo. The sudoers policy in
 `knxohui.sudoers` permits only exact `systemctl restart` and `systemctl is-active`
 commands for `openhab.service`, `knxohui.service`, and `evcc.service`. It does not
 grant a shell, arbitrary Git commands, or wildcard command arguments. Re-running
 `setup.sh` or `fix_permissions.sh` replaces the prior policy and checks it with
 `visudo -cf`.
 
-The package update buttons use the root-owned `/usr/local/sbin/knxohui-service-update`
-helper. Sudoers allows only its `refresh`, `openhab`, `evcc`, and `provision-yaml`
-actions. The YAML action runs a separate root-owned helper that provisions only the
+The update worker is started only through the fixed `start-web-update` action of
+the root-owned `/usr/local/sbin/knxohui-service-update` helper. Package update
+buttons use the same helper. Sudoers allows only its `start-web-update`, `refresh`,
+`openhab`, `evcc`, and `provision-yaml` actions. The YAML action runs a separate
+root-owned helper that provisions only the
 configured `.yaml` target directly under the protected OpenHAB `yaml/` directory;
 it does not import or execute code from the application tree. The installer preserves
 an existing `web_ui/backend/config.json` when copying new code and records the
@@ -200,6 +219,21 @@ been installed, but application source and setup have not yet been changed.
 Repair is not fully offline: the existing dependency step still runs
 `apt-get update`.
 
+Before requesting sudo, the entry point checks for Python 3.11 or newer and at
+least 1 GiB of free space on the installation filesystem. `--install` and
+`--update` resolve the selected GitHub release before installing packages, so
+an unavailable release or network fails before package changes. After system
+packages are available, a temporary Python virtual environment is created and
+removed to verify venv support before cloning or running setup. `--repair`
+does not fetch a release, but its dependency and setup steps may still need
+network access. When all required system packages are installed, a repeated
+run skips `apt-get update`; Python package installation in setup may still
+access a package index. `--help` and `--cancel` work without Python.
+Before setup creates or reuses the `knxohui` service account, it checks that
+an existing account uses the matching primary group and a non-login shell.
+Incompatible accounts stop setup before services or file ownership change.
+When setup fails, the top-level installer returns its exit code to the caller.
+
 On a first install, running without a mode keeps `--install` as the default.
 For an existing installation, an interactive run asks for update, repair, or
 cancel; a non-interactive run stops with an explicit instruction instead of
@@ -207,6 +241,21 @@ changing the system. An existing directory is never overwritten by
 `--install`. These choices make the entry point safer; they do not yet make
 every operation in `setup.sh` idempotent or add a reinstall flow (Issue #25
 remains open for those items).
+
+During first installation, the checkout is copied into a temporary directory
+beside the final installation path and moved into place only after the copy
+succeeds. If copying fails, the final path stays absent and `--install` can be
+retried. If the subsequent setup fails, the copied checkout remains in place;
+use `bash install.sh --repair` after correcting the reported cause.
+Activation uses Linux's atomic no-clobber rename; it refuses an installation
+path that appears during copying and never falls back to a cross-filesystem copy.
+
+During setup, the installer stops its own Web UI service, then checks whether
+the configured bind address and port are available before copying files or
+migrating runtime data. If another process owns the address, setup exits with
+an error and attempts to restore services that were running before setup.
+Because a process can claim the port after this check, the final systemd start
+remains the definitive availability check.
 
 The top-level installer resolves the GitHub release and checks out its exact
 tag. It does not yet stage a separate release directory or verify the published

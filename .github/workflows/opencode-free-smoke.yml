@@ -1,0 +1,172 @@
+name: OpenCode + Superpowers free-model smoke test
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/opencode-free-smoke.yml"
+      - "opencode.jsonc"
+      - ".opencode/agents/ci-smoke.md"
+      - "docs/OPENCODE_FREE_SMOKE.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opencode-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    # Fork PRs are intentionally not executed. No secrets are passed to this job.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - opencode/glm-5.3-flash-free
+          - opencode/deepseek-v4.1-flash-free
+
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Install OpenCode V2
+        run: |
+          npm install --global @opencode/cli
+          opencode --version
+
+      - name: Check pinned test configuration
+        shell: bash
+        run: |
+          grep -Fq 'superpowers@git+https://github.com/obra/superpowers.git#v7.0.2' opencode.jsonc
+          test -f .opencode/agents/ci-smoke.md
+          test -f AGENTS.md
+          opencode debug config > /dev/null
+
+      - name: Check anonymous free-model availability
+        shell: bash
+        env:
+          MODEL: ${{ matrix.model }}
+        run: |
+          set -euo pipefail
+          opencode models > "$RUNNER_TEMP/models.txt"
+          if ! grep -Fxq "$MODEL" "$RUNNER_TEMP/models.txt"; then
+            echo "::error::Free model $MODEL is not listed on this fresh runner."
+            echo "Available OpenCode free models (if any):"
+            grep '^opencode/.*free$' "$RUNNER_TEMP/models.txt" || true
+            exit 1
+          fi
+          echo "Free model found: $MODEL"
+
+      - name: Run read-only agent and load Superpowers skill
+        shell: bash
+        env:
+          CI: "true"
+          MODEL: ${{ matrix.model }}
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=10s 420s \
+            opencode run --standalone --archived --format json \
+              --agent ci-smoke --model "$MODEL" \
+              "Use the skill tool to load the Superpowers brainstorming skill. Read AGENTS.md. If both succeed, include one standalone line containing exactly SMOKE_OK, then one sentence identifying the project. Otherwise explain the failure and do not include a standalone SMOKE_OK line. Do not edit anything." \
+            < /dev/null > "$RUNNER_TEMP/opencode-events.jsonl" \
+            2> "$RUNNER_TEMP/opencode-stderr.log"
+
+          jq -r 'select(.type == "text") | .part.text // empty' \
+            "$RUNNER_TEMP/opencode-events.jsonl" > "$RUNNER_TEMP/answer.txt"
+          cat "$RUNNER_TEMP/answer.txt"
+
+          jq -c '
+            select(.type == "tool_use" and (.part.tool == "skill" or .part.tool == "read"))
+            | {
+                tool: .part.tool,
+                status: .part.state.status,
+                input_keys: (.part.state.input // {} | keys),
+                skill_name: .part.state.input.name,
+                skill_id: .part.state.input.id,
+                read_filePath: .part.state.input.filePath,
+                read_path: .part.state.input.path
+              }
+          ' "$RUNNER_TEMP/opencode-events.jsonl" > "$RUNNER_TEMP/tool-calls.jsonl"
+          cat "$RUNNER_TEMP/tool-calls.jsonl"
+
+          if ! grep -Fxq "SMOKE_OK" "$RUNNER_TEMP/answer.txt"; then
+            echo "::error::No standalone response line exactly matching SMOKE_OK was found."
+            exit 1
+          fi
+          if ! jq -e '
+            select(
+              .type == "tool_use"
+              and .part.tool == "skill"
+              and .part.state.status == "completed"
+              and (
+                .part.state.input.name == "brainstorming"
+                or .part.state.input.id == "brainstorming"
+              )
+            )
+          ' "$RUNNER_TEMP/opencode-events.jsonl" > /dev/null; then
+            echo "::error::No completed brainstorming skill call found."
+            exit 1
+          fi
+          if ! jq -e --arg workspace "$GITHUB_WORKSPACE" '
+            select(
+              .type == "tool_use"
+              and .part.tool == "read"
+              and .part.state.status == "completed"
+              and (
+                .part.state.input.path == "AGENTS.md"
+                or .part.state.input.path == ($workspace + "/AGENTS.md")
+                or .part.state.input.filePath == "AGENTS.md"
+                or .part.state.input.filePath == ($workspace + "/AGENTS.md")
+              )
+            )
+          ' "$RUNNER_TEMP/opencode-events.jsonl" > /dev/null; then
+            echo "::error::No completed read of AGENTS.md found."
+            exit 1
+          fi
+
+      - name: Write test summary
+        if: always()
+        shell: bash
+        env:
+          MODEL: ${{ matrix.model }}
+        run: |
+          {
+            echo "### OpenCode + Superpowers: $MODEL"
+            echo
+            echo "This run used no model API key, and the test agent had read-only tool permissions."
+            echo
+            echo "Check the job status and uploaded JSONL for the exact requested skill and AGENTS.md read calls."
+            echo "Success is a basic smoke test, not evidence of dependable autonomous issue resolution."
+            if [ -f "$RUNNER_TEMP/answer.txt" ]; then
+              echo
+              echo '#### Agent response'
+              echo '~~~text'
+              head -c 3000 "$RUNNER_TEMP/answer.txt"
+              echo
+              echo '~~~'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: opencode-smoke-${{ matrix.model == 'opencode/glm-5.3-flash-free' && 'glm' || 'deepseek' }}
+          path: |
+            ${{ runner.temp }}/models.txt
+            ${{ runner.temp }}/opencode-events.jsonl
+            ${{ runner.temp }}/opencode-stderr.log
+            ${{ runner.temp }}/answer.txt
+          if-no-files-found: ignore
+          retention-days: 5

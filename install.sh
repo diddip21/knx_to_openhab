@@ -13,7 +13,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 REPO_URL="https://github.com/diddip21/knx_to_openhab.git"
-PATHS_FILE="/etc/knx_to_openhab/paths.env"
+PATHS_FILE="${KNXOH_PATHS_FILE:-/etc/knx_to_openhab/paths.env}"
 read_saved_install_dir() {
     python3 - "$PATHS_FILE" <<'PY'
 import shlex
@@ -52,6 +52,7 @@ PY
 }
 INSTALL_DIR="${KNXOH_INSTALL_DIR:-}"
 CONFIG_DIR="${KNXOH_CONFIG_DIR:-}"
+SETUP_APP_DIR=""
 REQUESTED_VERSION=""
 RELEASE_VERSION=""
 RELEASE_TAG=""
@@ -75,8 +76,7 @@ log_error() {
 
 is_valid_semver() {
     local pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$'
-    local prerelease
-    local identifier
+    local prerelease identifier
     local -a identifiers
 
     if [[ ! "$1" =~ $pattern ]]; then
@@ -150,6 +150,10 @@ PY
 resolve_release_version() {
     local requested_version="${1:-}"
     local endpoint="/releases/latest"
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "curl is required to query GitHub releases; install the curl package and retry." >&2
+        return 1
+    fi
     if [[ -n "$requested_version" ]]; then
         endpoint="/releases/tags/v$requested_version"
     fi
@@ -292,6 +296,57 @@ parse_install_mode() {
     fi
 }
 
+resolve_repair_setup_dir() {
+    local canonical_install_dir
+    if ! canonical_install_dir="$(cd -- "$INSTALL_DIR" && pwd -P)"; then
+        log_error "Cannot resolve the installation directory for repair: $INSTALL_DIR"
+        return 2
+    fi
+    SETUP_APP_DIR="$canonical_install_dir"
+    if [[ -L "$canonical_install_dir/current" ]]; then
+        local current_release releases_dir setup_script
+        if ! current_release="$(readlink -f -- "$canonical_install_dir/current")"; then
+            log_error "Cannot resolve the active release link for repair."
+            return 2
+        fi
+        releases_dir="$canonical_install_dir/releases"
+        case "$current_release" in
+            "$releases_dir"/*) ;;
+            *)
+                log_error "The active release link points outside $releases_dir."
+                return 2
+                ;;
+        esac
+        if [[ ! -d "$current_release" || \
+            ! -d "$current_release/installer" || -L "$current_release/installer" || \
+            ! -f "$current_release/installer/setup.sh" || \
+            -L "$current_release/installer/setup.sh" ]]; then
+            log_error "The active release does not contain a safe installer/setup.sh."
+            return 2
+        fi
+        if ! setup_script="$(readlink -f -- "$current_release/installer/setup.sh")" || \
+            [[ "$setup_script" != "$current_release/"* ]]; then
+            log_error "The active release setup script resolves outside the release directory."
+            return 2
+        fi
+        SETUP_APP_DIR="$current_release"
+    elif [[ -e "$canonical_install_dir/current" ]]; then
+        log_error "The current release path exists but is not a release symlink."
+        return 2
+    elif [[ ! -d "$canonical_install_dir/installer" || -L "$canonical_install_dir/installer" || \
+        ! -f "$canonical_install_dir/installer/setup.sh" || -L "$canonical_install_dir/installer/setup.sh" ]]; then
+        log_error "Cannot repair $canonical_install_dir: installer/setup.sh is missing or unsafe."
+        return 2
+    else
+        local legacy_setup_script
+        if ! legacy_setup_script="$(readlink -f -- "$canonical_install_dir/installer/setup.sh")" || \
+            [[ "$legacy_setup_script" != "$canonical_install_dir/"* ]]; then
+            log_error "The legacy setup script resolves outside the installation directory."
+            return 2
+        fi
+    fi
+}
+
 select_install_mode() {
     if [[ "$INSTALL_MODE" == "cancel" ]]; then
         log_info "Installation cancelled; no system or installation changes were made."
@@ -358,10 +413,7 @@ select_install_mode() {
                 fi
                 ;;
             repair)
-                if [[ ! -f "$INSTALL_DIR/installer/setup.sh" ]]; then
-                    log_error "Cannot repair $INSTALL_DIR: installer/setup.sh is missing."
-                    exit 2
-                fi
+                resolve_repair_setup_dir || exit 2
                 ;;
             *)
                 log_error "Invalid installer mode: $INSTALL_MODE"
@@ -422,19 +474,10 @@ check_os() {
     fi
 }
 
-check_installer_python_available() {
-    if ! command -v python3 >/dev/null 2>&1; then
-        log_error "Python 3.11 or newer is required by the installer, but python3 was not found."
-        return 1
-    fi
-}
-
 check_installer_python() {
-    local python_version
-    local python_major
-    local python_minor
-
-    if ! check_installer_python_available; then
+    local python_version python_major python_minor
+    if ! command -v python3 >/dev/null 2>&1; then
+        log_error "Python 3.11 or newer is required, but python3 was not found."
         return 1
     fi
     if ! python_version="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" ||
@@ -444,23 +487,15 @@ check_installer_python() {
     fi
     IFS=. read -r python_major python_minor <<<"$python_version"
     if (( python_major < 3 || (python_major == 3 && python_minor < 11) )); then
-        log_error "Python 3.11 or newer is required by the installer; found Python $python_version."
+        log_error "Python 3.11 or newer is required; found Python $python_version."
         return 1
     fi
 }
 
-run_installer_preflight() {
-    local mode="$1"
-    local install_dir="$2"
-    local disk_path
-    local df_output
-    local available_kib=""
+check_installer_disk_space() {
+    local install_dir="$1" disk_path df_output available_kib=""
     local filesystem blocks used available rest
     local minimum_free_kib=1048576
-
-    if ! check_installer_python; then
-        return 1
-    fi
 
     disk_path="$install_dir"
     while [[ ! -e "$disk_path" ]]; do
@@ -488,7 +523,12 @@ run_installer_preflight() {
         log_error "At least 1 GiB of free space is required on the filesystem containing $install_dir; found $((available_kib / 1024)) MiB."
         return 1
     fi
+}
 
+run_installer_preflight() {
+    local mode="$1" install_dir="$2"
+    check_installer_python || return
+    check_installer_disk_space "$install_dir" || return
     if [[ "$mode" == "install" || "$mode" == "update" ]]; then
         if ! curl --fail --silent --show-error --location --connect-timeout 5 --max-time 15 \
             --output /dev/null https://github.com/diddip21/knx_to_openhab; then
@@ -498,22 +538,102 @@ run_installer_preflight() {
     fi
 }
 
-verify_venv_support() (
-    local python_command="$1"
-    local probe_root
+is_trusted_probe_directory_chain() {
+    local directory="$1" parent candidate_uid candidate_mode
+    while [[ -n "$directory" ]]; do
+        if ! read -r candidate_uid candidate_mode < <(
+            stat -c '%u %a' -- "$directory"
+        ); then
+            return 1
+        fi
+        if [[ "$candidate_uid" != "0" ]] || (( (8#$candidate_mode & 8#022) != 0 )); then
+            return 1
+        fi
+        if [[ "$directory" == "/" ]]; then
+            break
+        fi
+        parent="${directory%/*}"
+        directory="${parent:-/}"
+    done
+}
 
-    if ! probe_root="$(mktemp -d "${TMPDIR:-/tmp}/knxoh-preflight.XXXXXX")"; then
+verify_venv_support() (
+    local probe_parent="$INSTALL_DIR" probe_anchor probe_root parent target_device
+    local candidate_uid candidate_mode candidate_device service_uid trusted_parent=0
+    while [[ ! -d "$probe_parent" ]]; do
+        parent="${probe_parent%/*}"
+        if [[ "$parent" == "$probe_parent" ]]; then
+            probe_parent="/"
+        else
+            probe_parent="${parent:-/}"
+        fi
+    done
+    if ! probe_parent="$(cd -- "$probe_parent" && pwd -P)" ||
+       ! target_device="$(stat -c '%d' -- "$probe_parent")"; then
+        log_error "Could not identify the installation filesystem for a safe Python probe."
+        exit 1
+    fi
+    probe_anchor="$probe_parent"
+    while [[ -n "$probe_parent" ]]; do
+        if ! read -r candidate_uid candidate_mode candidate_device < <(
+            stat -c '%u %a %d' -- "$probe_parent"
+        ); then
+            log_error "Could not inspect a directory on the installation filesystem."
+            exit 1
+        fi
+        if [[ "$candidate_device" != "$target_device" ]]; then
+            break
+        fi
+        if [[ "$candidate_uid" == "0" ]] &&
+           (( (8#$candidate_mode & 8#022) == 0 )) &&
+           is_trusted_probe_directory_chain "$probe_parent"; then
+            trusted_parent=1
+            break
+        fi
+        parent="${probe_parent%/*}"
+        if [[ "$parent" == "$probe_parent" ]]; then
+            probe_parent=""
+        else
+            probe_parent="${parent:-/}"
+        fi
+    done
+    if (( !trusted_parent )); then
+        if read -r candidate_uid candidate_mode < <(
+            stat -c '%u %a' -- "$probe_anchor"
+        ) &&
+           service_uid="$(id -u knxohui 2>/dev/null || true)" &&
+           [[ -n "$service_uid" && "$candidate_uid" == "$service_uid" ]] &&
+           (( (8#$candidate_mode & 8#200) != 0 )) &&
+           (( (8#$candidate_mode & 8#022) == 0 )); then
+            if ! probe_root="$(sudo -u knxohui mktemp -d "$probe_anchor/.knxoh-preflight.XXXXXX")"; then
+                log_error "Could not create a temporary directory to test Python virtual environment support."
+                exit 1
+            fi
+            trap 'sudo -u knxohui rm -rf -- "$probe_root"' EXIT
+            if ! sudo -u knxohui python3 -m venv "$probe_root/venv" >/dev/null 2>&1; then
+                log_error "Could not create a temporary Python virtual environment; check the python3-venv package."
+                exit 1
+            fi
+            if ! sudo -u knxohui "$probe_root/venv/bin/python" -c 'import sys' >/dev/null 2>&1; then
+                log_error "The temporary Python virtual environment is not usable."
+                exit 1
+            fi
+            log_success "Python virtual environment support is available."
+            return 0
+        fi
+        log_error "No root-owned, non-writable directory is available on the installation filesystem for a safe Python probe."
+        exit 1
+    fi
+    if ! probe_root="$(sudo mktemp -d "$probe_parent/.knxoh-preflight.XXXXXX")"; then
         log_error "Could not create a temporary directory to test Python virtual environment support."
         exit 1
     fi
-    trap 'rm -rf -- "$probe_root"' EXIT
-
-    if ! "$python_command" -m venv "$probe_root/venv" >/dev/null 2>&1; then
+    trap 'sudo rm -rf -- "$probe_root"' EXIT
+    if ! sudo python3 -m venv "$probe_root/venv" >/dev/null 2>&1; then
         log_error "Could not create a temporary Python virtual environment; check the python3-venv package."
         exit 1
     fi
-    if [[ ! -x "$probe_root/venv/bin/python" ]] ||
-       ! "$probe_root/venv/bin/python" -c 'import sys; print(sys.version)' >/dev/null 2>&1; then
+    if ! sudo "$probe_root/venv/bin/python" -c 'import sys' >/dev/null 2>&1; then
         log_error "The temporary Python virtual environment is not usable."
         exit 1
     fi
@@ -531,10 +651,26 @@ check_sudo() {
     log_success "Sudo access confirmed"
 }
 
+check_sudo_installer_python() {
+    local python_version python_major python_minor
+    if ! python_version="$(sudo python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" ||
+       [[ ! "$python_version" =~ ^[0-9]+\.[0-9]+$ ]]; then
+        log_error "Could not determine the Python version available through sudo."
+        return 1
+    fi
+    python_major="${python_version%%.*}"
+    python_minor="${python_version#*.}"
+    if (( python_major < 3 || (python_major == 3 && python_minor < 11) )); then
+        log_error "Python 3.11 or newer must be available through sudo as python3; found $python_version."
+        return 1
+    fi
+    log_success "Sudo uses supported Python $python_version."
+}
+
 install_dependencies() {
     log_info "Installing system dependencies..."
-    
-    sudo apt-get update -qq
+    local package_lists_updated=0
+    local package_status
     
     local packages=(
         "git"
@@ -546,7 +682,15 @@ install_dependencies() {
     )
     
     for pkg in "${packages[@]}"; do
-        if ! dpkg -l | grep -q "^ii  $pkg "; then
+        if ! package_status="$(dpkg-query -W -f='${db:Status-Status}' -- "$pkg" 2>/dev/null)" ||
+           [[ "$package_status" != "installed" ]]; then
+            if (( package_lists_updated == 0 )); then
+                if ! sudo apt-get update -qq; then
+                    log_error "Failed to update system package lists"
+                    return 1
+                fi
+                package_lists_updated=1
+            fi
             log_info "Installing $pkg..."
             sudo apt-get install -y -qq "$pkg" || {
                 log_error "Failed to install $pkg"
@@ -569,6 +713,11 @@ run_git_as_service_user() {
 }
 
 update_repository() {
+    if [[ -L "$INSTALL_DIR/current" ]]; then
+        log_error "This installation uses transactional releases. Update it from the Web UI; the CLI updater does not activate releases."
+        exit 1
+    fi
+
     log_info "Updating installation to release $RELEASE_TAG..."
     if [[ -z "$REQUESTED_VERSION" ]]; then
         local installed_tag
@@ -615,6 +764,102 @@ update_repository() {
     log_success "Repository updated to $RELEASE_TAG"
 }
 
+activate_staged_checkout() {
+    sudo python3 - "$1" "$2" "$3" <<'PY'
+import ctypes
+import os
+import sys
+
+parent, staged_name, target_name = sys.argv[1:]
+if any(name in ("", ".", "..") or "/" in name for name in (staged_name, target_name)):
+    raise SystemExit("Invalid staged release or target name")
+
+directory = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+try:
+    try:
+        renameat2 = ctypes.CDLL(None, use_errno=True).renameat2
+    except AttributeError as error:
+        raise SystemExit("Atomic no-clobber rename is unavailable on this host") from error
+    renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    renameat2.restype = ctypes.c_int
+    if renameat2(directory, os.fsencode(staged_name), directory, os.fsencode(target_name), 1):
+        error_number = ctypes.get_errno()
+        raise OSError(error_number, os.strerror(error_number), target_name)
+finally:
+    os.close(directory)
+PY
+}
+
+clone_new_repository() (
+    local result_file="$1" temp_dir stage_dir="" install_target="$INSTALL_DIR" install_parent
+    while [[ "$install_target" == */ ]]; do
+        install_target="${install_target%/}"
+    done
+    install_parent="$(dirname -- "$install_target")"
+
+    if ! temp_dir="$(mktemp -d)"; then
+        log_error "Could not create a temporary directory for the release checkout."
+        exit 1
+    fi
+    cleanup_clone() {
+        local status=$?
+        trap - EXIT
+        rm -rf -- "$temp_dir" || log_warning "Could not remove temporary checkout $temp_dir."
+        if [[ -n "$stage_dir" && "$stage_dir" == "$install_parent"/.knxoh-install.* ]]; then
+            sudo rm -rf -- "$stage_dir" || log_warning "Could not remove staging directory $stage_dir."
+        fi
+        exit "$status"
+    }
+    trap cleanup_clone EXIT
+
+    log_info "Cloning release $RELEASE_TAG from $REPO_URL..."
+    if ! git clone --depth 1 --single-branch --branch "$RELEASE_TAG" "$REPO_URL" "$temp_dir/repository"; then
+        log_error "Failed to clone release $RELEASE_TAG"
+        exit 1
+    fi
+
+    if ! sudo mkdir -p -- "$install_parent"; then
+        log_error "Could not create installation parent: $install_parent"
+        exit 1
+    fi
+    if ! install_parent="$(cd -- "$install_parent" && pwd -P)" || [[ -z "$install_parent" ]]; then
+        log_error "Could not resolve installation parent: $install_parent"
+        exit 1
+    fi
+    local install_basename
+    if ! install_basename="$(basename -- "$install_target")" || [[ -z "$install_basename" ]]; then
+        log_error "Could not determine the installation directory name."
+        exit 1
+    fi
+    install_target="${install_parent%/}/$install_basename"
+    if ! stage_dir="$(sudo mktemp -d "$install_parent/.knxoh-install.XXXXXXXX")"; then
+        log_error "Could not stage the release beside $install_target."
+        exit 1
+    fi
+    if ! sudo rsync -a "$temp_dir/repository/" "$stage_dir/"; then
+        log_error "Could not copy the release; $install_target was left untouched."
+        exit 1
+    fi
+    if ! sudo chmod 0755 "$stage_dir"; then
+        log_error "Could not set the staged checkout permissions; $install_target was left untouched."
+        exit 1
+    fi
+    if [[ -e "$install_target" || -L "$install_target" ]]; then
+        log_error "Installation path appeared during checkout: $install_target. Existing files were left untouched."
+        exit 2
+    fi
+    if ! activate_staged_checkout "$install_parent" "${stage_dir##*/}" "${install_target##*/}"; then
+        log_error "Could not atomically activate the staged release at $install_target."
+        exit 1
+    fi
+    stage_dir=""
+    if ! printf '%s\n' "$install_target" > "$result_file"; then
+        log_error "Could not record the activated installation path."
+        exit 1
+    fi
+    log_success "Release $RELEASE_TAG cloned successfully"
+)
+
 clone_repository() {
     if [[ "$INSTALL_MODE" == "update" ]]; then
         update_repository
@@ -626,36 +871,49 @@ clone_repository() {
         return 0
     fi
 
-    log_info "Cloning release $RELEASE_TAG from $REPO_URL..."
-    TEMP_DIR=$(mktemp -d)
-    if ! git clone --depth 1 --single-branch --branch "$RELEASE_TAG" "$REPO_URL" "$TEMP_DIR/repository"; then
-        rm -rf "$TEMP_DIR"
-        log_error "Failed to clone release $RELEASE_TAG"
-        exit 1
+    local activated_target_file
+    if ! activated_target_file="$(mktemp)"; then
+        log_error "Could not create a temporary file for the activated installation path."
+        return 1
     fi
-    sudo install -d -m 0755 "$INSTALL_DIR"
-    sudo rsync -a "$TEMP_DIR/repository/" "$INSTALL_DIR/"
-    rm -rf "$TEMP_DIR"
-
-    log_success "Release $RELEASE_TAG cloned successfully"
+    if ! clone_new_repository "$activated_target_file"; then
+        rm -f -- "$activated_target_file"
+        return 1
+    fi
+    if ! IFS= read -r INSTALL_DIR < "$activated_target_file" || [[ -z "$INSTALL_DIR" ]]; then
+        rm -f -- "$activated_target_file"
+        log_error "Could not determine the activated installation path."
+        return 1
+    fi
+    rm -f -- "$activated_target_file"
+    SETUP_APP_DIR="$INSTALL_DIR"
 }
 
 run_setup_script() {
     log_info "Running setup script..."
-    
-    cd "$INSTALL_DIR"
-    
-    if [[ ! -f "installer/setup.sh" ]]; then
-        log_error "Setup script not found at installer/setup.sh"
+
+    SETUP_APP_DIR="${SETUP_APP_DIR:-$INSTALL_DIR}"
+    if ! SETUP_APP_DIR="$(cd -- "$SETUP_APP_DIR" && pwd -P)"; then
+        log_error "Cannot resolve the setup directory: $SETUP_APP_DIR"
         exit 1
     fi
-    
-    chmod +x installer/setup.sh installer/backup_cleanup.sh
-    
-    bash installer/setup.sh || {
-        log_error "Setup script failed"
+    local canonical_setup_script
+    if [[ ! -d "$SETUP_APP_DIR/installer" || -L "$SETUP_APP_DIR/installer" || \
+        ! -f "$SETUP_APP_DIR/installer/setup.sh" || -L "$SETUP_APP_DIR/installer/setup.sh" ]] || \
+        ! canonical_setup_script="$(readlink -f -- "$SETUP_APP_DIR/installer/setup.sh")" || \
+        [[ "$canonical_setup_script" != "$SETUP_APP_DIR/"* ]]; then
+        log_error "Setup script not found or unsafe at $SETUP_APP_DIR/installer/setup.sh"
         exit 1
-    }
+    fi
+
+    cd "$SETUP_APP_DIR"
+    if bash installer/setup.sh; then
+        :
+    else
+        local setup_status=$?
+        log_error "Setup script failed (status $setup_status)"
+        return "$setup_status"
+    fi
     
     log_success "Setup completed successfully"
 }
@@ -664,7 +922,7 @@ display_completion() {
     local ip_addresses=$(hostname -I)
     local ip_address="${ip_addresses%% *}"
     local ui_settings
-    ui_settings=$(sudo python3 "$INSTALL_DIR/installer/web_ui_endpoint.py" \
+    ui_settings=$(sudo python3 "${SETUP_APP_DIR:-$INSTALL_DIR}/installer/web_ui_endpoint.py" \
         --config "$CONFIG_DIR/config.json" --lan-ip "$ip_addresses")
     local -a ui_values=()
     mapfile -t ui_values <<<"$ui_settings"
@@ -709,7 +967,7 @@ main() {
     if [[ "$INSTALL_MODE" == "cancel" ]]; then
         select_install_mode
     fi
-    if ! check_installer_python_available; then
+    if ! check_installer_python; then
         exit 1
     fi
     if [[ -z "$INSTALL_DIR" ]]; then
@@ -719,12 +977,13 @@ main() {
         CONFIG_DIR="$(read_saved_config_dir)"
     fi
     select_install_mode
+    if [[ "$INSTALL_MODE" == "update" && -L "$INSTALL_DIR/current" ]]; then
+        log_error "This installation uses transactional releases. Update it from the Web UI; the CLI updater does not activate releases."
+        exit 2
+    fi
     if [[ -n "$REQUESTED_VERSION" && "$INSTALL_MODE" != "install" && "$INSTALL_MODE" != "update" ]]; then
         log_error "--version can be used only with --install or --update."
         exit 2
-    fi
-    if ! check_installer_python; then
-        exit 1
     fi
 
     echo ""
@@ -738,10 +997,10 @@ main() {
     log_info "Selected installer mode: $INSTALL_MODE"
     check_root
     check_os
-    check_sudo
     if ! run_installer_preflight "$INSTALL_MODE" "$INSTALL_DIR"; then
         exit 1
     fi
+    check_sudo
     if [[ "$INSTALL_MODE" == "install" || "$INSTALL_MODE" == "update" ]]; then
         if ! RELEASE_VERSION="$(resolve_release_version "$REQUESTED_VERSION")"; then
             exit 1
@@ -754,7 +1013,10 @@ main() {
         fi
     fi
     install_dependencies
-    if ! verify_venv_support python3; then
+    if ! check_sudo_installer_python; then
+        exit 1
+    fi
+    if ! verify_venv_support; then
         exit 1
     fi
     clone_repository

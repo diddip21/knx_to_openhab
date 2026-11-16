@@ -62,7 +62,7 @@ jobs:
           fi
       - name: Upload probe report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: model-router-${{ matrix.task }}
           path: ${{ runner.temp }}/model-router.json

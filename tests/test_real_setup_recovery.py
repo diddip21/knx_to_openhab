@@ -83,7 +83,15 @@ def test_real_setup_restores_services_and_repairs_after_failure(tmp_path, monkey
     fake_bin.mkdir()
     adapter = (ROOT / "tests/fixtures/setup_host.py").read_text()
     executable(fake_bin / "sudo", f"#!{sys.executable}\n" + adapter)
-    executable(fake_bin / "getent", "#!/bin/sh\necho knxohui:x:0:\n")
+    executable(
+        fake_bin / "getent",
+        "#!/bin/sh\n"
+        'case "$1:$2" in\n'
+        "  passwd:knxohui) echo 'knxohui:x:997:997:KNX to OpenHAB:/var/lib/knxohui:/usr/sbin/nologin' ;;\n"
+        "  group:knxohui) echo 'knxohui:x:997:' ;;\n"
+        "  *) exit 2 ;;\n"
+        "esac\n",
+    )
     executable(fake_bin / "id", "#!/bin/sh\necho 997\n")
     env = os.environ | {
         "TMPDIR": str(temporary),

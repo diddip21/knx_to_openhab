@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 root = Path(os.environ["SETUP_SANDBOX"]).resolve()
@@ -19,6 +20,16 @@ def local(value):
     if not path.is_relative_to(root):
         raise RuntimeError(f"Refusing path outside sandbox: {path}")
     return path
+
+
+def sandbox_host_path(value):
+    path = Path(value)
+    resolved = path.resolve()
+    if resolved.is_relative_to(root):
+        return resolved
+    if not path.is_absolute():
+        return local(value)
+    return (root / "host" / path.relative_to(path.anchor)).resolve()
 
 
 def execute(command):
@@ -66,6 +77,30 @@ elif command == "install":
     if fault == "helpers" and args[-1].endswith("/launch_backup_cleanup.sh"):
         sys.exit(71)
     sys.exit(subprocess.call(["/usr/bin/install", *rewritten]))
+elif command == "mktemp":
+    if len(args) != 2 or "XXXXXX" not in args[1]:
+        raise RuntimeError(f"Unexpected mktemp invocation: {args}")
+    target = sandbox_host_path(args[1])
+    target.parent.mkdir(parents=True, exist_ok=True)
+    prefix, _, suffix = target.name.partition("XXXXXX")
+    descriptor, name = tempfile.mkstemp(prefix=prefix, suffix=suffix, dir=target.parent)
+    os.close(descriptor)
+    print(name)
+elif command == "cat":
+    if len(args) != 3 or args[1] != "--":
+        raise RuntimeError(f"Unexpected cat invocation: {args}")
+    sys.stdout.buffer.write(local(args[2]).read_bytes())
+elif command == "mv":
+    paths = [value for value in args[1:] if value not in {"-f", "--"}]
+    if len(paths) != 2:
+        raise RuntimeError(f"Unexpected mv invocation: {args}")
+    os.replace(local(paths[0]), local(paths[1]))
+elif command == "rm":
+    paths = [value for value in args[1:] if value not in {"-f", "--"}]
+    if not paths:
+        raise RuntimeError(f"Unexpected rm invocation: {args}")
+    for value in paths:
+        local(value).unlink(missing_ok=True)
 elif command in {"chown", "chmod", "usermod", "systemd-tmpfiles"}:
     pass  # Ownership, account membership and host tmpfiles are outside this test.
 elif command == "mkdir":
@@ -124,7 +159,7 @@ elif command == "python3" or command.endswith("/venv/bin/python"):
             "write_maintenance_lock_tmpfiles.py",
             "configure_bind.py",
             "provision_managed_files.py",
-        }:
+        } and not script.name.startswith("knxoh-check-web-port."):
             raise RuntimeError(f"Unexpected Python script: {script}")
 elif command.endswith("/venv/bin/pip"):
     local(command)

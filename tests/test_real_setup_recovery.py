@@ -57,7 +57,9 @@ def test_real_setup_restores_services_and_repairs_after_failure(tmp_path, monkey
     (venv / "python").symlink_to(sys.executable)
     lock = tmp_path / "locks/maintenance.lock"
     lock.parent.mkdir(mode=0o750)
+    os.chown(lock.parent, 0, 997)
     lock.touch(mode=0o640)
+    os.chown(lock, 0, 997)
     registry = tmp_path / "registry/paths.env"
     registry.parent.mkdir()
     registry.write_text(
@@ -89,6 +91,7 @@ def test_real_setup_restores_services_and_repairs_after_failure(tmp_path, monkey
         'case "$1:$2" in\n'
         "  passwd:knxohui) echo 'knxohui:x:997:997:KNX to OpenHAB:/var/lib/knxohui:/usr/sbin/nologin' ;;\n"
         "  group:knxohui) echo 'knxohui:x:997:' ;;\n"
+        "  group:openhab) echo 'openhab:x:998:knxohui' ;;\n"
         "  *) exit 2 ;;\n"
         "esac\n",
     )

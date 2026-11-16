@@ -42,6 +42,8 @@ def test_homekit_implementer_uses_dev_for_source_and_pr_base():
     assert "branch: 'dev'" in text
     assert "base: context.payload.repository.default_branch, draft: true" not in text
     assert "comparison.behind_by !== 0" in text
+    assert ".github/workflows/ci.yml" in text
+    assert "Require approved CI definition" in text
     assert "actions.createWorkflowDispatch" in text
 
 

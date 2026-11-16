@@ -169,18 +169,18 @@ wurde.
 
 ## 5. Merge-Reihenfolge, verantwortliche Aktionen
 
-1. **`dev` zuerst mit `main` versöhnen** und die 46
-   exklusiven `dev`-Commits erhalten: [#110](https://github.com/diddip21/knx_to_openhab/pull/110)
+1. **#109 zuerst gegen `main` prüfen und manuell mergen**, wenn
+   Security-Review und grüne Tests dieses *exakten* Commits vorliegen.
+   Das aktiviert die vom Default-Branch getriggerten Controller für
+   Plan/Implementierung/Self-Repair. Bis `dev` synchronisiert ist,
+   stoppen die Agenten **absichtlich** (fail-closed).
+2. **Anschließend `dev` mit dem dann aktuellen `main` versöhnen**
+   und die 46 exklusiven `dev`-Commits erhalten:
+   [#110](https://github.com/diddip21/knx_to_openhab/pull/110)
    ist ein **nicht mergebarer Konfliktnachweis** (Head `main`);
    Konflikte in einem **separaten Integrationsbranch von `dev`**
    lösen und per kontrolliertem PR nach `dev` einbringen.
-   Details und Befehle:
-   [dev-Quickstart](AI_DEV_TO_MERGE_QUICKSTART.md).
-2. **#109 gegen `main` prüfen und mergen**, wenn Security-Review und
-   grüne Tests dieses *exakten* Commits vorliegen. Das aktiviert
-   die Reparatur für spätere fehlgeschlagene CI-`workflow_dispatch`-
-   Läufe des Issue-#89-Drafts; ein bereits grüner Lauf löst keinen
-   Reparaturagenten aus.
+   Details und Befehle: [dev-Quickstart](AI_DEV_TO_MERGE_QUICKSTART.md).
 3. **#108 erst nach synchronisiertem `dev` auf Base `dev`
    retargeten**. Danach die neue Diff-/CI-Matrix prüfen, `main`
    keinesfalls durch diesen PR mergen.

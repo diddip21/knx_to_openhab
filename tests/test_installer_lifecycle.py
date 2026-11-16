@@ -217,7 +217,13 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
     assert fresh_install.returncode == 0, fresh_install.stdout + fresh_install.stderr
     assert "Cloning release v1.2.3" in fresh_install.stdout
     assert setup_log.read_text(encoding="utf-8").splitlines() == ["setup"]
-    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 2
+    expected_curl_calls = curl_log.read_text(encoding="utf-8").splitlines()
+    assert [shlex.split(call)[-1] for call in expected_curl_calls] == [
+        "https://github.com/diddip21/knx_to_openhab",
+        "https://api.github.com/repos/diddip21/knx_to_openhab/releases/latest",
+    ] * 2
+    for call in expected_curl_calls[::2]:
+        assert "--connect-timeout 5 --max-time 15 --output /dev/null" in call
     assert "--branch v1.2.3" in clone_log.read_text(encoding="utf-8")
 
     if install_path_style == "symlinked-ancestor-retargeted":
@@ -237,14 +243,14 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
     assert "existing files were left untouched" in second_install.stdout
     assert user_data.read_text(encoding="utf-8") == '{"created": true, "custom": "keep"}'
     assert setup_log.read_text(encoding="utf-8").splitlines() == ["setup"]
-    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 2
+    assert curl_log.read_text(encoding="utf-8").splitlines() == expected_curl_calls
 
     repair = run_installer("--repair")
     assert repair.returncode == 0, repair.stdout + repair.stderr
     assert "Repairing the existing installation without pulling source" in repair.stdout
     assert setup_log.read_text(encoding="utf-8").splitlines() == ["setup", "setup"]
     assert user_data.read_text(encoding="utf-8") == '{"created": true, "custom": "keep"}'
-    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 2
+    assert curl_log.read_text(encoding="utf-8").splitlines() == expected_curl_calls
     assert len(clone_log.read_text(encoding="utf-8").splitlines()) == 2
 
     active_release = install_dir / "releases" / "v2.0.0"
@@ -270,7 +276,7 @@ def test_clean_install_repeat_install_and_repair_are_isolated(tmp_path, install_
         "setup",
         f"active setup:{active_release.resolve()}",
     ]
-    assert len(curl_log.read_text(encoding="utf-8").splitlines()) == 2
+    assert curl_log.read_text(encoding="utf-8").splitlines() == expected_curl_calls
     assert len(clone_log.read_text(encoding="utf-8").splitlines()) == 2
     environment.pop("FAKE_CHMOD_DENY")
 

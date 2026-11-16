@@ -90,7 +90,9 @@ def _setup_routes(page: Page):
 
 def _expand_settings(page: Page):
     page.locator(".card-header:has-text('Configuration Settings')").click()
-    page.wait_for_timeout(300)
+    # loadConfig() is scheduled one second after initialization. Wait for actual
+    # configured data before editing/saving, not for an arbitrary 300 ms delay.
+    expect(page.locator("#conf-central-keyword")).to_have_value("zentral", timeout=10000)
 
 
 def test_homekit_defaults_are_shown_when_keys_are_missing(page: Page, base_url, flask_server):

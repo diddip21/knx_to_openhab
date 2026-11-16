@@ -12,10 +12,12 @@ import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 import ets_to_openhab
 import knxproject_to_openhab
 from config import config
+from openhab_yaml import parse_metadata
 
 TESTS_DIR = Path(__file__).parent
 MINI_PROJECT = TESTS_DIR / "fixtures" / "mini_project.json"
@@ -289,3 +291,72 @@ def test_homekit_override_enables_covering_metadata_without_ets_comment(monkeypa
     assert "homekit" in equipment_line
     assert "sendUpDownForExtents" in equipment_line
     assert model["items"][ROLLER_EQUIPMENT]["metadata"]["homekit"]["value"] == "WindowCovering"
+
+
+@pytest.mark.parametrize(
+    ("homekit_enabled", "send_up_down", "stop", "stop_same"),
+    [
+        (True, None, False, False),
+        (True, False, False, False),
+        (True, True, True, True),
+        (False, None, True, True),
+    ],
+)
+def test_exported_legacy_and_yaml_have_equivalent_homekit_metadata(
+    monkeypatch, tmp_path, homekit_enabled, send_up_down, stop, stop_same
+):
+    items, sitemap, things, model = _generate(
+        monkeypatch,
+        homekit_enabled=homekit_enabled,
+        send_up_down=send_up_down,
+        stop=stop,
+        stop_same=stop_same,
+    )
+    cfg = copy.deepcopy(config)
+    cfg.update(
+        {
+            "output_format": "legacy",
+            "openhab_path": str(tmp_path),
+            "items_path": str(tmp_path / "items/knx.items"),
+            "things_path": str(tmp_path / "things/knx.things"),
+            "sitemaps_path": str(tmp_path / "sitemaps/knx.sitemap"),
+            "influx_path": str(tmp_path / "persistence/influxdb.persist"),
+            "fenster_path": str(tmp_path / "rules/fenster.rules"),
+            "yaml_path": str(tmp_path / "yaml/knx.yaml"),
+        }
+    )
+    ets_to_openhab.export_output(
+        items,
+        sitemap,
+        things,
+        configuration=cfg,
+        yaml_model=model,
+        include_private_persistence=False,
+    )
+    legacy = Path(cfg["items_path"]).read_text(encoding="utf-8")
+    group_line = _equipment_line(legacy)
+    item_line = _item_line(legacy, ROLLER_ITEM)
+
+    cfg["output_format"] = "yaml"
+    ets_to_openhab.export_output(
+        items,
+        sitemap,
+        things,
+        configuration=cfg,
+        yaml_model=model,
+        include_private_persistence=False,
+    )
+    exported_yaml = yaml.safe_load(Path(cfg["yaml_path"]).read_text(encoding="utf-8"))
+    for name, line in ((ROLLER_EQUIPMENT, group_line), (ROLLER_ITEM, item_line)):
+        legacy_metadata = parse_metadata(line.partition("{")[2].rpartition("}")[0])
+        yaml_metadata = exported_yaml["items"][name].get("metadata", {})
+        assert legacy_metadata.get("homekit") == yaml_metadata.get("homekit")
+        if homekit_enabled:
+            assert "Instance" in yaml_metadata["homekit"]["config"]
+        else:
+            assert "homekit" not in yaml_metadata
+    if homekit_enabled:
+        options = exported_yaml["items"][ROLLER_EQUIPMENT]["metadata"]["homekit"]["config"]
+        assert ("sendUpDownForExtents" in options) is (send_up_down is not False)
+        assert ("stop" in options) is stop
+        assert ("stopSameDirection" in options) is stop_same

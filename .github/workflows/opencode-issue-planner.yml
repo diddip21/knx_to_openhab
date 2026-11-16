@@ -40,7 +40,7 @@ jobs:
           persist-credentials: false
 
       - name: Fetch bot comments
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           OUT_FILE: ${{ runner.temp }}/issue-comments.json
         with:
@@ -101,7 +101,7 @@ jobs:
           steps.decision.outputs.operation == 'approve' ||
           steps.decision.outputs.operation == 'invalidate' ||
           steps.decision.outputs.operation == 'notice'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           RESULT_FILE: ${{ runner.temp }}/issue-result.json
         with:

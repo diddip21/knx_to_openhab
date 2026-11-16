@@ -87,8 +87,8 @@ Achtung: Auch wenn #108 und #109 bei einem früheren Commit grün waren,
 | Echte UI-Screenshots zu `docs/screenshots/` hinzufügen | **Manuell oder mit geprüftem Tool** | Bilder enthalten kein Geheimnis; Dateilinks im PR |
 | KNX-/HomeKit-Funktionsprüfung mit Testaktor | **Manuell: Owner/Tester** | 0/100 %, Lamellen-Endlage, Zwischenposition, Stop, Rollback dokumentiert |
 | Ready for review, Merge des Feature-PR nach `dev` | **Manuell** | Review, Screenshots, Hardware, letzte CI, keine Konflikte |
-| Release-PR `dev` → `main` | **Manuell gestartet**, CI automatisch | Änderungsumfang, Release-Notes, alle Checks/Reviews, Rückfallplan |
-| Merge Release-PR, Smoke-Test, Issue schließen | **Manuell: Owner** | Post-Merge-CI und Funktionsprobe, erst dann Issue erledigt |
+| Release-PR `dev` → `main` | **Manuell gestartet**, CI automatisch | **Alle** noch nicht veröffentlichten `dev`-Commits prüfen, `VERSION` und `CHANGELOG.md` gemäß `docs/RELEASING.md` vorbereiten, Pflichtreviews und Rollback |
+| Merge Release-PR, Smoke-Test, Issue schließen | **Manuell: Owner** | Post-Merge-CI, Funktionsprobe; für Veröffentlichung danach annotierten `v<version>`-Tag bewusst pushen (`Release`-Action prüft Version), Release-Assets/Checksumme prüfen, erst dann Issue schließen |
 
 ### Pflicht-Review vor `dev`-Merge
 
@@ -120,6 +120,14 @@ Achtung: Auch wenn #108 und #109 bei einem früheren Commit grün waren,
 
 Vertiefung, Links und Audit-Protokoll:
 [AI_ISSUE_TO_MERGE_RUNBOOK.md](AI_ISSUE_TO_MERGE_RUNBOOK.md).
+
+**Release-Gate:** Das Projekt veröffentlicht nicht automatisch durch einen
+Merge auf `main`. Die [Release-Anleitung](RELEASING.md) verlangt
+eine manuelle `VERSION`-/Changelog-Vorbereitung und einen
+annotierten Tag `v<version>`. Erst dessen Push startet die
+`Release`-Action. Eine komplette `dev`→`main`-Integration
+übernimmt alle noch fehlenden `dev`-Commits, nicht ausschließlich
+HomeKit #89; daher vorher den vollständigen Release-Diff prüfen.
 
 **Wichtige Einschränkung:** Das beschriebene Self-Repair ist noch kein
 nachgewiesener End-to-End-Erfolg. Unit-/Guard-Tests prüfen nur Komponenten;

@@ -184,3 +184,82 @@ Edit `ets_to_openhab.py` → `gen_building()` for content, `export_output()` for
 - If adding new dependencies — confirm they're needed and check `requirements.txt`
 - If changing output file format — confirm compatibility with OpenHAB
 - If test failures involve global state — check if `setup_method()` resets are needed
+
+## GitHub Coding Agent Workflow (Codex / issue assignment)
+
+These instructions apply whenever a coding agent is assigned a GitHub issue or is asked
+to work on a pull request. Preserve the preceding project-specific instructions.
+
+### Issue intake and scope
+
+1. Read the **entire** assigned issue, linked issues/PRs, relevant discussion, and existing
+   acceptance criteria before changing code. Inspect recent changes in affected areas.
+2. Reproduce bugs first when feasible. Write down the root cause, affected interfaces
+   (CLI, Flask API, UI, generated openHAB YAML/legacy files, installer, systemd), and a
+   concise implementation/test plan in the PR description.
+3. Implement the whole agreed scope, not just the visible symptom. If the issue is ambiguous,
+   use backwards-compatible defaults and record assumptions; ask for clarification only
+   when proceeding would risk breaking users, safety, or data.
+4. Keep work isolated on an issue-specific branch; use a separate PR targeting `main`.
+   Do not push agent-generated feature changes directly to `main`.
+
+### Compatibility and reliability guardrails
+
+- Preserve existing behavior unless the issue explicitly requires a change. Check both
+  CLI and Web UI paths, existing settings/defaults, stored configuration, REST responses,
+  generated Things/Items/Sitemaps/YAML, installer/update flows, and rollback where relevant.
+- Do not lose unrelated configuration keys when saving settings. Do not overwrite manually
+  maintained openHAB files or remove existing backup/rollback safeguards.
+- For YAML generation, validate openHAB 5.2 compatibility, deterministic output, and
+  model references. When output changes intentionally, update affected golden files
+  and document the migration/compatibility implications.
+- Avoid adding dependencies without a justified need. Never commit secrets, user ETS
+  projects, private configuration, API tokens, or personal data.
+- Prefer minimal, clearly separated changes. Avoid opportunistic refactoring unrelated
+  to the assigned issue.
+
+### Mandatory verification
+
+- Add a regression test for every fix, ideally demonstrating failure before the fix.
+  For new features cover success, edge/failure cases, and unchanged default behavior.
+- Run focused tests first, then the applicable full suite. Match the CI checks where
+  practical: `black --check . --diff`, `isort --check-only .`, `flake8 .`,
+  `mypy .`, and `pytest -q -m "not ui" --ignore=tests/ui`.
+- For UI behavior run Playwright tests with a real test server when feasible, and add
+  committed, representative **real** screenshots under `docs/screenshots/` referenced
+  by the PR. Never fabricate screenshots or mark unexecuted tests as passing.
+- For relevant generator changes run integration/golden checks. For installer or updater
+  changes include failure/rollback and idempotency coverage where feasible.
+- Run `git diff --check`. If environment restrictions prevent any check, state exactly
+  which checks were skipped and why in the PR; do not silently claim success.
+
+### Reviews, comments, and follow-ups
+
+- Read all existing PR reviews, inline threads, and general PR comments **before**
+  implementing changes and again after follow-up pushes.
+- Assess each actionable point independently. Fix valid findings and test the fix;
+  explain with technical reasoning when declining a suggestion. Reply in the relevant
+  thread and resolve only after the concern is addressed.
+- Do not stop at a passing CI run while review feedback or acceptance criteria are
+  unresolved. Re-run affected checks after revisions.
+
+### Pull request handoff and merge policy
+
+- Open a **draft PR** early for substantial work. Before marking it ready, include:
+  linked issue(s), root cause/solution, user-visible changes, backwards-compatibility
+  notes, executed tests with results, skipped checks, screenshots (if UI changed),
+  and known limitations.
+- Do **not** auto-merge or merge into `main` merely because the agent finished.
+  Await explicit human authorization for the merge; honor branch protection,
+  required checks, and reviewer decisions.
+- If blocked, report the precise blocker and next step in the PR. Do not close an
+  issue as completed while its acceptance criteria remain unmet.
+- Documentation-only changes do not require application screenshots or new functional
+  tests, but should still be reviewed for accuracy and checked for clean diffs.
+
+### How to assign work
+
+Assign a GitHub issue to the available Codex coding agent through GitHub's supported
+agent interface (if enabled for the account/repository). This file provides instructions
+to an agent **after it starts**; it does not install or enable the agent, grant GitHub
+permissions, or automatically trigger a task on issue assignment.

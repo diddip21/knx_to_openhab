@@ -88,6 +88,20 @@ nicht bekannt.
 
 ## Hardware-Abnahme bleibt offen
 
+### Bestandsbefund zur Bridge-Zuordnung
+
+Die Tests belegen den Erhalt des bisherigen `Instance`-Metadatums, keine
+reale Bridge-Zuordnung. Bereits vor #108 schreibt der Generator `Instance`
+mit einem hochgezählten Wert. Die geprüfte Add-on-Version beschreibt dagegen
+kleingeschriebenes numerisches `instance` für die Root-Bridge-Auswahl.
+Diese Zuordnungsfrage ist mit Quellen und Prüfkriterien in
+[Follow-up #113](https://github.com/diddip21/knx_to_openhab/issues/113)
+und im übergeordneten Audit #90 erfasst. #108 ändert diesen Bestandsbereich
+nicht. Eine bloße Umbenennung wäre ungeprüft: Der bisherige Zähler könnte
+Accessories dann nicht vorhandenen Bridges zuweisen.
+
+### Offener Gerätebeleg
+
 Der Owner bestätigte am 16.11.2026: **Noch kein Hardwaretest vorhanden.**
 Deshalb bleiben PR #108 als Draft und der HomeKit-Merge gesperrt.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail-closed CI repair controller for the approved HomeKit #89 Draft PR.
 
-Run this script only from a trusted default-branch checkout. The AI agent edits
+Run this script only from a trusted default-branch checkout. Feature PRs target dev, not main. The AI agent edits
 an unprivileged workspace; the separate publisher only commits validated files.
 """
 
@@ -69,7 +69,7 @@ def check_authorization(source: dict[str, Any], owner: str) -> dict[str, Any]:
         or (pr.get("head") or {}).get("sha") != run_sha
         or (pr.get("head") or {}).get("repo", {}).get("full_name")
         != os.environ.get("GITHUB_REPOSITORY")
-        or (pr.get("base") or {}).get("ref") != "main"
+        or (pr.get("base") or {}).get("ref") != "dev"
         or not isinstance(pr.get("number"), int)
     ):
         raise ValueError("Live PR is not the bot-created open Draft PR for the failed commit")

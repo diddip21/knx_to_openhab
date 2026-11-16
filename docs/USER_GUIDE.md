@@ -124,6 +124,12 @@ The **Settings → General → HomeKit (Apple Home)** fieldset controls HomeKit 
 
 The two stop options are independent and are only written while HomeKit output is active. Without a configuration key, the generator now emits `sendUpDownForExtents="true"` for HomeKit blinds; this is an intentional default change for existing HomeKit projects. Non-HomeKit output, KNX group addresses and Alexa metadata are unchanged. Verify the actual slat behaviour against the installed openHAB/HomeKit add-on version and the concrete KNX actuator; the repository tests do not replace that hardware check.
 
+The settings can be saved independently. In the openHAB HomeKit add-on,
+`stopSameDirection` selects the command used by stop emulation; setting it alone
+does not enable stop emulation. The source check for openHAB 5.2.4 and the
+software/hardware acceptance evidence are documented in the
+[HomeKit acceptance record](screenshots/issue-89-homekit.md).
+
 ## Model Format and Live Gateway IP
 
 The Web UI exposes the model format under **Settings → General** and gateway controls under **Settings → Devices**.

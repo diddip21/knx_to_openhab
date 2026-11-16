@@ -307,6 +307,7 @@ def test_exported_legacy_and_yaml_have_equivalent_homekit_metadata(
 ):
     items, sitemap, things, model = _generate(
         monkeypatch,
+        project=_project_with_lamella(),
         homekit_enabled=homekit_enabled,
         send_up_down=send_up_down,
         stop=stop,
@@ -336,6 +337,11 @@ def test_exported_legacy_and_yaml_have_equivalent_homekit_metadata(
     legacy = Path(cfg["items_path"]).read_text(encoding="utf-8")
     group_line = _equipment_line(legacy)
     item_line = _item_line(legacy, ROLLER_ITEM)
+    lamella_line = next(
+        line
+        for line in legacy.splitlines()
+        if re.match(rf"^\S+\s+{re.escape(LAMELLA_ITEM)}\s", line)
+    )
 
     cfg["output_format"] = "yaml"
     ets_to_openhab.export_output(
@@ -347,7 +353,11 @@ def test_exported_legacy_and_yaml_have_equivalent_homekit_metadata(
         include_private_persistence=False,
     )
     exported_yaml = yaml.safe_load(Path(cfg["yaml_path"]).read_text(encoding="utf-8"))
-    for name, line in ((ROLLER_EQUIPMENT, group_line), (ROLLER_ITEM, item_line)):
+    for name, line in (
+        (ROLLER_EQUIPMENT, group_line),
+        (ROLLER_ITEM, item_line),
+        (LAMELLA_ITEM, lamella_line),
+    ):
         legacy_metadata = parse_metadata(line.partition("{")[2].rpartition("}")[0])
         yaml_metadata = exported_yaml["items"][name].get("metadata", {})
         assert legacy_metadata.get("homekit") == yaml_metadata.get("homekit")
@@ -356,6 +366,9 @@ def test_exported_legacy_and_yaml_have_equivalent_homekit_metadata(
         else:
             assert "homekit" not in yaml_metadata
     if homekit_enabled:
+        lamella_metadata = exported_yaml["items"][LAMELLA_ITEM]["metadata"]["homekit"]
+        assert lamella_metadata["value"] == "CurrentHorizontalTiltAngle, TargetHorizontalTiltAngle"
+        assert set(lamella_metadata["config"]) == {"Instance"}
         options = exported_yaml["items"][ROLLER_EQUIPMENT]["metadata"]["homekit"]["config"]
         assert ("sendUpDownForExtents" in options) is (send_up_down is not False)
         assert ("stop" in options) is stop

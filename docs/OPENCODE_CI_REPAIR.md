@@ -1,7 +1,7 @@
 # Auto-repair failed CI for approved HomeKit issue #89
 
 This workflow adds **at most two** controlled OpenCode + Superpowers
-follow-up changes to the already-approved HomeKit Draft PR. It does **not**
+follow-up changes to the already-approved HomeKit Draft PR **targeting `dev`**. It does **not**
 auto-merge, edit `main`, add paid providers, expand the original plan, or
 permit unrelated PRs.
 
@@ -9,7 +9,9 @@ permit unrelated PRs.
 
 A completed **failed** `CI` run that was explicitly dispatched on a
 bot-created branch of the form
-`ai/issue-89-plan-v2-run-<run ID>`. Other PRs, user branches,
+`ai/issue-89-plan-v2-run-<run ID>` **whose open Draft PR base is `dev`**.
+The workflow definition and trusted validators stay on GitHub's default
+branch `main`. Other PRs, user branches,
 GitHub PR events, successful CI, and unrelated jobs are ignored.
 
 The PR must remain a **Draft** and the author must be
@@ -48,9 +50,12 @@ should fix the failure's root cause, **not weaken or skip tests**.
 
 - Validate `tests/test_ci_repair.py` in CI and review the privileged workflow
   before merging the infrastructure PR.
-- After merge, the workflow lives on `main`. Subsequent *failed*
+- After merge, the workflow lives on `main` (mandatory for `workflow_run`).
+  Subsequent *failed*
   `workflow_dispatch` CI runs on a matching Draft PR can trigger the
   automatic repair.
+- The current PR #108 currently targets `main`: first reconcile `dev`
+  and then retarget it to `dev`, checking the resulting diff and CI.
 - The current PR #108 already has manual test corrections. If its current CI
   is green, the repair workflow **must not run**. A forced failing run should
   not be introduced merely to test the feature.
@@ -60,7 +65,8 @@ should fix the failure's root cause, **not weaken or skip tests**.
 
 ## Limits
 
-- The allowlist is pinned to Issue #89, with an owner-approved v2 plan.
+- The allowlist is pinned to Issue #89, with an owner-approved v2 plan
+  and a `dev` target. A PR against `main` is intentionally rejected.
   Another issue requires new review and a separate, scoped design.
 - Free-tier availability and capability may change; the router has **no paid
   fallback** and aborts if no approved model passes its read-only probe.

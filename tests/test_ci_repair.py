@@ -4,7 +4,11 @@ import base64
 import hashlib
 import importlib.util
 import json
+import os
+import shutil
+import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -263,3 +267,74 @@ def test_repair_agent_denies_shell_and_new_files():
     assert "action: bash" not in agent
     assert "action: write" not in agent
     assert "action: edit" in agent
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux" or shutil.which("bash") is None,
+    reason="the real workflow cleanup step requires Linux and Bash",
+)
+@pytest.mark.parametrize("tracked_agent", [True, False])
+def test_workflow_cleanup_preserves_tracked_policy_and_collects_source_only(
+    tmp_path, monkeypatch, tracked_agent
+):
+    candidate = tmp_path / "candidate"
+    candidate.mkdir()
+    agent = candidate / ".opencode/agents/issue89-ci-repair.md"
+    agent.parent.mkdir(parents=True)
+    original_agent = "# Original repository policy\n"
+    if tracked_agent:
+        agent.write_text(original_agent, encoding="utf-8")
+    source = candidate / "ets_to_openhab.py"
+    source.write_text("# Original source\n", encoding="utf-8")
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "-C", str(candidate), *args],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+
+    git("init", "-q")
+    git("add", ".")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "base")
+    source.write_text("# Repaired source\n", encoding="utf-8")
+    if tracked_agent:
+        # Reproduce the original cleanup failure without weakening the guard.
+        agent.unlink()
+        with monkeypatch.context() as patch:
+            patch.chdir(candidate)
+            with pytest.raises(ValueError, match="Deletion/rename/new files"):
+                ci.changed_files()
+    agent.write_text("# Trusted runtime policy\n", encoding="utf-8")
+
+    trusted_scripts = tmp_path / "trusted/scripts"
+    trusted_scripts.mkdir(parents=True)
+    for name in ("ci_repair.py", "issue89_impl.py", "issue_impl.py", "issue_bot.py"):
+        shutil.copy2(ROOT / "scripts" / name, trusted_scripts / name)
+    temporary = tmp_path / "runtime"
+    temporary.mkdir()
+    (temporary / "repair-context.json").write_text('{"attempt": 1}', encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/opencode-ci-self-repair.yml").read_text(encoding="utf-8")
+    step = workflow.split(
+        "      - name: Remove trusted temporary agent; validate exact repair diff\n", 1
+    )[1].split("\n      - name:", 1)[0]
+    script = textwrap.dedent(step.split("        run: |\n", 1)[1])
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=candidate,
+        env=os.environ | {"RUNNER_TEMP": str(temporary)},
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    artifact = json.loads((temporary / "repair-artifact.json").read_text(encoding="utf-8"))
+    assert [item["path"] for item in artifact["files"]] == ["ets_to_openhab.py"]
+    assert base64.b64decode(artifact["files"][0]["content_b64"]) == source.read_bytes()
+    assert git("diff", "--name-only") == "ets_to_openhab.py"
+    if tracked_agent:
+        assert agent.read_text(encoding="utf-8") == original_agent
+    else:
+        assert not agent.exists()

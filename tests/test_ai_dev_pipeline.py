@@ -52,11 +52,7 @@ def test_repair_only_updates_approved_dev_drafts_without_auto_merge():
     assert "force:false" in text
     assert "workflow_id:'ci.yml'" in text
     assert "auto_merge" not in text
-    from scripts import ci_repair  # noqa: PLC0415
-
-    import inspect
-
-    check = inspect.getsource(ci_repair.check_authorization)
+    check = (ROOT / "scripts" / "ci_repair.py").read_text(encoding="utf-8")
     assert 'get("ref") != "dev"' in check
     assert 'get("ref") != "main"' not in check
 

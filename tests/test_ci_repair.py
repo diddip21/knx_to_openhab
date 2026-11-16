@@ -180,8 +180,7 @@ def test_hidden_implementation_reference_survives_description_rewrites(tmp_path,
     make_event(tmp_path, monkeypatch)
     source = live_source()
     source["pr"]["body"] = (
-        "Deutsche PR-Beschreibung mit Zusammenfassung.\n"
-        "<!-- ai-implementation-command: 40 -->"
+        "Deutsche PR-Beschreibung mit Zusammenfassung.\n" "<!-- ai-implementation-command: 40 -->"
     )
     assert ci.check_authorization(source, OWNER)["command_comment_id"] == 40
 

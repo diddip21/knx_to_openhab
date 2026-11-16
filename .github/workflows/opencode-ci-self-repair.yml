@@ -54,7 +54,7 @@ jobs:
             const {data: open} = await github.rest.pulls.list({
               ...repo, state:'open', head:`${repo.owner}:${branch}`, per_page:100
             });
-            const pr = open.find(p => p.head.ref === branch && p.base.ref === 'main');
+            const pr = open.find(p => p.head.ref === branch && p.base.ref === 'dev');
             if (!pr) throw new Error('No matching approved Draft PR');
             const commits = await github.paginate(
               github.rest.pulls.listCommits,
@@ -166,7 +166,7 @@ jobs:
             const {data: open} = await github.rest.pulls.list({
               ...repo, state:'open', head:`${repo.owner}:${branch}`, per_page:100
             });
-            const pr = open.find(p => p.head.ref === branch && p.base.ref === 'main');
+            const pr = open.find(p => p.head.ref === branch && p.base.ref === 'dev');
             if (!pr) throw new Error('Matching Draft PR disappeared');
             const commits = await github.paginate(
               github.rest.pulls.listCommits,
@@ -208,7 +208,7 @@ jobs:
             if (currentPr.state !== 'open' || !currentPr.draft ||
                 currentPr.user.login !== 'github-actions[bot]' ||
                 currentPr.head.sha !== item.head_sha ||
-                currentPr.head.ref !== item.branch || currentPr.base.ref !== 'main') {
+                currentPr.head.ref !== item.branch || currentPr.base.ref !== 'dev') {
               core.setFailed('Draft PR changed during repair');
               return;
             }
@@ -253,7 +253,7 @@ jobs:
               message:`fix(ai-ci): issue89 attempt ${item.attempt}`,
               tree:tree.sha,parents:[item.head_sha]
             });
-            // Fast-forward only; no force push or merge into main.
+            // Fast-forward only; no force push or merge into dev/main.
             await github.rest.git.updateRef({
               ...repo, ref:`heads/${item.branch}`, sha:commit.sha, force:false
             });

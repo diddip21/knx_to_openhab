@@ -49,8 +49,9 @@ if command == "systemctl":
         sys.exit(0 if unit in active else 3)
     if action == "show":
         if "--property=LoadState" in args:
-            unit_file = root / "host" / "etc" / "systemd" / "system" / unit
-            print("loaded" if unit_file.is_file() else "not-found")
+            # This adapter records installed files in the sandbox but does not
+            # load units into systemd. Active state is modeled separately above.
+            print("not-found")
         elif "--property=FragmentPath" in args:
             print(f"/etc/systemd/system/{unit}")
         else:

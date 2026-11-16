@@ -1,0 +1,183 @@
+name: OpenCode issue planner
+
+on:
+  issues:
+    types: [labeled, edited]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ai-issue-plan-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: >-
+      github.event.issue.state == 'open' &&
+      !github.event.issue.pull_request &&
+      (
+        (github.event_name == 'issues' &&
+         ((github.actor == github.repository_owner &&
+           github.event.action == 'labeled' &&
+           github.event.label.name == 'ai:plan') ||
+          (github.event.action == 'edited' &&
+           contains(github.event.issue.labels.*.name, 'ai:approved'))) ||
+        (github.event_name == 'issue_comment' &&
+         github.actor == github.repository_owner)
+      )
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout trusted default branch only
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Fetch bot comments
+        uses: actions/github-script@v7
+        env:
+          OUT_FILE: ${{ runner.temp }}/issue-comments.json
+        with:
+          script: |
+            const fs = require('node:fs');
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+            fs.writeFileSync(process.env.OUT_FILE, JSON.stringify(comments));
+
+      - name: Decide operation and prepare prompt
+        id: decision
+        shell: bash
+        run: python scripts/issue_bot.py prepare
+
+      - name: Set up Node.js
+        if: steps.decision.outputs.operation == 'plan'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install OpenCode
+        if: steps.decision.outputs.operation == 'plan'
+        run: |
+          npm install --global @opencode/cli
+          opencode --version
+
+      - name: Select an approved working free model
+        id: model
+        if: steps.decision.outputs.operation == 'plan'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/opencode_model_router.py select --task plan --report "$RUNNER_TEMP/model-router.json"
+
+      - name: Generate plan with selected free model
+        if: steps.decision.outputs.operation == 'plan'
+        shell: bash
+        env:
+          MODEL: ${{ steps.model.outputs.model }}
+          CI: "true"
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=10s 660s \
+            opencode run --standalone --archived --format json \
+              --agent issue-planner --model "$MODEL" \
+              "$(cat "$RUNNER_TEMP/issue-prompt.txt")" \
+            < /dev/null > "$RUNNER_TEMP/opencode-events.jsonl" \
+            2> "$RUNNER_TEMP/opencode-stderr.log"
+          python scripts/issue_bot.py finish
+
+      - name: Publish plan, questions or approval
+        if: >-
+          steps.decision.outputs.operation == 'plan' ||
+          steps.decision.outputs.operation == 'approve' ||
+          steps.decision.outputs.operation == 'invalidate' ||
+          steps.decision.outputs.operation == 'notice'
+        uses: actions/github-script@v7
+        env:
+          RESULT_FILE: ${{ runner.temp }}/issue-result.json
+        with:
+          script: |
+            const fs = require('node:fs');
+            const crypto = require('node:crypto');
+            const result = JSON.parse(fs.readFileSync(process.env.RESULT_FILE, 'utf8'));
+            const repo = { owner: context.repo.owner, repo: context.repo.repo };
+            const issue_number = result.issue;
+            const details = await github.rest.issues.get({ ...repo, issue_number });
+            if (details.data.state !== 'open' || details.data.pull_request) {
+              core.setFailed('Issue closed or converted to PR during processing');
+              return;
+            }
+            const labels = new Set(details.data.labels.map(x => x.name));
+            if (result.operation !== 'invalidate' && !labels.has('ai:plan')) {
+              core.setFailed('ai:plan label removed while processing');
+              return;
+            }
+            let liveDigest;
+            if (['approve', 'invalidate', 'plan'].includes(result.operation)) {
+              liveDigest = crypto.createHash('sha256')
+                .update(JSON.stringify([details.data.title ?? '', details.data.body ?? '']), 'utf8')
+                .digest('hex');
+              if (!result.digest || liveDigest !== result.digest) {
+                core.setFailed('Issue title or body changed while processing; rerun the plan or approval against the current issue.');
+                return;
+              }
+            }
+            if (result.operation === 'approve') {
+              if (!labels.has('ai:waiting')) {
+                core.setFailed('Approval no longer awaiting human review');
+                return;
+              }
+              await github.rest.issues.addLabels({
+                ...repo, issue_number, labels: ['ai:approved']
+              });
+              await github.rest.issues.removeLabel({
+                ...repo, issue_number, name: 'ai:waiting'
+              });
+            } else if (result.operation === 'plan') {
+              await github.rest.issues.createComment({
+                ...repo, issue_number, body: result.comment
+              });
+              await github.rest.issues.addLabels({
+                ...repo, issue_number, labels: ['ai:waiting']
+              });
+              if (labels.has('ai:approved')) {
+                await github.rest.issues.removeLabel({
+                  ...repo, issue_number, name: 'ai:approved'
+                });
+              }
+              return;
+            } else if (result.operation === 'invalidate') {
+              if (!labels.has('ai:approved') || liveDigest === result.approved_digest) {
+                core.info('The approved state changed while processing; keeping current labels.');
+                return;
+              }
+              await github.rest.issues.removeLabel({
+                ...repo, issue_number, name: 'ai:approved'
+              });
+              if (labels.has('ai:plan') && !labels.has('ai:waiting')) {
+                await github.rest.issues.addLabels({
+                  ...repo, issue_number, labels: ['ai:waiting']
+                });
+              }
+              await github.rest.issues.createComment({
+                ...repo, issue_number, body: result.comment
+              });
+              return;
+            }
+            await github.rest.issues.createComment({
+              ...repo, issue_number, body: result.comment
+            });
+
+      - name: Explain model failure
+        if: failure() && steps.decision.outputs.operation == 'plan'
+        run: |
+          echo "Planning failed. Inspect the Actions logs. No plan was published." >> "$GITHUB_STEP_SUMMARY"

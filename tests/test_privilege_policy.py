@@ -837,10 +837,12 @@ def test_setup_preflights_credentials_before_stopping_services():
 
 def test_setup_restores_previously_active_services_after_failure():
     setup = (ROOT / "installer" / "setup.sh").read_text(encoding="utf-8")
+    restore = (ROOT / "installer" / "setup_restore.sh").read_text(encoding="utf-8")
 
     assert "PREVIOUSLY_ACTIVE_UNITS" in setup
+    assert 'source "$SCRIPT_DIR/setup_restore.sh"' in setup
     assert "trap restore_previous_services EXIT" in setup
-    assert 'sudo systemctl start "$unit"' in setup
+    assert 'sudo systemctl start "$unit"' in restore
     assert setup.index("trap restore_previous_services EXIT") < setup.index(
         'echo "Stopping services and waiting for the updater to finish"'
     )
@@ -910,6 +912,8 @@ def test_setup_preflight_generates_for_missing_credentials_and_rejects_invalid_c
             '    SETUP_TEST_PREFLIGHT_AS_SERVICE=1 exec "$@"\n'
             "  fi\n"
             "fi\n"
+            'if [ "$1" = systemctl ] && [ "$2" = show ]; then\n'
+            "  echo not-found\n  exit 0\nfi\n"
             'echo mutation >> "$SETUP_TEST_SUDO_LOG"\n'
             "exit 0\n",
             encoding="utf-8",

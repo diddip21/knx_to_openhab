@@ -32,6 +32,14 @@ The installation directories can be selected with `KNXOH_INSTALL_DIR`,
 reused on later setup runs. The paths must be absolute, separate, and outside
 the application directory.
 
+Before changing services, setup checks all four `knxohui` systemd unit names.
+An existing unmasked unit at another location or an unrecognized unit file in
+`/etc/systemd/system` stops setup with an error. Existing project units from
+older releases are recognized by their known description and launch command.
+Administrator-masked units remain untouched. Resolve a name collision with
+the unit's owner before retrying setup; do not remove a unit solely to make
+the installer pass.
+
 ### Runtime paths and migration
 
 | Data | Default location |
@@ -48,8 +56,14 @@ the application directory.
 `setup.sh` copies existing settings, jobs, uploads, and backups before changing
 the active paths. It checks for conflicting files and refuses symlinked or
 system-wide legacy source directories. Only after a successful copy does it
-remove legacy job or backup directories inside the application tree. The old
-root `config.json` is copied to `generator.json` before the application tree is
+remove legacy job or backup directories inside the application tree. Runtime
+files are copied through temporary files, so most interrupted copies leave no
+partial final destination and can be retried. If a restart finds a tracked
+temporary without its final destination, or an incomplete exclusive-copy
+fallback target, setup preserves the marker and files for manual inspection
+rather than trusting a device/inode identity that may have been reused. Do not
+remove such files until their ownership and contents are verified. The old root
+`config.json` is copied to `generator.json` before the application tree is
 reset to the packaged defaults. Existing user-chosen Web UI passwords are converted to
 Argon2id hashes in the restricted secrets file. If no usable password exists, setup
 generates a random password, stores only its hash, and prints the new password once. This
@@ -176,6 +190,21 @@ prereleases such as `1.3.0-rc.1` can be selected this way; they are never
 chosen by the default stable channel. If GitHub has no matching release, the
 installer stops instead of falling back to `main`.
 
+Before requesting sudo, the entry point checks for Python 3.11 or newer and at
+least 1 GiB of free space on the installation filesystem. `--install` and
+`--update` resolve the selected GitHub release before installing packages, so
+an unavailable release or network fails before package changes. After system
+packages are available, a temporary Python virtual environment is created and
+removed to verify venv support before cloning or running setup. `--repair`
+does not fetch a release, but its dependency and setup steps may still need
+network access. When all required system packages are installed, a repeated
+run skips `apt-get update`; Python package installation in setup may still
+access a package index. `--help` and `--cancel` work without Python.
+Before setup creates or reuses the `knxohui` service account, it checks that
+an existing account uses the matching primary group and a non-login shell.
+Incompatible accounts stop setup before services or file ownership change.
+When setup fails, the top-level installer returns its exit code to the caller.
+
 On a first install, running without a mode keeps `--install` as the default.
 For an existing installation, an interactive run asks for update, repair, or
 cancel; a non-interactive run stops with an explicit instruction instead of
@@ -183,6 +212,21 @@ changing the system. An existing directory is never overwritten by
 `--install`. These choices make the entry point safer; they do not yet make
 every operation in `setup.sh` idempotent or add a reinstall flow (Issue #25
 remains open for those items).
+
+During first installation, the checkout is copied into a temporary directory
+beside the final installation path and moved into place only after the copy
+succeeds. If copying fails, the final path stays absent and `--install` can be
+retried. If the subsequent setup fails, the copied checkout remains in place;
+use `bash install.sh --repair` after correcting the reported cause.
+Activation uses Linux's atomic no-clobber rename; it refuses an installation
+path that appears during copying and never falls back to a cross-filesystem copy.
+
+During setup, the installer stops its own Web UI service, then checks whether
+the configured bind address and port are available before copying files or
+migrating runtime data. If another process owns the address, setup exits with
+an error and attempts to restore services that were running before setup.
+Because a process can claim the port after this check, the final systemd start
+remains the definitive availability check.
 
 The top-level installer resolves the GitHub release and checks out its exact
 tag. It does not yet stage a separate release directory or verify the published

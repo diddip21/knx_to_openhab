@@ -260,12 +260,16 @@ def test_setup_uses_a_saved_custom_maintenance_lock_path(tmp_path):
     sudo_log = tmp_path / "sudo.log"
     fake_sudo = fake_bin / "sudo"
     fake_sudo.write_text(
-        '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$SETUP_SUDO_LOG"\nexit 1\n',
+        '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$SETUP_SUDO_LOG"\n'
+        'if [[ "${1:-}" == systemctl && "${2:-}" == show ]]; then\n'
+        "  echo not-found\n  exit 0\nfi\nexit 1\n",
         encoding="utf-8",
     )
     fake_sudo.chmod(0o755)
     (fake_bin / "getent").write_text(
-        '#!/usr/bin/env bash\n[[ "$1" == group && "$2" == knxohui ]]\n', encoding="utf-8"
+        '#!/usr/bin/env bash\nif [[ "$1" == passwd ]]; then exit 2; fi\n'
+        '[[ "$1" == group && "$2" == knxohui ]]\n',
+        encoding="utf-8",
     )
     (fake_bin / "getent").chmod(0o755)
     (fake_bin / "id").write_text(
@@ -362,7 +366,8 @@ def test_setup_rejects_unsafe_maintenance_lock_parent_before_privileged_steps(tm
     )
     fake_sudo.chmod(0o755)
     (fake_bin / "getent").write_text(
-        '#!/usr/bin/env bash\n[[ "$1" == group && "$2" == knxohui ]]\n',
+        '#!/usr/bin/env bash\nif [[ "$1" == passwd ]]; then exit 2; fi\n'
+        '[[ "$1" == group && "$2" == knxohui ]]\n',
         encoding="utf-8",
     )
     (fake_bin / "getent").chmod(0o755)

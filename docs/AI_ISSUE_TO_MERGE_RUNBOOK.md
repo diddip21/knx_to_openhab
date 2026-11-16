@@ -1,11 +1,19 @@
 # Runbook: Vom GitHub-Issue bis zum geprüften Merge
 
 > Status: Pilot für [Issue #89](https://github.com/diddip21/knx_to_openhab/issues/89).
-> Stand der E2E-Prüfung: **16.11.2026**, PR-Head `#108: 7730c7f0`,
-> `#109: 8b6ebce2`. Statusdaten sind eine **Momentaufnahme** und müssen
-> nach jeder neuen Commit-Version erneut geprüft werden.
+> Stand der E2E-Prüfung: **16.11.2026**. PR #108, #109 und der
+> neue Entwicklungs-Synchronisations-PR #110 müssen anhand ihrer
+> **jeweils aktuellen HEAD-SHA** überprüft werden. Das ist eine
+> Momentaufnahme, kein garantiert aktueller Status.
 >
 > **Merksatz:** Grüne CI ≠ fachlich geprüft ≠ freigegeben ≠ gemergt.
+>
+> **Aktuelle Blockade:** `dev` besitzt 46 eigene, `main` 276 eigene
+> Commits; Draft-PR [#110 (`main` → `dev`)](https://github.com/diddip21/knx_to_openhab/pull/110)
+> ist wegen Konflikten **nicht mergebar**. Vor dem Retargeting von
+> [#108](https://github.com/diddip21/knx_to_openhab/pull/108) bitte den
+> [kompakten dev-Quickstart](AI_DEV_TO_MERGE_QUICKSTART.md) abarbeiten.
+> Niemals `dev` auf `main` zurücksetzen oder Konflikte am `main`-Head lösen.
 
 ## 1. Rollen, Zuständigkeiten und Grenzen
 
@@ -34,7 +42,7 @@ sicherheitsgeprüften Implementierungsweg.
 | 5 | Free-Model-Router, Agent, Publisher | CI liest Approval, wählt nur geprüfte Free-Modelle, beschränkt Dateien und publiziert Draft-PR | [Implementierungslauf](https://github.com/diddip21/knx_to_openhab/actions/runs/43893665720) | ✅ Durchlaufen |
 | 6 | Draft-PR statt Direktänderung | Publisher erzeugt PR, keine Änderungen an `main` | [Feature-PR #108](https://github.com/diddip21/knx_to_openhab/pull/108) | ✅ Erledigt |
 | 7 | CI auf *aktuellem* Commit | GitHub: Black, isort, Flake8, mypy, Core 3.12/3.13, UI | [#108 CI 43908602613](https://github.com/diddip21/knx_to_openhab/actions/runs/43908602613): vier Jobs grün auf `7730c7f0` | ✅ Erledigt |
-| 8 | Automatische CI-Reparatur | **Nur** fehlgeschlagener, explizit gestarteter CI-Lauf des genehmigten Bot-Drafts; höchstens zwei Versuche | [Infrastruktur-PR #109](https://github.com/diddip21/knx_to_openhab/pull/109), [Guard-Tests](https://github.com/diddip21/knx_to_openhab/actions/runs/43908687141) | ⚠️ Implementiert / noch nicht gemergt / kein Live-E2E-Reparaturtest |
+| 8 | Automatische CI-Reparatur | **Nur** fehlgeschlagener, explizit gestarteter CI-Lauf des genehmigten Bot-Drafts **gegen `dev`**; höchstens zwei Versuche | [Infrastruktur-PR #109](https://github.com/diddip21/knx_to_openhab/pull/109), [Guard-Tests](https://github.com/diddip21/knx_to_openhab/actions/runs/43908687141) | ⚠️ Implementiert / noch nicht gemergt / kein Live-E2E-Reparaturtest |
 | 9 | Feature-/Sicherheitsreview | Mensch liest alle PR-Kommentare, Diff, Datenflüsse, Tests, Defaults; offene Findings klären | In #108 und #109 zum Prüfzeitpunkt keine formellen Reviews | ⬜ Offen |
 | 10 | UI-Belege | Echte, anonymisierte Screenshots der neuen HomeKit-Einstellungen in `docs/screenshots/` einchecken, PR verlinken | PR #108 verändert keine Screenshot-Datei; `AGENTS.md` verlangt sie | ⬜ Offen |
 | 11 | Funktionsabnahme | Reales ETS-Projekt; Legacy/YAML, Web-UI, CLI/API, Export und Werte vergleichen | Prüfschritte in Abschnitt 3 | ⬜ Offen |
@@ -129,6 +137,7 @@ Issue + ai:plan
   getrennter Publisher -> Draft-PR
     |
   expliziter workflow_dispatch CI / push- und PR-Checks
+    (Feature-PR-Base: dev, trusted Workflow-Definition: main)
     |
     +-- CI rot --> [nur approved issue89 Bot-Draft & Dispatch]
     |                 -> Reparatur #1 (nur erlaubte Dateien)
@@ -140,7 +149,8 @@ Issue + ai:plan
                       -> echte UI-Screenshots + Funktionsprüfung
                       -> KNX-Hardwareabnahme
                       -> Owner setzt Draft auf Ready for Review
-                      -> Owner merged (kein Bot-Merge)
+                      -> Owner merged Feature nach dev
+                      -> Release-PR dev → main (manuell)
                       -> CI/Smoke auf main
                       -> Issue schließen nach belegter Abnahme
 ```
@@ -159,18 +169,32 @@ wurde.
 
 ## 5. Merge-Reihenfolge, verantwortliche Aktionen
 
-1. **#109 zuerst prüfen und mergen**, wenn Security-Review und
+1. **`dev` zuerst mit `main` versöhnen** und die 46
+   exklusiven `dev`-Commits erhalten: [#110](https://github.com/diddip21/knx_to_openhab/pull/110)
+   ist ein **nicht mergebarer Konfliktnachweis** (Head `main`);
+   Konflikte in einem **separaten Integrationsbranch von `dev`**
+   lösen und per kontrolliertem PR nach `dev` einbringen.
+   Details und Befehle:
+   [dev-Quickstart](AI_DEV_TO_MERGE_QUICKSTART.md).
+2. **#109 gegen `main` prüfen und mergen**, wenn Security-Review und
    grüne Tests dieses *exakten* Commits vorliegen. Das aktiviert
    die Reparatur für spätere fehlgeschlagene CI-`workflow_dispatch`-
    Läufe des Issue-#89-Drafts; ein bereits grüner Lauf löst keinen
    Reparaturagenten aus.
-2. **#108 fachlich abnehmen**, fehlende Screenshots ergänzen,
+3. **#108 erst nach synchronisiertem `dev` auf Base `dev`
+   retargeten**. Danach die neue Diff-/CI-Matrix prüfen, `main`
+   keinesfalls durch diesen PR mergen.
+4. **#108 fachlich abnehmen**, fehlende Screenshots ergänzen,
    Generator-Ausgabe/Config real vergleichen und Human-Review abschließen.
-3. Nach jedem PR-Commit alle Checks noch einmal anhand der Head-SHA
+5. Nach jedem PR-Commit oder jeder Base-Änderung alle Checks
+   noch einmal anhand der Head-SHA
    prüfen, inklusive Screenshot-/Golden-Tests und Kommentaren.
-4. Wenn die manuellen Gates dokumentiert sind, Draft-Status von #108
+6. Wenn die manuellen Gates dokumentiert sind, Draft-Status von #108
    auf *Ready for review* setzen. **Merge ausschließlich durch Owner**.
-5. Nach dem Merge CI auf `main` und einen sicheren lokalen
+7. Erst nach erfolgreich integriertem `dev` einen **separaten
+   Release-PR `dev` → `main`** erstellen. Dafür erneut CI,
+   Reviews, Rollback-Plan und manuelle Owner-Freigabe verlangen.
+8. Nach diesem Release-Merge CI auf `main` und einen sicheren lokalen
    HomeKit-/KNX-Smoke-Test dokumentieren. Erst danach Issue #89
    schließen.
 

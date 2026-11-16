@@ -1,8 +1,11 @@
 """Browser tests for the HomeKit settings fieldset (issue #89)."""
 
 import json
+import os
 import re
+from pathlib import Path
 
+import pytest
 from playwright.sync_api import Page, expect
 
 
@@ -165,3 +168,96 @@ def test_save_default_mode_removes_the_override_key(page: Page, base_url, flask_
     assert general["homekit_rollershutter_sendUpDownForExtents"] is True
     assert general["homekit_rollershutter_stop"] is False
     assert general["homekit_rollershutter_stopSameDirection"] is False
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the isolated real app requires POSIX host modules")
+@pytest.mark.parametrize(
+    ("mode", "override", "send_extents", "stop", "stop_same"),
+    [
+        ("default", None, True, False, False),
+        ("enabled", True, False, True, False),
+        ("disabled", False, False, False, True),
+    ],
+)
+def test_real_homekit_save_reload_and_screenshot(
+    page: Page, emulator_server, mode, override, send_extents, stop, stop_same
+):
+    """Exercise actual config GET/POST, disk persistence and a fresh page load."""
+    config_path = emulator_server["generator_config"]
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    for key in (
+        "homekit_enabled",
+        "homekit_rollershutter_sendUpDownForExtents",
+        "homekit_rollershutter_stop",
+        "homekit_rollershutter_stopSameDirection",
+    ):
+        config["general"].pop(key, None)
+    config["general"]["central_function_keyword"] = "acceptance-central"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    page.add_init_script("window.localStorage.setItem('knx_to_openhab.locale', 'de')")
+    # Only the external release lookup is stubbed. Config routes remain real.
+    page.route(
+        "**/api/version/check",
+        lambda route: route.fulfill(
+            content_type="application/json", body='{"update_available": false}'
+        ),
+    )
+    page.set_viewport_size({"width": 1440, "height": 1000})
+
+    def open_loaded_settings():
+        page.locator("#settings-section .card-header").click()
+        expect(page.locator("#conf-central-keyword")).to_have_value("acceptance-central")
+
+    page.goto(emulator_server["base_url"])
+    open_loaded_settings()
+    expect(page.locator("#conf-homekit-mode-default")).to_be_checked()
+    expect(page.locator("#conf-homekit-send-up-down")).to_be_checked()
+    expect(page.locator("#conf-homekit-stop")).not_to_be_checked()
+    expect(page.locator("#conf-homekit-stop-same-direction")).not_to_be_checked()
+
+    page.locator(f"#conf-homekit-mode-{mode}").check()
+    page.locator("#conf-homekit-send-up-down").set_checked(send_extents)
+    page.locator("#conf-homekit-stop").set_checked(stop)
+    page.locator("#conf-homekit-stop-same-direction").set_checked(stop_same)
+    with page.expect_response(
+        lambda response: response.url.endswith("/api/config") and response.request.method == "POST"
+    ) as saved:
+        page.locator("#settings-section button[onclick='saveConfig(false)']").click()
+    assert saved.value.ok
+    expect(page.locator("#configStatus")).to_have_class("status-message success")
+
+    expected = {
+        "homekit_rollershutter_sendUpDownForExtents": send_extents,
+        "homekit_rollershutter_stop": stop,
+        "homekit_rollershutter_stopSameDirection": stop_same,
+        "central_function_keyword": "acceptance-central",
+    }
+    persisted = json.loads(config_path.read_text(encoding="utf-8"))["general"]
+    loaded = page.request.get(f"{emulator_server['base_url']}/api/config")
+    assert loaded.ok
+    fetched = loaded.json()["general"]
+    for key, value in expected.items():
+        assert persisted[key] == value
+        assert fetched[key] == value
+    for general in (persisted, fetched):
+        if override is None:
+            assert "homekit_enabled" not in general
+        else:
+            assert general["homekit_enabled"] is override
+
+    page.reload()
+    open_loaded_settings()
+    expect(page.locator(f"#conf-homekit-mode-{mode}")).to_be_checked()
+    expect(page.locator("#conf-homekit-send-up-down")).to_be_checked(checked=send_extents)
+    expect(page.locator("#conf-homekit-stop")).to_be_checked(checked=stop)
+    expect(page.locator("#conf-homekit-stop-same-direction")).to_be_checked(checked=stop_same)
+    screenshot_dir = Path("test-results/homekit")
+    screenshot_dir.mkdir(parents=True, exist_ok=True)
+    page.locator("fieldset:has(#conf-homekit-mode-default)").screenshot(
+        path=str(screenshot_dir / f"issue89-{mode}-saved-reloaded.png")
+    )
+    (screenshot_dir / f"issue89-{mode}-roundtrip.json").write_text(
+        json.dumps({"mode": mode, "override": override, "verified": expected}, indent=2),
+        encoding="utf-8",
+    )

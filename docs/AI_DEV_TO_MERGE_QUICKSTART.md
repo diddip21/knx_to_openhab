@@ -12,6 +12,19 @@ und die neuesten GitHub-Actions-Runs in den verlinkten PRs vergleichen.
 - **Release:** nach geprüfter Integration ein **eigener PR von `dev` nach `main`**.
   **Weder Agent noch Publisher dürfen automatisch mergen.**
 
+## Reihenfolge bei der Umstellung – wichtig
+
+1. **Zuerst #109** mit grüner CI und Security-Review **manuell nach `main` mergen**.
+   Nur damit können die GitHub-Default-Branch-Trigger und sicheren Controller
+   die `dev`-Regeln aktivieren. Während der folgenden Synchronisation ist
+   der Issue-Agent bewusst **fail-closed**, also vorübergehend nicht verfügbar.
+2. **Danach `main` vollständig nach `dev` integrieren**. Dadurch sind
+   alle neuen #109-Controller und Policies zugleich Bestandteil von `dev`.
+3. **Erst dann #108 gegen `dev` retargeten**, Diff, Reviews und neue CI
+   prüfen und nach Hardware-/UI-Abnahme manuell mergen.
+4. Für einen Release: **separater PR `dev` → `main`** mit eigenen
+   Freigaben, nie implizit beim Feature-Merge.
+
 ### Einmalige Voraussetzung: `dev` sicher aufholen
 
 Am 16.11.2026 ist `dev` von `main` abgewichen:
@@ -52,7 +65,7 @@ jeweils aktuelle Codebasis aus `dev`.
 | PR | Ziel | Noch manueller Schritt |
 | --- | --- | --- |
 | [#108 HomeKit-Feature](https://github.com/diddip21/knx_to_openhab/pull/108) | **`dev`, nach der Synchronisation** | Bis dahin `main` als Base beibehalten, danach Base auf `dev` umstellen, Diff auf nur die HomeKit-Änderungen prüfen, neue CI abwarten |
-| [#109 KI-Controller + Self-Repair](https://github.com/diddip21/knx_to_openhab/pull/109) | **`main`** | CI und Security-Review; bei Freigabe manuell mergen, denn `workflow_run` muss auf dem Default-Branch liegen |
+| [#109 KI-Controller + Self-Repair](https://github.com/diddip21/knx_to_openhab/pull/109) | **`main`** | **ZUERST** CI und Security-Review, danach manuell mergen; `workflow_run` muss auf dem Default-Branch liegen. Erst anschließend `dev` synchronisieren |
 | [#110 Branch-Synchronisationskonflikt](https://github.com/diddip21/knx_to_openhab/pull/110) | `dev` | Ein separater Integrationsbranch muss Konflikte lösen; #110 nicht direkt mergen |
 
 Achtung: Auch wenn #108 und #109 bei einem früheren Commit grün waren,

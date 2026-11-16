@@ -65,7 +65,7 @@ def live_source():
             "sha": HEAD,
             "repo": {"full_name": "diddip21/knx_to_openhab"},
         },
-        "base": {"ref": "main"},
+        "base": {"ref": "dev"},
         "body": "Approval comment: 20; implementation command: 40",
     }
     return {
@@ -116,6 +116,14 @@ def test_unrelated_events_rejected(tmp_path, monkeypatch, override, error):
     make_event(tmp_path, monkeypatch, **override)
     with pytest.raises(ValueError, match=error):
         ci.check_authorization(live_source(), OWNER)
+
+
+def test_reject_non_development_base(tmp_path, monkeypatch):
+    make_event(tmp_path, monkeypatch)
+    source = live_source()
+    source["pr"]["base"]["ref"] = "main"
+    with pytest.raises(ValueError, match="Live PR"):
+        ci.check_authorization(source, OWNER)
 
 
 def test_stale_commit_rejected(tmp_path, monkeypatch):

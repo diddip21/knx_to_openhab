@@ -25,6 +25,7 @@ def run_setup_unit_manager(
     runtime_mask=False,
     destination_text=None,
     fragment_path=None,
+    destination_missing=False,
 ):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -63,7 +64,7 @@ def run_setup_unit_manager(
         destination.write_text("[Service]\nExecStart=/old/runtime-masked-unit\n", encoding="utf-8")
     elif load_state == "masked":
         destination.symlink_to("/dev/null")
-    else:
+    elif not destination_missing:
         destination.write_text(
             destination_text or "# Managed by knx_to_openhab installer\n[Service]\n",
             encoding="utf-8",
@@ -156,6 +157,18 @@ def test_setup_refuses_unit_loaded_from_another_location(tmp_path, fragment_path
     assert result.returncode != 0
     assert "outside the managed location" in result.stderr
     assert destination.read_text(encoding="utf-8").startswith("# Managed by")
+    assert all(call.startswith("show ") for call in events.read_text().splitlines())
+
+
+def test_setup_refuses_loaded_unit_with_missing_backing_file(tmp_path):
+    unit = "knxohui.service"
+    result, destination, events = run_setup_unit_manager(
+        tmp_path, unit, "loaded", destination_missing=True
+    )
+
+    assert result.returncode != 0
+    assert "loaded systemd unit with a missing backing file" in result.stderr
+    assert not destination.exists()
     assert all(call.startswith("show ") for call in events.read_text().splitlines())
 
 

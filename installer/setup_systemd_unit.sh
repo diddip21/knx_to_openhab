@@ -72,6 +72,10 @@ preflight_setup_systemd_unit() {
             echo "ERROR: Refusing to replace a unit outside the managed location: $unit ($fragment)." >&2
             return 1
         fi
+        if [[ ! -e "$destination" && ! -L "$destination" ]]; then
+            echo "ERROR: Refusing to replace a loaded systemd unit with a missing backing file: $unit ($destination)." >&2
+            return 1
+        fi
     fi
     if [[ -e "$destination" || -L "$destination" ]]; then
         if [[ -L "$destination" || ! -f "$destination" ]] ||

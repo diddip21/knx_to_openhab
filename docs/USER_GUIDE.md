@@ -104,6 +104,20 @@ The `config.json` file controls global settings for the generator.
 - **`switch`**: Configuration for switch detection.
   - `status_suffix`: Suffixes identifying the status GA (e.g., "Status", "Rückmeldung").
 
+### HomeKit blinds
+
+The **Settings → General → HomeKit (Apple Home)** fieldset controls HomeKit output without editing the ETS project:
+
+- **Mode** (`general.homekit_enabled`, tri-state):
+  - missing (default): the ETS info comment (`homekit=true/false`) decides,
+  - `true`: force HomeKit output on,
+  - `false`: force HomeKit output off.
+- **`general.homekit_rollershutter_sendUpDownForExtents`** (default `true`): adds `sendUpDownForExtents="true"` to the generated `WindowCovering` equipment metadata. End-position percentages (0/100 %) become UP/DOWN commands so the actuator performs its configured slat correction. Explicit `false` is preserved.
+- **`general.homekit_rollershutter_stop`** (default `false`): adds `stop="true"` when enabled.
+- **`general.homekit_rollershutter_stopSameDirection`** (default `false`): adds `stopSameDirection="true"` when enabled.
+
+The two stop options are independent and are only written while HomeKit output is active. Without a configuration key, the generator now emits `sendUpDownForExtents="true"` for HomeKit blinds; this is an intentional default change for existing HomeKit projects. Non-HomeKit output, KNX group addresses and Alexa metadata are unchanged. Verify the actual slat behaviour against the installed openHAB/HomeKit add-on version and the concrete KNX actuator; the repository tests do not replace that hardware check.
+
 ## Model Format and Live Gateway IP
 
 The Web UI exposes the model format under **Settings → General** and gateway controls under **Settings → Devices**.

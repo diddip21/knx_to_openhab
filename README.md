@@ -14,7 +14,7 @@ Includes a **Web UI** for browser-based management and a **CLI** for automated w
 - **Reports** — Unknown addresses, partial items, completeness checks (missing required channels)
 - **Auto-Placement** — Optional: automatically create missing floors/rooms for unmatched addresses
 - **Semantic Model** — Auto-tags items for OpenHAB's semantic model
-- **HomeKit / Alexa** — Auto-generates metadata when enabled in ETS project comments
+- **HomeKit / Alexa** — Auto-generates metadata when enabled in ETS project comments; HomeKit output and blind options can also be controlled in **Settings → General**
 - **InfluxDB Support** — Auto-configure persistence via ETS description tags
 - **Self-Update** — Check for and apply updates from GitHub directly in the UI
 - **Service Management** — Restart OpenHAB from the Web UI
@@ -111,6 +111,12 @@ The UI surfaces reports for anything that couldn't be fully placed:
 - **`completeness_report.json`** — Generated Things missing required channels per device type
 
 Enable auto-placement in **Settings → Auto-place unknown addresses** or set `general.auto_place_unknown = true` in `config.json`.
+
+### HomeKit Blinds
+
+When HomeKit output is active, generated blinds now include `sendUpDownForExtents="true"` on the `WindowCovering` equipment metadata by default (including projects that do not yet contain the new key). This translates the 0/100 % end-position commands into UP/DOWN so the actuator can keep its slat correction. Set `general.homekit_rollershutter_sendUpDownForExtents` to `false` to opt out. The optional `general.homekit_rollershutter_stop` and `general.homekit_rollershutter_stopSameDirection` switches are independent and disabled by default.
+
+Use **Settings → General → HomeKit (Apple Home)** to choose between ETS detection (default), forced on, or forced off (`general.homekit_enabled`). The override applies to CLI runs, job generation and project previews without changing KNX group addresses or Alexa metadata. See the [user guide](docs/USER_GUIDE.md#homekit-blinds) for details and the hardware-verification note.
 
 ---
 

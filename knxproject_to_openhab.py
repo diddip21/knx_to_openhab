@@ -715,6 +715,28 @@ def is_homekit_enabled(project: KNXProject):
     return False
 
 
+def resolve_homekit_enabled(detected: bool, general_config: dict[str, Any] | None = None):
+    """Apply the Web UI/CLI HomeKit override to the ETS-detected state.
+
+    ``general.homekit_enabled`` is intentionally tri-state:
+
+    * missing (or ``None``) keeps the ETS project comment as the source of truth,
+    * ``True`` forces HomeKit output on,
+    * ``False`` forces it off.
+
+    CLI generation, the Web UI job worker and the project preview all call this
+    helper so the same configuration always produces the same result.
+    """
+    if not isinstance(general_config, dict) or "homekit_enabled" not in general_config:
+        return bool(detected)
+    value = general_config.get("homekit_enabled")
+    if value is None:
+        return bool(detected)
+    if isinstance(value, str):
+        return str2bool(value)
+    return bool(value)
+
+
 def is_alexa_enabled(project: KNXProject):
     """Determine if Alexa is enabled for the project."""
     comment_value = project["info"].get("comment")
@@ -781,7 +803,7 @@ def main():
     house = put_addresses_in_building(building, addresses, project)
     prj_name = house[0]["name_long"]
     ip = get_gateway_ip(project)
-    homekit_enabled = is_homekit_enabled(project)
+    homekit_enabled = resolve_homekit_enabled(is_homekit_enabled(project), config.get("general"))
     alexa_enabled = is_alexa_enabled(project)
 
     ets_to_openhab.floors = house[0]["floors"]

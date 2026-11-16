@@ -196,6 +196,38 @@
                 <span data-i18n="settings.namingInfo">Naming heuristics control how floors/rooms are inferred from ETS. Combine options as needed for your project structure.</span>
               </div>
             </fieldset>
+            <fieldset>
+              <legend data-i18n="settings.homekit">HomeKit (Apple Home)</legend>
+              <div class="checkbox-group">
+                <div class="checkbox-item">
+                  <label><input type="radio" name="conf-homekit-mode" id="conf-homekit-mode-default" value="default"> <span data-i18n="settings.homekitModeDefault">Default (ETS project)</span></label>
+                  <div class="checkbox-help" data-i18n="settings.homekitModeDefaultHelp">The ETS info comment (homekit=true/false) decides whether HomeKit output is generated.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="radio" name="conf-homekit-mode" id="conf-homekit-mode-enabled" value="enabled"> <span data-i18n="settings.homekitModeEnabled">Always enabled</span></label>
+                  <div class="checkbox-help" data-i18n="settings.homekitModeEnabledHelp">Force HomeKit metadata even when the ETS project does not request it.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="radio" name="conf-homekit-mode" id="conf-homekit-mode-disabled" value="disabled"> <span data-i18n="settings.homekitModeDisabled">Always disabled</span></label>
+                  <div class="checkbox-help" data-i18n="settings.homekitModeDisabledHelp">Suppress HomeKit metadata even when the ETS project requests it.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-homekit-send-up-down"> <span data-i18n="settings.homekitSendUpDownForExtents">Send end positions as up/down (sendUpDownForExtents)</span></label>
+                  <div class="checkbox-help" data-i18n="settings.homekitSendUpDownForExtentsHelp">Applies to HomeKit blinds. Enabled by default so 0/100% commands become UP/DOWN and the actuator keeps its slat position.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-homekit-stop"> <span data-i18n="settings.homekitStop">Emulate stop (stop)</span></label>
+                  <div class="checkbox-help" data-i18n="settings.homekitStopHelp">Optional HomeKit parameter; only written to blinds when HomeKit output is active.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-homekit-stop-same-direction"> <span data-i18n="settings.homekitStopSameDirection">Stop by repeating up/down (stopSameDirection)</span></label>
+                  <div class="checkbox-help" data-i18n="settings.homekitStopSameDirectionHelp">Optional HomeKit parameter; independent from the other stop option.</div>
+                </div>
+              </div>
+              <div class="info-box">
+                <span data-i18n="settings.homekitInfo">The mode override applies to the next generation, the project preview and CLI runs. The blind options are only written when HomeKit output is active; unrelated settings are preserved when saving.</span>
+              </div>
+            </fieldset>
             <div class="form-group">
               <label data-i18n="settings.unknownFloor">Unknown Floor Name</label>
               <input type="text" id="conf-unknown-floor" class="form-control">

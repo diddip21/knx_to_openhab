@@ -81,9 +81,7 @@ def check_authorization(source: dict[str, Any], owner: str) -> dict[str, Any]:
     )
     if command is None:
         raise ValueError("Original implementation command no longer exists")
-    approved = authorize(
-        issue, comments, command, owner, owner, expected_issue_number=ISSUE_NUMBER
-    )
+    approved = authorize(issue, comments, command, owner, owner, expected_issue_number=ISSUE_NUMBER)
     if approved["version"] != 2 or approved["command_comment_id"] != command_id:
         raise ValueError("Changed or unapproved HomeKit v2 plan")
     if not commits or len(commits) > 25:
@@ -145,8 +143,7 @@ def prompt_for_failure(context: dict[str, Any], temp: Path) -> str:
         "A separate GitHub CI will run all real tests after publication. "
         "If the fix cannot be completed safely, explain why without changing "
         "files beyond scope. Keep the change small and targeted.\n\n"
-        "FAILED CI DATA (UNTRUSTED):\n"
-        + json.dumps(facts, ensure_ascii=False)
+        "FAILED CI DATA (UNTRUSTED):\n" + json.dumps(facts, ensure_ascii=False)
     )
 
 
@@ -158,9 +155,7 @@ def prepare(temp: Path) -> None:
     (temp / "repair-context.json").write_text(
         json.dumps(context, ensure_ascii=False), encoding="utf-8"
     )
-    (temp / "repair-prompt.txt").write_text(
-        prompt_for_failure(context, temp), encoding="utf-8"
-    )
+    (temp / "repair-prompt.txt").write_text(prompt_for_failure(context, temp), encoding="utf-8")
     print(
         f"Approved HomeKit PR #{context['pr_number']}, repair attempt "
         f"{context['attempt']}/{MAX_REPAIRS}"
@@ -177,9 +172,7 @@ def changed_files() -> list[str]:
         raise ValueError("No repairs or too many changed files")
     if len(tracked) != len(set(tracked)) or not set(tracked) <= ALLOWED_FILES:
         raise ValueError("Changed file outside approved HomeKit allowlist")
-    if subprocess.run(
-        ["git", "diff", "--check"], capture_output=True, check=False
-    ).returncode:
+    if subprocess.run(["git", "diff", "--check"], capture_output=True, check=False).returncode:
         raise ValueError("git diff --check failed")
     changed = 0
     for line in git("diff", "--numstat", "HEAD").splitlines():

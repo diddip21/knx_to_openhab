@@ -142,13 +142,9 @@ def test_nonbot_or_non_draft_rejected(tmp_path, monkeypatch):
 def test_repair_attempts_are_bounded(tmp_path, monkeypatch):
     make_event(tmp_path, monkeypatch)
     source = live_source()
-    source["commits"].append(
-        {"commit": {"message": "fix(ai-ci): issue89 attempt 1"}}
-    )
+    source["commits"].append({"commit": {"message": "fix(ai-ci): issue89 attempt 1"}})
     assert ci.check_authorization(source, OWNER)["attempt"] == 2
-    source["commits"].append(
-        {"commit": {"message": "fix(ai-ci): issue89 attempt 2"}}
-    )
+    source["commits"].append({"commit": {"message": "fix(ai-ci): issue89 attempt 2"}})
     with pytest.raises(ValueError, match="Maximum of two"):
         ci.check_authorization(source, OWNER)
 
@@ -156,9 +152,7 @@ def test_repair_attempts_are_bounded(tmp_path, monkeypatch):
 def test_bad_or_duplicate_round_markers_rejected(tmp_path, monkeypatch):
     make_event(tmp_path, monkeypatch)
     source = live_source()
-    source["commits"].append(
-        {"commit": {"message": "fix(ai-ci): issue89 attempt 2"}}
-    )
+    source["commits"].append({"commit": {"message": "fix(ai-ci): issue89 attempt 2"}})
     with pytest.raises(ValueError, match="Out-of-order"):
         ci.check_authorization(source, OWNER)
     source["commits"][-1]["commit"]["message"] = "fix(ai-ci): issue89 attempt 9"
@@ -228,9 +222,7 @@ def test_repair_artifact_checks_digest_paths_and_size():
 
 def test_diagnostics_are_explicitly_untrusted_and_bounded(tmp_path):
     (tmp_path / "ci-failed.log").write_text("evil-instructions " * 10_000)
-    prompt = ci.prompt_for_failure(
-        {"pr_number": 108, "attempt": 1}, tmp_path
-    )
+    prompt = ci.prompt_for_failure({"pr_number": 108, "attempt": 1}, tmp_path)
     assert "UNTRUSTED DATA" in prompt
     assert "weaken failing tests" in prompt
     assert len(prompt) < 52_000

@@ -45,7 +45,7 @@ jobs:
             echo "::error::dev does not contain main: reconcile dev first"
             exit 1
           }
-          for file in opencode.jsonc .opencode/agents/issue89-implementer.md .opencode/agents/ci-smoke.md; do
+          for file in opencode.jsonc .opencode/agents/issue89-implementer.md .opencode/agents/ci-smoke.md .github/workflows/ci.yml; do
             cmp -s "../trusted/$file" "$file" || {
               echo "::error::dev OpenCode policy differs from trusted main: $file"
               exit 1
@@ -148,6 +148,16 @@ jobs:
           set -euo pipefail
           git merge-base --is-ancestor "$(git -C ../trusted rev-parse HEAD)" HEAD || {
             echo "::error::dev does not contain main at publishing time"
+            exit 1
+          }
+
+      - name: Require approved CI definition for the development base
+        working-directory: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmp -s ../trusted/.github/workflows/ci.yml .github/workflows/ci.yml || {
+            echo "::error::dev CI definition differs from trusted main; review before publishing"
             exit 1
           }
 

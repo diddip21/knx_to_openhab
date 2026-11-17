@@ -5,25 +5,29 @@
 > Immer den aktuellen HEAD und die tatsächlichen neuesten CI-Läufe prüfen.
 > [#109](https://github.com/diddip21/knx_to_openhab/pull/109) ist nach
 > `main` gemergt, [#110](https://github.com/diddip21/knx_to_openhab/pull/110)
-> hat `main` nach `dev` synchronisiert. `main` ist Vorfahr von `dev`.
+> hat `main` nach `dev` synchronisiert. Nach Merge von
+> [#115](https://github.com/diddip21/knx_to_openhab/pull/115) nach
+> `main` ist die Synchronisation erneut zu prüfen.
 > #108 ist auf `dev` gerichtet und **Ready for review**; die neue
 > Codex-P2-Anmerkung zur HomeKit-Vorschau muss auf der aktuellen SHA erneut
 > geprüft und der Inline-Thread aufgelöst werden.
 >
 > **Grüne CI ≠ fachlich geprüft ≠ freigegeben ≠ gemergt.**
-> Der echte KNX-Hardwaretest ist weiterhin ein **Stop-Gate**. Ein vollständiger
-> automatischer KI-Reparaturzyklus wurde noch nicht Ende-zu-Ende nachgewiesen.
+> Ein KNX-Hardwaretest ist **kein verpflichtendes Merge-Gate** und kein
+> Bestandteil des Software-Readiness-Berichts. Ohne einen realen Test wird
+> keine KNX-/Apple-Home-Hardwarefunktion als verifiziert bezeichnet.
+> Ein vollständiger automatischer KI-Reparaturzyklus wurde noch nicht
+> Ende-zu-Ende nachgewiesen.
 
 ## 1. Rollen, Zuständigkeiten und Grenzen
 
 | Rolle | Was darf sie? | Was nicht? |
 | --- | --- | --- |
-| Repository-Owner | Issue konkretisieren, Plan freigeben, Implementierung auslösen, Hardware abnehmen, Merge entscheiden | Keine Freigabe nur aufgrund des KI-Texts |
+| Repository-Owner | Issue konkretisieren, Plan freigeben, Implementierung auslösen, Software-Readiness prüfen, Merge entscheiden | Keine Freigabe nur aufgrund des KI-Texts |
 | OpenCode + Superpowers | Freigegebenes Issue lesen, Plan erzeugen, begrenzte Codeänderungen und Reparaturen vorschlagen | Nicht eigenständig `main` ändern oder mergen; keine Paid-Modelle |
 | Getrennter GitHub-Publisher | Freigaben und Pfade revalidieren, Draft-PR erstellen oder erlaubten PR-Branch aktualisieren | Generierten Code ausführen, Prüfungen umgehen oder `main` ändern |
 | GitHub CI | Lint, Core-Python 3.11/3.12/3.13, UI/Playwright und Guard-Tests ausführen | Echtes KNX-Gerät oder Apple Home validieren |
 | Menschlicher Reviewer | Diff, Kompatibilität, Testergebnisse, UI und Hinweise prüfen | Nicht durch ein KI-Review ersetzen |
-| Hardware-Tester | Endlagen/Lamellen und Rückweg mit realem KNX-Aktor prüfen | Keinen Hardwareerfolg ohne Protokoll behaupten |
 
 Nur die **exakte Issue-#89-Planversion v2** ist durch die vorhandene
 Automatisierung freigegeben. Der abgeschlossene #96-Dokumentationspilot wurde aus aktiven Actions entfernt; seine gemeinsamen Freigabefunktionen bleiben bestehen.
@@ -45,9 +49,8 @@ sicherheitsgeprüften Implementierungsweg.
 | 9 | Code-/Sicherheitsreview | Reviewer untersucht PR-Diff und Findings, später erneut auf aktueller SHA | [Neues P2-Finding](https://github.com/diddip21/knx_to_openhab/pull/108#discussion_r4601217188) mit offenem Thread; der Owner muss aktualisierten Code prüfen | ⬜ Offen |
 | 10 | UI-Belege | Drei reale HomeKit-Einstellungszustände in docs/screenshots/ | PR #108 enthält Default/Enabled/Disabled-Screenshots | ⚠️ Dateien vorhanden, menschliche Sichtprüfung noch erforderlich |
 | 11 | Funktionsabnahme | Realitätsnahe Legacy-/YAML-/UI-/CLI-/API-Tests und Manualreview | Software-Review berichtet Ergebnisse; nach Codefix erneut prüfen | ⬜ Zu bestätigen |
-| 12 | KNX-/Apple-Home-Hardwaretest | Owner testet 0/100 %, Zwischenposition, Lamellen-Endlage, Stop, Rollback | Aktor-Typ, openHAB-Version, Datum, Beobachtung und Rollback dokumentieren | ⬜ Offen – Merge-Stop |
-| 13 | Ready for review & Feature-Merge | Nur Owner nach allen Gates | #108 ist Ready for review; kein Merge erfolgt | ⚠️ Review-Status gesetzt, Freigabe offen |
-| 14 | Release und Nach-Merge-Validierung | Separater PR dev→main, CI, Version/Changelog/annotierter Tag, Smoke | [RELEASING.md](RELEASING.md) | ⬜ Offen |
+| 12 | Ready for review & Feature-Merge | Nur Owner nach allen Software-Gates | #108 ist Ready for review; kein Merge erfolgt | ⚠️ Review-Status gesetzt, Freigabe offen |
+| 13 | Release und Nach-Merge-Validierung | Separater PR dev→main, CI, Version/Changelog/annotierter Tag, Smoke | [RELEASING.md](RELEASING.md) | ⬜ Offen |
 
 **Wichtig:** Step 8 wurde durch die Tests des Routers und des
 `ci_repair.py`-Validators nur **teilweise** nachgewiesen. Ein tatsächlicher
@@ -90,10 +93,6 @@ nachvollziehbare Anmerkung.
   (`Charne`, `UploadJson`, `Mini`) vergleichen; bei Differenzen
   Abweichungen begründen. Änderungen an anderen Geräten/KNX-Kanälen
   dürfen nicht unbemerkt eintreten.
-- [ ] **Realgerät:** Mit *einem* Testaktor zunächst 0 %, 100 %,
-  Zwischenposition, Pause und Lamellenstellung prüfen. Nachweis, ob
-  die Endlage nicht unerwartet die Lamellen verstellt.
-  Sicheres Zurückrollen auf vorherige Konfiguration bereitstellen.
 - [ ] **Reviews:** Sämtliche Inline-Threads und allgemeinen Kommentare
   in #108 und #109 lesen; alle relevanten Findings beheben oder
   dokumentiert zurückweisen. Danach ggf. erneut reviewen lassen.
@@ -105,20 +104,17 @@ HomeKit #89 – manuelle Abnahme
 PR-Commit: <vollständige SHA>
 Prüfer/Datum: <Name, Datum>
 openHAB-Version: <Version>
-KNX-/Aktor-Typ (ohne private Adressen): <Typ>
 Web-UI (ETS/An/Aus + Save/Reload): PASS / FAIL / NICHT GEPRÜFT
 Legacy-YAML-Metadaten-Gleichheit: PASS / FAIL / NICHT GEPRÜFT
 Optionen/default false/Stop/Instance: PASS / FAIL / NICHT GEPRÜFT
 Screenshots in docs/screenshots/: <Datei-/PR-Link>
-Endlagen 0/100 %, Zwischenposition, Lamellen: PASS / FAIL / NICHT GEPRÜFT
-Rollback geprobt: PASS / FAIL / NICHT GEPRÜFT
 Bemerkungen/offene Punkte: <...>
 Freigabe zum Merge: JA / NEIN
 ```
 
-**Kein Merge bei FAIL oder NICHT GEPRÜFT in einem verpflichtenden Gate.**
-Wenn kein reales Gerät verfügbar ist, Abnahme als *offen* kennzeichnen,
-aber nicht stillschweigend als bestanden deklarieren.
+**Kein Merge bei FAIL oder NICHT GEPRÜFT in einem verpflichtenden Software-Gate.**
+Ein realer Hardwaretest gehört nicht zur Merge-Readiness; ohne ihn darf keine
+Aussage über erfolgreich geprüfte KNX-/Apple-Home-Hardware getroffen werden.
 
 ## 4. Automatische Prüf- und Reparaturschleife
 
@@ -146,7 +142,6 @@ Issue + ai:plan
     |
     +-- CI grün --> Code-/Sicherheitsreview
                       -> echte UI-Screenshots + Funktionsprüfung
-                      -> KNX-Hardwareabnahme
                       -> Owner setzt Draft auf Ready for Review
                       -> Owner merged Feature nach dev
                       -> Release-PR dev → main (manuell)
@@ -178,22 +173,15 @@ wurde.
 3. **Reale UI-Screenshots prüfen.** Dateien unter
    `docs/screenshots/` sind im PR vorhanden; Passwörter/
    Adressen dürfen nicht enthalten sein.
-4. **Manuelle KNX-Abnahme.** An einem Testaktor Endlagen,
-   Lamellen, Stop und Rollback gegen die installierte openHAB-Version
-   nachweisen. Für den neuen read-only Merge-Readiness-Check ist eine
-   explizite Owner-Erklärung auf der exakten SHA erforderlich:
-   `/ai hardware-accepted <40-char-SHA>` und Felder
-   `Datum:`, `Aktor:`, `Beobachtung:`, `Rollback:`.
-   Das ersetzt **keinen** echten Hardwaretest.
-5. **Readiness-Check** über
+4. **Readiness-Check** über
    [AI merge readiness](https://github.com/diddip21/knx_to_openhab/actions/workflows/ai-merge-readiness.yml)
    auf `main` mit PR-Nummer `108` starten. Der Bericht verifiziert
    Branch, aktuellen CI-Stand, Plan, Approval, Review, Threads,
-   Screenshots und Hardware-Owner-Erklärung. Er ist **read-only**
+   Screenshots. Er ist **read-only**
    und meldet fehlende Nachweise als `OPEN`.
-6. **Owner entscheidet**, dann manueller Merge von #108 nach
+5. **Owner entscheidet**, dann manueller Merge von #108 nach
    `dev`. Kein Agent hat Merge-Erlaubnis.
-7. **Release separat:** Geprüfter PR `dev` → `main`,
+6. **Release separat:** Geprüfter PR `dev` → `main`,
    vollständiger Release-Diff, `VERSION`, Changelog,
    annotierter Tag und GitHub-Release mit Checksumme.
    Zuletzt einen Post-Merge-Smoke-Test dokumentieren und erst danach
@@ -206,9 +194,9 @@ können nur der Owner in *Settings → Rules* vollständig bestätigen.
 
 ## 6. Verbesserungen für die nächste Automatisierungsstufe
 
-**Stand 17.11.2026:** Der read-only Merge-Readiness-Check ist in diesem
-Cleanup-PR implementiert und muss vor Verwendung in `main` gemergt
-werden. Der ältere Workflow/Agent für README-Issue #96 wurde deaktiviert,
+**Stand 17.11.2026:** Der read-only Merge-Readiness-Check wurde mit
+PR #115 nach `main` gemergt. Die Entfernung des Hardware-Gates wird
+als separater, reviewbarer Infrastruktur-PR umgesetzt. Der ältere Workflow/Agent für README-Issue #96 wurde deaktiviert,
 die Freigabe-/Digest-Bibliothek bleibt für die aktiven Agenten bestehen.
 Die CI-Push-Trigger sind auf `main` und `dev` begrenzt, PR- und
 explizite Bot-Dispatch-Tests bleiben. OpenCode CLI ist versionsgebunden.
@@ -217,12 +205,12 @@ Ein echter Repair-E2E-Lauf ist weiterhin offen.
 
 | Priorität | Vorschlag | Automatisch / manuell | Status |
 | --- | --- | --- | --- |
-| P0 | **Read-only Flow-Audit** pro AI-PR: aktuelle Head-SHA, Issue/Plan/Approval, CI, Reviews, Screenshotdateien und offene Gates als maschinenlesbare Summary | Automatisch; Reviewentscheidung bleibt menschlich | ⬜ Noch nicht implementiert |
+| P0 | **Read-only Flow-Audit** pro AI-PR: aktuelle Head-SHA, Issue/Plan/Approval, CI, Reviews, Screenshotdateien und offene Gates als maschinenlesbare Summary | Automatisch; Reviewentscheidung bleibt menschlich | ✅ Mit #115 implementiert |
 | P0 | **Verpflichtende Schutzregeln** für `main`: PR erforderlich, kritische Checks grün, 1 unabhängiges Review, offene Threads erledigt; Admin-Berechtigungen prüfen | GitHub-Branch-Rules/Rulesets | ⚠️ Das sichtbare Ruleset `protect main` blockiert Löschen/Force-Push; Review-/CI-Pflicht daraus **nicht** belegt |
 | P1 | **Playwright-Screenshot-Artefakte** für HomeKit-UI inkl. DE/EN und drei Modi automatisch erzeugen, Datenschutz-/Inhaltsprüfung; zum PR verlinken oder geprüfte Dateien nach `docs/screenshots/` übernehmen | Automatisch erstellte Belege, menschlich freigegeben | ⬜ Noch nicht implementiert |
 | P1 | **Read-only Code-Review-Agent** nach grüner CI prüft Diff, AGENTS, Plan, Safety, Golden/Legacy/YAML und schreibt Findings ohne Schreibrechte | Automatisch; Human-Review bleibt erforderlich | ⬜ Noch nicht implementiert |
 | P1 | **Merge-Readiness-Bericht** als PR-Kommentar/Check mit Grün/Gelb/Rot, konkretem Blocker und Links; keine stillen PASSs bei fehlenden Daten | Automatisch; Merge bleibt manuell | ⬜ Noch nicht implementiert |
-| P2 | **Post-Merge-Recheck**: neue CI auf `main`, Release-/Changelog-Notiz, Issue erst nach Abnahme schließen | Größtenteils automatisch; Hardware manuell | ⬜ Noch nicht implementiert |
+| P2 | **Post-Merge-Recheck**: neue CI auf `main`, Release-/Changelog-Notiz, Issue erst nach Software-Abnahme schließen | Größtenteils automatisch; Merge und Freigabe manuell | ⬜ Noch nicht implementiert |
 | P2 | **Generischer, policy-gesteuerter Implementierungsagent** für weitere Issues mit separater Owner-Freigabe des genauen Dateiscopes und Budgets | Automatisch innerhalb des genehmigten Scopes | ⬜ Aktuell nur #89 / #96 Piloten |
 
 ### Branchschutzbefund vom 17.11.2026
@@ -244,7 +232,7 @@ und **nach jedem neuen Commit**:
 2. Issue und letzte **unveränderte**, vom Owner genehmigte Planversion
    mit PR verknüpfen; Owner-Aktion statt Bot-Selbstfreigabe belegen.
 3. Kontinuierliche Kette `Issue → Plan → Approval → Implementation →
-   Draft-PR → CI → ggf. Repair → Review → Hardware → Merge →
+   Draft-PR → CI → ggf. Repair → Review → Merge →
    post-merge CI` auf Lücken prüfen und für jede Phase
    `PASS`, `FAIL`, `OPEN` oder `N/A mit Begründung` notieren.
 4. Alle Reviews, offenen Threads, CI-Jobs (auch übersprungen),

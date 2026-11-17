@@ -67,13 +67,11 @@ jobs:
                 github.rest.issues.listComments, {...repo, issue_number:issueNumber, per_page:100}
               );
             }
-            const [reviews, files, prComments] = await Promise.all([
+            const [reviews, files] = await Promise.all([
               github.paginate(github.rest.pulls.listReviews,
                 {...repo, pull_number:number, per_page:100}),
               github.paginate(github.rest.pulls.listFiles,
-                {...repo, pull_number:number, per_page:100}),
-              github.paginate(github.rest.issues.listComments,
-                {...repo, issue_number:number, per_page:100})
+                {...repo, pull_number:number, per_page:100})
             ]);
             const {data:checkResult} = await github.rest.checks.listForRef({
               ...repo, ref:pr.head.sha, per_page:100, filter:'latest'
@@ -116,7 +114,6 @@ jobs:
               })),
               unresolved_threads:unresolved,
               files:files.map(f=>({filename:f.filename,status:f.status})),
-              pr_comments:prComments,
               checks:checkResult.check_runs.map(c=>({
                 id:c.id, name:c.name, head_sha:c.head_sha,
                 started_at:c.started_at, status:c.status, conclusion:c.conclusion

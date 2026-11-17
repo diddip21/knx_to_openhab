@@ -3,12 +3,9 @@ name: Approved issue implementation guard tests
 on:
   pull_request:
     paths:
-      - ".github/workflows/opencode-issue-implement.yml"
       - ".github/workflows/ai-issue-implement-tests.yml"
       - "scripts/issue_impl.py"
       - "tests/test_issue_impl.py"
-      - ".opencode/agents/issue-implementer.md"
-      - "docs/OPENCODE_ISSUE_IMPLEMENTATION.md"
   workflow_dispatch:
 
 permissions:
@@ -19,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-python@v7

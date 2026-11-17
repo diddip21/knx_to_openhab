@@ -1,8 +1,4 @@
-"""Issue-independent approval checks for trusted repository controllers.
-
-Callers must supply the issue number from their own trusted policy. Validating
-an approval does not grant file-write permissions or enable a new agent.
-"""
+"""Issue-independent, fail-closed approval checks for trusted controllers."""
 
 from __future__ import annotations
 
@@ -25,8 +21,18 @@ def digest(issue: dict[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def text_digest(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def unedited(comment: dict[str, Any]) -> None:
+    # Live GitHub comments always have these timestamps. Unit snapshots may omit them.
+    if comment.get("updated_at") != comment.get("created_at"):
+        raise ValueError("Edited authorization comment: create a new plan/command instead")
+
+
 def latest_plan(comments: list[dict[str, Any]]) -> dict[str, Any]:
-    plans = []
+    states = []
     for comment in comments:
         if (comment.get("user") or {}).get("login", "").casefold() != BOT_LOGIN:
             continue
@@ -36,19 +42,24 @@ def latest_plan(comments: list[dict[str, Any]]) -> dict[str, Any]:
             continue
         try:
             marker = json.loads(match.group(1))
-        except ValueError:
-            continue
+        except ValueError as exc:
+            raise ValueError("Malformed trusted planning marker") from exc
         if (
-            isinstance(marker, dict)
-            and marker.get("kind") == "plan"
-            and type(marker.get("version")) is int
-            and isinstance(marker.get("issue_digest"), str)
-            and re.fullmatch(r"[a-f0-9]{64}", marker["issue_digest"])
+            not isinstance(marker, dict)
+            or marker.get("kind") not in {"plan", "questions"}
+            or type(marker.get("version")) is not int
+            or not 1 <= marker["version"] <= 9999
+            or not re.fullmatch(r"[a-f0-9]{64}", str(marker.get("issue_digest", "")))
         ):
-            plans.append({"id": int(comment["id"]), "state": marker, "body": body})
-    if not plans:
+            raise ValueError("Invalid trusted planning marker")
+        states.append((int(comment["id"]), comment, marker))
+    if not states:
         raise ValueError("No trusted approved planning comment found")
-    return max(plans, key=lambda plan: plan["id"])
+    ident, comment, marker = max(states, key=lambda record: record[0])
+    unedited(comment)
+    if marker["kind"] != "plan":
+        raise ValueError("The latest planning response still has questions")
+    return {"id": ident, "state": marker, "body": comment["body"]}
 
 
 def authorize(
@@ -60,7 +71,7 @@ def authorize(
     *,
     expected_issue_number: int,
 ) -> dict[str, Any]:
-    """Require the owner, latest plan, exact approval and unchanged issue."""
+    """Verify the owner, current plan, receipt and unchanged issue, not file access."""
     if type(expected_issue_number) is not int or expected_issue_number < 1:
         raise ValueError("A positive issue number from trusted policy is required")
     if not actor or actor.casefold() != owner.casefold():
@@ -76,22 +87,24 @@ def authorize(
         raise ValueError("The current plan is not approved")
     if (command_comment.get("user") or {}).get("login", "").casefold() != owner.casefold():
         raise ValueError("Implementation command must be authored by the owner")
-    implementation = COMMAND.fullmatch((command_comment.get("body") or "").strip())
+    body = str(command_comment.get("body") or "").strip()
+    header = body.splitlines()[0] if body else ""
+    implementation = COMMAND.fullmatch(header)
     if not implementation:
-        raise ValueError("Expected exact command: /ai implement vN")
+        raise ValueError("Expected exact command header: /ai implement vN")
     version = int(implementation.group(1))
     plan = latest_plan(comments)
-    marker = plan["state"]
-    if marker["version"] != version or marker["issue_digest"] != digest(issue):
+    if plan["state"]["version"] != version or plan["state"]["issue_digest"] != digest(issue):
         raise ValueError("Plan version or issue digest is stale")
     cmd_id = int(command_comment["id"])
-    if not any(
-        int(comment.get("id") or 0) == cmd_id
-        and (comment.get("body") or "").strip() == (command_comment.get("body") or "").strip()
-        and (comment.get("user") or {}).get("login", "").casefold() == owner.casefold()
-        for comment in comments
+    live = next((c for c in comments if c.get("id") == cmd_id), None)
+    if (
+        live is None
+        or (live.get("body") or "").strip() != body
+        or (live.get("user") or {}).get("login", "").casefold() != owner.casefold()
     ):
         raise ValueError("Implementation command is not in the live comment history")
+    unedited(live)
     if cmd_id <= plan["id"]:
         raise ValueError("Implementation command predates the latest plan")
     approvals = [
@@ -104,20 +117,25 @@ def authorize(
     if not approvals:
         raise ValueError("No matching owner approval after the latest plan")
     approval = max(approvals, key=lambda item: int(item["id"]))
-    confirmed = any(
-        int(approval["id"]) < int(comment.get("id") or 0) < cmd_id
-        and (comment.get("user") or {}).get("login", "").casefold() == BOT_LOGIN
-        and (comment.get("body") or "").startswith(f"\u2705 **Plan v{version} freigegeben.**")
-        for comment in comments
-    )
-    if not confirmed:
+    unedited(approval)
+    receipts = [
+        c
+        for c in comments
+        if int(approval["id"]) < int(c.get("id") or 0) < cmd_id
+        and (c.get("user") or {}).get("login", "").casefold() == BOT_LOGIN
+        and (c.get("body") or "").startswith(f"\u2705 **Plan v{version} freigegeben.**")
+    ]
+    if not receipts:
         raise ValueError("The planning workflow has not confirmed approval")
+    unedited(max(receipts, key=lambda c: int(c["id"])))
     return {
         "issue_number": expected_issue_number,
         "version": version,
-        "digest": marker["issue_digest"],
+        "digest": digest(issue),
         "plan_comment_id": plan["id"],
+        "plan_sha256": text_digest(plan["body"]),
         "approval_comment_id": int(approval["id"]),
         "command_comment_id": cmd_id,
+        "command_sha256": text_digest(body),
         "plan": plan["body"],
     }

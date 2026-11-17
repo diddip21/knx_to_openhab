@@ -1,0 +1,65 @@
+name: Generic AI automation guard tests
+
+on:
+  pull_request:
+    paths:
+      - "scripts/automation/**"
+      - "scripts/issue_implement.py"
+      - "scripts/ci_repair.py"
+      - "scripts/ai_merge_readiness.py"
+      - "scripts/build_release.py"
+      - "tests/ai_pipeline/**"
+      - "tests/test_ai_dev_pipeline.py"
+      - "tests/test_ai_merge_readiness.py"
+      - "tests/test_release_automation_exclusions.py"
+      - ".github/workflows/ai-*.yml"
+      - ".github/workflows/opencode-ci-self-repair.yml"
+      - ".opencode/agents/**"
+      - "docs/AI_AUTOMATION.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guard-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Install test tools
+        run: python -m pip install "pytest>=8,<10" "PyYAML>=6,<7" "black>=23.7" "isort>=5.12"
+      - name: Test multi-issue authorization, artifacts, API contracts and isolated red-green flow
+        run: >-
+          python -m pytest -q -o addopts=
+          tests/ai_pipeline tests/test_ai_dev_pipeline.py
+          tests/test_ai_merge_readiness.py tests/test_release_automation_exclusions.py
+      - name: Check controller syntax
+        run: |
+          python -m compileall -q scripts/automation scripts/issue_implement.py scripts/ci_repair.py scripts/ai_merge_readiness.py
+          node --check scripts/automation/github.cjs
+          node --check scripts/automation/readiness.cjs
+      - name: Produce reviewable formatting suggestions without committing
+        if: always()
+        shell: bash
+        run: |
+          isort scripts/automation scripts/issue_implement.py scripts/ci_repair.py scripts/ai_merge_readiness.py tests/ai_pipeline tests/test_ai_dev_pipeline.py tests/test_ai_merge_readiness.py
+          black scripts/automation scripts/issue_implement.py scripts/ci_repair.py scripts/ai_merge_readiness.py tests/ai_pipeline tests/test_ai_dev_pipeline.py tests/test_ai_merge_readiness.py
+          git diff --binary > "$RUNNER_TEMP/ai-formatting.patch"
+          git diff --exit-code
+      - name: Archive suggested formatting patch only
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ai-formatting-${{ github.run_id }}
+          path: ${{ runner.temp }}/ai-formatting.patch
+          if-no-files-found: ignore
+          retention-days: 3

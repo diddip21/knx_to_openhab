@@ -52,6 +52,7 @@ EXCLUDED_AUTOMATION_FILES = frozenset(
         "scripts/issue89_impl.py",
         "scripts/issue_bot.py",
         "scripts/issue_impl.py",
+        "scripts/issue_implement.py",
         "scripts/opencode_model_router.py",
     }
 )

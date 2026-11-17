@@ -16,7 +16,7 @@ SPEC.loader.exec_module(release)
 
 AUTOMATION_FILES = [
     ".github/workflows/ci.yml",
-    ".opencode/agents/issue89-implementer.md",
+    ".opencode/agents/ai-task.md",
     ".opencode/agents/future-agent.md",
     "opencode.jsonc",
     "opencode.json",
@@ -25,9 +25,11 @@ AUTOMATION_FILES = [
     "scripts/issue89_impl.py",
     "scripts/issue_bot.py",
     "scripts/issue_impl.py",
+    "scripts/issue_implement.py",
     "scripts/opencode_model_router.py",
     "scripts/automation/__init__.py",
     "scripts/automation/approval.py",
+    "scripts/automation/github.cjs",
     "scripts/automation/future_controller.py",
 ]
 APPLICATION_FILES = [

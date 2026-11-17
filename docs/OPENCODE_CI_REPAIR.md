@@ -60,8 +60,8 @@ should fix the failure's root cause, **not weaken or skip tests**.
   is green, the repair workflow **must not run**. A forced failing run should
   not be introduced merely to test the feature.
 - The original HomeKit functionality still requires correct legacy/YAML
-  metadata, Web-UI behavior, Playwright tests, screenshots and a real
-  hardware test before any merge.
+  metadata, Web-UI behavior, Playwright tests and screenshots before
+  a software merge. Real-device behavior is not verified by CI.
 
 ## Limits
 
@@ -73,7 +73,8 @@ should fix the failure's root cause, **not weaken or skip tests**.
 - A model can edit source but cannot directly publish any change. Unexpected
   files, stale PR heads, revoked approvals or invalid artifacts fail closed.
 - Limits are a guardrail, not proof that AI-generated code is correct. All
-  generated changes are reviewable and CI/hardware testing remains required.
+  generated changes remain reviewable and CI/software testing stays required.
+  Real hardware behavior remains unverified without a separate device test.
 - The privileged GitHub publisher cannot fully eliminate races with concurrent
   administrator branch updates; it serializes its own runs and requires
   fast-forward updates. Do not run this on third-party PRs.

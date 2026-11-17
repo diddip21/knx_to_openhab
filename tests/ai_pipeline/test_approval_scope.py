@@ -3,16 +3,18 @@
 import copy
 
 import pytest
-
-from .helpers import OWNER, fixture
 from automation.approval import authorize, latest_plan
 from automation.scope import authorize_task, normalize_scope, safe_path, scope_from_command
+
+from .helpers import OWNER, fixture
 
 
 @pytest.mark.parametrize("number,version", [(89, 3), (1234, 5), (9999, 1)])
 def test_distinct_issues_and_versions_use_identical_code(number, version):
     issue, comments = fixture(number, version)
-    result = authorize_task(issue, comments, comments[-1], OWNER, OWNER, expected_issue_number=number)
+    result = authorize_task(
+        issue, comments, comments[-1], OWNER, OWNER, expected_issue_number=number
+    )
     assert result["issue_number"] == number
     assert result["version"] == version
     assert result["scope"]["files"] == ["docs/feature.md", "feature.py", "tests/test_feature.py"]
@@ -41,9 +43,24 @@ def test_only_owner_can_start(actor):
         authorize_task(issue, history, history[-1], actor, OWNER, expected_issue_number=89)
 
 
-@pytest.mark.parametrize("change", ["digest", "labels", "waiting", "closed", "other_issue",
-                                     "forged_plan", "forged_command", "receipt", "old_version",
-                                     "late_approval", "edited_plan", "edited_command", "edited_approval"])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "digest",
+        "labels",
+        "waiting",
+        "closed",
+        "other_issue",
+        "forged_plan",
+        "forged_command",
+        "receipt",
+        "old_version",
+        "late_approval",
+        "edited_plan",
+        "edited_command",
+        "edited_approval",
+    ],
+)
 def test_authorization_changes_fail_closed(change):
     issue, history = fixture()
     if change == "digest":
@@ -91,23 +108,48 @@ def test_newer_questions_invalidate_previous_plan():
         latest_plan(history)
 
 
-@pytest.mark.parametrize("path", ["../evil.py", "/tmp/evil.py", "C:/evil.py", "web_ui\\app.py",
-                                  ".github/workflows/ci.yml", "scripts/automation/approval.py",
-                                  "opencode.jsonc", "AGENTS.md", "tests/conftest.py",
-                                  "tests/test_ai_pipeline.py", "requirements.txt", "tests/*.py",
-                                  "web_ui//app.py", "docs/../evil.md", "file.py\n", "setup.py",
-                                  "web_ui/.env", "tests/automation/helpers.py"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "../evil.py",
+        "/tmp/evil.py",
+        "C:/evil.py",
+        "web_ui\\app.py",
+        ".github/workflows/ci.yml",
+        "scripts/automation/approval.py",
+        "opencode.jsonc",
+        "AGENTS.md",
+        "tests/conftest.py",
+        "tests/test_ai_pipeline.py",
+        "requirements.txt",
+        "tests/*.py",
+        "web_ui//app.py",
+        "docs/../evil.md",
+        "file.py\n",
+        "setup.py",
+        "web_ui/.env",
+        "tests/automation/helpers.py",
+    ],
+)
 def test_privileged_and_nonliteral_paths_are_never_authorized(path):
     with pytest.raises(ValueError):
         safe_path(path)
 
 
-@pytest.mark.parametrize("scope", [{}, {"files": []}, {"files": ["a.py"]},
-                                  {"files": ["README.md", "README.md"]},
-                                  {"files": ["README.md"], "create": ["other.md"]},
-                                  {"files": ["README.md"], "required": ["other.md"]},
-                                  {"files": ["README.md"], "skip_review": True},
-                                  {"files": "README.md"}, {"files": [None]}])
+@pytest.mark.parametrize(
+    "scope",
+    [
+        {},
+        {"files": []},
+        {"files": ["a.py"]},
+        {"files": ["README.md", "README.md"]},
+        {"files": ["README.md"], "create": ["other.md"]},
+        {"files": ["README.md"], "required": ["other.md"]},
+        {"files": ["README.md"], "skip_review": True},
+        {"files": "README.md"},
+        {"files": [None]},
+    ],
+)
 def test_malformed_or_unbounded_scope_rejected(scope):
     with pytest.raises(ValueError):
         normalize_scope(scope)

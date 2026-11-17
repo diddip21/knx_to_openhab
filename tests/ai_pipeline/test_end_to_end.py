@@ -7,9 +7,9 @@ import subprocess
 import sys
 
 import pytest
+from automation import artifacts
 
 from .helpers import OWNER, ROOT, context, git, init_repo, module, repair_source, set_event
-from automation import artifacts
 
 ci = module("ci_repair")
 
@@ -21,8 +21,15 @@ def run_core(root):
     # Avoid timestamp-dependent stale .pyc reuse between the deliberate failure and fix.
     for cache in root.rglob("__pycache__"):
         shutil.rmtree(cache)
-    return subprocess.run([sys.executable, "-B", "-m", "pytest", "-q", "tests/test_feature.py"],
-                          cwd=root, env=env, capture_output=True, text=True, timeout=30, check=False)
+    return subprocess.run(
+        [sys.executable, "-B", "-m", "pytest", "-q", "tests/test_feature.py"],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
 
 
 @pytest.mark.parametrize("number,version", [(89, 3), (1234, 5)])
@@ -63,14 +70,18 @@ def test_real_cli_uses_trusted_imports_and_restores_generated_agent(tmp_path, mo
     trusted = init_repo(tmp_path / "trusted")
     (trusted / "scripts").mkdir()
     shutil.copy2(ROOT / "scripts/issue_implement.py", trusted / "scripts/issue_implement.py")
-    shutil.copytree(ROOT / "scripts/automation", trusted / "scripts/automation",
-                    ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(
+        ROOT / "scripts/automation",
+        trusted / "scripts/automation",
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
     shutil.copy2(ROOT / ".opencode/agents/ai-task.md", trusted / ".opencode/agents/ai-task.md")
     git(trusted, "add", ".")
     git(trusted, "commit", "-qm", "trusted controller fixture")
     root = tmp_path / "candidate"
-    subprocess.run(["git", "clone", "--no-hardlinks", str(trusted), str(root)], check=True,
-                   capture_output=True)
+    subprocess.run(
+        ["git", "clone", "--no-hardlinks", str(trusted), str(root)], check=True, capture_output=True
+    )
     from .helpers import fixture
 
     issue, history = fixture(1234, 5)
@@ -78,19 +89,31 @@ def test_real_cli_uses_trusted_imports_and_restores_generated_agent(tmp_path, mo
     temporary.mkdir()
     artifacts.write_json(temporary / "issue-current.json", issue)
     artifacts.write_json(temporary / "issue-comments.json", history)
-    artifacts.write_json(temporary / "event.json", {"action": "created", "issue": issue,
-                                                   "comment": history[-1]})
-    env = os.environ | {"RUNNER_TEMP": str(temporary), "GITHUB_EVENT_NAME": "issue_comment",
-                        "GITHUB_EVENT_PATH": str(temporary / "event.json"), "GITHUB_ACTOR": OWNER,
-                        "GITHUB_REPOSITORY_OWNER": OWNER, "GITHUB_REPOSITORY": f"{OWNER}/sample",
-                        "GITHUB_RUN_ID": "1000"}
+    artifacts.write_json(
+        temporary / "event.json", {"action": "created", "issue": issue, "comment": history[-1]}
+    )
+    env = os.environ | {
+        "RUNNER_TEMP": str(temporary),
+        "GITHUB_EVENT_NAME": "issue_comment",
+        "GITHUB_EVENT_PATH": str(temporary / "event.json"),
+        "GITHUB_ACTOR": OWNER,
+        "GITHUB_REPOSITORY_OWNER": OWNER,
+        "GITHUB_REPOSITORY": f"{OWNER}/sample",
+        "GITHUB_RUN_ID": "1000",
+    }
     # A candidate-local stdlib shadow must never execute in a trusted controller.
     marker = tmp_path / "untrusted-import-ran"
     (root / "json.py").write_text(f"open({str(marker)!r}, 'w').write('unsafe')\n")
 
     def run(action):
-        result = subprocess.run([sys.executable, "-I", str(trusted / "scripts/issue_implement.py"), action],
-                                cwd=root, env=env, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            [sys.executable, "-I", str(trusted / "scripts/issue_implement.py"), action],
+            cwd=root,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
         assert result.returncode == 0, result.stdout + result.stderr
 
     run("prepare")

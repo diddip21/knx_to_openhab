@@ -8,9 +8,9 @@ import os
 import subprocess
 
 import pytest
+from automation import artifacts
 
 from .helpers import ROOT, context, git, init_repo
-from automation import artifacts
 
 
 def change_code(root):
@@ -25,8 +25,9 @@ def test_same_collect_and_independent_recheck_for_different_tasks(tmp_path, numb
     root = init_repo(tmp_path / "candidate")
     approved = context(root, number, version)
     target = tmp_path / "target"
-    subprocess.run(["git", "clone", "--no-hardlinks", str(root), str(target)], check=True,
-                   capture_output=True)
+    subprocess.run(
+        ["git", "clone", "--no-hardlinks", str(root), str(target)], check=True, capture_output=True
+    )
     change_code(root)
     candidate = artifacts.collect(approved, root, repair=False)
     checked = artifacts.recheck(candidate, approved, target, repair=False)
@@ -36,9 +37,22 @@ def test_same_collect_and_independent_recheck_for_different_tasks(tmp_path, numb
     assert git(target, "status", "--porcelain") == ""
 
 
-@pytest.mark.parametrize("field", ["digest", "scope_sha256", "command_sha256", "plan_sha256",
-                                   "base_commit_sha", "trusted_sha", "run_id", "issue_number",
-                                   "version", "scope", "repository"])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "digest",
+        "scope_sha256",
+        "command_sha256",
+        "plan_sha256",
+        "base_commit_sha",
+        "trusted_sha",
+        "run_id",
+        "issue_number",
+        "version",
+        "scope",
+        "repository",
+    ],
+)
 def test_artifact_cannot_authorize_itself(tmp_path, field):
     root = init_repo(tmp_path / "candidate")
     approved = context(root)
@@ -49,8 +63,21 @@ def test_artifact_cannot_authorize_itself(tmp_path, field):
         artifacts.recheck(candidate, approved, root, repair=False)
 
 
-@pytest.mark.parametrize("mutation", ["digest", "path", "extra", "duplicate", "empty", "binary",
-                                      "whitespace", "oversize", "no_test", "no_op"])
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "digest",
+        "path",
+        "extra",
+        "duplicate",
+        "empty",
+        "binary",
+        "whitespace",
+        "oversize",
+        "no_test",
+        "no_op",
+    ],
+)
 def test_candidate_file_tampering_rejected(tmp_path, mutation):
     root = init_repo(tmp_path / "candidate")
     approved = context(root)
@@ -70,8 +97,12 @@ def test_candidate_file_tampering_rejected(tmp_path, mutation):
     elif mutation == "no_test":
         records[:] = [r for r in records if not r["path"].startswith("tests/")]
     else:
-        payload = {"binary": b"bad\x00file", "whitespace": b"value = 1  \n",
-                   "oversize": b"a" * 300001, "no_op": b"value = 0\n"}[mutation]
+        payload = {
+            "binary": b"bad\x00file",
+            "whitespace": b"value = 1  \n",
+            "oversize": b"a" * 300001,
+            "no_op": b"value = 0\n",
+        }[mutation]
         record = next(r for r in records if r["path"] == "feature.py")
         record["content_b64"] = base64.b64encode(payload).decode()
         record["sha256"] = hashlib.sha256(payload).hexdigest()
@@ -134,17 +165,26 @@ def test_executable_mode_is_preserved_by_publisher(tmp_path):
 
 def test_agent_permissions_are_literal_and_missing_repair_files_are_not_granted(tmp_path):
     root = init_repo(tmp_path / "candidate")
-    approved = context(root, scope={"files": ["feature.py", "tests/test_extra.py"],
-                                    "create": ["tests/test_extra.py"]})
+    approved = context(
+        root,
+        scope={"files": ["feature.py", "tests/test_extra.py"], "create": ["tests/test_extra.py"]},
+    )
     template = ROOT / ".opencode/agents/ai-task.md"
     artifacts.write_agent(root, approved, template, repair=False)
     header = json.loads((root / ".opencode/agents/ai-task.md").read_text().split("---")[1])
     allowed = [r for r in header["permissions"] if r["effect"] == "allow" and r["action"] == "edit"]
-    assert {r["resource"] for r in allowed} == {"feature.py", "tests/test_extra.py",
-                                               str(root / "feature.py"), str(root / "tests/test_extra.py")}
+    assert {r["resource"] for r in allowed} == {
+        "feature.py",
+        "tests/test_extra.py",
+        str(root / "feature.py"),
+        str(root / "tests/test_extra.py"),
+    }
     assert all("*" not in r["resource"] for r in allowed)
-    assert not any(r["action"] in {"shell", "subagent", "execute", "external_directory"}
-                   and r["effect"] == "allow" for r in header["permissions"])
+    assert not any(
+        r["action"] in {"shell", "subagent", "execute", "external_directory"}
+        and r["effect"] == "allow"
+        for r in header["permissions"]
+    )
     artifacts.write_agent(root, approved, template, repair=True)
     repair = json.loads((root / ".opencode/agents/ai-task.md").read_text().split("---")[1])
     assert not any("test_extra.py" in r["resource"] for r in repair["permissions"])

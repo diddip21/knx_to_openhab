@@ -72,11 +72,21 @@ def file_bytes(root: Path, path: str) -> bytes:
 
 def changed_paths(root: Path) -> list[str]:
     changed = git(
-        "diff", "--no-ext-diff", "--no-textconv", "--name-only", "--diff-filter=ACM", "HEAD",
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--name-only",
+        "--diff-filter=ACM",
+        "HEAD",
         cwd=root,
     ).splitlines()
     illegal = git(
-        "diff", "--no-ext-diff", "--no-textconv", "--name-only", "--diff-filter=DRT", "HEAD",
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--name-only",
+        "--diff-filter=DRT",
+        "HEAD",
         cwd=root,
     ).splitlines()
     if illegal:
@@ -87,7 +97,11 @@ def changed_paths(root: Path) -> list[str]:
 
 
 def validate_files(
-    records: Any, context: dict[str, Any], root: Path, *, repair: bool,
+    records: Any,
+    context: dict[str, Any],
+    root: Path,
+    *,
+    repair: bool,
 ) -> list[dict[str, str]]:
     if not isinstance(records, list) or any(not isinstance(r, dict) for r in records):
         raise ValueError("Expected candidate file objects")
@@ -140,16 +154,23 @@ def collect(context: dict[str, Any], root: Path, *, repair: bool) -> dict[str, A
     records = []
     for path in paths:
         data = file_bytes(root, path)
-        records.append({
-            "path": path, "content_b64": base64.b64encode(data).decode("ascii"),
-            "sha256": hashlib.sha256(data).hexdigest(),
-        })
+        records.append(
+            {
+                "path": path,
+                "content_b64": base64.b64encode(data).decode("ascii"),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            }
+        )
     validate_files(records, context, root, repair=repair)
     return {**{key: value for key, value in context.items() if key != "plan"}, "files": records}
 
 
 def recheck(
-    candidate: dict[str, Any], fresh: dict[str, Any], root: Path, *, repair: bool,
+    candidate: dict[str, Any],
+    fresh: dict[str, Any],
+    root: Path,
+    *,
+    repair: bool,
 ) -> dict[str, Any]:
     expected = {key: value for key, value in fresh.items() if key != "plan"}
     if set(candidate) != set(expected) | {"files"}:
@@ -161,14 +182,18 @@ def recheck(
     return {**expected, "files": files}
 
 
-def write_agent(root: Path, context: dict[str, Any], trusted_template: Path, *, repair: bool) -> None:
+def write_agent(
+    root: Path, context: dict[str, Any], trusted_template: Path, *, repair: bool
+) -> None:
     """Generate literal file permissions; the model cannot choose or broaden them."""
     text = trusted_template.read_text(encoding="utf-8")
     body = text.split("---", 2)[-1].strip()
     permissions = [
         {"action": "*", "resource": "*", "effect": "deny"},
-        *[{"action": action, "resource": "*", "effect": "allow"}
-          for action in ("read", "glob", "grep", "skill")],
+        *[
+            {"action": action, "resource": "*", "effect": "allow"}
+            for action in ("read", "glob", "grep", "skill")
+        ],
     ]
     for path in context["scope"]["files"]:
         mode, _ = base_file(root, path)
@@ -180,14 +205,19 @@ def write_agent(root: Path, context: dict[str, Any], trusted_template: Path, *, 
         # Exact relative and absolute names, never suffix globs such as */foo.py.
         for resource in (path, str((root / path).resolve())):
             permissions.append({"action": "edit", "resource": resource, "effect": "allow"})
-    header = {"description": "Explicitly owner-scoped implementation or repair", "mode": "primary",
-              "steps": 120, "permissions": permissions}
+    header = {
+        "description": "Explicitly owner-scoped implementation or repair",
+        "mode": "primary",
+        "steps": 120,
+        "permissions": permissions,
+    }
     target = root / ".opencode/agents/ai-task.md"
     if target.is_symlink() or not target.parent.is_dir():
         raise ValueError("Trusted agent path missing or unsafe")
     # JSON is a YAML subset and avoids a new runtime YAML dependency.
-    target.write_text("---\n" + json.dumps(header, indent=2) + "\n---\n\n" + body + "\n",
-                      encoding="utf-8")
+    target.write_text(
+        "---\n" + json.dumps(header, indent=2) + "\n---\n\n" + body + "\n", encoding="utf-8"
+    )
 
 
 def runtime_dir() -> Path:

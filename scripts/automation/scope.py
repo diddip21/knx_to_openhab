@@ -22,10 +22,22 @@ COMMAND_REF = re.compile(r"<!-- ai-implementation-command: ([1-9][0-9]*) -->")
 TASK_REF = re.compile(r"<!-- ai-task: (\{[^\n]*\}) -->")
 SUFFIXES = {".py", ".js", ".css", ".html", ".json", ".md", ".template"}
 BLOCKED_NAMES = {
-    "AGENTS.md", "CONTRIBUTING.md", "conftest.py", "setup.py", "sitecustomize.py",
-    "usercustomize.py", "opencode.json", "opencode.jsonc", "package.json",
-    "package-lock.json", "npm-shrinkwrap.json", "jsconfig.json", "tsconfig.json",
-    "pytest.ini", "pyproject.toml", "VERSION",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "conftest.py",
+    "setup.py",
+    "sitecustomize.py",
+    "usercustomize.py",
+    "opencode.json",
+    "opencode.jsonc",
+    "package.json",
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "jsconfig.json",
+    "tsconfig.json",
+    "pytest.ini",
+    "pyproject.toml",
+    "VERSION",
 }
 
 
@@ -44,8 +56,16 @@ def safe_path(value: Any) -> str:
         or path.suffix not in SUFFIXES
         or path.name in BLOCKED_NAMES
         or (len(path.parts) > 1 and path.parts[0] not in {"web_ui", "tests", "docs"})
-        or path.name.startswith(("requirements", "test_ai_", "test_issue", "test_ci_repair",
-                                 "test_opencode", "test_release_"))
+        or path.name.startswith(
+            (
+                "requirements",
+                "test_ai_",
+                "test_issue",
+                "test_ci_repair",
+                "test_opencode",
+                "test_release_",
+            )
+        )
     ):
         raise ValueError("Task path is outside the global source policy")
     return value
@@ -73,7 +93,11 @@ def normalize_scope(raw: Any) -> dict[str, list[str]]:
             raise ValueError("Duplicate scope paths")
         result[key] = sorted(values)
     allowed = set(result["files"])
-    if not allowed or not set(result["create"]) <= allowed or not set(result["required"]) <= allowed:
+    if (
+        not allowed
+        or not set(result["create"]) <= allowed
+        or not set(result["required"]) <= allowed
+    ):
         raise ValueError("Empty or inconsistent owner scope")
     if any(not p.endswith(".md") for p in allowed) and not any(
         p.startswith("tests/") and p.endswith(".py") for p in allowed
@@ -96,11 +120,17 @@ def scope_from_command(body: str) -> dict[str, list[str]]:
 
 
 def authorize_task(
-    issue: dict[str, Any], comments: list[dict[str, Any]], command: dict[str, Any],
-    actor: str, owner: str, *, expected_issue_number: int,
+    issue: dict[str, Any],
+    comments: list[dict[str, Any]],
+    command: dict[str, Any],
+    actor: str,
+    owner: str,
+    *,
+    expected_issue_number: int,
 ) -> dict[str, Any]:
-    context = authorize(issue, comments, command, actor, owner,
-                        expected_issue_number=expected_issue_number)
+    context = authorize(
+        issue, comments, command, actor, owner, expected_issue_number=expected_issue_number
+    )
     scope = scope_from_command(str(command.get("body") or ""))
     context["scope"] = scope
     context["scope_sha256"] = text_digest(json.dumps(scope, sort_keys=True, separators=(",", ":")))
@@ -126,7 +156,15 @@ def validate_paths(paths: list[str], scope: dict[str, list[str]], *, repair: boo
 
 
 def task_reference(context: dict[str, Any]) -> dict[str, Any]:
-    return {key: context[key] for key in (
-        "issue_number", "version", "command_comment_id", "command_sha256", "plan_sha256",
-        "scope_sha256", "base_commit_sha",
-    )}
+    return {
+        key: context[key]
+        for key in (
+            "issue_number",
+            "version",
+            "command_comment_id",
+            "command_sha256",
+            "plan_sha256",
+            "scope_sha256",
+            "base_commit_sha",
+        )
+    }

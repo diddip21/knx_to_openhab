@@ -8,6 +8,9 @@ from pathlib import Path
 
 def git(*args: str, cwd: Path | None = None) -> str:
     return subprocess.run(
-        ["git", "-c", "core.hooksPath=/dev/null", *args], cwd=cwd, check=True,
-        text=True, capture_output=True,
+        ["git", "-c", "core.hooksPath=/dev/null", *args],
+        cwd=cwd,
+        check=True,
+        text=True,
+        capture_output=True,
     ).stdout.strip()

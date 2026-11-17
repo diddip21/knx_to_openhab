@@ -50,7 +50,7 @@ def test_implementation_requires_live_owner_scope_on_development_source():
 
 def test_repair_remains_bounded_to_explicit_failed_ci_and_exact_commit():
     text = workflow("opencode-ci-self-repair.yml")
-    assert "workflow_run:" in text and "workflows: [\"CI\"]" in text
+    assert "workflow_run:" in text and 'workflows: ["CI"]' in text
     assert "github.event.workflow_run.event == 'workflow_dispatch'" in text
     assert "github.event.workflow_run.head_repository.full_name == github.repository" in text
     assert "ref: ${{ github.event.workflow_run.head_sha }}" in text
@@ -71,13 +71,15 @@ def test_readiness_is_read_only_and_reruns_after_ci():
 
 def test_no_special_issue_controllers_or_agents_remain():
     obsolete = [
-        "scripts/issue89_impl.py", "scripts/issue_impl.py",
+        "scripts/issue89_impl.py",
+        "scripts/issue_impl.py",
         ".github/workflows/opencode-issue89-implement.yml",
         ".github/workflows/opencode-issue-implement.yml",
         ".github/workflows/ai-issue89-guard-tests.yml",
         ".github/workflows/ai-issue-implement-tests.yml",
         ".github/workflows/ai-ci-repair-tests.yml",
-        ".opencode/agents/issue89-implementer.md", ".opencode/agents/issue89-ci-repair.md",
+        ".opencode/agents/issue89-implementer.md",
+        ".opencode/agents/issue89-ci-repair.md",
     ]
     assert not [name for name in obsolete if (ROOT / name).exists()]
     for name in ["issue_implement.py", "ci_repair.py", "ai_merge_readiness.py"]:
@@ -108,5 +110,5 @@ def test_planner_and_shared_application_ci_keep_existing_roles():
     assert "ref: dev" in text and "../trusted/scripts/issue_bot.py prepare" in text
     ci = workflow("ci.yml")
     assert 'python-version: ["3.11", "3.12", "3.13"]' in ci
-    assert '--browser=chromium' in ci
+    assert "--browser=chromium" in ci
     assert 'SAVE_UI_SCREENSHOTS: "1"' in ci

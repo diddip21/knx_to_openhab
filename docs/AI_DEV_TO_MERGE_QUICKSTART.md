@@ -71,7 +71,7 @@ Nach jedem neuen Code-Commit muss er auf die neue SHA erneuert werden.
 
 ## Merge-Readiness ausführen
 
-- Workflow: [AI merge readiness (read-only)](../../actions/workflows/ai-merge-readiness.yml).
+- Workflow: [AI merge readiness (read-only)](https://github.com/diddip21/knx_to_openhab/actions/workflows/ai-merge-readiness.yml).
 - Er prüft passende KI-PRs bei PR-/Review-Änderungen selbst und lässt sich
   über **Run workflow** auf `main` starten (Eingabe: `pr_number`, z.B. `108`).
 - Er liefert in seiner GitHub-Job-Summary `PASS`/`OPEN`/`FAIL` pro Gate.

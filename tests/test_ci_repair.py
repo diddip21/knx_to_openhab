@@ -312,6 +312,7 @@ def test_workflow_cleanup_preserves_tracked_policy_and_collects_source_only(
     trusted_scripts.mkdir(parents=True)
     for name in ("ci_repair.py", "issue89_impl.py", "issue_impl.py", "issue_bot.py"):
         shutil.copy2(ROOT / "scripts" / name, trusted_scripts / name)
+    shutil.copytree(ROOT / "scripts/automation", trusted_scripts / "automation")
     temporary = tmp_path / "runtime"
     temporary.mkdir()
     (temporary / "repair-context.json").write_text('{"attempt": 1}', encoding="utf-8")

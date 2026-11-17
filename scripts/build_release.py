@@ -24,6 +24,7 @@ SEMVER_PATTERN = re.compile(
 EXCLUDED_TOP_LEVEL = {
     ".git",
     ".github",
+    ".opencode",
     ".pytest_cache",
     ".superpowers",
     ".venv",
@@ -41,6 +42,19 @@ EXCLUDED_NAMES = {
     "requirements-dev.txt",
     "secrets.env",
 }
+# Keep development/install helpers, but do not ship GitHub/AI controllers.
+EXCLUDED_AUTOMATION_FILES = frozenset(
+    {
+        "opencode.json",
+        "opencode.jsonc",
+        "scripts/ai_merge_readiness.py",
+        "scripts/ci_repair.py",
+        "scripts/issue89_impl.py",
+        "scripts/issue_bot.py",
+        "scripts/issue_impl.py",
+        "scripts/opencode_model_router.py",
+    }
+)
 
 
 class ReleaseArtifactError(ValueError):
@@ -79,6 +93,10 @@ def is_excluded_release_path(relative_path: PurePosixPath) -> bool:
     parts = relative_path.parts
     basename = relative_path.name
     if not parts or parts[0] in EXCLUDED_TOP_LEVEL or basename in EXCLUDED_NAMES:
+        return True
+    if relative_path.as_posix() in EXCLUDED_AUTOMATION_FILES:
+        return True
+    if parts[:2] == ("scripts", "automation"):
         return True
     if parts[:2] == ("docs", "screenshots"):
         return True

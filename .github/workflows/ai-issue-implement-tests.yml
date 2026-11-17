@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/ai-issue-implement-tests.yml"
       - "scripts/issue_impl.py"
+      - "scripts/automation/**"
       - "tests/test_issue_impl.py"
   workflow_dispatch:
 
@@ -27,4 +28,6 @@ jobs:
       - name: Verify implementation approval gates
         run: python -m pytest tests/test_issue_impl.py -q -o addopts=
       - name: Verify syntax
-        run: python -m py_compile scripts/issue_impl.py
+        run: |
+          python -m py_compile scripts/issue_impl.py
+          python -m compileall -q scripts/automation

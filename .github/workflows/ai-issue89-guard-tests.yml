@@ -7,6 +7,7 @@ on:
       - ".github/workflows/ai-issue89-guard-tests.yml"
       - ".opencode/agents/issue89-implementer.md"
       - "scripts/issue_impl.py"
+      - "scripts/automation/**"
       - "scripts/issue89_impl.py"
       - "tests/test_issue89_impl.py"
       - "docs/OPENCODE_ISSUE89_IMPLEMENTATION.md"

@@ -11,6 +11,7 @@ const {publish, fetchSource, taskReference} = require('../../scripts/automation/
 const readiness = require('../../scripts/automation/readiness.cjs');
 const {report} = require('../../scripts/automation/status.cjs');
 const {planningContext} = require('../../scripts/automation/planning.cjs');
+const {acknowledge} = require('../../scripts/automation/receipt.cjs');
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const BASE = 'a'.repeat(40);
 const TRUSTED = 'b'.repeat(40);
@@ -222,6 +223,40 @@ test('planning receives existing PR metadata and bounded patches', async t => {
   assert.equal(result.pull_requests[0].head_sha, BASE);
   assert.equal(result.pull_requests[0].files[0].patch.length, 16000);
   assert.equal(result.pull_requests[0].files[0].patch_incomplete, true);
+});
+
+test('owner commands get an idempotent receipt before authorization, including incomplete commands', async () => {
+  for (const body of ['/ai approve v3', '/ai start v3', '/ai implement v3', '  /AI answer Hinweis  ', '/ai unknown']) {
+    const comment = {id:40, body, user:{login:'owner'}, updated_at:'2026-01-01'};
+    const context = {eventName:'issue_comment', actor:'owner', repo:{owner:'owner',repo:'repo'},
+      payload:{action:'created', issue:{number:89}, comment}};
+    const reactions = [];
+    const github = {rest:{issues:{getComment:async()=>({data:comment})}, reactions:{
+      listForIssueComment:async()=>reactions,
+      createForIssueComment:async args=>reactions.push({...args,user:{login:'github-actions[bot]'}})
+    }},paginate:async(method,args)=>method(args)};
+    await acknowledge({github,context});
+    await acknowledge({github,context});
+    assert.equal(reactions.length, 1);
+    assert.equal(reactions[0].content, 'eyes');
+    assert.equal(reactions[0].comment_id, 40);
+  }
+});
+
+test('ordinary, foreign and stale comments receive no reaction', async () => {
+  for (const kind of ['ordinary','foreign','stale','pr','edited-event']) {
+    const comment = {id:40, body:'/ai start v3',user:{login:'owner'},updated_at:'original'};
+    const context = {eventName:'issue_comment',actor:'owner',repo:{owner:'owner',repo:'repo'},
+      payload:{action:'created',issue:{number:89},comment}};
+    if (kind==='ordinary') comment.body = 'Hello';
+    if (kind==='foreign') context.actor = comment.user.login = 'other';
+    if (kind==='pr') context.payload.issue.pull_request = {};
+    if (kind==='edited-event') context.payload.action = 'edited';
+    const github = {rest:{issues:{getComment:async()=>({data:{...comment,updated_at:'changed'}})},
+      reactions:{createForIssueComment:async()=>assert.fail('Unexpected receipt')}},
+      paginate:async()=>assert.fail('Unexpected reaction listing')};
+    await acknowledge({github,context});
+  }
 });
 
 test('stale repair HEAD and changed run attempt cannot publish', async t => {

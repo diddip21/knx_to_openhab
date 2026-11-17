@@ -22,6 +22,14 @@ new authorization protocol. Use a new approved plan for a fresh test run; retain
 
 ## Bedienung: Plan freigeben und Umsetzung starten
 
+Owner-Kommentare mit `/ai ...` erhalten eine **👀-Reaktion**, sobald der separate
+Empfangsjob startet. Das bedeutet **„Befehl empfangen“**, auch wenn später noch
+eine Prüfung fehlschlägt; es bedeutet keine Freigabe oder erfolgreiche Ausführung.
+Der Empfang läuft unabhängig von Modell, `main`/`dev`-Prüfung und CI. GitHub kann
+den Job zunächst in eine Warteschlange stellen. Normale Kommentare und fremde
+Autoren erhalten keine Bot-Reaktion; Wiederholungen desselben Jobs duplizieren
+die Reaktion nicht. Ergebnisse und nächste Schritte stehen im Bot-Status.
+
 | Schritt | Was du bestätigst | Neuer Issue-Kommentar | Was danach passiert |
 |---|---|---|---|
 | Plan anfordern | Die KI soll einen Vorschlag erstellen | Label `ai:plan` setzen | Read-only Prüfung von `dev` und bestehenden offenen PRs |

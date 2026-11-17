@@ -50,6 +50,7 @@ jobs:
           node --check scripts/automation/readiness.cjs
           node --check scripts/automation/planning.cjs
           node --check scripts/automation/status.cjs
+          node --check scripts/automation/receipt.cjs
       - name: Produce reviewable formatting suggestions without committing
         if: always()
         shell: bash

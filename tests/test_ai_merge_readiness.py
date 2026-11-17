@@ -82,7 +82,7 @@ def snapshot():
         "checks": checks,
         "reviews": [
             {
-                "user": {"login": "independent-reviewer"},
+                "user": {"login": "independent-reviewer", "type": "User"},
                 "state": "APPROVED",
                 "commit_id": HEAD,
                 "submitted_at": "2026-11-17T13:00:00Z",
@@ -180,12 +180,24 @@ def test_codex_comment_is_not_an_approval():
     assert statuses(data)["Unabhängiges Code-Review"] == "OPEN"
 
 
-def test_old_approval_or_self_approval_is_not_independent():
+def test_old_approval_or_review_from_pr_author_is_not_independent():
     data = snapshot()
     data["reviews"][0]["commit_id"] = "b" * 40
     assert statuses(data)["Unabhängiges Code-Review"] == "OPEN"
     data = snapshot()
+    data["reviews"][0]["user"]["login"] = "github-actions[bot]"
+    assert statuses(data)["Unabhängiges Code-Review"] == "OPEN"
+
+
+def test_owner_can_human_approve_a_bot_generated_pr():
+    data = snapshot()
     data["reviews"][0]["user"]["login"] = OWNER
+    assert statuses(data)["Unabhängiges Code-Review"] == "PASS"
+
+
+def test_automated_bot_approval_is_not_human_review():
+    data = snapshot()
+    data["reviews"][0]["user"] = {"login": "codex-review[bot]", "type": "Bot"}
     assert statuses(data)["Unabhängiges Code-Review"] == "OPEN"
 
 

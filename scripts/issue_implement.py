@@ -12,6 +12,7 @@ from typing import Any
 # Required when run with python -I: only this trusted checkout supplies imports.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from automation import artifacts  # noqa: E402
+from automation.formatting import format_candidate  # noqa: E402
 from automation.git_helpers import git  # noqa: E402
 from automation.scope import authorize_task  # noqa: E402
 
@@ -72,8 +73,14 @@ def make_prompt(issue: dict[str, Any], context: dict[str, Any]) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] not in {"prepare", "agent", "collect", "recheck"}:
-        raise SystemExit("Usage: issue_implement.py prepare|agent|collect|recheck")
+    if len(sys.argv) != 2 or sys.argv[1] not in {
+        "prepare",
+        "agent",
+        "format",
+        "collect",
+        "recheck",
+    }:
+        raise SystemExit("Usage: issue_implement.py prepare|agent|format|collect|recheck")
     temp = artifacts.runtime_dir()
     root = Path.cwd()
     action = sys.argv[1]
@@ -87,6 +94,10 @@ def main() -> None:
             artifacts.load_json(temp / "task-context.json"),
             TRUSTED_ROOT / ".opencode/agents/ai-task.md",
             repair=False,
+        )
+    elif action == "format":
+        format_candidate(
+            root, TRUSTED_ROOT, artifacts.load_json(temp / "task-context.json"), repair=False
         )
     elif action == "collect":
         context = artifacts.load_json(temp / "task-context.json")

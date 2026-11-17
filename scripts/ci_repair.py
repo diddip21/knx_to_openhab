@@ -156,8 +156,14 @@ def fresh_context(temp: Path) -> dict[str, Any]:
 
 
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] not in {"prepare", "agent", "collect", "recheck"}:
-        raise SystemExit("Usage: ci_repair.py prepare|agent|collect|recheck")
+    if len(sys.argv) != 2 or sys.argv[1] not in {
+        "prepare",
+        "agent",
+        "format",
+        "collect",
+        "recheck",
+    }:
+        raise SystemExit("Usage: ci_repair.py prepare|agent|format|collect|recheck")
     temp = artifacts.runtime_dir()
     action = sys.argv[1]
     if action == "prepare":
@@ -170,6 +176,12 @@ def main() -> None:
             artifacts.load_json(temp / "task-context.json"),
             TRUSTED_ROOT / ".opencode/agents/ai-task.md",
             repair=True,
+        )
+    elif action == "format":
+        from automation.formatting import format_candidate
+
+        format_candidate(
+            Path.cwd(), TRUSTED_ROOT, artifacts.load_json(temp / "task-context.json"), repair=True
         )
     elif action == "collect":
         context = artifacts.load_json(temp / "task-context.json")

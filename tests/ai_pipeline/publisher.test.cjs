@@ -9,6 +9,9 @@ const os = require('node:os');
 const path = require('node:path');
 const {publish, fetchSource, taskReference} = require('../../scripts/automation/github.cjs');
 const readiness = require('../../scripts/automation/readiness.cjs');
+const {report} = require('../../scripts/automation/status.cjs');
+const {planningContext} = require('../../scripts/automation/planning.cjs');
+const {acknowledge} = require('../../scripts/automation/receipt.cjs');
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const BASE = 'a'.repeat(40);
 const TRUSTED = 'b'.repeat(40);
@@ -51,9 +54,12 @@ function setup(t, number = 89, version = 3, repair = false) {
     mergeable: true, body: '<!-- ai-implementation-command: 40 -->\n<!-- ai-task: ' +
       JSON.stringify(taskReference(item)) + ' -->'};
   const state = {open: repair ? [pr] : [], pr, mutations: [], dispatches: [], blobs: [],
-    head: BASE, afterBlob: null, graphPage: 0};
+    head: BASE, afterBlob: null, graphPage: 0, statusComments: []};
   const github = {rest: {
-    issues: {get: async () => ({data: issue}), listComments: async () => comments},
+    issues: {get: async () => ({data: issue}), listComments: async () => comments,
+      createComment: async args => {state.statusComments.push(args); comments.push({id: 80,
+        user: {login:'github-actions[bot]'}, body:args.body});},
+      updateComment: async args => {state.statusComments.push(args); comments.find(c=>c.id===args.comment_id).body=args.body;}},
     repos: {getBranch: async ({branch: b}) => ({data: {commit: {sha: b === 'main' ? TRUSTED : BASE}}}),
       compareCommits: async () => ({data: {behind_by: 0}})},
     pulls: {list: async () => state.open, get: async () => ({data: state.pr}),
@@ -63,6 +69,8 @@ function setup(t, number = 89, version = 3, repair = false) {
         state.pr = {...pr, body: args.body, head: {...pr.head, sha: state.head}};
         state.open.push(state.pr); return {data: state.pr}; }},
     actions: {getWorkflowRun: async () => ({data: run}),
+      listJobsForWorkflowRun: async () => ({data:{jobs:[]}}),
+      listWorkflowRunArtifacts: async () => ({data:{artifacts:[{id:90, name:'ui-screenshots-and-reports', expired:false}]}}),
       createWorkflowDispatch: async args => {state.dispatches.push(args);}},
     checks: {listForRef: async () => []},
     git: {createBlob: async args => {state.blobs.push(args); if (state.afterBlob) state.afterBlob();
@@ -136,6 +144,119 @@ test('revocation during Git object creation prevents branch mutation', async t =
   await assert.rejects(() => publish(f));
   assert.equal(f.state.mutations.some(([kind]) => ['ref', 'update', 'pr'].includes(kind)), false);
   assert.equal(f.state.dispatches.length, 0);
+});
+
+test('short start is independently verified by the publisher', async t => {
+  const f = setup(t);
+  const marker = {kind:'plan', version:3, issue_digest:f.item.digest, scope:f.item.scope};
+  f.comments[0].body = '<!-- knx-issue-bot-state ' + JSON.stringify(marker) + ' -->\nPlan';
+  f.comments[3].body = '/ai start v3';
+  f.item.plan_sha256 = hash(f.comments[0].body);
+  f.item.command_sha256 = hash(f.comments[3].body);
+  f.save();
+  await publish(f);
+  assert.equal(f.state.dispatches.length, 1);
+});
+
+test('short start cannot silently reuse a legacy unscoped plan', async t => {
+  const f = setup(t);
+  f.comments[3].body = '/ai start v3';
+  f.item.command_sha256 = hash(f.comments[3].body);
+  f.save();
+  await assert.rejects(() => publish(f), /Invalid live scope/);
+  assert.equal(f.state.blobs.length, 0);
+});
+
+test('CI status updates one comment and ignores a stale PR SHA', async t => {
+  const f = setup(t, 1234, 5, true);
+  await report(f);
+  assert.match(f.state.statusComments[0].body, /0\/2/);
+  assert.match(f.state.statusComments[0].body, /workflow_dispatch/);
+  assert.match(f.state.statusComments[0].body, /artifacts\/90/);
+  f.run.conclusion = 'success';
+  await report(f);
+  assert.equal(f.state.statusComments[1].comment_id, 80);
+  assert.match(f.state.statusComments[1].body, /CI bestanden/);
+  f.state.pr.head.sha = RESULT;
+  await report(f);
+  assert.equal(f.state.statusComments.length, 2);
+  assert.equal(f.state.mutations.length, 0);
+});
+
+test('failed start gives owner instructions without exposing raw logs', async t => {
+  const f = setup(t);
+  await report({...f, phase:'failure'});
+  const message = f.state.statusComments[0].body;
+  assert.match(message, /approve.*start/);
+  assert.match(message, /vollständigen JSON/);
+  assert.match(message, /neuen Kommentar/);
+  assert.equal(f.state.mutations.length, 0);
+});
+
+test('status reporter ignores foreign runs and does not regress from CI to publication', async t => {
+  const f = setup(t, 1234, 5, true);
+  f.context.payload.workflow_run.head_repository.full_name = 'foreign/repo';
+  await report(f);
+  assert.equal(f.state.statusComments.length, 0);
+  f.context.payload.workflow_run.head_repository.full_name = 'owner/repo';
+  await report(f);
+  f.context.eventName = 'issue_comment';
+  await report({...f, phase:'published'});
+  assert.equal(f.state.statusComments.length, 1);
+});
+
+test('repair failure explains stop and a delayed CI event cannot erase it', async t => {
+  const f = setup(t, 1234, 5, true);
+  await report({...f, phase:'repair-failure'});
+  assert.match(f.state.statusComments[0].body, /KI-Reparatur angehalten/);
+  await report(f);
+  assert.equal(f.state.statusComments.length, 1);
+});
+
+test('planning receives existing PR metadata and bounded patches', async t => {
+  const f = setup(t);
+  f.context.issue = {number:89};
+  f.issue.body = 'Compare existing #50';
+  f.state.open = [{...f.state.pr, title:'Existing implementation'}];
+  f.github.rest.pulls.listFiles = async () => [{filename:'feature.py', status:'modified', patch:'x'.repeat(20000)}];
+  const result = await planningContext(f);
+  assert.equal(result.pull_requests[0].head_sha, BASE);
+  assert.equal(result.pull_requests[0].files[0].patch.length, 16000);
+  assert.equal(result.pull_requests[0].files[0].patch_incomplete, true);
+});
+
+test('owner commands get an idempotent receipt before authorization, including incomplete commands', async () => {
+  for (const body of ['/ai approve v3', '/ai start v3', '/ai implement v3', '  /AI answer Hinweis  ', '/ai unknown']) {
+    const comment = {id:40, body, user:{login:'owner'}, updated_at:'2026-01-01'};
+    const context = {eventName:'issue_comment', actor:'owner', repo:{owner:'owner',repo:'repo'},
+      payload:{action:'created', issue:{number:89}, comment}};
+    const reactions = [];
+    const github = {rest:{issues:{getComment:async()=>({data:comment})}, reactions:{
+      listForIssueComment:async()=>reactions,
+      createForIssueComment:async args=>reactions.push({...args,user:{login:'github-actions[bot]'}})
+    }},paginate:async(method,args)=>method(args)};
+    await acknowledge({github,context});
+    await acknowledge({github,context});
+    assert.equal(reactions.length, 1);
+    assert.equal(reactions[0].content, 'eyes');
+    assert.equal(reactions[0].comment_id, 40);
+  }
+});
+
+test('ordinary, foreign and stale comments receive no reaction', async () => {
+  for (const kind of ['ordinary','foreign','stale','pr','edited-event']) {
+    const comment = {id:40, body:'/ai start v3',user:{login:'owner'},updated_at:'original'};
+    const context = {eventName:'issue_comment',actor:'owner',repo:{owner:'owner',repo:'repo'},
+      payload:{action:'created',issue:{number:89},comment}};
+    if (kind==='ordinary') comment.body = 'Hello';
+    if (kind==='foreign') context.actor = comment.user.login = 'other';
+    if (kind==='pr') context.payload.issue.pull_request = {};
+    if (kind==='edited-event') context.payload.action = 'edited';
+    const github = {rest:{issues:{getComment:async()=>({data:{...comment,updated_at:'changed'}})},
+      reactions:{createForIssueComment:async()=>assert.fail('Unexpected receipt')}},
+      paginate:async()=>assert.fail('Unexpected reaction listing')};
+    await acknowledge({github,context});
+  }
 });
 
 test('stale repair HEAD and changed run attempt cannot publish', async t => {

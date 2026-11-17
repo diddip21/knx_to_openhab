@@ -72,9 +72,11 @@ async function assertLiveApproval(github, repo, item) {
       hash(command.body.trim()) !== item.command_sha256 || hash(plan.body) !== item.plan_sha256) {
     throw new Error('Owner command, plan or approval changed before publication');
   }
+  const shortStart = new RegExp(`^/ai start v${item.version}$`, 'i').test(command.body.trim());
   const raw = command.body.trim().split('\n').slice(1).join('\n').trim();
   const fenced = /^```json\s*\n([\s\S]*)\n```$/.exec(raw);
-  const scope = JSON.parse(fenced ? fenced[1] : raw);
+  const marker = /^<!-- knx-issue-bot-state (\{[^\n]*\}) -->/.exec(plan.body || '');
+  const scope = shortStart ? (marker && JSON.parse(marker[1]).scope) : JSON.parse(fenced ? fenced[1] : raw);
   if (!scope || typeof scope !== 'object' || Object.keys(scope).some(
       key => !['files', 'create', 'required'].includes(key))) throw new Error('Invalid live scope');
   const normalized = {};

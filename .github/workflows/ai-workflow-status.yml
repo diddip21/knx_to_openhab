@@ -1,0 +1,35 @@
+name: AI workflow status
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [in_progress, completed]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: ai-status-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  report:
+    if: >-
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'ai/issue-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const {report} = require(process.env.GITHUB_WORKSPACE + '/scripts/automation/status.cjs');
+            await report({github, context});

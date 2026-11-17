@@ -67,12 +67,17 @@ from .upload_security import (
 
 
 def _resolved_homekit_enabled(knx_module, project):
-    """Return the effective HomeKit state after the optional UI/CLI override."""
+    """Resolve preview HomeKit state from the *saved* generator configuration.
+
+    The generator module is imported once per Flask process, so its module-level
+    config can lag behind a successful POST /api/config. Read the persisted
+    configuration on each preview instead of returning a stale override.
+    """
     detected = knx_module.is_homekit_enabled(project)
     resolver = getattr(knx_module, "resolve_homekit_enabled", None)
     if resolver is None:
         return detected
-    config_data = getattr(knx_module, "config", {})
+    config_data = load_generator_config(project_root)
     general = config_data.get("general") if isinstance(config_data, dict) else None
     return resolver(detected, general)
 

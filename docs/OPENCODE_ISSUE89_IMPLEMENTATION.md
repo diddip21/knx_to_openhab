@@ -59,8 +59,9 @@ closed; inspect the GitHub Actions logs.
 - Do DE and EN translations and UI setting roundtrips work?
 - Do new unit, integration and Playwright tests pass?
 - Do documentation, screenshots, and changelog explain the default change?
-- Does a real KNX blind maintain its end position? **Hardware validation
-  cannot be performed by GitHub Actions** and remains open until confirmed.
+- Real KNX behavior cannot be verified by GitHub Actions; the software
+  merge-readiness report does not require physical hardware validation.
+  Never claim successful device validation without a real test.
 
 If the agent cannot create reliable UI screenshots under its read/edit
 permissions, those are explicitly follow-up work. Do not mark issue #89

@@ -1,79 +1,12 @@
-# Auto-repair failed CI for approved HomeKit issue #89
+# Generic approved-task CI repair
 
-This workflow adds **at most two** controlled OpenCode + Superpowers
-follow-up changes to the already-approved HomeKit Draft PR **targeting `dev`**. It does **not**
-auto-merge, edit `main`, add paid providers, expand the original plan, or
-permit unrelated PRs.
+See [AI_AUTOMATION.md](AI_AUTOMATION.md). The repair controller is no longer
+bound to a particular issue or plan version. It derives both from the verified
+AI branch and binds them to the original live owner command and explicit scope.
 
-## What triggers it?
+Only a failed, explicitly dispatched CI for the exact current SHA of a same-repo
+bot Draft PR against `dev` is eligible. The publisher independently rechecks
+all evidence and files. At most two attempts, existing approved files only,
+fast-forward updates only, no main/dev writes and no auto-merge.
 
-A completed **failed** `CI` run that was explicitly dispatched on a
-bot-created branch of the form
-`ai/issue-89-plan-v2-run-<run ID>` **whose open Draft PR base is `dev`**.
-The workflow definition and trusted validators stay on GitHub's default
-branch `main`. Other PRs, user branches,
-GitHub PR events, successful CI, and unrelated jobs are ignored.
-
-The PR must remain a **Draft** and the author must be
-`github-actions[bot]`. The controller retrieves live Issue #89 and its
-comments to revalidate the maintainer's latest plan v2, approval receipt,
-original implementation command, issue digest, open status and labels.
-The PR head must exactly match the commit checked by the failed CI run.
-
-## Safe workflow
-
-1. A low-privilege job checks out the trusted default-branch validator
-   separately from the **exact failing PR commit**.
-2. GitHub's failed-job logs are fetched as **untrusted diagnostic data**.
-3. A fresh approved-free-model probe selects a working OpenCode model.
-   The model can read relevant files, load Superpowers
-   `systematic-debugging` and `verification-before-completion`, and edit
-   **existing** allowlisted HomeKit, Web-UI and regression-test files.
-   Shell commands, git writes, arbitrary new files and secrets are excluded.
-4. Trusted Python checks the candidate Git diff (existing whitelisted files
-   only, bounded file count/changed lines/content size, no deletions, renames
-   or whitespace errors). The candidate is stored as a short-lived artifact.
-5. The separate publisher, which **never executes candidate code**, checks
-   the live PR/issue/approval again. It verifies every candidate blob's
-   SHA-256 and creates exactly one fast-forward-only commit on the existing
-   Draft-PR branch: `fix(ai-ci): issue89 attempt 1` or `attempt 2`.
-6. The publisher explicitly dispatches the existing `CI` workflow on the
-   modified branch. If CI is still red, the cycle can repeat once more.
-   If a third failure occurs, no more repairs are published; a maintainer
-   must review it.
-
-The existing CI retains its normal lint → core → UI dependencies and
-runs candidate tests under the existing read-only permissions. Repair attempts
-should fix the failure's root cause, **not weaken or skip tests**.
-
-## Test and activate
-
-- Validate `tests/test_ci_repair.py` in CI and review the privileged workflow
-  before merging the infrastructure PR.
-- After merge, the workflow lives on `main` (mandatory for `workflow_run`).
-  Subsequent *failed*
-  `workflow_dispatch` CI runs on a matching Draft PR can trigger the
-  automatic repair.
-- The current PR #108 currently targets `main`: first reconcile `dev`
-  and then retarget it to `dev`, checking the resulting diff and CI.
-- The current PR #108 already has manual test corrections. If its current CI
-  is green, the repair workflow **must not run**. A forced failing run should
-  not be introduced merely to test the feature.
-- The original HomeKit functionality still requires correct legacy/YAML
-  metadata, Web-UI behavior, Playwright tests, screenshots and a real
-  hardware test before any merge.
-
-## Limits
-
-- The allowlist is pinned to Issue #89, with an owner-approved v2 plan
-  and a `dev` target. A PR against `main` is intentionally rejected.
-  Another issue requires new review and a separate, scoped design.
-- Free-tier availability and capability may change; the router has **no paid
-  fallback** and aborts if no approved model passes its read-only probe.
-- A model can edit source but cannot directly publish any change. Unexpected
-  files, stale PR heads, revoked approvals or invalid artifacts fail closed.
-- Limits are a guardrail, not proof that AI-generated code is correct. All
-  generated changes are reviewable and CI/hardware testing remains required.
-- The privileged GitHub publisher cannot fully eliminate races with concurrent
-  administrator branch updates; it serializes its own runs and requires
-  fast-forward updates. Do not run this on third-party PRs.
+An old pilot PR without scoped authorization is not silently adopted.

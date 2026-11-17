@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "scripts/opencode_model_router.py"
+      - ".github/opencode-cli-version"
       - "tests/test_opencode_model_router.py"
       - ".github/workflows/opencode-model-router-tests.yml"
       - ".github/workflows/opencode-issue-planner.yml"
@@ -19,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-python@v7
@@ -41,14 +42,14 @@ jobs:
       matrix:
         task: [plan, implement]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
       - name: Install OpenCode
-        run: npm install --global @opencode/cli
+        run: npm install --global "@opencode/cli@$(cat .github/opencode-cli-version)"
       - name: Select free model using read-only live probes
         shell: bash
         run: |

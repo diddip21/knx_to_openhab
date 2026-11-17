@@ -206,9 +206,7 @@ def test_screenshots_and_hardware_are_explicit_gates():
 
 def test_hardware_acceptance_bound_to_head_and_owner():
     data = snapshot()
-    data["pr_comments"][0]["body"] = data["pr_comments"][0]["body"].replace(
-        HEAD, "b" * 40
-    )
+    data["pr_comments"][0]["body"] = data["pr_comments"][0]["body"].replace(HEAD, "b" * 40)
     assert statuses(data)["KNX-Hardwareabnahme (Owner-Erklärung)"] == "OPEN"
     data = snapshot()
     data["pr_comments"][0]["user"]["login"] = "attacker"

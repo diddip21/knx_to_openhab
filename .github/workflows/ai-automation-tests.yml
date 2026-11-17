@@ -48,6 +48,8 @@ jobs:
           python -m compileall -q scripts/automation scripts/issue_implement.py scripts/ci_repair.py scripts/ai_merge_readiness.py
           node --check scripts/automation/github.cjs
           node --check scripts/automation/readiness.cjs
+          node --check scripts/automation/planning.cjs
+          node --check scripts/automation/status.cjs
       - name: Produce reviewable formatting suggestions without committing
         if: always()
         shell: bash

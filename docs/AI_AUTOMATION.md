@@ -20,13 +20,38 @@ Its old command has no explicit file scope and is NOT silently upgraded to the
 new authorization protocol. Use a new approved plan for a fresh test run; retain
 #108 as a comparison until the owner decides what to do with it.
 
+## Bedienung: Plan freigeben und Umsetzung starten
+
+| Schritt | Was du bestätigst | Neuer Issue-Kommentar | Was danach passiert |
+|---|---|---|---|
+| Plan anfordern | Die KI soll einen Vorschlag erstellen | Label `ai:plan` setzen | Read-only Prüfung von `dev` und bestehenden offenen PRs |
+| Plan korrigieren | Anforderungen oder Dateiliste ändern | `/ai answer DEIN HINWEIS` | Neuer Plan; alte Freigabe gilt dafür nicht |
+| Plan freigeben | Ziel, Vorgehen und angezeigter Dateiumfang passen | `/ai approve vN` | Bot bestätigt die Freigabe und zeigt den Startbefehl |
+| Umsetzung starten | Jetzt genau diesen Plan im angezeigten Dateiumfang ausführen | `/ai start vN` | Modelllauf, Prüfung, Formatierung, Draft-PR und CI |
+| Merge entscheiden | Aktuelle CI, Screenshots und Review sind geprüft | GitHub-PR bewusst mergen | Eigene menschliche Entscheidung |
+
+`N` ist die konkrete Versionsnummer im Bot-Kommentar, etwa `v4`. Jeder Befehl
+gehört in einen **neuen Kommentar**. Bearbeiten eines alten Kommentars startet
+keinen Lauf. `approve` startet keine Codeänderung. Erst `start` autorisiert die
+Umsetzung samt der im unveränderten Bot-Plan hinterlegten Dateiliste.
+Du musst bei neuen Plänen keinen JSON-Block kopieren. Der Bot validiert die
+vorgeschlagene Liste vor Veröffentlichung; die Owner-Befehle verleihen die Rechte.
+
+Der kurze Start gilt nur für neue Pläne mit strukturiertem Dateiumfang. Bei
+älteren Plänen bleibt `/ai implement vN` mit vollständigem JSON-Block gültig.
+Ein alter Plan wird nicht automatisch auf den kurzen Start umgestellt.
+
 ## Normal issue-to-PR sequence
 
 1. Describe the task and acceptance criteria; request planning using `ai:plan`.
    The existing read-only planner proposes changes, tests and exact paths.
 2. Resolve questions using `/ai answer ...`. Review the current plan and post
    `/ai approve vN`. Wait for the bot's matching approval receipt.
-3. Separately post the exact start command and the reviewed JSON file scope:
+3. For new plans, separately post the short command shown in the bot receipt:
+   `/ai start vN`. The immutable bot plan contains the displayed, validated
+   `files`/`create`/`required` scope. Both Python and the independent publisher
+   bind that scope to the live plan, approval and command hashes.
+   For existing legacy plans, post the full command and reviewed JSON scope:
 
    ````text
    /ai implement vN
@@ -42,12 +67,15 @@ new authorization protocol. Use a new approved plan for a fresh test run; retain
    Replace `N` and the example paths. `files` is the complete allowed set;
    `create` authorizes missing files; `required` must actually be changed by the
    first implementation. Empty `create`/`required` lists are allowed. Only the
-   repository owner's live, unedited command grants this scope. A model proposal,
+   repository owner's live, unedited start command grants this scope. A model proposal,
    label, issue body or PR description does not grant write permissions.
 4. The read-only generation job selects an approved free model, installs the
    pinned OpenCode CLI and builds literal agent permissions from the owner scope.
    Shell, external directories, Code Mode, network tools and subagents stay denied.
-5. A separate publisher re-fetches the issue and all authorization comments,
+5. Trusted Black/isort format only changed approved Python files with trusted
+   configuration and explicit filenames. No candidate code is executed. Scope,
+   file modes, creation rights, sizes and diff budgets are checked again after
+   formatting. A separate publisher re-fetches the issue and all authorization comments,
    validates the candidate against trusted Git objects, and creates a Draft PR
    against `dev`. It explicitly dispatches the full existing CI.
 6. A failed **dispatched CI** may trigger at most two repairs of the same
@@ -96,6 +124,38 @@ claimed as validated by CI. Screenshot file presence is not proof of image
 content: human visual review is still required. A successful model run is not a
 test result. Tests and source still need independent review; a model can propose
 incorrect behavior even within an authorized file list.
+
+## Rückmeldungen und bestehende Arbeit
+
+Ein Bot-Statuskommentar pro Startauftrag wird aktualisiert: Veröffentlichung,
+PR/SHA, laufende oder abgeschlossene CI, Reparaturzähler und nächster Schritt.
+Fehler beim Start oder bei der Reparatur werden mit Run-Link und Schrittnamen
+gemeldet; rohe Modelltexte und Logs werden nicht ins Issue kopiert. Der
+Reporter arbeitet nur mit GitHub-APIs und vertrauenswürdigem Code von `main`.
+Er ändert keine Branches, Labels, Freigaben oder Merge-Entscheidungen.
+
+Maßgeblich für die automatische Reparatur ist die ausdrücklich gestartete CI
+(`workflow_dispatch`) auf der aktuellen PR-SHA. Ein zusätzlicher PR-Lauf kann
+wegen GitHub-Regeln `action_required` anzeigen. Das ist weiterhin gesondert in
+GitHub zu prüfen; der Statusbericht genehmigt diesen Lauf nicht automatisch.
+
+Vor der Planung werden bis zu fünf passende offene PRs desselben Repositories
+mit SHA, Beschreibung, Dateiliste und begrenzten Patches bereitgestellt.
+Ausgelassene Dateien/Patches sind gekennzeichnet. Der Plan soll vorhandene Arbeit
+als bereits vorhanden / übernehmen / korrigieren / neu erforderlich einordnen.
+Das ist Planungskontext, keine Freigabe zum Kopieren oder zum Ändern fremder PRs.
+
+Screenshot-Belege bleiben ein getrennter Schritt: Die bestehende Playwright-CI
+lädt `ui-screenshots-and-reports` aus `test-results/` hoch. UI-Tests sollen echte,
+anonymisierte Erfolgsansichten dort speichern (`SAVE_UI_SCREENSHOTS=1`). Nach
+Sichtprüfung werden ausgewählte Bilder unter `docs/screenshots/` committed und
+im PR erklärt. Der textbasierte Modell-Scope erhält keine binären Schreibrechte.
+Ein Artefakt allein erfüllt das Gate für committed Screenshots noch nicht.
+
+Die Neuerungen sind erst nach Review/Merge des Infrastruktur-PRs nach `main`
+und anschließender Synchronisation mit `dev` aktiv. Laufende ältere Aufträge
+werden nicht nachträglich umgeschrieben. Ein echter kompletter KI-Reparaturzyklus
+bleibt separat mit Run-URLs und SHAs nachzuweisen.
 
 ## Reproducible tests and evidence limits
 

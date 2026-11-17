@@ -1,0 +1,67 @@
+name: AI merge readiness (read-only)
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, ready_for_review, converted_to_draft]
+    branches: [dev]
+  pull_request_review:
+    types: [submitted, dismissed]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to audit'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  checks: read
+  actions: read
+
+jobs:
+  audit:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       startsWith(github.event.workflow_run.head_branch, 'ai/issue-')) ||
+      (github.event.pull_request.base.ref == 'dev' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       startsWith(github.event.pull_request.head.ref, 'ai/issue-'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout trusted default branch only; never PR code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Read current PR evidence without changing repository state
+        id: snapshot
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const snapshot = require(process.env.GITHUB_WORKSPACE + '/scripts/automation/readiness.cjs');
+            await snapshot({github,context,core,directory:process.env.RUNNER_TEMP});
+      - name: Evaluate current software evidence
+        if: steps.snapshot.outputs.eligible == 'true'
+        run: |
+          python -I scripts/ai_merge_readiness.py \
+            --snapshot "$RUNNER_TEMP/merge-readiness-snapshot.json" \
+            --report "$RUNNER_TEMP/merge-readiness-report.json"
+      - name: Archive gate results only
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ai-readiness-${{ github.run_id }}
+          path: ${{ runner.temp }}/merge-readiness-report.json
+          if-no-files-found: ignore
+          retention-days: 14

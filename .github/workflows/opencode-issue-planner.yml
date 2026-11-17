@@ -34,14 +34,14 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout trusted default-branch controllers
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           path: trusted
           persist-credentials: false
 
       - name: Checkout development source for planning
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: dev
           path: candidate
@@ -94,7 +94,7 @@ jobs:
       - name: Install OpenCode
         if: steps.decision.outputs.operation == 'plan'
         run: |
-          npm install --global @opencode/cli
+          npm install --global "@opencode/cli@$(cat trusted/.github/opencode-cli-version)"
           opencode --version
 
       - name: Select an approved working free model

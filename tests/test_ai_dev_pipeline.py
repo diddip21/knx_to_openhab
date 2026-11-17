@@ -1,88 +1,114 @@
-"""Cross-workflow contract tests for main(default) -> dev -> manual main release.
-
-These intentionally verify the *trusted* workflow contracts, not live GitHub
-branch synchronization, CI status or hardware review.
-"""
+"""Contract tests for generic, trusted-main controllers and isolated dev candidates."""
 
 from pathlib import Path
 
+import pytest
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
-WF = ROOT / ".github" / "workflows"
+WORKFLOWS = ROOT / ".github/workflows"
 
 
-def workflow(name: str) -> str:
-    return (WF / name).read_text(encoding="utf-8")
+def workflow(name):
+    return (WORKFLOWS / name).read_text(encoding="utf-8")
 
 
-def test_planner_uses_dev_code_but_trusted_main_controller():
-    text = workflow("opencode-issue-planner.yml")
-    assert "ref: dev" in text
-    assert "path: candidate" in text
-    assert "path: trusted" in text
+@pytest.mark.parametrize("name", ["ai-issue-implement.yml", "opencode-ci-self-repair.yml"])
+def test_generator_and_publisher_are_separate_and_do_not_merge(name):
+    text = workflow(name)
+    definition = yaml.safe_load(text)
+    generation = "implement" if name == "ai-issue-implement.yml" else "repair"
+    assert definition["permissions"] == {}
+    assert definition["jobs"]["publish"]["needs"] == generation
+    assert all(value == "read" for value in definition["jobs"][generation]["permissions"].values())
+    assert definition["jobs"]["publish"]["permissions"]["contents"] == "write"
+    assert "python -I ../trusted/scripts/" in text
+    assert "task-verified.json" in text
+    assert "persist-credentials: true" not in text
+    assert "allow-unsafe-pr-checkout: true" not in text
+    assert "HEAD:.opencode" in text
+    assert "opencode.json opencode.jsonc" in text
+    assert "issue-89" not in text and "issue89" not in text
+    publisher = (ROOT / "scripts/automation/github.cjs").read_text(encoding="utf-8")
+    assert "force: false" in publisher
+    assert "head, base: 'dev', draft: true" in publisher
+    assert "createWorkflowDispatch" in publisher
+    assert "pulls.merge" not in publisher and "autoMerge" not in publisher
+
+
+def test_implementation_requires_live_owner_scope_on_development_source():
+    text = workflow("ai-issue-implement.yml")
+    assert "issue_comment:" in text
+    assert "github.actor == github.repository_owner" in text
     assert "git merge-base --is-ancestor" in text
-    assert "../trusted/scripts/issue_bot.py prepare" in text
-    assert "../trusted/scripts/issue_bot.py finish" in text
-    assert "../trusted/scripts/opencode_model_router.py" in text
-    assert "cmp -s" in text
-    assert "issue-planner.md" in text
-
-
-def test_homekit_implementer_uses_dev_for_source_and_pr_base():
-    text = workflow("opencode-issue89-implement.yml")
     assert "ref: dev" in text
-    assert "path: candidate" in text
-    assert "path: target" in text
-    assert "path: trusted" in text
-    assert "git merge-base --is-ancestor" in text
-    assert "../trusted/scripts/issue89_impl.py prepare" in text
-    assert "../trusted/scripts/issue89_impl.py collect" in text
-    assert "../trusted/scripts/issue89_impl.py recheck" in text
-    assert "../trusted/scripts/opencode_model_router.py" in text
-    assert "base: 'dev', draft: true" in text
-    assert "branch: 'dev'" in text
-    assert "base: context.payload.repository.default_branch, draft: true" not in text
-    assert "comparison.behind_by !== 0" in text
-    assert ".github/workflows/ci.yml" in text
-    assert "Require approved CI definition" in text
-    assert "actions.createWorkflowDispatch" in text
+    assert "path: trusted" in text and "path: candidate" in text and "path: target" in text
+    assert "issue_implement.py prepare" in text
+    assert "issue_implement.py collect" in text
+    assert "issue_implement.py recheck" in text
 
 
-def test_repair_only_updates_approved_dev_drafts_without_auto_merge():
+def test_repair_remains_bounded_to_explicit_failed_ci_and_exact_commit():
     text = workflow("opencode-ci-self-repair.yml")
-    assert text.count("p.base.ref === 'dev'") == 2
-    assert "currentPr.base.ref !== 'dev'" in text
-    assert "force:false" in text
-    assert "workflow_id:'ci.yml'" in text
-    assert "auto_merge" not in text
-    check = (ROOT / "scripts" / "ci_repair.py").read_text(encoding="utf-8")
-    assert 'get("ref") != "dev"' in check
-    assert 'get("ref") != "main"' not in check
+    assert "workflow_run:" in text and 'workflows: ["CI"]' in text
+    assert "github.event.workflow_run.event == 'workflow_dispatch'" in text
+    assert "github.event.workflow_run.head_repository.full_name == github.repository" in text
+    assert "ref: ${{ github.event.workflow_run.head_sha }}" in text
+    assert "ci_repair.py recheck" in text
+    assert "git restore --source=HEAD --worktree -- .opencode/agents/ai-task.md" in text
 
 
-def test_default_branch_keeps_workflow_run_and_issue_comment_triggers():
-    assert "workflow_run:" in workflow("opencode-ci-self-repair.yml")
-    assert "issue_comment:" in workflow("opencode-issue-planner.yml")
-    assert "issue_comment:" in workflow("opencode-issue89-implement.yml")
+def test_readiness_is_read_only_and_reruns_after_ci():
+    text = workflow("ai-merge-readiness.yml")
+    definition = yaml.safe_load(text)
+    assert all(value == "read" for value in definition["permissions"].values())
+    assert "workflow_run:" in text
+    assert "ref: ${{ github.event.repository.default_branch }}" in text
+    assert "ref: ${{ github.event.pull_request.head" not in text
+    assert "ref: ${{ github.event.workflow_run.head_sha }}" not in text
+    assert "hardware-accepted" not in text
 
 
-def test_source_and_review_gates_remain_separate():
-    impl = workflow("opencode-issue89-implement.yml")
-    repair = workflow("opencode-ci-self-repair.yml")
-    assert "needs: implement" in impl
-    assert "needs: repair" in repair
-    assert "pull-requests: write" in impl
-    assert "contents: read" in repair
-    assert "draft: true" in impl
-    assert "createWorkflowDispatch" in impl
-    assert "createWorkflowDispatch" in repair
+def test_no_special_issue_controllers_or_agents_remain():
+    obsolete = [
+        "scripts/issue89_impl.py",
+        "scripts/issue_impl.py",
+        ".github/workflows/opencode-issue89-implement.yml",
+        ".github/workflows/opencode-issue-implement.yml",
+        ".github/workflows/ai-issue89-guard-tests.yml",
+        ".github/workflows/ai-issue-implement-tests.yml",
+        ".github/workflows/ai-ci-repair-tests.yml",
+        ".opencode/agents/issue89-implementer.md",
+        ".opencode/agents/issue89-ci-repair.md",
+    ]
+    assert not [name for name in obsolete if (ROOT / name).exists()]
+    for name in ["issue_implement.py", "ci_repair.py", "ai_merge_readiness.py"]:
+        source = (ROOT / "scripts" / name).read_text(encoding="utf-8")
+        assert "issue89" not in source and "== 89" not in source
+        assert "ISSUE_NUMBER =" not in source
 
 
-def test_shared_ci_preserves_development_validation_and_evidence():
-    text = workflow("ci.yml")
-    assert 'python-version: ["3.11", "3.12", "3.13"]' in text
-    assert 'SAVE_UI_SCREENSHOTS: "1"' in text
-    assert "--browser=chromium" in text
-    assert "--screenshot=only-on-failure" in text
-    assert "--video=retain-on-failure" in text
-    assert "--tracing=retain-on-failure" in text
-    assert 'branches: ["**"]' in text
+def test_runtime_agent_defaults_to_deny_and_planner_only_proposes_scope():
+    agent = (ROOT / ".opencode/agents/ai-task.md").read_text(encoding="utf-8")
+    permissions = yaml.safe_load(agent.split("---", 2)[1])["permissions"]
+    assert permissions[0] == {"action": "*", "resource": "*", "effect": "deny"}
+    assert not any(p["action"] == "edit" and p["effect"] == "allow" for p in permissions)
+    planner = (ROOT / ".opencode/agents/issue-planner.md").read_text(encoding="utf-8")
+    assert '"files"' in planner and '"create"' in planner and '"required"' in planner
+
+
+def test_guard_workflow_covers_shared_logic_and_runs_node_tests_without_optional_runtime():
+    text = workflow("ai-automation-tests.yml")
+    assert '"scripts/automation/**"' in text
+    assert '"tests/ai_pipeline/**"' in text
+    assert "actions/setup-node@v7" in text
+    assert "tests/test_release_automation_exclusions.py" in text
+
+
+def test_planner_and_shared_application_ci_keep_existing_roles():
+    text = workflow("opencode-issue-planner.yml")
+    assert "ref: dev" in text and "../trusted/scripts/issue_bot.py prepare" in text
+    ci = workflow("ci.yml")
+    assert 'python-version: ["3.11", "3.12", "3.13"]' in ci
+    assert "--browser=chromium" in ci
+    assert 'SAVE_UI_SCREENSHOTS: "1"' in ci

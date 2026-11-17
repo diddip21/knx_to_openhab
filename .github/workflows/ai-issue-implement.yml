@@ -1,0 +1,142 @@
+name: AI approved issue implementation
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+concurrency:
+  group: ai-implement-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    if: >-
+      github.actor == github.repository_owner &&
+      !github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/ai implement v')
+    permissions:
+      contents: read
+      issues: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: dev
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require current main ancestry and identical trusted runtime policies
+        working-directory: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$(git -C ../trusted rev-parse HEAD)" HEAD
+          test "$(git rev-parse HEAD:.opencode)" = "$(git -C ../trusted rev-parse HEAD:.opencode)"
+          for file in opencode.json opencode.jsonc .github/workflows/ci.yml; do
+            if test -e "../trusted/$file" || test -e "$file"; then
+              cmp -s "../trusted/$file" "$file"
+            fi
+          done
+      - name: Fetch live owner command and plan
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const task = require(process.env.GITHUB_WORKSPACE + '/trusted/scripts/automation/github.cjs');
+            await task.fetchSource({github, context, directory:process.env.RUNNER_TEMP, mode:'implement'});
+      - name: Authorize explicit file scope
+        working-directory: candidate
+        run: python -I ../trusted/scripts/issue_implement.py prepare
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Install pinned OpenCode
+        run: npm install --global "@opencode/cli@$(cat trusted/.github/opencode-cli-version)"
+      - name: Select approved free model
+        id: model
+        working-directory: candidate
+        run: python ../trusted/scripts/opencode_model_router.py select --task implement --report "$RUNNER_TEMP/model.json"
+      - name: Load literal owner-scoped agent permissions
+        working-directory: candidate
+        run: python -I ../trusted/scripts/issue_implement.py agent
+      - name: Generate candidate without GitHub credentials
+        working-directory: candidate
+        env:
+          CI: "true"
+          MODEL: ${{ steps.model.outputs.model }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=10s 1150s \
+            opencode run --standalone --archived --format json \
+            --agent ai-task --model "$MODEL" "$(cat "$RUNNER_TEMP/task-prompt.txt")" \
+            < /dev/null > "$RUNNER_TEMP/task-events.jsonl" 2> "$RUNNER_TEMP/task-stderr.log"
+      - name: Restore runtime agent and validate bounded candidate
+        working-directory: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git restore --source=HEAD --worktree -- .opencode/agents/ai-task.md
+          python -I ../trusted/scripts/issue_implement.py collect
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ai-task-${{ github.run_id }}
+          path: ${{ runner.temp }}/task-artifact.json
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    needs: implement
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: read
+      actions: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted
+          persist-credentials: false
+      - name: Read development Git objects only; never execute candidate code
+        uses: actions/checkout@v7
+        with:
+          ref: dev
+          path: target
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Recheck current dev ancestry and CI definition
+        working-directory: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$(git -C ../trusted rev-parse HEAD)" HEAD
+          cmp -s ../trusted/.github/workflows/ci.yml .github/workflows/ci.yml
+      - uses: actions/download-artifact@v8
+        with:
+          name: ai-task-${{ github.run_id }}
+          path: ${{ runner.temp }}
+      - name: Refresh live authorization
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const task = require(process.env.GITHUB_WORKSPACE + '/trusted/scripts/automation/github.cjs');
+            await task.fetchSource({github, context, directory:process.env.RUNNER_TEMP, mode:'implement'});
+      - name: Independently revalidate content, scope, base, plan and limits
+        working-directory: target
+        run: python -I ../trusted/scripts/issue_implement.py recheck
+      - name: Publish validated files and explicitly dispatch CI
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const task = require(process.env.GITHUB_WORKSPACE + '/trusted/scripts/automation/github.cjs');
+            await task.publish({github,context,core,mode:'implement',
+              verifiedPath:process.env.RUNNER_TEMP + '/task-verified.json'});

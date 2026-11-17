@@ -14,7 +14,7 @@ Includes a **Web UI** for browser-based management and a **CLI** for automated w
 - **Reports** — Unknown addresses, partial items, completeness checks (missing required channels)
 - **Auto-Placement** — Optional: automatically create missing floors/rooms for unmatched addresses
 - **Semantic Model** — Auto-tags items for OpenHAB's semantic model
-- **HomeKit / Alexa** — Auto-generates metadata when enabled in ETS project comments
+- **HomeKit / Alexa** — Auto-generates metadata when enabled in ETS project comments; the HomeKit mode can be forced on/off in the Web UI, and HomeKit rollershutters default to `sendUpDownForExtents=true` so 0 %/100 % end-position commands become UP/DOWN (see the [User Guide](docs/USER_GUIDE.md#homekit-apple-home))
 - **InfluxDB Support** — Auto-configure persistence via ETS description tags
 - **Self-Update** — Check for and apply updates from GitHub directly in the UI
 - **Service Management** — Restart OpenHAB from the Web UI

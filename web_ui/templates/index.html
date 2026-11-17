@@ -196,6 +196,39 @@
                 <span data-i18n="settings.namingInfo">Naming heuristics control how floors/rooms are inferred from ETS. Combine options as needed for your project structure.</span>
               </div>
             </fieldset>
+            <fieldset>
+              <legend data-i18n="settings.homekit">HomeKit (Apple Home)</legend>
+              <div class="form-group">
+                <label data-i18n="settings.homekitMode">HomeKit Mode</label>
+                <div class="checkbox-group" role="radiogroup" aria-label="HomeKit mode">
+                  <div class="checkbox-item">
+                    <label><input type="radio" name="conf-homekit-mode" value="default"> <span data-i18n="settings.homekitModeDefault">Default (ETS project)</span></label>
+                    <div class="checkbox-help" data-i18n="settings.homekitModeDefaultHelp">The ETS info comment (homekit=true/false) decides. The override applies from the next generation and to preview and status.</div>
+                  </div>
+                  <div class="checkbox-item">
+                    <label><input type="radio" name="conf-homekit-mode" value="on"> <span data-i18n="settings.homekitModeOn">Always enabled</span></label>
+                  </div>
+                  <div class="checkbox-item">
+                    <label><input type="radio" name="conf-homekit-mode" value="off"> <span data-i18n="settings.homekitModeOff">Always disabled</span></label>
+                  </div>
+                </div>
+              </div>
+              <div class="checkbox-group">
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-homekit-extents"> <span data-i18n="settings.homekitExtents">Send end positions as up/down (sendUpDownForExtents)</span></label>
+                  <div class="checkbox-help" data-i18n="settings.homekitExtentsHelp">Applies to HomeKit rollershutters: 0%/100% end-position commands are translated to UP/DOWN so the actuator can perform its slat correction at the end position itself. Default: on.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-homekit-stop"> <span data-i18n="settings.homekitStop">Emulate stop (stop)</span></label>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-homekit-stopsamedirection"> <span data-i18n="settings.homekitStopSameDirection">Stop via up/down in the same direction (stopSameDirection)</span></label>
+                </div>
+                <div class="info-box">
+                  <span data-i18n="settings.homekitInfo">Optional extra parameters; they are only written into the WindowCovering metadata while HomeKit is active.</span>
+                </div>
+              </div>
+            </fieldset>
             <div class="form-group">
               <label data-i18n="settings.unknownFloor">Unknown Floor Name</label>
               <input type="text" id="conf-unknown-floor" class="form-control">

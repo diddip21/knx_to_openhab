@@ -39,7 +39,8 @@ def test_build_project_preview_uses_preparsed_project_data():
         get_addresses=lambda _: pytest.fail("prepared addresses should be reused"),
         put_addresses_in_building=lambda *_: pytest.fail("prepared house should be reused"),
         get_gateway_ip=lambda _: "192.168.1.5",
-        is_homekit_enabled=lambda _: True,
+        is_homekit_enabled=lambda _: False,
+        resolve_homekit_mode=lambda _project, _general: True,
         is_alexa_enabled=lambda _: False,
     )
 
@@ -60,6 +61,36 @@ def test_build_project_preview_uses_preparsed_project_data():
         ],
     }
     assert preview["buildings"][0]["floors"][0]["rooms"][0]["device_count"] == 1
+
+
+def test_build_project_preview_reports_effective_homekit_override():
+    """The preview reports the override-aware value, not the raw ETS flag."""
+
+    def override_resolver(_project, general):
+        override = (general or {}).get("homekit_enabled")
+        return True if override is None else bool(override)
+
+    project = {"project": "data"}
+    building = {"id": "building"}
+    addresses = []
+    house = [{"name_long": "Demo home", "Description": "Home", "floors": []}]
+    knx_module = SimpleNamespace(
+        get_gateway_ip=lambda _: "192.168.1.5",
+        # ETS detection would say enabled; the stored configuration forces off.
+        is_homekit_enabled=lambda _: True,
+        resolve_homekit_mode=override_resolver,
+        is_alexa_enabled=lambda _: False,
+    )
+
+    preview = build_project_preview(
+        project,
+        knx_module,
+        parsed=(building, addresses, house),
+        general_config={"homekit_enabled": False},
+    )
+
+    assert preview["metadata"]["homekit_enabled"] is False
+    assert preview["buildings"] == []
 
 
 def test_build_project_preview_parses_project_when_no_data_is_prepared():

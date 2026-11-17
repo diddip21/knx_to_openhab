@@ -715,6 +715,36 @@ def is_homekit_enabled(project: KNXProject):
     return False
 
 
+def coerce_bool(value, default: bool = False) -> bool:
+    """Strictly evaluate a configuration value as a boolean.
+
+    Booleans pass through and ``None`` returns the default. Strings are matched
+    against the accepted truthy values ("yes", "true", "t", "1"), so the string
+    "false" never counts as enabled.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return str2bool(value)
+    return bool(value)
+
+
+def resolve_homekit_mode(project: KNXProject, general_config=None) -> bool:
+    """Resolve the effective HomeKit mode for a project.
+
+    ``general_config["homekit_enabled"]`` is a tri-state override: missing →
+    the ETS project comment decides; true → forced on; false → forced off.
+    String booleans are evaluated strictly (the string "false" is off).
+    """
+    if isinstance(general_config, dict):
+        override = general_config.get("homekit_enabled")
+        if override is not None:
+            return coerce_bool(override)
+    return is_homekit_enabled(project)
+
+
 def is_alexa_enabled(project: KNXProject):
     """Determine if Alexa is enabled for the project."""
     comment_value = project["info"].get("comment")
@@ -781,7 +811,7 @@ def main():
     house = put_addresses_in_building(building, addresses, project)
     prj_name = house[0]["name_long"]
     ip = get_gateway_ip(project)
-    homekit_enabled = is_homekit_enabled(project)
+    homekit_enabled = resolve_homekit_mode(project, config.get("general"))
     alexa_enabled = is_alexa_enabled(project)
 
     ets_to_openhab.floors = house[0]["floors"]

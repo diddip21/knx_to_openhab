@@ -1838,6 +1838,14 @@ function switchTab(tabId) {
 window.showReportDialog = showReportDialog
 
 
+function coerceTriState(value) {
+  // Strict tri-state evaluation: true/false (or their string forms) are kept,
+  // anything else means "no value configured" and the default applies.
+  if (value === true || value === 'true' || value === 1 || value === '1' || value === 'yes') return true
+  if (value === false || value === 'false' || value === 0 || value === '0' || value === 'no') return false
+  return null
+}
+
 async function loadConfig() {
   const configStatus = document.getElementById('configStatus')
 
@@ -1888,6 +1896,14 @@ async function loadConfig() {
     document.getElementById('conf-central-keyword').value = gen.central_function_keyword || 'zentral'
     document.getElementById('conf-central-group').value = gen.central_function_group || 'Base'
     document.getElementById('conf-notification-sensor-keyword').value = gen.notification_sensor_keyword || 'Melden/Sensor'
+
+    // HomeKit (Apple Home): tri-state mode plus rollershutter end-position options
+    const homekitMode = coerceTriState(gen.homekit_enabled)
+    const homekitModeValue = homekitMode === true ? 'on' : (homekitMode === false ? 'off' : 'default')
+    document.querySelector(`input[name="conf-homekit-mode"][value="${homekitModeValue}"]`).checked = true
+    document.getElementById('conf-homekit-extents').checked = coerceTriState(gen.homekit_rollershutter_sendUpDownForExtents) !== false
+    document.getElementById('conf-homekit-stop').checked = coerceTriState(gen.homekit_rollershutter_stop) === true
+    document.getElementById('conf-homekit-stopsamedirection').checked = coerceTriState(gen.homekit_rollershutter_stopSameDirection) === true
 
     // Populate Devices Tab
     const dev = currentConfig.devices || {}
@@ -2063,6 +2079,9 @@ async function saveConfig(reprocess = false) {
     newConfig.fenster_path = document.getElementById('conf-fenster-path').value
     delete newConfig.things_format
 
+    // HomeKit (Apple Home): "default" drops the override key so the ETS
+    // project comment decides again; explicit false stays a real false.
+    const homekitModeValue = (document.querySelector('input[name="conf-homekit-mode"]:checked') || {}).value || 'default'
     newConfig.general = {
       ...(newConfig.general || {}),
       FloorNameAsItIs: document.getElementById('conf-floor-asis').checked,
@@ -2076,6 +2095,10 @@ async function saveConfig(reprocess = false) {
       central_function_keyword: document.getElementById('conf-central-keyword').value,
       central_function_group: document.getElementById('conf-central-group').value,
       notification_sensor_keyword: document.getElementById('conf-notification-sensor-keyword').value,
+      homekit_enabled: homekitModeValue === 'on' ? true : (homekitModeValue === 'off' ? false : undefined),
+      homekit_rollershutter_sendUpDownForExtents: document.getElementById('conf-homekit-extents').checked,
+      homekit_rollershutter_stop: document.getElementById('conf-homekit-stop').checked,
+      homekit_rollershutter_stopSameDirection: document.getElementById('conf-homekit-stopsamedirection').checked,
       item_Floor_nameshort_prefix: currentConfig.general?.item_Floor_nameshort_prefix || "=",
       item_Room_nameshort_prefix: currentConfig.general?.item_Room_nameshort_prefix || "+"
     }

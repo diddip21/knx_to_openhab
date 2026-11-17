@@ -57,6 +57,7 @@ from .jobs import JobManager
 from .service_manager import get_service_status, restart_service
 from .service_updates import PACKAGES, ServiceUpdates, package_version
 from .session_store import SESSION_MAX_AGE, SessionStore
+from .project_preview import get_general_config, resolve_homekit_enabled
 from .storage import get_session_secret, load_config, load_generator_config, save_generator_config
 from .updater import Updater
 from .upload_security import (
@@ -1343,7 +1344,9 @@ if FLASK_AVAILABLE:
             # Extract metadata
             project_name = house[0].get("name_long") if house else None
             gateway_ip = knxmod.get_gateway_ip(project)
-            homekit_enabled = knxmod.is_homekit_enabled(project)
+            homekit_enabled = resolve_homekit_enabled(
+                knxmod, project, get_general_config(knxmod)
+            )
             alexa_enabled = knxmod.is_alexa_enabled(project)
 
             # Detect unknown items (addresses without proper room/floor assignments or with default names)
@@ -1504,7 +1507,9 @@ if FLASK_AVAILABLE:
             # Extract metadata
             project_name = house[0].get("name_long") if house else None
             gateway_ip = knxmod.get_gateway_ip(project)
-            homekit_enabled = knxmod.is_homekit_enabled(project)
+            homekit_enabled = resolve_homekit_enabled(
+                knxmod, project, get_general_config(knxmod)
+            )
             alexa_enabled = knxmod.is_alexa_enabled(project)
 
             # Detect unknown items (addresses without proper room/floor assignments or with default names)

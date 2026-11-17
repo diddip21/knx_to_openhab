@@ -44,6 +44,38 @@ FENSTERKONTAKTE: list[str] = []
 PRJ_NAME = "Our Home"
 
 
+def merge_metadata_params(metadata: str, extra: str) -> str:
+    """Merge one more parameter into a metadata parameter list.
+
+    The generated DSL must keep exactly one bracketed parameter list per
+    metadata assignment. When parameters already exist, ``extra`` is merged
+    into that single bracket instead of appending a second bracket.
+    """
+    open_index = metadata.find("[")
+    close_index = metadata.rfind("]")
+    if open_index == -1 or close_index < open_index:
+        return f"{metadata} [{extra}]"
+    params = metadata[open_index + 1 : close_index].strip()
+    merged = f"{params}, {extra}" if params else extra
+    return f"{metadata[: open_index + 1]}{merged}{metadata[close_index :]}"
+
+
+def general_bool(general_config, key, default):
+    """Read a boolean option from ``config['general']`` at generation time.
+
+    Missing keys fall back to ``default``; string values are evaluated
+    strictly, so the string "false" never counts as enabled.
+    """
+    value = general_config.get(key) if isinstance(general_config, dict) else None
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return normalize_string(value) in ("yes", "true", "t", "1")
+    return bool(value)
+
+
 def gen_building(include_yaml_model=False):
     """Generates a Building from an ETS Project"""
 
@@ -557,7 +589,34 @@ def gen_building(include_yaml_model=False):
                                 item_icon = "rollershutter"
                                 if B_HOMEKIT:
                                     equip_homekit = 'homekit = "WindowCovering"'
-                                    meta_homekit = ', homekit = "CurrentPosition, TargetPosition, PositionState"'
+                                    general_settings = config.get("general", {})
+                                    homekit_params = []
+                                    if general_bool(
+                                        general_settings,
+                                        "homekit_rollershutter_sendUpDownForExtents",
+                                        True,
+                                    ):
+                                        homekit_params.append(
+                                            "sendUpDownForExtents=true"
+                                        )
+                                    if general_bool(
+                                        general_settings, "homekit_rollershutter_stop", False
+                                    ):
+                                        homekit_params.append("stop=true")
+                                    if general_bool(
+                                        general_settings,
+                                        "homekit_rollershutter_stopSameDirection",
+                                        False,
+                                    ):
+                                        homekit_params.append("stopSameDirection=true")
+                                    if homekit_params:
+                                        equip_homekit = merge_metadata_params(
+                                            equip_homekit, ", ".join(homekit_params)
+                                        )
+                                    meta_homekit = (
+                                        ', homekit = "CurrentPosition, TargetPosition, '
+                                        'PositionState"'
+                                    )
                                 if B_ALEXA:
                                     equip_alexa = 'alexa = "Blind"'
                                     meta_alexa = ', alexa = "PositionState"'
@@ -797,7 +856,9 @@ def gen_building(include_yaml_model=False):
                             if item_label not in equipments:
                                 equipments[item_label] = item_name
                                 if equip_homekit:
-                                    equip_homekit += f" [Instance={homekit_instance}]"
+                                    equip_homekit = merge_metadata_params(
+                                        equip_homekit, f"Instance={homekit_instance}"
+                                    )
                                     grp_metadata += equip_homekit
                                 if equip_alexa:
                                     if grp_metadata:
@@ -824,13 +885,9 @@ def gen_building(include_yaml_model=False):
                         if item_label in equipments:
                             root = f"equipment_{equipments[item_label]}"
                         if B_HOMEKIT and meta_homekit:
-                            if "]" in meta_homekit:
-                                meta_homekit = meta_homekit.replace(
-                                    "]", f" ,Instance={homekit_instance}]"
-                                )
-                            else:
-                                meta_homekit += f" [Instance={homekit_instance}]"
-                            metadata += meta_homekit
+                            metadata += merge_metadata_params(
+                                meta_homekit, f"Instance={homekit_instance}"
+                            )
                             homekit_accessorie += 1
                         if B_ALEXA and meta_alexa:
                             metadata += meta_alexa

@@ -110,6 +110,24 @@ The `config.json` file controls global settings for the generator.
 - **`switch`**: Configuration for switch detection.
   - `status_suffix`: Suffixes identifying the status GA (e.g., "Status", "Rückmeldung").
 
+### HomeKit (Apple Home)
+
+HomeKit metadata is generated for Jalousien/Rollläden, Heating, Lights and Switches. Whether it is generated is decided per project by the **ETS info comment** (`homekit=true` / `homekit=false`) in the project properties.
+
+The Web UI (**Settings → General → HomeKit (Apple Home)**) can override this per installation:
+
+- **Mode** (`general.homekit_enabled`):
+  - *Default (ETS project)* — no key is stored; the ETS comment decides (previous behaviour).
+  - *Always enabled* — writes `homekit_enabled: true` and forces HomeKit output even without the ETS comment.
+  - *Always disabled* — writes `homekit_enabled: false` and suppresses HomeKit output even with the ETS comment.
+- **Rollershutter end positions** (`general.homekit_rollershutter_sendUpDownForExtents`):
+  - Default **on**: generated `WindowCovering` groups carry `sendUpDownForExtents=true`, so openHAB's HomeKit add-on translates 0 %/100 % end-position commands into UP/DOWN. A KNX actuator can then perform its slat (Lamellen) correction at the end position itself instead of leaving it.
+  - This default also applies to existing configurations without the key; set the option to `false` in the Web UI to keep percentage commands.
+- **Optional stop parameters** (`general.homekit_rollershutter_stop`, `general.homekit_rollershutter_stopSameDirection`):
+  - Independent of the end-position option and off by default; when enabled they are written into the `WindowCovering` group metadata (`stop=true`, `stopSameDirection=true`) as documented by the [openHAB HomeKit integration](https://www.openhab.org/addons/integrations/homekit/#window-covering-blinds-window-door).
+
+> **Note:** The parameter and its metadata position are verified against the generated software output and the openHAB documentation. Real actuator behaviour on Apple Home devices has **not** been hardware-tested; end-position slat correction depends on the individual KNX actor.
+
 ## Model Format and Live Gateway IP
 
 The Web UI exposes the model format under **Settings → General** and gateway controls under **Settings → Devices**.

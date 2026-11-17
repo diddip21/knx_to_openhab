@@ -986,8 +986,14 @@ class JobManager:
                 sys.stdout = captured_output
 
                 house = knxmod.put_addresses_in_building(building, addresses, project)
-                from .project_preview import build_project_preview
+                from .project_preview import (
+                    build_project_preview,
+                    get_general_config,
+                    resolve_homekit_enabled,
+                )
 
+                general_settings = get_general_config(knxmod)
+                homekit_enabled = resolve_homekit_enabled(knxmod, project, general_settings)
                 try:
                     self.save_job_preview(
                         job_id,
@@ -995,6 +1001,7 @@ class JobManager:
                             project,
                             knxmod,
                             parsed=(building, addresses, house),
+                            general_config=general_settings,
                         ),
                     )
                 except Exception as preview_error:
@@ -1012,7 +1019,6 @@ class JobManager:
                 detected_ip = knxmod.detect_gateway_ip(project)
                 job["gateway_ip"] = ip
                 job["detected_gateway_ip"] = detected_ip
-                homekit_enabled = knxmod.is_homekit_enabled(project)
                 alexa_enabled = knxmod.is_alexa_enabled(project)
 
                 etsmod.floors = house[0]["floors"] if house else []

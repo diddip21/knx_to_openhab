@@ -10,6 +10,7 @@ on:
       - "scripts/build_release.py"
       - "tests/ai_pipeline/**"
       - "tests/test_ai_dev_pipeline.py"
+      - "tests/test_ai_workflow_cleanliness.py"
       - "tests/test_ai_merge_readiness.py"
       - "tests/test_release_automation_exclusions.py"
       - ".github/workflows/ai-*.yml"
@@ -40,7 +41,7 @@ jobs:
       - name: Test multi-issue authorization, artifacts, API contracts and isolated red-green flow
         run: >-
           python -m pytest -q -o addopts=
-          tests/ai_pipeline tests/test_ai_dev_pipeline.py
+          tests/ai_pipeline tests/test_ai_dev_pipeline.py tests/test_ai_workflow_cleanliness.py
           tests/test_ai_merge_readiness.py tests/test_release_automation_exclusions.py
       - name: Check controller syntax
         run: |
@@ -51,8 +52,8 @@ jobs:
         if: always()
         shell: bash
         run: |
-          isort scripts/automation scripts/issue_implement.py scripts/ci_repair.py scripts/ai_merge_readiness.py tests/ai_pipeline tests/test_ai_dev_pipeline.py tests/test_ai_merge_readiness.py
-          black scripts/automation scripts/issue_implement.py scripts/ci_repair.py scripts/ai_merge_readiness.py tests/ai_pipeline tests/test_ai_dev_pipeline.py tests/test_ai_merge_readiness.py
+          isort scripts/automation scripts/issue_implement.py scripts/ci_repair.py scripts/ai_merge_readiness.py tests/ai_pipeline tests/test_ai_dev_pipeline.py tests/test_ai_workflow_cleanliness.py tests/test_ai_merge_readiness.py
+          black scripts/automation scripts/issue_implement.py scripts/ci_repair.py scripts/ai_merge_readiness.py tests/ai_pipeline tests/test_ai_dev_pipeline.py tests/test_ai_workflow_cleanliness.py tests/test_ai_merge_readiness.py
           git diff --binary > "$RUNNER_TEMP/ai-formatting.patch"
           git diff --exit-code
       - name: Archive suggested formatting patch only

@@ -20,10 +20,14 @@ def test_main_ci_does_not_double_run_on_ai_feature_pushes():
     assert "UI Tests (Playwright)" in ci
 
 
-def test_completed_issue96_pilot_has_no_live_comment_trigger():
+def test_completed_pilots_have_no_live_special_controller():
     assert not (WORKFLOWS / "opencode-issue-implement.yml").exists()
+    assert not (WORKFLOWS / "opencode-issue89-implement.yml").exists()
     assert not (ROOT / ".opencode/agents/issue-implementer.md").exists()
-    assert (ROOT / "scripts/issue_impl.py").is_file()
+    assert not (ROOT / "scripts/issue_impl.py").exists()
+    assert not (ROOT / "scripts/issue89_impl.py").exists()
+    assert (ROOT / "scripts/automation/approval.py").is_file()
+    assert (ROOT / "scripts/issue_implement.py").is_file()
 
 
 def test_all_active_actions_use_repo_approved_major_versions():
@@ -52,7 +56,7 @@ def test_cli_is_consistently_pinned_in_every_active_workflow():
                 assert "npm install -g @opencode/cli" not in line, path
     assert set(paths) == {
         "opencode-issue-planner.yml",
-        "opencode-issue89-implement.yml",
+        "ai-issue-implement.yml",
         "opencode-ci-self-repair.yml",
         "opencode-model-router-tests.yml",
         "opencode-free-smoke.yml",
@@ -77,11 +81,14 @@ def test_merge_readiness_is_trusted_read_only_and_never_checks_out_pr_head():
 
 
 def test_issue_and_repair_publishing_guards_stay_on_dev():
-    implement = workflow("opencode-issue89-implement.yml")
+    implement = workflow("ai-issue-implement.yml")
     repair = workflow("opencode-ci-self-repair.yml")
-    assert "head, base: 'dev', draft: true" in implement
-    assert "currentPr.base.ref !== 'dev'" in repair
-    assert "currentPr.draft" in repair
+    publisher = (ROOT / "scripts/automation/github.cjs").read_text(encoding="utf-8")
+    assert "head, base: 'dev', draft: true" in publisher
+    assert "pr.base.ref !== 'dev'" in publisher
+    assert "!pr.draft" in publisher
     assert "workflow_dispatch" in repair
-    assert "force:false" in repair
-    assert "auto_merge" not in implement + repair
+    assert "force: false" in publisher
+    assert "createWorkflowDispatch" in publisher
+    assert "auto_merge" not in implement + repair + publisher
+    assert "pulls.merge" not in publisher

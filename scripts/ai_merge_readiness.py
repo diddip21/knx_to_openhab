@@ -236,8 +236,8 @@ def summarize(pr: dict[str, Any], gates: list[dict[str, str]]) -> str:
     lines = [
         "### AI Merge-Readiness (read-only)",
         "",
-        f"PR #{safe(pr.get('number'))}, HEAD \`{safe(pr.get('head_sha'))}\`, Base "
-        f"\`{safe(pr.get('base_ref'))}\`",
+        f"PR #{safe(pr.get('number'))}, HEAD `{safe(pr.get('head_sha'))}`, Base "
+        f"`{safe(pr.get('base_ref'))}`",
         "",
         "| Gate | Status | Nachweis oder Blocker |",
         "|---|---|---|",

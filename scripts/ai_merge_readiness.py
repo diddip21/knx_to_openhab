@@ -3,7 +3,7 @@
 
 This script reads a bounded GitHub API snapshot from a trusted workflow. It
 does not clone candidate code, execute generated tests, write GitHub state or
-replace a maintainer's review or KNX hardware acceptance.
+replace a maintainer's software review.
 """
 
 from __future__ import annotations
@@ -221,28 +221,6 @@ def evaluate(snapshot: dict[str, Any]) -> list[dict[str, str]]:
                 ),
             )
         )
-        accepted = False
-        for comment in snapshot.get("pr_comments") or []:
-            if (comment.get("user") or {}).get("login", "").lower() != owner.lower():
-                continue
-            body = str(comment.get("body") or "")
-            if body.startswith(f"/ai hardware-accepted {sha}\n") and all(
-                field in body for field in ("Datum:", "Aktor:", "Beobachtung:", "Rollback:")
-            ):
-                accepted = True
-        results.append(
-            gate(
-                "KNX-Hardwareabnahme (Owner-Erklärung)",
-                "PASS" if accepted else "OPEN",
-                (
-                    "Owner hat einen Hardware-Testbericht zur aktuellen SHA hinterlegt "
-                    "(kein physikalischer Nachweis durch CI)"
-                    if accepted
-                    else "Owner-Test mit echtem Aktor fehlt. Kommentar mit "
-                    f"'/ai hardware-accepted {sha}' und Datum/Aktor/Beobachtung/Rollback nötig"
-                ),
-            )
-        )
     return results
 
 
@@ -273,7 +251,7 @@ def summarize(pr: dict[str, Any], gates: list[dict[str, str]]) -> str:
             ),
             "",
             "Das ist keine automatische Merge-Freigabe. Der Owner prüft den "
-            "Hardwarebericht und merged bewusst selbst.",
+            "Softwarebericht und entscheidet über den Merge selbst.",
         ]
     )
     return "\n".join(lines) + "\n"

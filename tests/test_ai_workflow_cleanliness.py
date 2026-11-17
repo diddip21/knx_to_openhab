@@ -47,7 +47,7 @@ def test_cli_is_consistently_pinned_in_every_active_workflow():
         paths.append(path.name)
         for line in content.splitlines():
             if "npm install" in line and "@opencode/cli" in line:
-                assert '@opencode/cli@$(cat ' in line, path
+                assert "@opencode/cli@$(cat " in line, path
                 assert ".github/opencode-cli-version" in line, path
                 assert "npm install -g @opencode/cli" not in line, path
     assert set(paths) == {

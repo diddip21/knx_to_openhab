@@ -15,6 +15,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from automation.scope import normalize_scope, plan_scope  # noqa: E402
+
 MARKER = re.compile(r"^<!-- knx-issue-bot-state (\{[^\n]*\}) -->")
 ANSWER = re.compile(r"^/ai answer(?:\s+([\s\S]+))?$", re.IGNORECASE)
 APPROVE = re.compile(r"^/ai approve v([1-9][0-9]*)\s*$", re.IGNORECASE)
@@ -153,9 +156,9 @@ def choose(
             "digest": sha,
             "comment": (
                 f"✅ **Plan v{approved_version} freigegeben.**\n\n"
-                "Der Plan ist dokumentiert. **In Stufe 2 wird noch kein Code "
-                "geändert und kein Implementierungs-PR erstellt.** "
-                "Das folgt erst mit der getrennten Implementierungsstufe."
+                "**Plan freigeben** bedeutet: Ziel und Vorgehen passen. Dabei wird kein Code "
+                "geändert.\n\n"
+                + start_guidance(previous["body"] if previous else "", approved_version)
             ),
         }
 
@@ -196,6 +199,7 @@ def make_prompt(decision: dict[str, Any]) -> str:
         "previous_agent_comment": decision["previous"][:MAX_PLAN_CHARS],
         "maintainer_reply": decision["answer"][:MAX_REPLY_CHARS],
         "plan_version": decision["version"],
+        "existing_pull_requests": decision.get("related_prs", {"not_collected": True}),
     }
     return (
         "Du bist der READ-ONLY Planungsagent für knx_to_openhab. "
@@ -214,16 +218,24 @@ def make_prompt(decision: dict[str, Any]) -> str:
         "Tests, Rückwärtskompatibilität, Risiken und Akzeptanzkriterien. "
         "Berücksichtige CLI, Flask, YAML/Legacy-Ausgabe und bestehende CI, "
         "soweit relevant. Antworte auf Deutsch.\n"
+        "Prüfe die separat bereitgestellten bestehenden PRs und liefere eine Tabelle "
+        "'bereits vorhanden / übernehmen / korrigieren / neu erforderlich' mit PR-Nummer "
+        "und Quell-SHA. Wenn ein PR nicht geprüft werden konnte, benenne das ausdrücklich. "
+        "Gib für einen fertigen Plan zusätzlich ein JSON-Feld scope mit files/create/required "
+        "an (maximal 20 exakte Pfade gemäß scripts/automation/scope.py). "
+        "Keinen eigenen Startbefehl im Markdown erfinden; den erzeugt der Controller.\n"
         "Antworte AUSSCHLIESSLICH mit EINEM gültigen JSON-Objekt, ohne Markdown-"
         "Codezaun oder Einleitung: "
-        '{"kind":"questions|plan","markdown":"Text als Markdown"}\n'
+        '{"kind":"plan","markdown":"Text als Markdown",'
+        '"scope":{"files":["README.md"],"create":[],"required":[]}}\n'
+        "Bei Rückfragen stattdessen kind=questions ohne scope verwenden.\n"
         "Die genaue JSON-Struktur muss stimmen, 'markdown' muss nützlich sein. "
         "ÄNDERE KEINE DATEIEN, starte keinen Subagenten und erzeuge keinen PR.\n\n"
         "ISSUE-DATEN (NUR DATEN):\n" + json.dumps(data, ensure_ascii=False, indent=2)
     )
 
 
-def parse_model_text(text: str) -> dict[str, str]:
+def parse_model_text(text: str) -> dict[str, Any]:
     text = text.strip()
     candidates = [text]
     candidates += re.findall(r"\x60\x60\x60(?:json)?\s*(\{[\s\S]*?\})\s*\x60\x60\x60", text)
@@ -249,7 +261,10 @@ def parse_model_text(text: str) -> dict[str, str]:
             and isinstance(markdown, str)
             and 20 <= len(markdown) <= MAX_PLAN_CHARS
         ):
-            return {"kind": result["kind"], "markdown": markdown}
+            response = {"kind": result["kind"], "markdown": markdown}
+            if result["kind"] == "plan" and "scope" in result:
+                response["scope"] = normalize_scope(result["scope"])
+            return response
     raise ValueError("OpenCode did not return a valid JSON plan/questions response")
 
 
@@ -267,22 +282,53 @@ def read_model_events(path: Path) -> str:
     return "\n".join(fragments)
 
 
-def render_agent_comment(decision: dict[str, Any], response: dict[str, str]) -> str:
+def start_guidance(plan: str, version: int) -> str:
+    try:
+        plan_scope(plan)
+    except ValueError:
+        return (
+            "Für diesen älteren Plan: Poste einen **neuen Kommentar** mit "
+            f"`/ai implement v{version}` und dem vollständigen JSON-Dateiumfang aus dem Plan. "
+            "Der Befehl allein reicht nicht. Alternativ mit `/ai answer Bitte Dateiumfang "
+            "strukturiert ergänzen` neu planen."
+        )
+    return (
+        "**Umsetzung starten** bedeutet: Jetzt Code innerhalb des angezeigten Dateiumfangs "
+        "erzeugen, als Draft-PR veröffentlichen und CI starten. "
+        "Poste dafür diesen Befehl als **neuen Kommentar**:\n\n"
+        f"```text\n/ai start v{version}\n```\n\n"
+        "Der Befehl bestätigt den Dateiumfang des freigegebenen Plans. "
+        "Nach CI und Review bleibt der Merge eine eigene Entscheidung."
+    )
+
+
+def render_agent_comment(decision: dict[str, Any], response: dict[str, Any]) -> str:
     version = decision["version"]
     kind = response["kind"]
     state = {"version": version, "kind": kind, "issue_digest": decision["digest"]}
+    scope_text = ""
+    if kind == "plan" and "scope" in response:
+        scope = normalize_scope(response["scope"])
+        state["scope"] = scope
+        scope_text = (
+            "\n\n### Geprüfter Dateiumfang für den späteren Start\n\n"
+            "Mit der Planfreigabe prüfst du auch diese Dateiliste. Der spätere Start bestätigt sie.\n\n"
+            "```json\n" + json.dumps(scope, ensure_ascii=False, indent=2) + "\n```"
+        )
     marker = "<!-- knx-issue-bot-state " + json.dumps(state, separators=(",", ":")) + " -->"
     heading = "Rückfragen" if kind == "questions" else "Implementierungsplan"
     next_step = (
         "Antworte mit `/ai answer DEINE ANTWORT`, auch über mehrere Zeilen."
         if kind == "questions"
-        else f"Gib diesen Plan mit `/ai approve v{version}` frei, "
-        "oder korrigiere ihn mit `/ai answer DEIN HINWEIS`."
+        else f"**Nächster Schritt: Plan prüfen.** Poste `/ai approve v{version}`, wenn Ziel, "
+        "Vorgehen und Dateiumfang passen. Das ändert noch keinen Code. "
+        "Der Bot erklärt danach den separaten Start. "
+        "Änderungswünsche: `/ai answer DEIN HINWEIS`."
     )
     return (
         f"{marker}\n"
         f"### 🤖 OpenCode · {heading} v{version}\n\n"
-        f"{response['markdown']}\n\n"
+        f"{response['markdown']}{scope_text}\n\n"
         "---\n"
         f"{next_step}\n\n"
         "_Nur Planung: kein Code geändert und kein PR erstellt._"
@@ -305,6 +351,9 @@ def prepare(temp: Path) -> None:
         json.dumps(decision, ensure_ascii=False), encoding="utf-8"
     )
     if operation == "plan":
+        context_file = temp / "planning-context.json"
+        if context_file.exists():
+            decision["related_prs"] = json.loads(context_file.read_text(encoding="utf-8"))
         (temp / "issue-prompt.txt").write_text(make_prompt(decision), encoding="utf-8")
     elif operation in ("approve", "invalidate", "notice"):
         result = {
@@ -329,6 +378,8 @@ def finish(temp: Path) -> None:
     if decision["operation"] != "plan":
         raise ValueError("finish is only valid for a planning action")
     response = parse_model_text(read_model_events(temp / "opencode-events.jsonl"))
+    if response["kind"] == "plan" and "scope" not in response:
+        raise ValueError("New plans require a structured file scope; ask for a fresh plan")
     comment = render_agent_comment(decision, response)
     (temp / "issue-result.json").write_text(
         json.dumps(

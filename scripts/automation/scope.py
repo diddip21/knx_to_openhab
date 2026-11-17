@@ -7,7 +7,7 @@ import re
 from pathlib import PurePosixPath
 from typing import Any
 
-from .approval import authorize, text_digest
+from .approval import PLAN_MARKER, authorize, text_digest
 
 MAX_FILES = 20
 MAX_FILE_BYTES = 300_000
@@ -119,6 +119,17 @@ def scope_from_command(body: str) -> dict[str, list[str]]:
     return normalize_scope(json.loads(payload, object_pairs_hook=no_duplicates))
 
 
+def plan_scope(body: str) -> dict[str, list[str]]:
+    """Read a proposal, never an authorization, from the immutable bot plan."""
+    match = PLAN_MARKER.match(body)
+    if not match:
+        raise ValueError("No structured plan scope; use the full /ai implement command with JSON")
+    state = json.loads(match.group(1), object_pairs_hook=no_duplicates)
+    if "scope" not in state:
+        raise ValueError("No structured plan scope; use the full /ai implement command with JSON")
+    return normalize_scope(state["scope"])
+
+
 def authorize_task(
     issue: dict[str, Any],
     comments: list[dict[str, Any]],
@@ -131,7 +142,13 @@ def authorize_task(
     context = authorize(
         issue, comments, command, actor, owner, expected_issue_number=expected_issue_number
     )
-    scope = scope_from_command(str(command.get("body") or ""))
+    body = str(command.get("body") or "").strip()
+    if re.fullmatch(r"/ai start v[1-9][0-9]*", body, re.IGNORECASE):
+        scope = plan_scope(context["plan"])
+    else:
+        if body.lower().startswith("/ai start "):
+            raise ValueError("Use only /ai start vN; changing scope requires a new reviewed plan")
+        scope = scope_from_command(body)
     context["scope"] = scope
     context["scope_sha256"] = text_digest(json.dumps(scope, sort_keys=True, separators=(",", ":")))
     return context

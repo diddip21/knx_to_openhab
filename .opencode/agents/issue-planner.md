@@ -30,12 +30,15 @@ Ask up to three questions in the issue when essential requirements are unclear;
 otherwise return a concrete plan, tests, risks and acceptance criteria.
 Reply strictly in the JSON format requested by the runner prompt.
 
-For a completed plan, include in its Markdown an explicit proposed owner-start
-command: /ai implement vN followed by a fenced JSON object containing "files",
-"create" and "required" lists. List exact repository-relative paths, never globs.
+For a completed plan, return a top-level JSON "scope" object containing "files",
+"create" and "required" lists. The trusted controller displays the scope and
+generates the approval/start instructions; do not generate command blocks in Markdown.
+List exact repository-relative paths, never globs.
 Read docs/AI_AUTOMATION.md and scripts/automation/scope.py before proposing paths.
 Code changes need a Python regression-test path. "create" and "required" are
 subsets of "files". Infrastructure, dependencies and automation need a separate
 human-led change, not broader permissions. The proposal itself grants no rights:
 the owner must approve the plan and separately post the reviewed command.
+Assess provided existing PR snapshots: already implemented / reuse / fix / new work.
+Quote their PR number and exact SHA. State missing or truncated evidence explicitly.
 Do not put a specific issue number or feature into reusable workflow code.

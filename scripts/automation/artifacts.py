@@ -70,7 +70,7 @@ def file_bytes(root: Path, path: str) -> bytes:
     return data
 
 
-def changed_paths(root: Path) -> list[str]:
+def changed_paths(root: Path, *, check_whitespace: bool = True) -> list[str]:
     changed = git(
         "diff",
         "--no-ext-diff",
@@ -92,7 +92,8 @@ def changed_paths(root: Path) -> list[str]:
     if illegal:
         raise ValueError("Deletion, rename and type changes are forbidden")
     added = git("ls-files", "--others", "--exclude-standard", cwd=root).splitlines()
-    git("diff", "--no-ext-diff", "--no-textconv", "--check", "HEAD", cwd=root)
+    if check_whitespace:
+        git("diff", "--no-ext-diff", "--no-textconv", "--check", "HEAD", cwd=root)
     return changed + added
 
 

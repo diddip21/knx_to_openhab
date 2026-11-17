@@ -9,6 +9,8 @@ on:
 permissions:
   contents: read
   issues: write
+  pull-requests: read
+  actions: read
 
 concurrency:
   group: ai-issue-plan-${{ github.event.issue.number || github.run_id }}
@@ -78,6 +80,9 @@ jobs:
               per_page: 100
             });
             fs.writeFileSync(process.env.OUT_FILE, JSON.stringify(comments));
+            const {planningContext} = require(process.env.GITHUB_WORKSPACE + '/trusted/scripts/automation/planning.cjs');
+            const related = await planningContext({github, context});
+            fs.writeFileSync(process.env.RUNNER_TEMP + '/planning-context.json', JSON.stringify(related));
 
       - name: Decide operation and prepare prompt
         id: decision
@@ -206,6 +211,9 @@ jobs:
             });
 
       - name: Explain model failure
-        if: failure() && steps.decision.outputs.operation == 'plan'
-        run: |
-          echo "Planning failed. Inspect the Actions logs. No plan was published." >> "$GITHUB_STEP_SUMMARY"
+        if: failure()
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const {report} = require(process.env.GITHUB_WORKSPACE + '/trusted/scripts/automation/status.cjs');
+            await report({github, context, phase:'planning-failure'});

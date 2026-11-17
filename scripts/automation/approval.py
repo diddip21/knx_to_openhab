@@ -8,7 +8,7 @@ import re
 from typing import Any
 
 BOT_LOGIN = "github-actions[bot]"
-COMMAND = re.compile(r"^/ai implement v([1-9][0-9]*)$", re.IGNORECASE)
+COMMAND = re.compile(r"^/ai (?:implement|start) v([1-9][0-9]*)$", re.IGNORECASE)
 PLAN_MARKER = re.compile(r"^<!-- knx-issue-bot-state (\{[^\n]*\}) -->")
 
 
@@ -91,7 +91,7 @@ def authorize(
     header = body.splitlines()[0] if body else ""
     implementation = COMMAND.fullmatch(header)
     if not implementation:
-        raise ValueError("Expected exact command header: /ai implement vN")
+        raise ValueError("Expected exact command header: /ai start vN or /ai implement vN")
     version = int(implementation.group(1))
     plan = latest_plan(comments)
     if plan["state"]["version"] != version or plan["state"]["issue_digest"] != digest(issue):

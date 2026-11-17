@@ -9,11 +9,14 @@ jedem Merge erneut auf **derselben SHA** geprüft werden.
 - `main` ist der GitHub-**Default-Branch** und enthält die vertrauenswürdigen
   Issue-Kommentar-/`workflow_run`-Controller und Release-Versionen.
 - `dev` ist die Integrationsbasis für **KI-Feature-PRs**.
-  `main` ist aktuell ein Vorfahr von `dev`; die vorherige
-  Branch-Synchronisation ist abgeschlossen.
+  Nach neuen Änderungen an `main` (insbesondere PR #115) muss
+  `dev` erneut mit `main` synchronisiert werden, bevor der nächste
+  genehmigte Implementierungslauf gestartet wird.
 - [PR #109](https://github.com/diddip21/knx_to_openhab/pull/109)
   (CI-Reparatur) und [PR #110](https://github.com/diddip21/knx_to_openhab/pull/110)
   (Branch-Synchronisation) sind **gemergt**.
+- [PR #115](https://github.com/diddip21/knx_to_openhab/pull/115)
+  (bereinigte CI und Merge-Readiness) ist nach `main` gemergt.
 - [PR #108](https://github.com/diddip21/knx_to_openhab/pull/108)
   (HomeKit #89) ist **offen, Ready for review, Base `dev`**.
   Ein neuer Codex-P2-Hinweis zur gespeicherten HomeKit-Vorschau wurde
@@ -40,34 +43,23 @@ jedem Merge erneut auf **derselben SHA** geprüft werden.
 | 8. Reparatur bei roter CI | **Automatisch für #89**, nur im passenden Bot-**Draft** und expliziten CI-Dispatch | Max. zwei isolierte Korrekturen, jedes Mal neue CI; sonst manueller Stopp |
 | 9. KI-/Code-Review und Threads | **Automatisches Codex-Review optional, menschliche Review zwingend** | Keine offenen relevanten Findings, Freigabe auf aktueller SHA |
 | 10. Echte UI-Screenshots und API/CLI/Legacy/YAML | **Tests plus manuelle Sichtprüfung** | Geprüfte Bilder in `docs/screenshots/`, Semantik/Defaults nachgewiesen |
-| 11. KNX-/HomeKit-Abnahme | **Manuell: Owner/Testperson**, reales Gerät | Gerät, Version, 0/100 %, Lamellen/Stop, Rückfallweg und Datum dokumentiert |
-| 12. Merge-Readiness-Bericht | **Automatischer read-only Check** nach PR-/Review-Änderungen, zusätzlich manuell startbar | Aktuelle SHA, Approved Plan, CI, Reviews, Threads, Bilder, Owner-Abnahme |
-| 13. Feature-PR nach `dev` mergen | **Nur manuell: Owner** | Alle Blocker gelöst, Checks grün, nicht nur ein früherer Commit |
-| 14. Release-PR `dev` → `main` | **Manuell gestartet und überprüft**, CI automatisch | Gesamter Release-Diff, `VERSION`, Changelog, Rollback, Reviews |
-| 15. Veröffentlichen | **Manuell: Owner** | Annotations-Tag `v<version>`, GitHub Release, SHA-256 und Installations-/Smoke-Test; danach Issue schließen |
+| 11. Merge-Readiness-Bericht | **Automatischer read-only Check** nach PR-/Review-Änderungen, zusätzlich manuell startbar | Aktuelle SHA, Approved Plan, CI, Reviews, Threads, Bilder |
+| 12. Feature-PR nach `dev` mergen | **Nur manuell: Owner** | Alle Software-Blocker gelöst, Checks grün, nicht nur ein früherer Commit |
+| 13. Release-PR `dev` → `main` | **Manuell gestartet und überprüft**, CI automatisch | Gesamter Release-Diff, `VERSION`, Changelog, Rollback, Reviews |
+| 14. Veröffentlichen | **Manuell: Owner** | Annotations-Tag `v<version>`, GitHub Release, SHA-256 und Installations-/Smoke-Test; danach Issue schließen |
 
 **Sicherheitsregel:** Fehlende Evidenz wird `OPEN`, niemals automatisch
 `PASS`. Die AI Readiness-Action besitzt ausschließlich Leserechte und darf
 weder PRs verändern noch ihre Reviews oder Hardwaretests selbst freigeben.
 Sie setzt auch nicht selbst die erforderlichen GitHub-Ruleset-Checks.
 
-## Nur noch bei Issue #89: exakte manuelle Hardwareabnahme
+## Geltungsbereich des Prüfberichts
 
-Wenn du die Änderungen an einem echten KNX-Aktor und mit deiner
-openHAB-/HomeKit-Version geprüft hast, füge in **PR #108** einen Kommentar
-mit **vollständiger aktueller Commit-SHA** und diesen Feldern hinzu:
-
-```text
-/ai hardware-accepted <40-stellige aktuelle PR-Commit-SHA>
-Datum: YYYY-MM-DD
-Aktor: Typ/Modell, ohne private Gruppenadressen
-Beobachtung: 0 % / 100 % / Zwischenposition, Lamellenendlage, Stop-Verhalten
-Rollback: vorherige Konfiguration gesichert und Rückweg überprüft
-```
-
-Dieser Kommentar ist eine **Owner-Erklärung**, keine automatische
-Hardware-Messung. Ohne echte Prüfung ist er **nicht** abzugeben.
-Nach jedem neuen Code-Commit muss er auf die neue SHA erneuert werden.
+Der Hardwaretest ist **kein Merge-Gate** und wird im
+Software-Readiness-Bericht nicht verlangt. Ohne einen Test mit einem echten
+KNX-Aktor lässt sich dessen Verhalten mit openHAB/Apple Home
+nicht als erfolgreich validiert ausweisen. Die Entscheidung über den
+Merge und über einen späteren Hardwaretest bleibt beim Owner.
 
 ## Merge-Readiness ausführen
 
@@ -89,7 +81,7 @@ Nach jedem neuen Code-Commit muss er auf die neue SHA erneuert werden.
   **Bot-Draft-PR** und nur wenn die CI per `workflow_dispatch` fehlgeschlagen
   ist; normale rote PR-CI und PRs mit Status *Ready for review* werden
   bewusst **nicht** automatisch verändert.
-- Für reale KNX-Hardware kann es keine verlässliche CI-Abkürzung geben.
+- Der Softwarebericht ersetzt keine Validierung auf realer KNX-Hardware.
 - Status- und Ruleset-Pflichten müssen vom Owner geprüft werden.
 
 **Release-Details:** [RELEASING.md](RELEASING.md).

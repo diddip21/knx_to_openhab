@@ -1,3 +1,15 @@
+> **Archivierter Pilot (17.11.2026):** Das README-only-Issue #96 und
+> [PR #100](https://github.com/diddip21/knx_to_openhab/pull/100)
+> sind abgeschlossen. Der automatische `issue_comment`-Workflow und
+> der alte Schreibagent wurden aus `.github/workflows` beziehungsweise
+> `.opencode/agents` entfernt, um keine unnötigen Trigger zu erzeugen.
+> Diese Anleitung dokumentiert **nur die Historie** und ist **nicht**
+> als aktuelle Bedienungsanleitung zu verwenden. Die weiterhin benötigten
+> Freigabe- und Digest-Prüfungen bleiben in `scripts/issue_impl.py` und
+> werden von [Issue #89](OPENCODE_ISSUE89_IMPLEMENTATION.md) sowie der
+> [aktuellen dev→main-Prozessdokumentation](AI_DEV_TO_MERGE_QUICKSTART.md)
+> genutzt.
+>
 # Approved Issue → OpenCode → Draft PR (stage 3 pilot)
 
 This **opt-in pilot is restricted to issue #96 and README.md**. It does not

@@ -84,8 +84,8 @@ def evaluate(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     issue_comments = snapshot.get("issue_comments") or []
     command_match = COMMAND_ID.search(str(pr.get("body") or ""))
     try:
-        if not valid_source or not command_match:
-            raise ValueError("PR fehlt die unveränderliche Implementierungsreferenz")
+        if not valid_source or command_match is None or issue_number is None or plan_version is None:
+            raise ValueError("PR fehlt die gültige Implementierungs-/Planreferenz")
         command_id = int(command_match.group(1))
         command = next(
             (c for c in issue_comments if c.get("id") == command_id),

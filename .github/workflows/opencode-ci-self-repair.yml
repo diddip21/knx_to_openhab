@@ -25,14 +25,14 @@ jobs:
     timeout-minutes: 24
     steps:
       - name: Checkout trusted default-branch scripts
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           path: trusted
           persist-credentials: false
 
       - name: Checkout exact failing commit without writing credentials
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           path: candidate
@@ -78,12 +78,12 @@ jobs:
         shell: bash
         run: python ../trusted/scripts/ci_repair.py prepare
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
       - name: Install OpenCode without provider API keys
-        run: npm install --global @opencode/cli
+        run: npm install --global "@opencode/cli@$(cat trusted/.github/opencode-cli-version)"
 
       - name: Pick a working approved free model using read-only probes
         id: model
@@ -127,7 +127,7 @@ jobs:
           python ../trusted/scripts/ci_repair.py collect
 
       - name: Upload bounded, validated repair artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: issue89-ci-repair-${{ github.run_id }}
           path: ${{ runner.temp }}/repair-artifact.json
@@ -145,13 +145,13 @@ jobs:
     timeout-minutes: 12
     steps:
       - name: Checkout only trusted main for validator and GitHub API calls
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
 
       - name: Download validated repair artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: issue89-ci-repair-${{ github.run_id }}
           path: ${{ runner.temp }}

@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Fail-closed authorization and artifact validation for the first AI implementation trial.
+"""Trusted owner/plan/issue authorization plus archived README pilot checks.
 
-Only issue #96 and README.md are permitted in this first stage. The LLM runs in
-a read-only GitHub-token job; a separate, privileged job rechecks all approvals.
+The issue #96 README-only workflow has been retired; its original artifact
+validators remain tested for historical compatibility. The approval/digest
+helpers are shared by the current scoped issue #89 implementation and repair
+controllers, using an explicit expected_issue_number.
 """
 
 from __future__ import annotations
@@ -20,7 +22,6 @@ from typing import Any
 ISSUE_NUMBER = 96
 ALLOWED_PATH = "README.md"
 BOT_LOGIN = "github-actions[bot]"
-MODEL = "opencode/glm-5.3-flash-free"
 COMMAND = re.compile(r"^/ai implement v([1-9][0-9]*)$", re.IGNORECASE)
 PLAN_MARKER = re.compile(r"^<!-- knx-issue-bot-state (\{[^\n]*\}) -->")
 MAX_CONTENT = 100_000

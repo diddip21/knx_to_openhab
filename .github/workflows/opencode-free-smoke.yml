@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/opencode-free-smoke.yml"
       - "opencode.jsonc"
+      - ".github/opencode-cli-version"
       - ".opencode/agents/ci-smoke.md"
       - "docs/OPENCODE_FREE_SMOKE.md"
   workflow_dispatch:
@@ -31,7 +32,7 @@ jobs:
 
     steps:
       - name: Checkout without persisted credentials
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -42,7 +43,7 @@ jobs:
 
       - name: Install OpenCode V2
         run: |
-          npm install --global @opencode/cli
+          npm install --global "@opencode/cli@$(cat .github/opencode-cli-version)"
           opencode --version
 
       - name: Check pinned test configuration

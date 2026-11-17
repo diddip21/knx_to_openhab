@@ -1,0 +1,143 @@
+name: AI merge readiness (read-only)
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, ready_for_review, converted_to_draft]
+    branches: [dev]
+  pull_request_review:
+    types: [submitted, dismissed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to audit (for example 108)'
+        type: string
+        required: true
+
+# Security invariant: never check out a PR head, execute untrusted code, or
+# write to GitHub. Only trusted main is checked out in this read-only workflow.
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  checks: read
+
+jobs:
+  audit:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.base.ref == 'dev' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       startsWith(github.event.pull_request.head.ref, 'ai/issue-'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout trusted default branch only (never PR code)
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Fetch PR, approval, CI, review and manual evidence (read only)
+        uses: actions/github-script@v9
+        env:
+          OUT: ${{ runner.temp }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const repo = {owner: context.repo.owner, repo: context.repo.repo};
+            const provided = context.eventName === 'workflow_dispatch'
+              ? context.payload.inputs?.pr_number
+              : context.payload.pull_request?.number;
+            const number = Number(provided);
+            if (!Number.isSafeInteger(number) || number < 1) {
+              throw new Error('Invalid PR number');
+            }
+            const {data: pr} = await github.rest.pulls.get({...repo, pull_number:number});
+            const issueMatch = /^ai\/issue-(\d+)-plan-v\d+-run-\d+$/.exec(pr.head.ref);
+            let issue = {};
+            let issueComments = [];
+            if (issueMatch) {
+              const issueNumber = Number(issueMatch[1]);
+              ({data:issue} = await github.rest.issues.get({...repo, issue_number:issueNumber}));
+              issueComments = await github.paginate(
+                github.rest.issues.listComments, {...repo, issue_number:issueNumber, per_page:100}
+              );
+            }
+            const [reviews, files, prComments] = await Promise.all([
+              github.paginate(github.rest.pulls.listReviews,
+                {...repo, pull_number:number, per_page:100}),
+              github.paginate(github.rest.pulls.listFiles,
+                {...repo, pull_number:number, per_page:100}),
+              github.paginate(github.rest.issues.listComments,
+                {...repo, issue_number:number, per_page:100})
+            ]);
+            const {data:checkResult} = await github.rest.checks.listForRef({
+              ...repo, ref:pr.head.sha, per_page:100, filter:'latest'
+            });
+            const query = `query($owner:String!, $name:String!, $number:Int!, $after:String) {
+              repository(owner:$owner,name:$name) {
+                pullRequest(number:$number) {
+                  reviewThreads(first:100,after:$after) {
+                    nodes {isResolved}
+                    pageInfo {hasNextPage endCursor}
+                  }
+                }
+              }
+            }`;
+            let cursor = null;
+            let unresolved = 0;
+            for (let page = 0; page < 25; page++) {
+              const graph = await github.graphql(query,
+                {owner:repo.owner,name:repo.repo,number,after:cursor});
+              const collection = graph.repository?.pullRequest?.reviewThreads;
+              if (!collection) throw new Error('Missing review threads');
+              unresolved += collection.nodes.filter(t=>!t.isResolved).length;
+              if (!collection.pageInfo.hasNextPage) break;
+              if (page === 24) throw new Error('Review thread pagination limit reached');
+              cursor = collection.pageInfo.endCursor;
+            }
+            const snapshot = {
+              owner:repo.owner,
+              repository:`${repo.owner}/${repo.repo}`,
+              pr:{
+                number, head_ref:pr.head.ref, head_sha:pr.head.sha,
+                head_repo:pr.head.repo?.full_name, base_ref:pr.base.ref,
+                state:pr.state, draft:pr.draft, mergeable:pr.mergeable,
+                author:pr.user.login, body:pr.body
+              },
+              issue, issue_comments:issueComments,
+              reviews:reviews.map(r=>({
+                user:r.user, state:r.state, commit_id:r.commit_id,
+                submitted_at:r.submitted_at
+              })),
+              unresolved_threads:unresolved,
+              files:files.map(f=>({filename:f.filename,status:f.status})),
+              pr_comments:prComments,
+              checks:checkResult.check_runs.map(c=>({
+                id:c.id, name:c.name, head_sha:c.head_sha,
+                started_at:c.started_at, status:c.status, conclusion:c.conclusion
+              }))
+            };
+            fs.writeFileSync(process.env.OUT + '/merge-readiness-snapshot.json',
+              JSON.stringify(snapshot));
+
+      - name: Evaluate all evidence without changing repository state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/ai_merge_readiness.py \
+            --snapshot "$RUNNER_TEMP/merge-readiness-snapshot.json" \
+            --report "$RUNNER_TEMP/merge-readiness-report.json"
+
+      - name: Archive gate results only (no PR comments or patches)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ai-readiness-${{ github.run_id }}
+          path: ${{ runner.temp }}/merge-readiness-report.json
+          if-no-files-found: ignore
+          retention-days: 14

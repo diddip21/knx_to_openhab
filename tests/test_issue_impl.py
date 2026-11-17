@@ -185,14 +185,8 @@ def test_artifact_bound_to_readme_bytes():
     assert hashlib.sha256(base64.b64decode(obj["readme_b64"])).hexdigest() == obj["readme_sha256"]
 
 
-def test_workflow_has_isolated_model_and_privileged_jobs():
-    workflow = (ROOT / ".github/workflows/opencode-issue-implement.yml").read_text()
-    assert "  implement:" in workflow
-    assert "  publish:" in workflow
-    assert "needs: implement" in workflow
-    assert "python scripts/issue_impl.py recheck" in workflow
-    assert "draft:true" in workflow
-    assert "createWorkflowDispatch" in workflow
-    assert "ai/issue-96-plan-v" in workflow
-    assert "git.createTree" in workflow
-    assert "auto_merge" not in workflow
+def test_completed_readme_pilot_is_archived_without_removing_shared_approval_guards():
+    assert not (ROOT / ".github/workflows/opencode-issue-implement.yml").exists()
+    assert not (ROOT / ".opencode/agents/issue-implementer.md").exists()
+    assert (ROOT / ".github/workflows/opencode-issue89-implement.yml").is_file()
+    assert (ROOT / "scripts/issue_impl.py").is_file()

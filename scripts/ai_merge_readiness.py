@@ -55,9 +55,11 @@ def evaluate(snapshot: dict[str, Any]) -> list[dict[str, str]]:
         gate(
             "Branch und Ziel",
             "PASS" if valid_source else "FAIL",
-            "Offener KI-Feature-PR aus demselben Repository, Base dev, gültiger HEAD"
-            if valid_source
-            else "Nur offene ai/issue-N-Plan-PRs aus diesem Repository gegen dev",
+            (
+                "Offener KI-Feature-PR aus demselben Repository, Base dev, gültiger HEAD"
+                if valid_source
+                else "Nur offene ai/issue-N-Plan-PRs aus diesem Repository gegen dev"
+            ),
         )
     )
     draft = pr.get("draft")
@@ -72,9 +74,11 @@ def evaluate(snapshot: dict[str, Any]) -> list[dict[str, str]]:
         gate(
             "Merge-Konflikte",
             "PASS" if pr.get("mergeable") is True else "OPEN",
-            "GitHub meldet keinen Konflikt"
-            if pr.get("mergeable") is True
-            else "Mergeability ist unbekannt oder Konflikt liegt vor",
+            (
+                "GitHub meldet keinen Konflikt"
+                if pr.get("mergeable") is True
+                else "Mergeability ist unbekannt oder Konflikt liegt vor"
+            ),
         )
     )
     issue_number = int(match.group(1)) if match else None
@@ -84,7 +88,12 @@ def evaluate(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     issue_comments = snapshot.get("issue_comments") or []
     command_match = COMMAND_ID.search(str(pr.get("body") or ""))
     try:
-        if not valid_source or command_match is None or issue_number is None or plan_version is None:
+        if (
+            not valid_source
+            or command_match is None
+            or issue_number is None
+            or plan_version is None
+        ):
             raise ValueError("PR fehlt die gültige Implementierungs-/Planreferenz")
         command_id = int(command_match.group(1))
         command = next(
@@ -124,10 +133,9 @@ def evaluate(snapshot: dict[str, Any]) -> list[dict[str, str]]:
         # check-runs are delivered newest first, but timestamps make this
         # independent of the API response ordering.
         if previous is None or (
-            str(record.get("started_at") or ""), str(record.get("id") or "")
-        ) > (
-            str(previous.get("started_at") or ""), str(previous.get("id") or "")
-        ):
+            str(record.get("started_at") or ""),
+            str(record.get("id") or ""),
+        ) > (str(previous.get("started_at") or ""), str(previous.get("id") or "")):
             by_name[name] = record
     missing = [name for name in REQUIRED_CI if name not in by_name]
     bad = [
@@ -143,9 +151,11 @@ def evaluate(snapshot: dict[str, Any]) -> list[dict[str, str]]:
         gate(
             "CI am aktuellen Commit",
             "PASS" if not (missing or bad) else "OPEN",
-            "Lint, Python 3.11/3.12/3.13 und Playwright erfolgreich auf " + sha[:8]
-            if not (missing or bad)
-            else f"Fehlend: {missing}; nicht erfolgreich: {bad}; HEAD {sha[:8]}",
+            (
+                "Lint, Python 3.11/3.12/3.13 und Playwright erfolgreich auf " + sha[:8]
+                if not (missing or bad)
+                else f"Fehlend: {missing}; nicht erfolgreich: {bad}; HEAD {sha[:8]}"
+            ),
         )
     )
 
@@ -171,10 +181,12 @@ def evaluate(snapshot: dict[str, Any]) -> list[dict[str, str]]:
         gate(
             "Unabhängiges Code-Review",
             "PASS" if approvals else "OPEN",
-            "Aktuelle Freigabe auf dem HEAD durch " + ", ".join(approvals)
-            if approvals
-            else "Keine unabhängige APPROVED-Review auf der aktuellen HEAD-SHA; "
-            "ein Codex-COMMENTED ist keine Freigabe",
+            (
+                "Aktuelle Freigabe auf dem HEAD durch " + ", ".join(approvals)
+                if approvals
+                else "Keine unabhängige APPROVED-Review auf der aktuellen HEAD-SHA; "
+                "ein Codex-COMMENTED ist keine Freigabe"
+            ),
         )
     )
 
@@ -183,9 +195,11 @@ def evaluate(snapshot: dict[str, Any]) -> list[dict[str, str]]:
         gate(
             "Review-Diskussionen",
             "PASS" if unresolved == 0 else "OPEN",
-            "Keine offenen Review-Threads"
-            if unresolved == 0
-            else f"{unresolved!r} offene oder nicht ausgelesene Review-Threads",
+            (
+                "Keine offenen Review-Threads"
+                if unresolved == 0
+                else f"{unresolved!r} offene oder nicht ausgelesene Review-Threads"
+            ),
         )
     )
     if issue_number == 89:
@@ -199,9 +213,11 @@ def evaluate(snapshot: dict[str, Any]) -> list[dict[str, str]]:
             gate(
                 "UI-Belege",
                 "PASS" if screenshot_files else "OPEN",
-                f"{len(screenshot_files)} Screenshot-Dateien im PR"
-                if screenshot_files
-                else "Keine echten Screenshots unter docs/screenshots/ im Diff",
+                (
+                    f"{len(screenshot_files)} Screenshot-Dateien im PR"
+                    if screenshot_files
+                    else "Keine echten Screenshots unter docs/screenshots/ im Diff"
+                ),
             )
         )
         accepted = False
@@ -210,19 +226,20 @@ def evaluate(snapshot: dict[str, Any]) -> list[dict[str, str]]:
                 continue
             body = str(comment.get("body") or "")
             if body.startswith(f"/ai hardware-accepted {sha}\n") and all(
-                field in body
-                for field in ("Datum:", "Aktor:", "Beobachtung:", "Rollback:")
+                field in body for field in ("Datum:", "Aktor:", "Beobachtung:", "Rollback:")
             ):
                 accepted = True
         results.append(
             gate(
                 "KNX-Hardwareabnahme (Owner-Erklärung)",
                 "PASS" if accepted else "OPEN",
-                "Owner hat einen Hardware-Testbericht zur aktuellen SHA hinterlegt "
-                "(kein physikalischer Nachweis durch CI)"
-                if accepted
-                else "Owner-Test mit echtem Aktor fehlt. Kommentar mit "
-                f"'/ai hardware-accepted {sha}' und Datum/Aktor/Beobachtung/Rollback nötig",
+                (
+                    "Owner hat einen Hardware-Testbericht zur aktuellen SHA hinterlegt "
+                    "(kein physikalischer Nachweis durch CI)"
+                    if accepted
+                    else "Owner-Test mit echtem Aktor fehlt. Kommentar mit "
+                    f"'/ai hardware-accepted {sha}' und Datum/Aktor/Beobachtung/Rollback nötig"
+                ),
             )
         )
     return results
@@ -243,16 +260,16 @@ def summarize(pr: dict[str, Any], gates: list[dict[str, str]]) -> str:
         "|---|---|---|",
     ]
     for item in gates:
-        lines.append(
-            f"| {safe(item['name'])} | {item['status']} | {safe(item['reason'])} |"
-        )
+        lines.append(f"| {safe(item['name'])} | {item['status']} | {safe(item['reason'])} |")
     ready = all(item["status"] == "PASS" for item in gates)
     lines.extend(
         [
             "",
-            "**Software-Merge-Gates vollständig belegbar**"
-            if ready
-            else "**Noch NICHT merge-ready: offene/fehlende Nachweise.**",
+            (
+                "**Software-Merge-Gates vollständig belegbar**"
+                if ready
+                else "**Noch NICHT merge-ready: offene/fehlende Nachweise.**"
+            ),
             "",
             "Das ist keine automatische Merge-Freigabe. Der Owner prüft den "
             "Hardwarebericht und merged bewusst selbst.",

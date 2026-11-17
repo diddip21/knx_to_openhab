@@ -1,19 +1,18 @@
 # Runbook: Vom GitHub-Issue bis zum geprüften Merge
 
-> Status: Pilot für [Issue #89](https://github.com/diddip21/knx_to_openhab/issues/89).
-> Stand der E2E-Prüfung: **16.11.2026**. PR #108, #109 und der
-> neue Entwicklungs-Synchronisations-PR #110 müssen anhand ihrer
-> **jeweils aktuellen HEAD-SHA** überprüft werden. Das ist eine
-> Momentaufnahme, kein garantiert aktueller Status.
+> **E2E-Audit am 17.11.2026** – [Issue #89](https://github.com/diddip21/knx_to_openhab/issues/89),
+> [Feature-PR #108](https://github.com/diddip21/knx_to_openhab/pull/108).
+> Immer den aktuellen HEAD und die tatsächlichen neuesten CI-Läufe prüfen.
+> [#109](https://github.com/diddip21/knx_to_openhab/pull/109) ist nach
+> `main` gemergt, [#110](https://github.com/diddip21/knx_to_openhab/pull/110)
+> hat `main` nach `dev` synchronisiert. `main` ist Vorfahr von `dev`.
+> #108 ist auf `dev` gerichtet und **Ready for review**; die neue
+> Codex-P2-Anmerkung zur HomeKit-Vorschau muss auf der aktuellen SHA erneut
+> geprüft und der Inline-Thread aufgelöst werden.
 >
-> **Merksatz:** Grüne CI ≠ fachlich geprüft ≠ freigegeben ≠ gemergt.
->
-> **Aktuelle Blockade:** `dev` besitzt 46 eigene, `main` 276 eigene
-> Commits; Draft-PR [#110 (`main` → `dev`)](https://github.com/diddip21/knx_to_openhab/pull/110)
-> ist wegen Konflikten **nicht mergebar**. Vor dem Retargeting von
-> [#108](https://github.com/diddip21/knx_to_openhab/pull/108) bitte den
-> [kompakten dev-Quickstart](AI_DEV_TO_MERGE_QUICKSTART.md) abarbeiten.
-> Niemals `dev` auf `main` zurücksetzen oder Konflikte am `main`-Head lösen.
+> **Grüne CI ≠ fachlich geprüft ≠ freigegeben ≠ gemergt.**
+> Der echte KNX-Hardwaretest ist weiterhin ein **Stop-Gate**. Ein vollständiger
+> automatischer KI-Reparaturzyklus wurde noch nicht Ende-zu-Ende nachgewiesen.
 
 ## 1. Rollen, Zuständigkeiten und Grenzen
 
@@ -22,12 +21,12 @@
 | Repository-Owner | Issue konkretisieren, Plan freigeben, Implementierung auslösen, Hardware abnehmen, Merge entscheiden | Keine Freigabe nur aufgrund des KI-Texts |
 | OpenCode + Superpowers | Freigegebenes Issue lesen, Plan erzeugen, begrenzte Codeänderungen und Reparaturen vorschlagen | Nicht eigenständig `main` ändern oder mergen; keine Paid-Modelle |
 | Getrennter GitHub-Publisher | Freigaben und Pfade revalidieren, Draft-PR erstellen oder erlaubten PR-Branch aktualisieren | Generierten Code ausführen, Prüfungen umgehen oder `main` ändern |
-| GitHub CI | Lint, Core-Python 3.12/3.13, UI/Playwright und Guard-Tests ausführen | Echtes KNX-Gerät oder Apple Home validieren |
+| GitHub CI | Lint, Core-Python 3.11/3.12/3.13, UI/Playwright und Guard-Tests ausführen | Echtes KNX-Gerät oder Apple Home validieren |
 | Menschlicher Reviewer | Diff, Kompatibilität, Testergebnisse, UI und Hinweise prüfen | Nicht durch ein KI-Review ersetzen |
 | Hardware-Tester | Endlagen/Lamellen und Rückweg mit realem KNX-Aktor prüfen | Keinen Hardwareerfolg ohne Protokoll behaupten |
 
 Nur die **exakte Issue-#89-Planversion v2** ist durch die vorhandene
-Automatisierung freigegeben. Der #96-Dokumentationspilot bleibt separat.
+Automatisierung freigegeben. Der abgeschlossene #96-Dokumentationspilot wurde aus aktiven Actions entfernt; seine gemeinsamen Freigabefunktionen bleiben bestehen.
 Neue Issues brauchen eigene Scope-/Dateifreigaben und einen neuen,
 sicherheitsgeprüften Implementierungsweg.
 
@@ -41,14 +40,14 @@ sicherheitsgeprüften Implementierungsweg.
 | 4 | Ausdrücklicher Implementierungsbefehl | Owner: `/ai implement v2` | [Auslöser](https://github.com/diddip21/knx_to_openhab/issues/89#issuecomment-6920334364) | ✅ Erledigt |
 | 5 | Free-Model-Router, Agent, Publisher | CI liest Approval, wählt nur geprüfte Free-Modelle, beschränkt Dateien und publiziert Draft-PR | [Implementierungslauf](https://github.com/diddip21/knx_to_openhab/actions/runs/43893665720) | ✅ Durchlaufen |
 | 6 | Draft-PR statt Direktänderung | Publisher erzeugt PR, keine Änderungen an `main` | [Feature-PR #108](https://github.com/diddip21/knx_to_openhab/pull/108) | ✅ Erledigt |
-| 7 | CI auf *aktuellem* Commit | GitHub: Black, isort, Flake8, mypy, Core 3.12/3.13, UI | [#108 CI 43908602613](https://github.com/diddip21/knx_to_openhab/actions/runs/43908602613): vier Jobs grün auf `7730c7f0` | ✅ Erledigt |
-| 8 | Automatische CI-Reparatur | **Nur** fehlgeschlagener, explizit gestarteter CI-Lauf des genehmigten Bot-Drafts **gegen `dev`**; höchstens zwei Versuche | [Infrastruktur-PR #109](https://github.com/diddip21/knx_to_openhab/pull/109), [Guard-Tests](https://github.com/diddip21/knx_to_openhab/actions/runs/43908687141) | ⚠️ Implementiert / noch nicht gemergt / kein Live-E2E-Reparaturtest |
-| 9 | Feature-/Sicherheitsreview | Mensch liest alle PR-Kommentare, Diff, Datenflüsse, Tests, Defaults; offene Findings klären | In #108 und #109 zum Prüfzeitpunkt keine formellen Reviews | ⬜ Offen |
-| 10 | UI-Belege | Echte, anonymisierte Screenshots der neuen HomeKit-Einstellungen in `docs/screenshots/` einchecken, PR verlinken | PR #108 verändert keine Screenshot-Datei; `AGENTS.md` verlangt sie | ⬜ Offen |
-| 11 | Funktionsabnahme | Reales ETS-Projekt; Legacy/YAML, Web-UI, CLI/API, Export und Werte vergleichen | Prüfschritte in Abschnitt 3 | ⬜ Offen |
-| 12 | KNX-/Apple-Home-Hardwaretest | Owner testet 0/100 %, Zwischenposition, Lamellen-Endlage, Stop-Schalter, Rollback | Testergebnis mit Gerätemodell, openHAB-Version, Datum, Output-Hinweis | ⬜ Offen |
-| 13 | Ready for review & Merge | Owner, nach allen Gates; Merge **manuell** | Draft-Status beider PRs noch aktiv | ⬜ Offen |
-| 14 | Nach-Merge-Validierung | CI auf `main`, Smoke-Test in Zielumgebung; erst anschließend Issue schließen | Noch kein Merge | ⬜ Offen |
+| 7 | CI auf *aktueller* Head-SHA | GitHub: Black, isort, Flake8, mypy, Core 3.11/3.12/3.13, Playwright | Nach der Codex-P2-Korrektur auf #108 erneut verifizieren; alte grüne Runs zählen **nicht** für neue Commits | ⏳ Neue CI nötig / laufend |
+| 8 | Automatische CI-Reparatur | Nur genehmigter Bot-**Draft** gegen dev und explizit fehlgeschlagene CI, max. 2 Reparaturversuche | [#109 gemergt](https://github.com/diddip21/knx_to_openhab/pull/109), Unit-/Guard-Tests grün | ⚠️ Aktiviert, echter Live-Selbstkorrekturlauf noch nicht nachgewiesen |
+| 9 | Code-/Sicherheitsreview | Reviewer untersucht PR-Diff und Findings, später erneut auf aktueller SHA | [Neues P2-Finding](https://github.com/diddip21/knx_to_openhab/pull/108#discussion_r4601217188) mit offenem Thread; der Owner muss aktualisierten Code prüfen | ⬜ Offen |
+| 10 | UI-Belege | Drei reale HomeKit-Einstellungszustände in docs/screenshots/ | PR #108 enthält Default/Enabled/Disabled-Screenshots | ⚠️ Dateien vorhanden, menschliche Sichtprüfung noch erforderlich |
+| 11 | Funktionsabnahme | Realitätsnahe Legacy-/YAML-/UI-/CLI-/API-Tests und Manualreview | Software-Review berichtet Ergebnisse; nach Codefix erneut prüfen | ⬜ Zu bestätigen |
+| 12 | KNX-/Apple-Home-Hardwaretest | Owner testet 0/100 %, Zwischenposition, Lamellen-Endlage, Stop, Rollback | Aktor-Typ, openHAB-Version, Datum, Beobachtung und Rollback dokumentieren | ⬜ Offen – Merge-Stop |
+| 13 | Ready for review & Feature-Merge | Nur Owner nach allen Gates | #108 ist Ready for review; kein Merge erfolgt | ⚠️ Review-Status gesetzt, Freigabe offen |
+| 14 | Release und Nach-Merge-Validierung | Separater PR dev→main, CI, Version/Changelog/annotierter Tag, Smoke | [RELEASING.md](RELEASING.md) | ⬜ Offen |
 
 **Wichtig:** Step 8 wurde durch die Tests des Routers und des
 `ci_repair.py`-Validators nur **teilweise** nachgewiesen. Ein tatsächlicher
@@ -167,38 +166,54 @@ den **expliziten CI-`workflow_dispatch`**. Vor Freigaben immer prüfen,
 dass die **letzte Head-SHA**, nicht nur ein älterer grüner Run, geprüft
 wurde.
 
-## 5. Merge-Reihenfolge, verantwortliche Aktionen
+## 5. Aktuelle Schritte bis zum Merge
 
-1. **#109 zuerst gegen `main` prüfen und manuell mergen**, wenn
-   Security-Review und grüne Tests dieses *exakten* Commits vorliegen.
-   Das aktiviert die vom Default-Branch getriggerten Controller für
-   Plan/Implementierung/Self-Repair. Bis `dev` synchronisiert ist,
-   stoppen die Agenten **absichtlich** (fail-closed).
-2. **Anschließend `dev` mit dem dann aktuellen `main` versöhnen**
-   und die 46 exklusiven `dev`-Commits erhalten:
-   [#110](https://github.com/diddip21/knx_to_openhab/pull/110)
-   ist ein **nicht mergebarer Konfliktnachweis** (Head `main`);
-   Konflikte in einem **separaten Integrationsbranch von `dev`**
-   lösen und per kontrolliertem PR nach `dev` einbringen.
-   Details und Befehle: [dev-Quickstart](AI_DEV_TO_MERGE_QUICKSTART.md).
-3. **#108 erst nach synchronisiertem `dev` auf Base `dev`
-   retargeten**. Danach die neue Diff-/CI-Matrix prüfen, `main`
-   keinesfalls durch diesen PR mergen.
-4. **#108 fachlich abnehmen**, fehlende Screenshots ergänzen,
-   Generator-Ausgabe/Config real vergleichen und Human-Review abschließen.
-5. Nach jedem PR-Commit oder jeder Base-Änderung alle Checks
-   noch einmal anhand der Head-SHA
-   prüfen, inklusive Screenshot-/Golden-Tests und Kommentaren.
-6. Wenn die manuellen Gates dokumentiert sind, Draft-Status von #108
-   auf *Ready for review* setzen. **Merge ausschließlich durch Owner**.
-7. Erst nach erfolgreich integriertem `dev` einen **separaten
-   Release-PR `dev` → `main`** erstellen. Dafür erneut CI,
-   Reviews, Rollback-Plan und manuelle Owner-Freigabe verlangen.
-8. Nach diesem Release-Merge CI auf `main` und einen sicheren lokalen
-   HomeKit-/KNX-Smoke-Test dokumentieren. Erst danach Issue #89
-   schließen.
+1. **PR #108: Codex-P2-Befund prüfen.** Das gespeicherte
+   `homekit_enabled` muss sofort in beiden Vorschau-APIs gelten, auch
+   wenn das Generatormodul im Flask-Prozess noch alte Config hält.
+   Regressionstest speichern → Vorschau prüfen, CI zur neuesten SHA.
+2. **Inline-Thread und Review klären.** Review-Kommentar des Codex
+   im PR lesen, Änderung beurteilen, ggf. erneut Review starten und
+   den Thread **erst nach bestätigtem Fix** auflösen.
+3. **Reale UI-Screenshots prüfen.** Dateien unter
+   `docs/screenshots/` sind im PR vorhanden; Passwörter/
+   Adressen dürfen nicht enthalten sein.
+4. **Manuelle KNX-Abnahme.** An einem Testaktor Endlagen,
+   Lamellen, Stop und Rollback gegen die installierte openHAB-Version
+   nachweisen. Für den neuen read-only Merge-Readiness-Check ist eine
+   explizite Owner-Erklärung auf der exakten SHA erforderlich:
+   `/ai hardware-accepted <40-char-SHA>` und Felder
+   `Datum:`, `Aktor:`, `Beobachtung:`, `Rollback:`.
+   Das ersetzt **keinen** echten Hardwaretest.
+5. **Readiness-Check** über
+   [AI merge readiness](../../actions/workflows/ai-merge-readiness.yml)
+   auf `main` mit PR-Nummer `108` starten. Der Bericht verifiziert
+   Branch, aktuellen CI-Stand, Plan, Approval, Review, Threads,
+   Screenshots und Hardware-Owner-Erklärung. Er ist **read-only**
+   und meldet fehlende Nachweise als `OPEN`.
+6. **Owner entscheidet**, dann manueller Merge von #108 nach
+   `dev`. Kein Agent hat Merge-Erlaubnis.
+7. **Release separat:** Geprüfter PR `dev` → `main`,
+   vollständiger Release-Diff, `VERSION`, Changelog,
+   annotierter Tag und GitHub-Release mit Checksumme.
+   Zuletzt einen Post-Merge-Smoke-Test dokumentieren und erst danach
+   Issue #89 schließen.
+
+**Aktuelle Architektur:** `main` liefert die vertrauenswürdigen
+Issue- und CI-Reparatur-Workflows, `dev` ist der Feature-Basisbranch.
+GitHub meldet beide Branches als geschützt; einzelne Ruleset-Pflichten
+können nur der Owner in *Settings → Rules* vollständig bestätigen.
 
 ## 6. Verbesserungen für die nächste Automatisierungsstufe
+
+**Stand 17.11.2026:** Der read-only Merge-Readiness-Check ist in diesem
+Cleanup-PR implementiert und muss vor Verwendung in `main` gemergt
+werden. Der ältere Workflow/Agent für README-Issue #96 wurde deaktiviert,
+die Freigabe-/Digest-Bibliothek bleibt für die aktiven Agenten bestehen.
+Die CI-Push-Trigger sind auf `main` und `dev` begrenzt, PR- und
+explizite Bot-Dispatch-Tests bleiben. OpenCode CLI ist versionsgebunden.
+Ein echter Repair-E2E-Lauf ist weiterhin offen.
+
 
 | Priorität | Vorschlag | Automatisch / manuell | Status |
 | --- | --- | --- | --- |
@@ -210,15 +225,14 @@ wurde.
 | P2 | **Post-Merge-Recheck**: neue CI auf `main`, Release-/Changelog-Notiz, Issue erst nach Abnahme schließen | Größtenteils automatisch; Hardware manuell | ⬜ Noch nicht implementiert |
 | P2 | **Generischer, policy-gesteuerter Implementierungsagent** für weitere Issues mit separater Owner-Freigabe des genauen Dateiscopes und Budgets | Automatisch innerhalb des genehmigten Scopes | ⬜ Aktuell nur #89 / #96 Piloten |
 
-### Repo-Schutzbefund vom 16.11.2026
+### Branchschutzbefund vom 17.11.2026
 
-Das aktive, lesbare GitHub-Ruleset **`protect main`** verbietet
-Branch-Löschung und Nicht-Fast-Forward-Updates. Es enthält **keine**
-eigenen Regeln für Pflicht-Reviews oder Status-Checks. Der separate
-Branch-Protection-Endpunkt war mit der aktuellen GitHub-Verbindung
-nicht lesbar (HTTP 403); deshalb sind möglicherweise weitere Regeln
-vorhanden, aber **nicht nachgewiesen**. Der Owner prüft dies manuell
-unter *Settings → Rules → Rulesets* bzw. *Branches*.
+GitHub markiert nun **`main` und `dev` als geschützt**. Über die App
+sind die exakten individuellen Review-/Required-Status-Checks weiterhin
+nicht lesbar (HTTP 403). Das lesbare Ruleset `protect main` schützt
+vor Löschung und Force-Push, zeigt aber nicht den ganzen Branchschutz.
+**Manuelle Kontrolle durch den Owner in Settings → Rules ist nötig**.
+Keine pauschale Merge-Freigabe allein aus dem Protected-Flag.
 
 ## 7. Wiederkehrende E2E-Audit-Routine für JEDEN neuen AI-PR
 

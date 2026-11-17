@@ -186,7 +186,7 @@ wurde.
    `Datum:`, `Aktor:`, `Beobachtung:`, `Rollback:`.
    Das ersetzt **keinen** echten Hardwaretest.
 5. **Readiness-Check** über
-   [AI merge readiness](../../actions/workflows/ai-merge-readiness.yml)
+   [AI merge readiness](https://github.com/diddip21/knx_to_openhab/actions/workflows/ai-merge-readiness.yml)
    auf `main` mit PR-Nummer `108` starten. Der Bericht verifiziert
    Branch, aktuellen CI-Stand, Plan, Approval, Review, Threads,
    Screenshots und Hardware-Owner-Erklärung. Er ist **read-only**

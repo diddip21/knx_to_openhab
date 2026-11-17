@@ -173,7 +173,8 @@ def evaluate(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     approvals = [
         author
         for author, review in latest_review_by_user.items()
-        if author not in {owner.lower(), str(pr.get("author") or "").lower()}
+        if author != str(pr.get("author") or "").lower()
+        and (review.get("user") or {}).get("type") == "User"
         and review.get("state") == "APPROVED"
         and review.get("commit_id") == sha
     ]
@@ -184,7 +185,7 @@ def evaluate(snapshot: dict[str, Any]) -> list[dict[str, str]]:
             (
                 "Aktuelle Freigabe auf dem HEAD durch " + ", ".join(approvals)
                 if approvals
-                else "Keine unabhängige APPROVED-Review auf der aktuellen HEAD-SHA; "
+                else "Keine menschliche APPROVED-Review (nicht vom PR-Autor) auf der aktuellen SHA; "
                 "ein Codex-COMMENTED ist keine Freigabe"
             ),
         )

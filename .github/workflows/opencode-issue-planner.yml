@@ -216,4 +216,4 @@ jobs:
         with:
           script: |
             const {report} = require(process.env.GITHUB_WORKSPACE + '/trusted/scripts/automation/status.cjs');
-            await report({github, context, phase:'failure'});
+            await report({github, context, phase:'planning-failure'});

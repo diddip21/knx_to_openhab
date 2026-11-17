@@ -11,7 +11,7 @@ def test_notifications_never_gain_source_write_permissions_or_execute_candidate(
     for name in ["ai-issue-implement.yml", "opencode-ci-self-repair.yml", "ai-workflow-status.yml"]:
         definition = yaml.safe_load((ROOT / ".github/workflows" / name).read_text())
         for job_id, job in definition["jobs"].items():
-            if job_id not in {"notify", "notify-failure", "report"}:
+            if job_id not in {"announce", "notify", "notify-failure", "report"}:
                 continue
             permissions = job.get("permissions", definition.get("permissions", {}))
             assert permissions["issues"] == "write"

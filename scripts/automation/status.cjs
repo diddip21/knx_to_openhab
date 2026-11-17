@@ -48,13 +48,14 @@ async function report({github, context, phase}) {
   const {data: jobs} = await github.rest.actions.listJobsForWorkflowRun({...repo, run_id: diagnosticRun, per_page: 100});
   const failed = jobs.jobs.flatMap(j => j.steps || []).filter(s => s.conclusion === 'failure');
   const jobsFailed = jobs.jobs.some(j => j.conclusion === 'failure');
-  const failedState = run.conclusion === 'failure' || jobsFailed || phase === 'failure';
+  const failedState = run.conclusion === 'failure' || jobsFailed || phase?.endsWith('failure');
   const ci = context.eventName === 'workflow_run';
-  const title = repairFailure ? 'KI-Reparatur angehalten' : ci ? (run.status !== 'completed' ? 'CI läuft' :
+  const title = phase === 'started' ? 'Umsetzung läuft' : repairFailure ? 'KI-Reparatur angehalten' : ci ? (run.status !== 'completed' ? 'CI läuft' :
     run.conclusion === 'success' ? 'CI bestanden – Review erforderlich' : 'CI benötigt Aufmerksamkeit') :
     failedState ? 'Workflow angehalten' : 'Draft-PR veröffentlicht – CI gestartet';
   const marker = `<!-- ai-workflow-status:${commandId} -->`;
   const existing = comments.find(c => c.user?.login === 'github-actions[bot]' && c.body?.startsWith(marker));
+  if (phase === 'started' && existing) return;
   const priorCI = /<!-- ai-status-ci:([0-9]+):([12]) -->/.exec(existing?.body || '');
   if (priorCI && (!ci || Number(priorCI[1]) > run.id ||
       (Number(priorCI[1]) === run.id && priorCI[2] === '2' && !repairFailure))) return;
@@ -80,6 +81,13 @@ async function report({github, context, phase}) {
       attempts >= 2 ? '\n\nReparaturlimit erreicht. Nächster Schritt: Fehler menschlich prüfen.' :
       '\n\nEine begrenzte KI-Reparatur kann folgen, wenn Draft, Freigabe und Dateiumfang weiterhin gültig sind. ' +
       'Ein fehlgeschlagener CI-Lauf allein bestätigt noch keinen erfolgreichen Reparaturstart.';
+  } else if (phase === 'started') {
+    body += '\n\nDer Startauftrag wird geprüft; danach folgen Modelllauf, Formatierung und unabhängige Veröffentlichung. ' +
+      'Nächster Schritt: Ergebnis abwarten. Der Bot ergänzt PR und CI nach erfolgreicher Veröffentlichung.';
+  } else if (phase === 'planning-failure') {
+    body += '\n\nDie Planung wurde nicht erfolgreich veröffentlicht. Nächster Schritt: Den Lauf prüfen. ' +
+      'Bei vorhandenem Plan mit `/ai answer Bitte erneut planen` einen neuen Kommentar posten; ' +
+      'ohne bisherigen Plan das Label `ai:plan` entfernen und erneut setzen. Keine Freigabe für einen fehlenden Plan erteilen.';
   } else if (failedState) {
     body += '\n\nNächster Schritt: Den fehlgeschlagenen Schritt im Lauf prüfen. ' +
       'Bei fehlendem Dateiumfang: Für neue Pläne nach der Bot-Freigabe `/ai start vN` posten. ' +

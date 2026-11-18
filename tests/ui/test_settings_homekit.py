@@ -25,6 +25,9 @@ def _open_general_settings(page: Page, base_url: str) -> None:
         expect(page.locator("#upload-section")).to_be_visible(timeout=10000)
 
     page.get_by_role("combobox", name="Sprache / Language").select_option("en")
+    # The initial configuration load is scheduled shortly after page startup.
+    # Wait for it before editing so it cannot overwrite the first save result.
+    expect(page.locator("#configStatus")).to_contain_text("Configuration loaded", timeout=10000)
     settings_section = page.locator("#settings-section")
     expect(settings_section).to_be_visible()
     settings_content = page.locator("#settings-content")

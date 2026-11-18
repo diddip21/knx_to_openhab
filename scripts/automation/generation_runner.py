@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Bounded, content-free generation diagnostics and one verified model fallback.
+"""Bounded generation with private completeness feedback and safe diagnostics.
 
 This runner does not publish or authorize a candidate. The existing trusted
 format, collect and publisher checks must still run after a successful result.
-Only a second model already verified by this invocation's router may retry,
-and only after an unchanged policy boundary and a literal scoped rollback.
+A normally finished, safe but incomplete implementation gets one targeted
+completion with the same verified model. Other retryable failures may use one
+different model verified by this router, after a literal scoped rollback.
+Both paths share the existing two-call and total-time limits.
 """
 
 from __future__ import annotations
@@ -826,6 +828,28 @@ def write_diagnostics(temp: Path, report: dict[str, Any]) -> None:
                 pass
 
 
+def build_completion_prompt(prompt: str, missing_required: list[str]) -> str:
+    """Only trusted scope-derived feedback enters the private follow-up prompt."""
+    follow_up = (
+        prompt + "\n\nTRUSTED CONTROLLER COMPLETENESS FEEDBACK: "
+        "Your previous attempt ended normally, but the candidate is incomplete. "
+        "The current checkout retains its validated in-scope changes. Review and preserve "
+        "those changes, then complete the missing required files from the approved plan. "
+        "Each required file needs a meaningful approved change relative to the original "
+        "base; do not make cosmetic edits merely to satisfy this check. The original "
+        "scope, creation permissions and all other restrictions remain unchanged. "
+        "If the approved plan cannot be completed within that scope, report the blocker. "
+        "This is the only completion attempt; finish the complete scoped patch and end.\n"
+        + json.dumps(
+            {"code": "required_missing", "missing_required_files": missing_required},
+            ensure_ascii=False,
+        )
+    )
+    if len(follow_up.encode("utf-8")) > MAX_PROMPT_BYTES:
+        raise GenerationError("prompt_limit")
+    return follow_up
+
+
 def run_generation(root: Path, temp: Path, mode: str, model: str) -> dict[str, Any]:
     report: dict[str, Any] = {
         "schema_version": 1,
@@ -862,7 +886,8 @@ def run_generation(root: Path, temp: Path, mode: str, model: str) -> dict[str, A
         report["scope_counts"] = {
             name: len(boundary.scope[name]) for name in ("files", "create", "required")
         }
-        for number, candidate_model in enumerate(models, 1):
+        candidate_model, phase, attempt_prompt = models[0], "initial", prompt
+        for number in range(1, 3):
             remaining = total - (time.monotonic() - started)
             if remaining <= 0 or INTERRUPTED:
                 raise GenerationError("interrupted" if INTERRUPTED else "budget_exhausted")
@@ -870,7 +895,7 @@ def run_generation(root: Path, temp: Path, mode: str, model: str) -> dict[str, A
             attempt: dict[str, Any] = {
                 "attempt": number,
                 "model": candidate_model,
-                "phase": "initial" if number == 1 else "fallback",
+                "phase": phase,
                 "limit_seconds": round(limit, 3),
             }
             report["attempts"].append(attempt)
@@ -879,7 +904,7 @@ def run_generation(root: Path, temp: Path, mode: str, model: str) -> dict[str, A
                 flush=True,
             )
             metrics = execute(
-                root, candidate_model, prompt, limit, EventMetrics(root, boundary.scope)
+                root, candidate_model, attempt_prompt, limit, EventMetrics(root, boundary.scope)
             )
             attempt.update(metrics)
             try:
@@ -893,10 +918,22 @@ def run_generation(root: Path, temp: Path, mode: str, model: str) -> dict[str, A
             if code is None:
                 report["status"] = "success"
                 return report
-            if code not in RETRYABLE or number == len(models):
+            if number == 2:
+                raise GenerationError(code)
+            if mode == "implement" and metrics["code"] is None and code == "required_missing":
+                missing = sorted(set(boundary.scope["required"]) - set(changed))
+                attempt_prompt = build_completion_prompt(prompt, missing)
+                phase = "completion"
+                print(
+                    f"AI generation completion: prior_code=required_missing, missing_required_files={len(missing)}",
+                    flush=True,
+                )
+                continue
+            if code not in RETRYABLE or len(models) < 2:
                 raise GenerationError(code)
             boundary.rollback()
             attempt["scoped_rollback"] = True
+            candidate_model, phase, attempt_prompt = models[1], "fallback", prompt
             print(
                 f"AI generation fallback: prior_code={code}, restored_files={len(changed)}",
                 flush=True,

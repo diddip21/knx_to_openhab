@@ -80,9 +80,12 @@ Planungen dürfen neuere oder geänderte Anforderungen nicht überschreiben.
    ````
 
    Replace `N` and the example paths. `files` is the complete allowed set;
-   `create` authorizes missing files; `required` must actually be changed by the
-   first implementation. Empty `create`/`required` lists are allowed. Only the
-   repository owner's live, unedited start command grants this scope. A model proposal,
+   `create` authorizes missing files; `required` identifies files that need a
+   meaningful task-related change against the original implementation baseline.
+   A file's existence alone does not satisfy `required`, and cosmetic dummy edits
+   are not a substitute for the approved work. The guard checks for a change;
+   its substance still requires review. Empty `create`/`required` lists are allowed.
+   Only the repository owner's live, unedited start command grants this scope. A model proposal,
    label, issue body or PR description does not grant write permissions.
 4. The read-only generation job selects an approved free model, installs the
    pinned OpenCode CLI and builds literal agent permissions from the owner scope.
@@ -184,35 +187,52 @@ actual execution belongs to the reviewer and CI. A model must report checks it
 could not run, never invent their results.
 
 Both model steps use the trusted `generation_runner.py` with bounded output,
-process lifetime and at most two attempts. A fallback is allowed only to another
-approved free model that passed the router probe in this same run. A successful
-probe from an earlier workflow does not authorize a fallback. After a failed
-first attempt, the runner stops with diagnostics if no second verified model
-is available. A successful first attempt does not require a second model.
+process lifetime and at most two model invocations in total. A successful first
+invocation does not require a second one.
 
-| Mode | First attempt | Fallback limit | Total model budget | Job limit |
+Implementation has one narrowly defined completion path: if the first model
+process finishes cleanly, all scope, runtime and file-boundary checks pass, and
+the remaining failure is `required_missing`, the runner may make one targeted
+completion call to the same model that passed this run's router probe. It retains
+the checked partial patch and supplies the missing approved paths only as private
+prompt feedback. The original plan, approval, allowed paths and budgets remain
+unchanged. The completed patch is checked again against the original baseline.
+This completion consumes the second invocation; if it fails, the runner stops
+without a third invocation or a subsequent fallback to another model. CI repair does
+not use this completion path.
+
+For other retryable failures, a fallback is allowed only to another approved
+free model that passed the router probe in this same run. A successful probe
+from an earlier workflow does not authorize a fallback. If that second verified
+model is unavailable, the runner stops with diagnostics. Policy and boundary
+violations still stop immediately.
+
+| Mode | First invocation | Second invocation limit | Total model budget | Job limit |
 |---|---|---|---|---|
 | Implementation | Up to 1,150 seconds | Up to 650 seconds | 1,800 seconds | 40 minutes |
 | CI repair | Up to 750 seconds | Up to 250 seconds | 1,000 seconds | 28 minutes |
 
-The second attempt is also bounded by the remaining total budget. On the Linux
-runner, the controller stops and reaps the attempt's child processes, including
+The second invocation, whether completion or fallback, is also
+bounded by the remaining total budget. On the Linux runner, the controller stops
+and reaps the attempt's child processes, including
 OpenCode's detached standalone server, before inspecting or restoring files.
 Children that already existed before the attempt are excluded. Prompts enter
 through bounded stdin, avoiding per-argument limits for long UTF-8 input.
 
-Before a fallback starts, the runner restores approved partial changes to
-their original baseline. It does not use a blanket reset or clean to hide
+Before falling back to another model, the runner restores approved partial
+changes to their original baseline. It does not use a blanket reset or clean to hide
 foreign changes. Changed HEAD, runtime-agent tampering, out-of-scope paths and
-unsafe links stop the run without
-fallback. Repair still cannot create new files. The two-attempt model budget is
-separate from, and does not increase, the limit of two published CI repairs.
+unsafe links stop the run without completion or fallback. Repair still cannot
+create new files. The two-invocation model budget is separate from, and does not
+increase, the limit of two published CI repairs.
 
 After the model step, including a controlled timeout or failure, the workflow
 uploads only `generation-diagnostics.json` as
 `ai-generation-diagnostics-<run-id>-<run-attempt>`. The job and step limits leave
-time to write and upload this report. It contains fixed result codes, verified
-model identifiers, timings, byte/event/tool counters and candidate-file counts.
+time to write and upload this report. It contains fixed result codes, attempt
+phases, verified model identifiers, timings, byte/event/tool counters and
+candidate-file counts. Missing required paths appear only in private completion
+feedback; diagnostics contain their counts, not paths or file contents.
 Prompts, source code, tool arguments, raw stderr and provider messages are not
 uploaded. Missing or malformed event data is reported explicitly. Runner loss
 or a forced infrastructure termination can still prevent an artifact upload;

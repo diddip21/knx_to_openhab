@@ -342,10 +342,13 @@ def test_scope_input_tampering_cannot_authorize_fallback(tmp_path, monkeypatch):
 
 def test_repair_can_change_one_existing_file_without_required_test_again(tmp_path, monkeypatch):
     root, temp = setup_runtime(tmp_path, monkeypatch, mode="repair")
-    fake_cli(tmp_path, monkeypatch, "Path('feature.py').write_text('value = 2\\n')\nvalid()")
+    calls = fake_cli(
+        tmp_path, monkeypatch, "Path('feature.py').write_text('value = 2\\n')\nvalid()"
+    )
     report = runner.run_generation(root, temp, "repair", FIRST)
     assert report["attempts"][0]["required_files"] == 1
     assert report["attempts"][0]["required_files_changed"] == 0
+    assert json.loads(calls.read_text()) == [FIRST]
     assert json.loads((temp / "task-context.json").read_text())["attempt"] == 2
 
 
@@ -363,16 +366,299 @@ def test_repair_cannot_create_even_initially_approved_files(tmp_path, monkeypatc
     assert len(json.loads(calls.read_text())) == 1
 
 
-def test_missing_required_files_is_not_a_success(tmp_path, monkeypatch):
+@pytest.mark.parametrize("second", [False, True])
+def test_missing_required_files_is_not_a_success(tmp_path, monkeypatch, second):
+    root, temp = setup_runtime(tmp_path, monkeypatch, second=second)
+    calls = fake_cli(
+        tmp_path, monkeypatch, "Path('feature.py').write_text('value = 2\\n')\nvalid()"
+    )
+    report = fails(root, temp, "required_missing")
+    assert json.loads(calls.read_text()) == [FIRST, FIRST]
+    assert [attempt["phase"] for attempt in report["attempts"]] == ["initial", "completion"]
+    assert (root / "feature.py").read_text() == "value = 2\n"
+
+
+@pytest.mark.parametrize("second", [False, True])
+def test_required_completion_keeps_partial_patch_and_same_verified_model(
+    tmp_path, monkeypatch, second
+):
+    root, temp = setup_runtime(tmp_path, monkeypatch, second=second)
+    original_inputs = {name: (temp / name).read_bytes() for name in runner.INPUT_NAMES}
+    original_agent = (root / runner.AGENT_PATH).read_bytes()
+    original_head = git(root, "rev-parse", "HEAD")
+    calls = fake_cli(
+        tmp_path,
+        monkeypatch,
+        "prompt = sys.stdin.read()\n"
+        "if len(calls) == 1:\n"
+        "    assert prompt == PRIVATE\n"
+        "    Path('feature.py').write_text('value = 17\\n')\n"
+        "else:\n"
+        f"    assert model == {FIRST!r}\n"
+        "    assert PRIVATE in prompt and 'tests/test_feature.py' in prompt\n"
+        "    assert Path('feature.py').read_text() == 'value = 17\\n'\n"
+        f"    assert Path({runner.AGENT_PATH!r}).read_bytes() == {original_agent!r}\n"
+        "    Path('tests/test_feature.py').write_text('from feature import value\\n\\ndef test_value():\\n    assert value == 17\\n')\n"
+        "valid()",
+    )
+    report = runner.run_generation(root, temp, "implement", FIRST)
+    assert report["status"] == "success"
+    assert json.loads(calls.read_text()) == [FIRST, FIRST]
+    assert [attempt["code"] for attempt in report["attempts"]] == [
+        "required_missing",
+        "candidate_generated",
+    ]
+    assert [attempt["phase"] for attempt in report["attempts"]] == ["initial", "completion"]
+    assert not report["attempts"][0].get("scoped_rollback", False)
+    assert (root / "feature.py").read_text() == "value = 17\n"
+    assert (root / runner.AGENT_PATH).read_bytes() == original_agent
+    assert {name: (temp / name).read_bytes() for name in runner.INPUT_NAMES} == original_inputs
+    assert git(root, "rev-parse", "HEAD") == original_head
+    diagnostics(temp)
+
+
+def test_completion_feedback_is_private_and_lists_only_missing_required_files(
+    tmp_path, monkeypatch, capsys
+):
+    missing_test = f"tests/test_{PRIVATE}.py"
+    created_note = f"docs/{PRIVATE}.md"
+    scope = {
+        "files": [
+            "feature.py",
+            "tests/test_feature.py",
+            "docs/feature.md",
+            missing_test,
+            created_note,
+        ],
+        "create": [missing_test, created_note],
+        "required": [missing_test, "tests/test_feature.py", "docs/feature.md"],
+    }
+    root, temp = setup_runtime(tmp_path, monkeypatch, scope=scope)
+    received_prompt = tmp_path / "received-prompt.txt"
+    calls = fake_cli(
+        tmp_path,
+        monkeypatch,
+        "prompt = sys.stdin.read()\n"
+        "if len(calls) == 1:\n"
+        "    changed()\n"
+        f"    Path({created_note!r}).write_text(PRIVATE)\n"
+        "else:\n"
+        "    assert Path('feature.py').read_text() == 'value = 1\\n'\n"
+        f"    assert Path({created_note!r}).read_text() == PRIVATE\n"
+        f"    Path({str(received_prompt)!r}).write_text(prompt)\n"
+        "    Path('docs/feature.md').write_text('# Completed feature\\n')\n"
+        f"    Path({missing_test!r}).write_text('def test_completion():\\n    assert True\\n')\n"
+        "valid()",
+    )
+    report = runner.run_generation(root, temp, "implement", FIRST)
+    assert report["status"] == "success"
+    assert json.loads(calls.read_text()) == [FIRST, FIRST]
+    received = received_prompt.read_text()
+    assert received.startswith(PRIVATE)
+    correction = received[len(PRIVATE) :]
+    feedback, _ = json.JSONDecoder().raw_decode(correction[correction.index("{") :])
+    assert feedback["code"] == "required_missing"
+    assert feedback["missing_required_files"] == sorted([missing_test, "docs/feature.md"])
+    assert (root / created_note).read_text() == PRIVATE
+    assert (temp / "task-prompt.txt").read_text() == PRIVATE
+    diagnostics(temp)
+    captured = capsys.readouterr()
+    assert PRIVATE not in captured.out + captured.err
+    assert "docs/feature.md" not in (temp / "generation-diagnostics.json").read_text()
+
+
+def test_completion_reuses_selected_model_when_first_allowlist_entry_is_unavailable(
+    tmp_path, monkeypatch
+):
+    root, temp = setup_runtime(tmp_path, monkeypatch)
+    selection = json.loads((temp / "model.json").read_text())
+    selection["selected"] = SECOND
+    selection["probes"] = [{"model": FIRST, "passed": False}, {"model": SECOND, "passed": True}]
+    (temp / "model.json").write_text(json.dumps(selection))
+    monkeypatch.setenv("MODEL", SECOND)
+    calls = fake_cli(
+        tmp_path,
+        monkeypatch,
+        "if len(calls) == 1:\n"
+        "    Path('feature.py').write_text('value = 17\\n')\n"
+        "else:\n"
+        "    assert Path('feature.py').read_text() == 'value = 17\\n'\n"
+        "    Path('tests/test_feature.py').write_text('from feature import value\\n\\ndef test_value():\\n    assert value == 17\\n')\n"
+        "valid()",
+    )
+    assert runner.run_generation(root, temp, "implement", SECOND)["status"] == "success"
+    assert json.loads(calls.read_text()) == [SECOND, SECOND]
+    diagnostics(temp)
+
+
+def test_completion_rechecks_policy_after_the_second_process(tmp_path, monkeypatch):
+    root, temp = setup_runtime(tmp_path, monkeypatch)
+    calls = fake_cli(
+        tmp_path,
+        monkeypatch,
+        "if len(calls) == 1:\n"
+        "    Path('feature.py').write_text('value = 17\\n')\n"
+        "else:\n"
+        "    changed()\n"
+        "    Path('foreign.py').write_text(PRIVATE)\n"
+        "valid()",
+    )
+    report = fails(root, temp, "foreign_path_changed")
+    assert json.loads(calls.read_text()) == [FIRST, FIRST]
+    assert report["attempts"][1]["code"] == "foreign_path_changed"
+    assert (root / "foreign.py").read_text() == PRIVATE
+
+
+def test_provider_error_during_completion_cannot_start_an_alternative(tmp_path, monkeypatch):
+    root, temp = setup_runtime(tmp_path, monkeypatch)
+    calls = fake_cli(
+        tmp_path,
+        monkeypatch,
+        "if len(calls) == 1:\n"
+        "    Path('feature.py').write_text('value = 17\\n')\n"
+        "    valid()\n"
+        "else:\n"
+        "    assert Path('feature.py').read_text() == 'value = 17\\n'\n"
+        "    emit({'type': 'error', 'error': {'message': PRIVATE}})",
+    )
+    report = fails(root, temp, "provider_error")
+    assert json.loads(calls.read_text()) == [FIRST, FIRST]
+    assert [attempt["code"] for attempt in report["attempts"]] == [
+        "required_missing",
+        "provider_error",
+    ]
+    assert (root / "feature.py").read_text() == "value = 17\n"
+
+
+def test_incomplete_provider_fallback_cannot_get_a_third_completion(tmp_path, monkeypatch):
+    root, temp = setup_runtime(tmp_path, monkeypatch)
+    calls = fake_cli(
+        tmp_path,
+        monkeypatch,
+        "assert sys.stdin.read() == PRIVATE\n"
+        "if len(calls) == 1:\n"
+        "    Path('feature.py').write_text('partial = 8\\n')\n"
+        "    emit({'type': 'error', 'error': {'message': PRIVATE}})\n"
+        "else:\n"
+        "    assert Path('feature.py').read_text() == 'value = 0\\n'\n"
+        "    Path('feature.py').write_text('value = 17\\n')\n"
+        "    valid()",
+    )
+    report = fails(root, temp, "required_missing")
+    assert json.loads(calls.read_text()) == [FIRST, SECOND]
+    assert [attempt["phase"] for attempt in report["attempts"]] == ["initial", "fallback"]
+    assert report["attempts"][0]["scoped_rollback"] is True
+
+
+@pytest.mark.parametrize(
+    "mutation,expected",
+    [
+        ("foreign", "foreign_path_changed"),
+        ("agent", "agent_changed"),
+        ("input", "input_changed"),
+    ],
+)
+def test_normal_partial_response_with_changed_policy_never_gets_completion(
+    tmp_path, monkeypatch, mutation, expected
+):
+    root, temp = setup_runtime(tmp_path, monkeypatch)
+    target = {
+        "foreign": root / "foreign.py",
+        "agent": root / runner.AGENT_PATH,
+        "input": temp / "task-context.json",
+    }[mutation]
+    calls = fake_cli(
+        tmp_path,
+        monkeypatch,
+        "Path('feature.py').write_text('value = 17\\n')\n"
+        f"Path({str(target)!r}).write_text(PRIVATE)\nvalid()",
+    )
+    report = fails(root, temp, expected)
+    assert json.loads(calls.read_text()) == [FIRST]
+    assert len(report["attempts"]) == 1
+    assert target.read_text() == PRIVATE
+
+
+def test_completion_keeps_original_boundary_for_cumulative_change_limits(tmp_path, monkeypatch):
+    root, temp = setup_runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(runner, "MAX_CHANGED_LINES", 4)
+    calls = fake_cli(
+        tmp_path,
+        monkeypatch,
+        "if len(calls) == 1:\n"
+        "    Path('feature.py').write_text('value = 17\\n')\n"
+        "else:\n"
+        "    Path('tests/test_feature.py').write_text('from feature import value\\n\\ndef test_value():\\n    assert value == 17\\n    assert isinstance(value, int)\\n')\n"
+        "valid()",
+    )
+    report = fails(root, temp, "candidate_limit")
+    assert json.loads(calls.read_text()) == [FIRST, FIRST]
+    assert report["attempts"][0]["changed_lines"] == 2
+    assert (root / "feature.py").read_text() == "value = 17\n"
+
+
+def test_completion_uses_only_existing_secondary_budget(tmp_path, monkeypatch):
+    root, temp = setup_runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(runner, "MODE_LIMITS", {"implement": (0.8, 1.1)})
+    calls = fake_cli(
+        tmp_path,
+        monkeypatch,
+        "if len(calls) == 1:\n"
+        "    time.sleep(0.2)\n"
+        "    Path('feature.py').write_text('value = 17\\n')\n"
+        "    valid()\n"
+        "else:\n"
+        "    time.sleep(3)",
+    )
+    report = fails(root, temp, "timeout")
+    assert json.loads(calls.read_text()) == [FIRST, FIRST]
+    assert report["attempts"][1]["phase"] == "completion"
+    assert report["attempts"][1]["limit_seconds"] <= 0.3
+    assert report["total_limit_seconds"] == 1.1
+    assert report["elapsed_seconds"] < 1.5
+
+
+@pytest.mark.parametrize("room_for_feedback", [True, False])
+def test_completion_prompt_checks_combined_utf8_bytes_without_overwriting_input(
+    tmp_path, monkeypatch, room_for_feedback
+):
     root, temp = setup_runtime(tmp_path, monkeypatch, second=False)
-    fake_cli(tmp_path, monkeypatch, "Path('feature.py').write_text('value = 2\\n')\nvalid()")
-    fails(root, temp, "required_missing")
+    reserve = 2048 if room_for_feedback else 0
+    prompt = "\U0001f600" * ((runner.MAX_PROMPT_BYTES - reserve) // 4)
+    (temp / "task-prompt.txt").write_text(prompt, encoding="utf-8")
+    received_prompt = tmp_path / "completion-input.txt"
+    calls = fake_cli(
+        tmp_path,
+        monkeypatch,
+        "prompt = sys.stdin.read()\n"
+        "if len(calls) == 1:\n"
+        "    Path('feature.py').write_text('value = 17\\n')\n"
+        "else:\n"
+        f"    Path({str(received_prompt)!r}).write_text(prompt, encoding='utf-8')\n"
+        "    Path('tests/test_feature.py').write_text('from feature import value\\n\\ndef test_value():\\n    assert value == 17\\n')\n"
+        "valid()",
+    )
+    if room_for_feedback:
+        assert runner.run_generation(root, temp, "implement", FIRST)["status"] == "success"
+        received = received_prompt.read_text(encoding="utf-8")
+        assert received.startswith(prompt)
+        assert len(received.encode("utf-8")) <= runner.MAX_PROMPT_BYTES
+        assert "tests/test_feature.py" in received[len(prompt) :]
+        assert json.loads(calls.read_text()) == [FIRST, FIRST]
+    else:
+        fails(root, temp, "prompt_limit")
+        assert json.loads(calls.read_text()) == [FIRST]
+        assert not received_prompt.exists()
+    assert (temp / "task-prompt.txt").read_text(encoding="utf-8") == prompt
+    assert (root / "feature.py").read_text() == "value = 17\n"
+    diagnostics(temp)
 
 
 def test_questions_or_final_text_without_changes_is_not_success(tmp_path, monkeypatch):
     root, temp = setup_runtime(tmp_path, monkeypatch, second=False)
-    fake_cli(tmp_path, monkeypatch, "valid()")
+    calls = fake_cli(tmp_path, monkeypatch, "valid()")
     fails(root, temp, "no_changes")
+    assert json.loads(calls.read_text()) == [FIRST]
 
 
 def test_two_failed_models_do_not_get_a_third_attempt(tmp_path, monkeypatch):

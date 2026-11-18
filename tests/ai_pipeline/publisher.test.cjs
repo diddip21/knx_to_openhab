@@ -54,7 +54,7 @@ function setup(t, number = 89, version = 3, repair = false) {
     mergeable: true, body: '<!-- ai-implementation-command: 40 -->\n<!-- ai-task: ' +
       JSON.stringify(taskReference(item)) + ' -->'};
   const state = {open: repair ? [pr] : [], pr, mutations: [], dispatches: [], blobs: [],
-    head: BASE, afterBlob: null, graphPage: 0, statusComments: []};
+    head: BASE, afterBlob: null, graphPage: 0, statusComments: [], ciRuns: [run]};
   const github = {rest: {
     issues: {get: async () => ({data: issue}), listComments: async () => comments,
       createComment: async args => {state.statusComments.push(args); comments.push({id: 80,
@@ -68,10 +68,19 @@ function setup(t, number = 89, version = 3, repair = false) {
       create: async args => { state.mutations.push(['pr', args]);
         state.pr = {...pr, body: args.body, head: {...pr.head, sha: state.head}};
         state.open.push(state.pr); return {data: state.pr}; }},
-    actions: {getWorkflowRun: async () => ({data: run}),
+    actions: {getWorkflowRun: async args => ({data: state.ciRuns.find(r => r.id === args.run_id) || run}),
+      listWorkflowRuns: async args => state.ciRuns.filter(r =>
+        (!args.branch || r.head_branch === args.branch) && (!args.head_sha || r.head_sha === args.head_sha)),
       listJobsForWorkflowRun: async () => ({data:{jobs:[]}}),
       listWorkflowRunArtifacts: async () => ({data:{artifacts:[{id:90, name:'ui-screenshots-and-reports', expired:false}]}}),
-      createWorkflowDispatch: async args => {state.dispatches.push(args);}},
+      createWorkflowDispatch: async args => {
+        state.dispatches.push(args);
+        if (args.workflow_id !== 'ci.yml') return {data: {workflow_run_id: 9000}};
+        const next = {...run, id: 6000 + state.dispatches.length, head_sha: state.head,
+          head_branch: args.ref, status: 'queued', conclusion: null};
+        state.ciRuns.push(next);
+        return {data: {workflow_run_id: next.id}};
+      }},
     checks: {listForRef: async () => []},
     git: {createBlob: async args => {state.blobs.push(args); if (state.afterBlob) state.afterBlob();
         return {data: {sha: hash(args.content).slice(0, 40)}};},
@@ -82,7 +91,10 @@ function setup(t, number = 89, version = 3, repair = false) {
       getRef: async () => ({data: {object: {sha: state.head}}}),
       updateRef: async args => {state.mutations.push(['update', args]); state.head = args.sha;
         state.pr.head.sha = args.sha;}}
-  }, paginate: async (method, args) => method(args),
+  }, paginate: async (method, args) => {
+    const response = await method(args);
+    return response?.data?.jobs || response?.data?.workflow_runs || response;
+  },
     graphql: async () => ({repository: {pullRequest: {reviewThreads: {
       nodes: [{isResolved: true}], pageInfo: {hasNextPage: false, endCursor: null}
     }}}})};
@@ -116,7 +128,8 @@ for (const [number, version] of [[89, 3], [1234, 5]]) {
     assert.equal(update.force, false);
     assert.equal(update.ref, `heads/ai/issue-${number}-plan-v${version}-run-1000`);
     assert.equal(f.state.mutations.some(([kind]) => kind === 'pr'), false);
-    assert.equal(f.state.dispatches.length, 1);
+    assert.equal(f.state.dispatches.length, 2);
+    assert.equal(f.state.dispatches[1].workflow_id, 'opencode-ci-self-repair.yml');
   });
 }
 
@@ -155,7 +168,7 @@ test('short start is independently verified by the publisher', async t => {
   f.item.command_sha256 = hash(f.comments[3].body);
   f.save();
   await publish(f);
-  assert.equal(f.state.dispatches.length, 1);
+  assert.equal(f.state.dispatches.length, 2);
 });
 
 test('short start cannot silently reuse a legacy unscoped plan', async t => {
@@ -281,6 +294,7 @@ test('source collector uses event issue and branch numbers, never a fixed pilot'
   await fetchSource({...f, directory: f.temp, mode: 'implement'});
   assert.equal(JSON.parse(fs.readFileSync(path.join(f.temp, 'issue-current.json'))).number, 1234);
   f.context.eventName = 'workflow_run';
+  f.context.payload.action = 'completed';
   f.state.open = [f.state.pr];
   await fetchSource({...f, directory: f.temp, mode: 'repair'});
   const source = JSON.parse(fs.readFileSync(path.join(f.temp, 'repair-source.json')));
@@ -307,4 +321,164 @@ test('readiness paginates review threads and reports unresolved threads', async 
   const output = await readiness({...f, directory: f.temp});
   assert.equal(pages, 2);
   assert.equal(output.unresolved_threads, 1);
+});
+
+test('explicit CI continuation reports the actual run and attempt', async t => {
+  const f = setup(t, 1234, 5, true);
+  f.context.eventName = 'workflow_dispatch';
+  f.context.actor = 'github-actions[bot]';
+  f.context.ref = 'refs/heads/main';
+  f.context.payload.inputs = {ci_run_id:'6000', ci_run_attempt:'1', ci_head_sha:BASE};
+  await report(f);
+  assert.match(f.state.statusComments[0].body, /6000, Versuch 1/);
+  assert.match(f.state.statusComments[0].body, /ai-status-ci:6000:1:1/);
+});
+
+test('an older CI attempt cannot overwrite a newer attempt status', async t => {
+  const f = setup(t, 1234, 5, true);
+  await report({...f, phase:'repair-failure'});
+  f.run.run_attempt = 2;
+  f.run.conclusion = 'success';
+  await report(f); // Event still describes attempt 1.
+  assert.equal(f.state.statusComments.length, 1);
+  f.context.payload.workflow_run.run_attempt = 2;
+  await report(f);
+  assert.match(f.state.statusComments[1].body, /CI bestanden/);
+  assert.match(f.state.statusComments[1].body, /ai-status-ci:6000:2:1/);
+});
+
+test('a changed head with no new CI gets a visible continuation failure', async t => {
+  const f = setup(t, 1234, 5, true);
+  f.state.pr.head.sha = RESULT;
+  await report({...f, phase:'continuation-failure'});
+  assert.match(f.state.statusComments[0].body, /KI-Fortsetzung angehalten/);
+  assert.match(f.state.statusComments[0].body, /kein neuer CI-Lauf belegt/);
+  assert.match(f.state.statusComments[0].body, new RegExp(RESULT));
+});
+
+test('a resumed controller cannot be overwritten by an older failure', async t => {
+  const f = setup(t, 1234, 5, true);
+  f.context.eventName = 'workflow_dispatch';
+  f.context.actor = 'github-actions[bot]';
+  f.context.ref = 'refs/heads/main';
+  f.context.payload.inputs = {ci_run_id:'6000', ci_run_attempt:'1', ci_head_sha:BASE};
+  await report({...f, phase:'continuation-failure'});
+  f.context.runId = 2001;
+  await report(f);
+  assert.equal(f.state.statusComments.length, 2);
+  assert.match(f.state.statusComments[1].body, /ai-status-controller:2001/);
+  f.context.runId = 2000;
+  await report({...f, phase:'continuation-failure'});
+  assert.equal(f.state.statusComments.length, 2);
+});
+
+test('a passive observer with a larger run ID cannot hide a real repair failure', async t => {
+  const f = setup(t, 1234, 5, true);
+  await report({...f, controller:true});
+  const observer = {...f.context, runId:3000};
+  await report({...f, context:observer});
+  const observed = f.comments.find(c => c.id === 80).body;
+  assert.match(observed, /ai-status-controller:2000/);
+  assert.doesNotMatch(observed, /ai-status-controller:3000/);
+  await report({...f, controller:true, phase:'repair-failure'});
+  assert.match(f.state.statusComments.at(-1).body, /KI-Reparatur angehalten/);
+  assert.match(f.state.statusComments.at(-1).body, /ai-status-controller:2000/);
+});
+
+test('a passive observer never creates controller lineage or clears a controller stop', async t => {
+  const f = setup(t, 1234, 5, true);
+  await report({...f, context:{...f.context, runId:3000}});
+  assert.doesNotMatch(f.state.statusComments[0].body, /ai-status-controller:/);
+  await report({...f, controller:true, phase:'repair-failure'});
+  assert.match(f.state.statusComments.at(-1).body, /ai-status-ci:6000:1:2/);
+  const writes = f.state.statusComments.length;
+  await report({...f, context:{...f.context, runId:4000}});
+  assert.equal(f.state.statusComments.length, writes);
+});
+
+test('a passive observer preserves controller lineage refreshed during evidence reads', async t => {
+  const f = setup(t, 1234, 5, true);
+  f.context.runId = 3000;
+  f.github.rest.pulls.listCommits = async () => {
+    f.comments.push({id:80, user:{login:'github-actions[bot]'}, body:
+      '<!-- ai-workflow-status:40 -->\n<!-- ai-status-ci:6000:1:1 -->\n' +
+      '<!-- ai-status-controller:2001 -->\nController began during observation'});
+    return [];
+  };
+  await report(f);
+  assert.equal(f.state.statusComments.length, 1);
+  assert.match(f.state.statusComments[0].body, /ai-status-controller:2001/);
+  assert.doesNotMatch(f.state.statusComments[0].body, /ai-status-controller:3000/);
+});
+
+test('continuation dispatch failure reports the newly started CI identity', async t => {
+  const f = setup(t, 1234, 5, true);
+  f.state.pr.head.sha = RESULT;
+  f.state.ciRuns.push({...f.run, id:6001, head_sha:RESULT, status:'queued', conclusion:null});
+  await report({...f, phase:'repair-failure', recovery:{
+    ci_run_id:'6001', ci_run_attempt:'1', ci_head_sha:RESULT
+  }});
+  assert.equal(f.state.statusComments.length, 1);
+  assert.match(f.state.statusComments[0].body, /6001, Versuch 1/);
+  assert.doesNotMatch(f.state.statusComments[0].body, /kein neuer CI-Lauf belegt/);
+  assert.match(f.state.statusComments[0].body, /Fortsetzung mit ihrer Run-ID/);
+});
+
+test('failure cannot use recovery evidence from an outdated CI run', async t => {
+  const f = setup(t, 1234, 5, true);
+  f.state.pr.head.sha = RESULT;
+  f.state.ciRuns.push(...[6001,6002].map(id => ({...f.run, id, head_sha:RESULT})));
+  await report({...f, phase:'repair-failure', recovery:{
+    ci_run_id:'6001', ci_run_attempt:'1', ci_head_sha:RESULT
+  }});
+  assert.equal(f.state.statusComments.length, 0);
+});
+
+test('status refuses CI evidence superseded while preparing the comment', async t => {
+  const f = setup(t, 1234, 5, true);
+  f.github.rest.pulls.listCommits = async () => {
+    f.state.ciRuns.push({...f.run, id:6001, status:'queued', conclusion:null});
+    return [];
+  };
+  await report(f);
+  assert.equal(f.state.statusComments.length, 0);
+});
+
+test('status rereads a newer controller comment immediately before writing', async t => {
+  const f = setup(t, 1234, 5, true);
+  f.github.rest.pulls.listCommits = async () => {
+    f.comments.push({id:80, user:{login:'github-actions[bot]'}, body:
+      '<!-- ai-workflow-status:40 -->\n<!-- ai-status-ci:6000:1:1 -->\n' +
+      '<!-- ai-status-controller:2001 -->\nNewer controller status'});
+    return [];
+  };
+  await report({...f, phase:'continuation-failure'});
+  assert.equal(f.state.statusComments.length, 0);
+});
+
+test('readiness selects newest dispatched CI rather than unrelated green checks', async t => {
+  const f = setup(t, 1234, 5, true);
+  f.state.ciRuns.push({...f.run, id:6001, status:'queued', conclusion:null});
+  const output = await readiness({...f, directory:f.temp});
+  assert.equal(output.ci.id, 6001);
+  assert.equal(output.ci.status, 'queued');
+  assert.deepEqual(output.ci.jobs, []);
+});
+
+test('readiness refuses a PR whose head changes while evidence is collected', async t => {
+  const f = setup(t, 1234, 5, true);
+  let reads = 0;
+  f.github.rest.pulls.get = async () => ({data: {
+    ...structuredClone(f.state.pr),
+    head:{...f.state.pr.head, sha:reads++ ? RESULT : BASE}
+  }});
+  await assert.rejects(() => readiness({...f, directory:f.temp}), /PR or CI changed/);
+  assert.equal(fs.existsSync(path.join(f.temp,'merge-readiness-snapshot.json')), false);
+});
+
+test('readiness refuses a new CI attempt started during evidence collection', async t => {
+  const f = setup(t, 1234, 5, true);
+  let reads = 0;
+  f.github.rest.actions.listWorkflowRuns = async () => [{...f.run, run_attempt:++reads === 1 ? 1 : 2}];
+  await assert.rejects(() => readiness({...f, directory:f.temp}), /PR or CI changed/);
 });

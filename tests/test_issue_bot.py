@@ -143,9 +143,10 @@ def test_publish_workflow_revalidates_live_issue_digest_before_label_changes():
     workflow = (
         Path(__file__).resolve().parents[1] / ".github" / "workflows" / "opencode-issue-planner.yml"
     ).read_text(encoding="utf-8")
-    digest_check = workflow.index("liveDigest = crypto.createHash('sha256')")
-    approval_label = workflow.index("labels: ['ai:approved']")
-    waiting_label = workflow.index("labels: ['ai:waiting']")
+    publication = workflow[workflow.index("- name: Publish plan, questions or approval") :]
+    digest_check = publication.index("liveDigest = crypto.createHash('sha256')")
+    approval_label = publication.index("labels: ['ai:approved']")
+    waiting_label = publication.index("labels: ['ai:waiting']")
 
     assert "details.data.title ?? ''" in workflow
     assert "details.data.body ?? ''" in workflow
@@ -343,7 +344,7 @@ def test_model_text_requires_schema():
 def test_model_plan_minimum_length_uses_normalized_markdown(markdown):
     response = json.dumps({"kind": "plan", "markdown": markdown})
 
-    with pytest.raises(ValueError, match="valid JSON plan/questions response"):
+    with pytest.raises(ValueError, match="markdown_too_short"):
         bot.parse_model_text(response)
 
 
@@ -352,3 +353,88 @@ def test_model_plan_is_stripped_before_publication():
     response = json.dumps({"kind": "plan", "markdown": markdown})
 
     assert bot.parse_model_text(response) == {"kind": "plan", "markdown": "x" * 20}
+
+
+def test_provider_error_event_is_not_misreported_as_invalid_json(tmp_path):
+    events = tmp_path / "events.jsonl"
+    events.write_text(
+        json.dumps({"type": "error", "error": {"message": "provider-private-detail"}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="provider_error") as caught:
+        bot.read_model_events(events)
+
+    assert "provider-private-detail" not in str(caught.value)
+
+
+def test_non_object_events_do_not_crash_the_response_reader(tmp_path):
+    events = tmp_path / "events.jsonl"
+    events.write_text(
+        "[]\nnull\n" + json.dumps({"type": "text", "part": {"text": "answer"}}),
+        encoding="utf-8",
+    )
+
+    assert bot.read_model_events(events) == "answer"
+
+
+def test_oversized_markdown_reports_the_actual_length():
+    response = json.dumps({"kind": "plan", "markdown": "x" * 16001})
+
+    with pytest.raises(ValueError, match="markdown_too_long.*16001"):
+        bot.parse_model_text(response)
+
+
+def test_json_with_an_unrelated_root_cannot_smuggle_a_nested_plan():
+    response = json.dumps({"payload": {"kind": "plan", "markdown": "x" * 30}})
+
+    with pytest.raises(ValueError, match="invalid_schema"):
+        bot.parse_model_text(response)
+
+
+def test_new_plan_prompt_states_markdown_limit():
+    assert "16000" in bot.make_prompt(decide("issues", "labeled"))
+
+
+def test_approval_refuses_an_old_plan_after_a_failed_replanning_request():
+    comments = [
+        state_comment(),
+        {"id": 11, "user": {"login": "diddip21"}, "body": "/ai answer Compare existing PRs"},
+    ]
+
+    result = decide("issue_comment", "created", "/ai approve v1", comments=comments)
+
+    assert result["operation"] == "notice"
+    assert "Neuplanung" in result["comment"]
+
+
+def test_label_retry_preserves_pending_owner_guidance():
+    comments = [
+        state_comment(),
+        {"id": 11, "user": {"login": "diddip21"}, "body": "/ai answer Compare existing PRs"},
+    ]
+
+    result = decide("issues", "labeled", comments=comments)
+
+    assert result["answer"] == "Compare existing PRs"
+
+
+def test_prepare_binds_plan_publication_to_current_request_and_previous_plan(tmp_path, monkeypatch):
+    previous = state_comment()
+    comment = {"id": 11, "user": {"login": "diddip21"}, "body": "/ai answer Compare PRs"}
+    event_path = tmp_path / "event.json"
+    event_path.write_text(json.dumps({"action": "created", "issue": issue(), "comment": comment}))
+    (tmp_path / "issue-comments.json").write_text(json.dumps([previous, comment]))
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "issue_comment")
+    monkeypatch.setenv("GITHUB_ACTOR", "diddip21")
+    monkeypatch.setenv("GITHUB_REPOSITORY_OWNER", "diddip21")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
+
+    bot.prepare(tmp_path)
+
+    snapshot = json.loads((tmp_path / "issue-decision.json").read_text())["planning_snapshot"]
+    assert snapshot["previous_plan_id"] == 10
+    assert snapshot["trigger_comment_id"] == snapshot["latest_answer_id"] == 11
+    assert snapshot["trigger_comment_sha256"] == snapshot["latest_answer_sha256"]
+    assert len(snapshot["previous_plan_sha256"]) == 64

@@ -19,7 +19,11 @@ def test_generator_and_publisher_are_separate_and_do_not_merge(name):
     definition = yaml.safe_load(text)
     generation = "implement" if name == "ai-issue-implement.yml" else "repair"
     assert definition["permissions"] == {}
-    assert definition["jobs"]["publish"]["needs"] == generation
+    dependencies = definition["jobs"]["publish"]["needs"]
+    dependencies = [dependencies] if isinstance(dependencies, str) else dependencies
+    assert generation in dependencies
+    if generation == "repair":
+        assert "route" in dependencies
     assert all(value == "read" for value in definition["jobs"][generation]["permissions"].values())
     assert definition["jobs"]["publish"]["permissions"]["contents"] == "write"
     assert "python -I ../trusted/scripts/" in text
@@ -32,7 +36,7 @@ def test_generator_and_publisher_are_separate_and_do_not_merge(name):
     publisher = (ROOT / "scripts/automation/github.cjs").read_text(encoding="utf-8")
     assert "force: false" in publisher
     assert "head, base: 'dev', draft: true" in publisher
-    assert "createWorkflowDispatch" in publisher
+    assert "dispatchCiAndContinuation" in publisher
     assert "pulls.merge" not in publisher and "autoMerge" not in publisher
 
 
@@ -50,10 +54,32 @@ def test_implementation_requires_live_owner_scope_on_development_source():
 
 def test_repair_remains_bounded_to_explicit_failed_ci_and_exact_commit():
     text = workflow("opencode-ci-self-repair.yml")
+    definition = yaml.safe_load(text)
     assert "workflow_run:" in text and 'workflows: ["CI"]' in text
     assert "github.event.workflow_run.event == 'workflow_dispatch'" in text
     assert "github.event.workflow_run.head_repository.full_name == github.repository" in text
-    assert "ref: ${{ github.event.workflow_run.head_sha }}" in text
+    assert "workflow_dispatch:" in text
+    assert all(name in text for name in ("ci_run_id:", "ci_run_attempt:", "ci_head_sha:"))
+    route = definition["jobs"]["route"]
+    assert route["permissions"]["contents"] == "read"
+    assert route["permissions"]["actions"] == "write"
+    assert "github.event.repository.default_branch" in route["if"]
+    assert "github.actor == github.repository_owner" in route["if"]
+    for step in route["steps"]:
+        assert "run" not in step
+        if step.get("uses", "").startswith("actions/checkout"):
+            assert step["with"]["ref"] == "${{ github.event.repository.default_branch }}"
+            assert step["with"]["persist-credentials"] is False
+    assert definition["jobs"]["repair"]["needs"] == "route"
+    for job in ("repair", "publish"):
+        candidates = [
+            step
+            for step in definition["jobs"][job]["steps"]
+            if step.get("uses", "").startswith("actions/checkout")
+            and step.get("with", {}).get("path") in {"candidate", "target"}
+        ]
+        assert len(candidates) == 1
+        assert candidates[0]["with"]["ref"] == "${{ needs.route.outputs.head_sha }}"
     assert "ci_repair.py recheck" in text
     assert "git restore --source=HEAD --worktree -- .opencode/agents/ai-task.md" in text
 
@@ -109,6 +135,13 @@ def test_planner_and_shared_application_ci_keep_existing_roles():
     text = workflow("opencode-issue-planner.yml")
     assert "ref: dev" in text and "../trusted/scripts/issue_bot.py prepare" in text
     ci = workflow("ci.yml")
+    definition = yaml.safe_load(ci)
+    assert all(value == "read" for value in definition["permissions"].values())
+    assert all(
+        value == "read"
+        for job in definition["jobs"].values()
+        for value in job.get("permissions", {}).values()
+    )
     assert 'python-version: ["3.11", "3.12", "3.13"]' in ci
     assert "--browser=chromium" in ci
     assert 'SAVE_UI_SCREENSHOTS: "1"' in ci

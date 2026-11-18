@@ -4,6 +4,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const {dispatchCiAndContinuation, resolveSource, sourceIdentity} = require('./continuation.cjs');
+const {latestDispatchedRun} = require('./ci_evidence.cjs');
 const branchPattern = /^ai\/issue-([1-9][0-9]*)-plan-v([1-9][0-9]*)-run-([1-9][0-9]*)$/;
 const hash = value => crypto.createHash('sha256').update(value, 'utf8').digest('hex');
 const unedited = c => c && c.created_at === c.updated_at;
@@ -35,15 +37,10 @@ async function fetchSource({github, context, directory, mode}) {
     return source;
   }
   if (mode !== 'repair') throw new Error('Unknown source mode');
-  const expected = context.payload.workflow_run;
-  const match = branchPattern.exec(expected?.head_branch || '');
-  if (context.eventName !== 'workflow_run' || !match) throw new Error('Invalid repair event');
-  const {data: run} = await github.rest.actions.getWorkflowRun({...repo, run_id: expected.id});
-  const open = await github.paginate(github.rest.pulls.list,
-    {...repo, state: 'open', head: `${repo.owner}:${expected.head_branch}`, per_page: 100});
-  const prs = open.filter(p => p.head.ref === expected.head_branch && p.base.ref === 'dev');
-  if (prs.length !== 1) throw new Error('Exactly one matching development PR is required');
-  const pr = prs[0];
+  const current = await resolveSource({github, context});
+  if (!current) throw new Error('The CI source is superseded or no longer has a matching open AI PR');
+  const {run, pr} = current;
+  const match = branchPattern.exec(run.head_branch);
   const source = await history(github, repo, Number(match[1]));
   const commits = await github.paginate(github.rest.pulls.listCommits,
     {...repo, pull_number: pr.number, per_page: 100});
@@ -101,6 +98,10 @@ async function assertLiveApproval(github, repo, item) {
       latest.state.version !== item.version || latest.state.issue_digest !== item.digest) {
     throw new Error('A newer or different plan is pending');
   }
+  if (comments.some(c => c.id > plan.id && isOwner(c) &&
+      /^\/ai answer\s+\S[\s\S]*$/i.test(String(c.body || '').trim()))) {
+    throw new Error('An owner replan request supersedes this approval');
+  }
   if (!comments.some(c => c.id > approval.id && c.id < command.id && unedited(c) &&
       c.user?.login === 'github-actions[bot]' &&
       c.body.startsWith(`\u2705 **Plan v${item.version} freigegeben.**`))) {
@@ -128,11 +129,12 @@ function validateVerified(item, context, mode) {
     throw new Error('Implementation event does not match verified owner command');
   }
   if (mode === 'repair') {
-    const expected = context.payload.workflow_run;
+    const expected = sourceIdentity(context);
     const match = branchPattern.exec(item.branch || '');
     if (!match || Number(match[1]) !== item.issue_number || Number(match[2]) !== item.version ||
-        expected?.head_branch !== item.branch || expected.head_sha !== item.base_commit_sha ||
-        expected.id !== item.failed_run_id || ![1, 2].includes(item.attempt)) {
+        (expected.branch && expected.branch !== item.branch) || expected.sha !== item.base_commit_sha ||
+        expected.id !== item.failed_run_id || expected.attempt !== item.failed_run_attempt ||
+        ![1, 2].includes(item.attempt)) {
       throw new Error('Invalid verified repair metadata');
     }
   }
@@ -176,8 +178,13 @@ async function assertHead(github, repo, item, mode, defaultBranch) {
   const {data: run} = await github.rest.actions.getWorkflowRun({...repo, run_id: item.failed_run_id});
   if (run.run_attempt !== item.failed_run_attempt || run.status !== 'completed' ||
       run.conclusion !== 'failure' || run.head_sha !== item.base_commit_sha ||
-      run.path !== '.github/workflows/ci.yml' || run.event !== 'workflow_dispatch') {
+      run.head_branch !== item.branch || run.head_repository?.full_name !== item.repository ||
+      run.name !== 'CI' || run.path !== '.github/workflows/ci.yml' || run.event !== 'workflow_dispatch') {
     throw new Error('CI run changed before repair');
+  }
+  const latest = await latestDispatchedRun({github, repo, branch: item.branch, headSha: item.base_commit_sha});
+  if (!latest || latest.id !== run.id || latest.run_attempt !== run.run_attempt) {
+    throw new Error('A newer dispatched CI run supersedes this repair');
   }
 }
 
@@ -203,7 +210,7 @@ async function publish({github, context, core, verifiedPath, mode}) {
         throw new Error(`An implementation PR for this plan already exists: #${existing.number}`);
       }
       // A rerun of the same command resumes CI, never republishes or overwrites code.
-      await github.rest.actions.createWorkflowDispatch({...repo, workflow_id: 'ci.yml', ref: head});
+      await dispatchCiAndContinuation({github, context, core, branch: head, headSha: existing.head.sha});
       core.info(`Existing Draft PR #${existing.number}; CI resumed without code changes`);
       return {pr: existing.number, reused: true};
     }
@@ -242,8 +249,8 @@ async function publish({github, context, core, verifiedPath, mode}) {
         `Run: https://github.com/${item.repository}/actions/runs/${context.runId}`});
     prNumber = pr.number;
   }
-  await github.rest.actions.createWorkflowDispatch({...repo, workflow_id: 'ci.yml', ref: head});
-  core.info(`Published ${mode} to PR #${prNumber}; full CI explicitly dispatched`);
+  await dispatchCiAndContinuation({github, context, core, branch: head, headSha: commit.sha});
+  core.info(`Published ${mode} to PR #${prNumber}; full CI and trusted continuation explicitly dispatched`);
   await core.summary.addRaw(`PR #${prNumber}: ${mode}, commit ${commit.sha}. No merge performed.\n`).write();
   return {pr: prNumber, sha: commit.sha, reused: false};
 }

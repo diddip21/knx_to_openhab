@@ -46,6 +46,29 @@ def snapshot(number=89, version=3):
         },
         "issue": issue,
         "issue_comments": comments,
+        "ci": {
+            "id": 6000,
+            "run_attempt": 1,
+            "head_sha": sha,
+            "head_branch": f"ai/issue-{number}-plan-v{version}-run-1000",
+            "head_repo": f"{OWNER}/sample",
+            "event": "workflow_dispatch",
+            "path": ".github/workflows/ci.yml",
+            "status": "completed",
+            "conclusion": "success",
+            "jobs": [
+                {
+                    "id": n,
+                    "name": name,
+                    "head_sha": sha,
+                    "run_id": 6000,
+                    "run_attempt": 1,
+                    "status": "completed",
+                    "conclusion": "success",
+                }
+                for n, name in enumerate(readiness.REQUIRED_CI, 1)
+            ],
+        },
         "checks": [
             {
                 "id": n,
@@ -108,11 +131,11 @@ def test_missing_or_stale_evidence_never_passes(change):
     elif change == "main":
         data["pr"]["base_ref"] = "main"
     elif change == "stale_checks":
-        data["checks"][0]["head_sha"] = "c" * 40
+        data["ci"]["jobs"][0]["head_sha"] = "c" * 40
     elif change in {"failed", "skipped"}:
-        data["checks"][0]["conclusion"] = "failure" if change == "failed" else "skipped"
+        data["ci"]["jobs"][0]["conclusion"] = "failure" if change == "failed" else "skipped"
     elif change == "fake_app":
-        data["checks"][0]["app_slug"] = "another-app"
+        data["ci"]["path"] = ".github/workflows/unrelated.yml"
     elif change == "no_approval":
         data["reviews"] = []
     elif change == "bot_review":
@@ -150,9 +173,9 @@ def test_ui_evidence_follows_file_changes_for_every_issue(number):
     assert statuses(data)["UI-Belege"] == "OPEN"
 
 
-def test_later_failed_check_overrides_success_even_with_equal_timestamps():
+def test_duplicate_job_names_cannot_hide_failed_job():
     data = snapshot()
-    data["checks"].append({**data["checks"][0], "id": 100, "conclusion": "failure"})
+    data["ci"]["jobs"].append({**data["ci"]["jobs"][0], "id": 100, "conclusion": "failure"})
     assert statuses(data)["CI am aktuellen Commit"] == "OPEN"
 
 
@@ -166,6 +189,47 @@ def test_plain_review_comment_does_not_revoke_real_approval():
 
 def test_unknown_snapshot_fails_closed():
     assert any(state != "PASS" for state in statuses({}).values())
+
+
+def test_unrelated_green_check_names_cannot_replace_verified_ci_run():
+    data = snapshot()
+    data.pop("ci", None)
+    assert statuses(data)["CI am aktuellen Commit"] == "OPEN"
+
+
+def test_failed_dispatch_without_jobs_cannot_inherit_older_green_checks():
+    data = snapshot()
+    data["ci"] = {
+        "id": 6000,
+        "run_attempt": 2,
+        "head_sha": data["pr"]["head_sha"],
+        "status": "completed",
+        "conclusion": "failure",
+        "jobs": [],
+    }
+    assert statuses(data)["CI am aktuellen Commit"] == "OPEN"
+
+
+@pytest.mark.parametrize("key,value", [("run_id", 5999), ("run_attempt", 2)])
+def test_jobs_from_another_run_or_attempt_cannot_fill_missing_gate(key, value):
+    data = snapshot()
+    data["ci"]["jobs"][0][key] = value
+    assert statuses(data)["CI am aktuellen Commit"] == "OPEN"
+
+
+def test_completed_audit_may_report_pending_review_without_claiming_ready(tmp_path, monkeypatch):
+    data = snapshot()
+    data["reviews"] = []
+    source, report = tmp_path / "snapshot.json", tmp_path / "report.json"
+    source.write_text(json.dumps(data))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["readiness", "--snapshot", str(source), "--report", str(report), "--allow-open"],
+    )
+    assert readiness.main() == 0
+    assert json.loads(report.read_text())["ready"] is False
+    assert "Noch nicht merge-ready" in report.with_suffix(".md").read_text()
 
 
 def test_report_has_current_sha_and_nonzero_exit_for_open_gate(tmp_path, monkeypatch):

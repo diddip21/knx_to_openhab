@@ -292,8 +292,17 @@ def _generate(project, general):
 
 
 def _base_general():
+    """Return a config without the optional HomeKit overrides.
+
+    ``config.json`` may ship explicit defaults for the rollershutter options,
+    so remove them to exercise the missing-key fallback that existing user
+    configurations rely on.
+    """
     general = deepcopy(config["general"])
     general.pop("homekit_enabled", None)
+    general.pop(KEY_EXTENTS, None)
+    general.pop(KEY_STOP, None)
+    general.pop(KEY_STOP_SAME_DIRECTION, None)
     return general
 
 

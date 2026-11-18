@@ -1,0 +1,106 @@
+name: AI planner diagnostic (unpublished)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ai-planner-diagnostic.yml"
+      - "scripts/automation/planner_diagnostic.py"
+      - "scripts/automation/diagnostic_request.cjs"
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue context to replay without publishing or changing approval'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: planner-diagnostic-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    if: >-
+      github.actor == github.repository_owner &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login == github.repository_owner))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout diagnostic harness without credentials
+        uses: actions/checkout@v7
+        with:
+          path: harness
+          persist-credentials: false
+      - name: Checkout trusted current controllers
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted
+          persist-credentials: false
+      - name: Checkout development source read-only
+        uses: actions/checkout@v7
+        with:
+          ref: dev
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check current ancestry and planner policy
+        working-directory: candidate
+        run: |
+          git merge-base --is-ancestor "$(git -C ../trusted rev-parse HEAD)" HEAD
+          cmp ../trusted/opencode.jsonc opencode.jsonc
+          cmp ../trusted/.opencode/agents/issue-planner.md .opencode/agents/issue-planner.md
+          cmp ../trusted/.opencode/agents/ci-smoke.md .opencode/agents/ci-smoke.md
+      - name: Read current issue and PR context without modifying GitHub
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('node:fs');
+            const {diagnosticIssue} = require(process.env.GITHUB_WORKSPACE + '/harness/scripts/automation/diagnostic_request.cjs');
+            const number = diagnosticIssue(context);
+            const repo = {owner:context.repo.owner, repo:context.repo.repo};
+            const {data:issue} = await github.rest.issues.get({...repo, issue_number:number});
+            if (issue.state !== 'open' || issue.pull_request) throw new Error('Open issue required');
+            const comments = await github.paginate(github.rest.issues.listComments, {...repo, issue_number:number, per_page:100});
+            if (comments.length > 2000) throw new Error('Issue history exceeds diagnostic limit');
+            const {planningContext} = require(process.env.GITHUB_WORKSPACE + '/trusted/scripts/automation/planning.cjs');
+            const related = await planningContext({github,context:{...context,issue:{number}}});
+            const source = {issue,comments,related};
+            fs.writeFileSync(process.env.RUNNER_TEMP + '/planner-diagnostic-source.json', JSON.stringify(source));
+      - name: Prepare private replay
+        working-directory: candidate
+        run: python -I ../harness/scripts/automation/planner_diagnostic.py prepare ../trusted
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Install pinned OpenCode
+        run: npm install --global "@opencode/cli@$(cat trusted/.github/opencode-cli-version)"
+      - name: Probe approved free models
+        id: model
+        working-directory: candidate
+        run: python ../trusted/scripts/opencode_model_router.py select --task plan --report "$RUNNER_TEMP/model-router.json"
+      - name: Replay trusted planner without publication
+        working-directory: candidate
+        env:
+          MODEL: ${{ steps.model.outputs.model }}
+        run: python -I ../harness/scripts/automation/planner_diagnostic.py run ../trusted
+      - name: Verify development files were not changed
+        if: always()
+        working-directory: candidate
+        run: git diff --exit-code HEAD
+      - name: Retain only content-free diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: planner-replay-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/planner-diagnostics.json
+            ${{ runner.temp }}/model-router.json
+          if-no-files-found: ignore
+          retention-days: 7

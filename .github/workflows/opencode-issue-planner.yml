@@ -136,6 +136,17 @@ jobs:
           set -euo pipefail
           python ../trusted/scripts/opencode_model_router.py select --task plan --report "$RUNNER_TEMP/model-router.json"
 
+      - name: Preserve content-free model selection diagnostics
+        if: >-
+          always() && (steps.model.outcome == 'success' ||
+          steps.model.outcome == 'failure' || steps.model.outcome == 'cancelled')
+        uses: actions/upload-artifact@v7
+        with:
+          name: ai-model-selection-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/model-router.json
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Generate plan with selected free model
         if: steps.decision.outputs.operation == 'plan'
         working-directory: candidate
@@ -154,7 +165,6 @@ jobs:
           name: ai-planner-diagnostics-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/planner-diagnostics.json
-            ${{ runner.temp }}/model-router.json
           if-no-files-found: ignore
           retention-days: 7
 

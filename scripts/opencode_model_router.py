@@ -29,7 +29,30 @@ DISCOVERY_TIMEOUT = 50
 PROBE_TIMEOUT = 110
 MAX_CAPTURE = 1_500_000
 MODEL_LINE = re.compile(r"^opencode/[a-z0-9][a-z0-9.-]*-free$")
+CATALOG_LINE = re.compile(r"^[a-z0-9][a-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._:/-]*$")
 MARKER = re.compile(r"(?m)^ROUTER_OK\s*$")
+DISCOVERY_FAILURES = {
+    "empty_catalog",
+    "no_approved_models",
+    "discovery_timeout",
+    "discovery_cli_error",
+    "discovery_output_limit",
+    "discovery_invalid_output",
+}
+
+
+class RouterError(RuntimeError):
+    """Only fixed controller-owned codes may leave a failed command."""
+
+    def __init__(self, code: str) -> None:
+        self.code = code if code in DISCOVERY_FAILURES else "router_error"
+        super().__init__(self.code)
+
+
+def byte_count(value: Any) -> int:
+    if isinstance(value, bytes):
+        return len(value)
+    return len(value.encode("utf-8")) if isinstance(value, str) else 0
 
 
 def isolated_environment() -> dict[str, str]:
@@ -56,27 +79,91 @@ def parse_catalog(stdout: str) -> set[str]:
     return {line.strip() for line in stdout.splitlines() if MODEL_LINE.fullmatch(line.strip())}
 
 
-def discover_models() -> set[str]:
+def discover_models(diagnostics: dict[str, Any] | None = None) -> set[str]:
+    """Use V2's native catalog command, with at most one fresh retry.
+
+    No catalog text, unapproved model identifiers, stderr or exception strings
+    enter diagnostics. An unusable catalog gets one fresh attempt because V2
+    can initially serve its bundled catalog while refreshing it asynchronously.
+    """
     environment = isolated_environment()
-    errors = []
-    for cmd in (["opencode", "models", "opencode", "--refresh"], ["opencode", "models"]):
+    trace = diagnostics if diagnostics is not None else {}
+    trace.update(attempts=[], catalog_count=0, approved_count=0, status="failure")
+    code = "empty_catalog"
+    for number in (1, 2):
+        start = time.monotonic()
+        record: dict[str, Any] = {
+            "attempt": number,
+            "exit_code": None,
+            "stdout_bytes": 0,
+            "stderr_bytes": 0,
+            "catalog_count": 0,
+            "approved_count": 0,
+        }
+        approved: set[str] = set()
         try:
             result = subprocess.run(
-                cmd,
+                ["opencode", "models", "--standalone"],
+                input="",
                 capture_output=True,
                 text=True,
                 check=False,
                 timeout=DISCOVERY_TIMEOUT,
                 env=environment,
             )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            errors.append(type(exc).__name__)
-            continue
-        if result.returncode == 0:
-            # An empty catalog is not an excuse to select a cached or paid model.
-            return parse_catalog(result.stdout) & set(APPROVED_FREE_MODELS)
-        errors.append(f"catalog command exit status {result.returncode}")
-    raise RuntimeError("OpenCode model discovery failed: " + ", ".join(errors))
+        except subprocess.TimeoutExpired as error:
+            code = "discovery_timeout"
+            record.update(
+                stdout_bytes=byte_count(error.output), stderr_bytes=byte_count(error.stderr)
+            )
+        except OSError:
+            code = "discovery_cli_error"
+        except UnicodeError:
+            code = "discovery_invalid_output"
+        else:
+            record.update(
+                exit_code=result.returncode,
+                stdout_bytes=byte_count(result.stdout),
+                stderr_bytes=byte_count(getattr(result, "stderr", "")),
+            )
+            if result.returncode != 0:
+                code = "discovery_cli_error"
+            elif record["stdout_bytes"] + record["stderr_bytes"] > MAX_CAPTURE:
+                code = "discovery_output_limit"
+            else:
+                catalog = {
+                    line.strip()
+                    for line in result.stdout.splitlines()
+                    if CATALOG_LINE.fullmatch(line.strip())
+                }
+                approved = parse_catalog(result.stdout) & set(APPROVED_FREE_MODELS)
+                record.update(catalog_count=len(catalog), approved_count=len(approved))
+                code = (
+                    "catalog_ready"
+                    if approved
+                    else "no_approved_models" if catalog else "empty_catalog"
+                )
+        record.update(code=code, elapsed_seconds=round(time.monotonic() - start, 2))
+        trace["attempts"].append(record)
+        trace.update(
+            code=code,
+            catalog_count=record["catalog_count"],
+            approved_count=len(approved),
+            status="success" if approved else "failure",
+        )
+        print(
+            f"Router discovery: attempt={number}, code={code}, exit_code={record['exit_code']}, "
+            f"catalog_count={record['catalog_count']}, approved_count={len(approved)}, "
+            f"seconds={record['elapsed_seconds']}",
+            flush=True,
+        )
+        if approved:
+            return approved
+        if code in {"discovery_output_limit", "discovery_invalid_output"}:
+            break
+    if code in {"empty_catalog", "no_approved_models"}:
+        return set()
+    raise RouterError(code)
 
 
 def probe_prompt(task: str) -> str:
@@ -101,26 +188,69 @@ def probe_prompt(task: str) -> str:
 def inspect_events(output: str, task: str, seconds: float) -> dict[str, Any]:
     """Score observable tool use, a small fact check and elapsed seconds."""
     successful_tools = set()
+    pending = set()
     texts = []
+    event_count = invalid = provider_errors = tool_errors = 0
+    incomplete = False
     for line in output.splitlines():
+        if not line.strip():
+            continue
         try:
             event = json.loads(line)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, RecursionError):
+            invalid += 1
             continue
-        if not isinstance(event, dict):
+        if not isinstance(event, dict) or not isinstance(event.get("type"), str):
+            invalid += 1
             continue
+        event_count += 1
+        kind = event["type"]
+        if kind == "error":
+            provider_errors += 1
+        if kind in {"question", "permission", "permission_request"}:
+            incomplete = True
         part = event.get("part")
         if not isinstance(part, dict):
             continue
-        if event.get("type") == "text" and isinstance(part.get("text"), str):
+        if kind == "text" and isinstance(part.get("text"), str):
             texts.append(part["text"])
-        if event.get("type") == "tool_use":
+        if kind == "step_finish" and part.get("reason") in ("length", "max_tokens", "max_steps"):
+            incomplete = True
+        if kind == "tool_use":
             state = part.get("state") or {}
-            if isinstance(state, dict) and state.get("status") == "completed":
-                if part.get("tool") in ("read", "skill"):
-                    successful_tools.add(part["tool"])
+            if not isinstance(state, dict):
+                invalid += 1
+                continue
+            tool, status = part.get("tool"), state.get("status")
+            identity = str(part.get("id") or part.get("callID") or tool)
+            if status in ("streaming", "pending", "running"):
+                pending.add(identity)
+            elif status in ("completed", "error"):
+                pending.discard(identity)
+                tool_errors += int(status == "error")
+                if status == "completed" and tool in ("read", "skill"):
+                    successful_tools.add(tool)
+            else:
+                invalid += 1
+            if tool not in ("read", "skill", "glob", "grep"):
+                incomplete = True
     answer = "\n".join(texts)
-    passed = successful_tools == {"read", "skill"} and bool(MARKER.search(answer))
+    marker_ok = bool(MARKER.search(answer))
+    passed = successful_tools == {"read", "skill"} and marker_ok
+    code = (
+        "provider_error"
+        if provider_errors
+        else (
+            "invalid_events"
+            if invalid
+            else (
+                "incomplete_probe"
+                if pending or tool_errors or incomplete or not passed
+                else "probe_passed"
+            )
+        )
+    )
+    passed = code == "probe_passed"
     factual = (
         "legacy" in answer.casefold()
         and "yaml" in answer.casefold()
@@ -137,11 +267,18 @@ def inspect_events(output: str, task: str, seconds: float) -> dict[str, Any]:
             score += 2
     return {
         "passed": passed,
+        "code": code,
         "factual": factual,
         "read_ok": "read" in successful_tools,
         "skill_ok": "skill" in successful_tools,
         "elapsed_seconds": round(seconds, 2),
         "score": score,
+        "marker_ok": marker_ok,
+        "event_count": event_count,
+        "invalid_event_lines": invalid,
+        "provider_errors": provider_errors,
+        "tool_errors": tool_errors,
+        "pending_tools": len(pending),
     }
 
 
@@ -172,32 +309,48 @@ def probe_model(model: str, task: str) -> dict[str, Any]:
             timeout=PROBE_TIMEOUT,
             env=isolated_environment(),
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+    except subprocess.TimeoutExpired as error:
         return {
             "model": model,
             "passed": False,
-            "reason": type(exc).__name__,
-            "elapsed_seconds": round(time.monotonic() - start, 2),
+            "code": "timeout",
             "score": 0,
+            "elapsed_seconds": round(time.monotonic() - start, 2),
+            "exit_code": None,
+            "stdout_bytes": byte_count(error.output),
+            "stderr_bytes": byte_count(error.stderr),
+        }
+    except (OSError, UnicodeError):
+        return {
+            "model": model,
+            "passed": False,
+            "code": "cli_error",
+            "score": 0,
+            "elapsed_seconds": round(time.monotonic() - start, 2),
+            "exit_code": None,
+            "stdout_bytes": 0,
+            "stderr_bytes": 0,
         }
     elapsed = time.monotonic() - start
+    stdout_bytes = byte_count(result.stdout)
+    stderr_bytes = byte_count(getattr(result, "stderr", ""))
+    metadata = {
+        "model": model,
+        "elapsed_seconds": round(elapsed, 2),
+        "exit_code": result.returncode,
+        "stdout_bytes": stdout_bytes,
+        "stderr_bytes": stderr_bytes,
+    }
+    if stdout_bytes + stderr_bytes > MAX_CAPTURE:
+        return {**metadata, "passed": False, "code": "output_limit", "score": 0}
+    inspected = inspect_events(result.stdout, task, elapsed)
     if result.returncode != 0:
-        return {
-            "model": model,
-            "passed": False,
-            "reason": f"OpenCode exit status {result.returncode}",
-            "elapsed_seconds": round(elapsed, 2),
-            "score": 0,
-        }
-    if len(result.stdout.encode("utf-8")) > MAX_CAPTURE:
-        return {
-            "model": model,
-            "passed": False,
-            "reason": "Probe event log exceeds size cap",
-            "elapsed_seconds": round(elapsed, 2),
-            "score": 0,
-        }
-    return {"model": model, **inspect_events(result.stdout, task, elapsed)}
+        inspected.update(
+            passed=False,
+            code="provider_error" if inspected["provider_errors"] else "cli_error",
+            score=0,
+        )
+    return {**metadata, **inspected}
 
 
 def choose_model(probes: list[dict[str, Any]]) -> dict[str, Any]:
@@ -218,7 +371,14 @@ def choose_model(probes: list[dict[str, Any]]) -> dict[str, Any]:
     )
 
 
-def write_summary(task: str, models: list[dict[str, Any]], selected: str | None) -> None:
+def write_summary(
+    task: str,
+    models: list[dict[str, Any]],
+    selected: str | None,
+    *,
+    discovery: dict[str, Any] | None = None,
+    failure_code: str | None = None,
+) -> None:
     target = os.environ.get("GITHUB_STEP_SUMMARY")
     if not target:
         return
@@ -227,14 +387,28 @@ def write_summary(task: str, models: list[dict[str, Any]], selected: str | None)
         "",
         f"Task: `{task}`. Only the two audited zero-retention free models are eligible.",
         "",
-        "| Candidate | Tool/response probe | Fact check | Seconds | Score |",
-        "|---|---|---|---:|---:|",
+        f"Result: `{failure_code or 'selected'}`.",
+        "",
+        "| Discovery attempt | Code | Catalog entries | Approved entries | Seconds |",
+        "|---:|---|---:|---:|---:|",
     ]
+    for attempt in (discovery or {}).get("attempts", []):
+        lines.append(
+            f"| {attempt['attempt']} | `{attempt['code']}` | {attempt['catalog_count']} | "
+            f"{attempt['approved_count']} | {attempt['elapsed_seconds']} |"
+        )
+    lines.extend(
+        [
+            "",
+            "| Candidate | Probe code | Fact check | Seconds | Score |",
+            "|---|---|---|---:|---:|",
+        ]
+    )
     for model in models:
         lines.append(
             "| `{}` | {} | {} | {} | {} |".format(
                 model["model"],
-                "pass" if model.get("passed") else "fail",
+                model.get("code", "probe_passed" if model.get("passed") else "incomplete_probe"),
                 "pass" if model.get("factual") else "n/a",
                 model.get("elapsed_seconds", "n/a"),
                 model.get("score", 0),
@@ -253,42 +427,79 @@ def main() -> int:
     parser.add_argument("--task", choices=TASKS, required=True)
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
-
+    discovery: dict[str, Any] = {"attempts": [], "catalog_count": 0, "approved_count": 0}
+    report: dict[str, Any] = {
+        "schema_version": 1,
+        "task": args.task,
+        "status": "failure",
+        "failure_code": None,
+        "available": [],
+        "selected": None,
+        "probes": [],
+        "discovery": discovery,
+    }
     try:
-        available = discover_models()
-    except RuntimeError as exc:
-        args.report.write_text(
-            json.dumps({"task": args.task, "error": str(exc), "probes": []}), encoding="utf-8"
-        )
-        print(f"::error::{exc}", file=sys.stderr)
-        return 1
-    # Never probe other providers, non-free model IDs or newly advertised free
-    # models that have not been explicitly reviewed and added to the allowlist.
-    ordered = [model for model in APPROVED_FREE_MODELS if model in available]
-    probes = [probe_model(model, args.task) for model in ordered]
+        available = discover_models(discovery)
+        # Never probe other providers, paid IDs or newly advertised free IDs.
+        ordered = [model for model in APPROVED_FREE_MODELS if model in available]
+        report["available"] = ordered
+        if not ordered:
+            report["failure_code"] = discovery.get("code", "no_approved_models")
+        else:
+            for model in ordered:
+                probe = probe_model(model, args.task)
+                report["probes"].append(probe)
+                code = probe.get(
+                    "code", "probe_passed" if probe.get("passed") else "incomplete_probe"
+                )
+                print(
+                    f"Router probe: model={model}, code={code}, passed={probe.get('passed') is True}, "
+                    f"read_ok={probe.get('read_ok') is True}, skill_ok={probe.get('skill_ok') is True}, "
+                    f"seconds={probe.get('elapsed_seconds', 0)}, exit_code={probe.get('exit_code')}",
+                    flush=True,
+                )
+            try:
+                report["selected"] = choose_model(report["probes"])["model"]
+                report["status"] = "success"
+            except RuntimeError:
+                report["failure_code"] = "probe_failed"
+    except RouterError as error:
+        report["failure_code"] = error.code
+    except Exception:
+        # Internal I/O/decoder failures must not leak model text in a traceback.
+        report["failure_code"] = "router_error"
     try:
-        selected = choose_model(probes)["model"]
-    except RuntimeError as exc:
-        args.report.write_text(
-            json.dumps({"task": args.task, "available": ordered, "probes": probes}, indent=2),
-            encoding="utf-8",
-        )
-        write_summary(args.task, probes, None)
-        print(f"::error::{exc}", file=sys.stderr)
+        args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        print("::error::OpenCode model router stopped: report_write_error", file=sys.stderr)
         return 1
-    args.report.write_text(
-        json.dumps(
-            {"task": args.task, "available": ordered, "selected": selected, "probes": probes},
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    try:
+        write_summary(
+            args.task,
+            report["probes"],
+            report["selected"],
+            discovery=discovery,
+            failure_code=report["failure_code"],
+        )
+    except OSError:
+        print("::warning::OpenCode model router summary_write_error", file=sys.stderr)
+    if report["status"] != "success":
+        print(f"::error::OpenCode model router stopped: {report['failure_code']}", file=sys.stderr)
+        return 1
     output = os.environ.get("GITHUB_OUTPUT")
-    if output:
-        with Path(output).open("a", encoding="utf-8") as target:
-            target.write(f"model={selected}\n")
-    write_summary(args.task, probes, selected)
-    print(f"Selected approved free model for {args.task}: {selected}")
+    try:
+        if output:
+            with Path(output).open("a", encoding="utf-8") as target:
+                target.write(f"model={report['selected']}\n")
+    except OSError:
+        report.update(status="failure", failure_code="output_write_error", selected=None)
+        try:
+            args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        except OSError:
+            pass
+        print("::error::OpenCode model router stopped: output_write_error", file=sys.stderr)
+        return 1
+    print(f"Selected approved free model for {args.task}: {report['selected']}")
     return 0
 
 

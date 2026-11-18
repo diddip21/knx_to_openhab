@@ -276,5 +276,4 @@ def test_failure_artifacts_include_only_explicit_content_free_diagnostic_files()
 
     assert {line.strip() for line in paths.splitlines() if line.strip()} == {
         "${{ runner.temp }}/planner-diagnostics.json",
-        "${{ runner.temp }}/model-router.json",
     }

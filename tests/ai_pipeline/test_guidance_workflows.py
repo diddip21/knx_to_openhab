@@ -101,3 +101,38 @@ def test_generation_diagnostics_survive_failure_without_publishing_partial_code(
     publisher = definition["jobs"]["publish"]
     assert job_name in publisher["needs"]
     assert publisher.get("if", "success()") == "success()"
+
+
+@pytest.mark.parametrize(
+    ("workflow", "job_name", "report_path", "generation_command"),
+    [
+        ("ai-issue-implement.yml", "implement", "model.json", "generation_runner.py"),
+        ("opencode-ci-self-repair.yml", "repair", "model.json", "generation_runner.py"),
+        ("opencode-issue-planner.yml", "plan", "model-router.json", "planner_runner.py"),
+    ],
+)
+def test_router_failure_has_its_own_diagnostics_before_generation(
+    workflow, job_name, report_path, generation_command
+):
+    definition = yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())
+    steps = definition["jobs"][job_name]["steps"]
+    selection = next(step for step in steps if step.get("id") == "model")
+    diagnostics = next(
+        step
+        for step in steps
+        if step.get("name") == "Preserve content-free model selection diagnostics"
+    )
+    assert diagnostics["uses"].startswith("actions/upload-artifact@")
+    assert diagnostics["with"]["path"] == "${{ runner.temp }}/" + report_path
+    assert "always()" in diagnostics["if"]
+    for outcome in ("success", "failure", "cancelled"):
+        assert f"steps.model.outcome == '{outcome}'" in diagnostics["if"]
+    assert "steps.generation" not in diagnostics["if"]
+    assert "${{ github.run_id }}" in diagnostics["with"]["name"]
+    assert "${{ github.run_attempt }}" in diagnostics["with"]["name"]
+    assert diagnostics["with"]["if-no-files-found"] == "error"
+    generation = next(step for step in steps if generation_command in step.get("run", ""))
+    assert steps.index(selection) < steps.index(diagnostics) < steps.index(generation)
+    assert not selection.get("continue-on-error", False)
+    assert not generation.get("continue-on-error", False)
+    assert "always()" not in generation.get("if", "")

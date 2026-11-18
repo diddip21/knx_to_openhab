@@ -111,6 +111,18 @@ logger = logging.getLogger(__name__)
 cfg = load_config()
 
 
+def _preview_homekit_enabled(knx_module, project, project_root):
+    """Resolve the effective preview HomeKit state from freshly saved settings."""
+    try:
+        general_config = load_generator_config(project_root).get("general", {})
+    except Exception:
+        general_config = {}
+    resolver = getattr(knx_module, "resolve_homekit_mode", None)
+    if resolver is not None:
+        return resolver(project, general_config)
+    return knx_module.is_homekit_enabled(project)
+
+
 def _parse_origin(value: str, *, allow_url_path: bool = False):
     """Return a normalized HTTP(S) origin, rejecting malformed URLs."""
     if not isinstance(value, str) or not value or value != value.strip():
@@ -1343,7 +1355,7 @@ if FLASK_AVAILABLE:
             # Extract metadata
             project_name = house[0].get("name_long") if house else None
             gateway_ip = knxmod.get_gateway_ip(project)
-            homekit_enabled = knxmod.is_homekit_enabled(project)
+            homekit_enabled = _preview_homekit_enabled(knxmod, project, project_root)
             alexa_enabled = knxmod.is_alexa_enabled(project)
 
             # Detect unknown items (addresses without proper room/floor assignments or with default names)
@@ -1504,7 +1516,7 @@ if FLASK_AVAILABLE:
             # Extract metadata
             project_name = house[0].get("name_long") if house else None
             gateway_ip = knxmod.get_gateway_ip(project)
-            homekit_enabled = knxmod.is_homekit_enabled(project)
+            homekit_enabled = _preview_homekit_enabled(knxmod, project, project_root)
             alexa_enabled = knxmod.is_alexa_enabled(project)
 
             # Detect unknown items (addresses without proper room/floor assignments or with default names)

@@ -242,6 +242,70 @@ def test_job_preview_success(client, monkeypatch):
     assert payload["metadata"]["unknown_items"]
 
 
+def test_job_preview_uses_saved_homekit_general_config(client, monkeypatch):
+    job_mgr = Mock()
+    job_mgr.get_job.return_value = {
+        "id": "abc",
+        "input": "/tmp/input.json",
+        "password": None,
+    }
+    monkeypatch.setattr(app_module, "job_mgr", job_mgr)
+    monkeypatch.setattr(app_module.os.path, "exists", lambda path: path == "/tmp/input.json")
+
+    saved_general = {
+        "homekit_enabled": False,
+        "homekit_rollershutter_sendUpDownForExtents": False,
+    }
+    monkeypatch.setattr(
+        app_module,
+        "load_generator_config",
+        lambda _root: {"general": saved_general},
+    )
+
+    seen = {}
+
+    def resolve_homekit_mode(_project, general):
+        seen["general"] = general
+        return general.get("homekit_enabled") is not False
+
+    fake_knx_module = SimpleNamespace(
+        create_building=lambda project: {"building": True},
+        get_addresses=lambda project: [
+            {"Group name": "Shutter", "Address": "1/2/1", "Floor": "EG", "Room": "RM1"}
+        ],
+        put_addresses_in_building=lambda building, addresses, project: [
+            {
+                "name_long": "Project",
+                "floors": [
+                    {
+                        "rooms": [
+                            {
+                                "Addresses": [{"Group name": "Shutter", "Address": "1/2/1"}],
+                                "devices": [],
+                            }
+                        ]
+                    }
+                ],
+            }
+        ],
+        get_gateway_ip=lambda project: "1.2.3.4",
+        is_homekit_enabled=lambda project: True,
+        resolve_homekit_mode=resolve_homekit_mode,
+        is_alexa_enabled=lambda project: False,
+    )
+
+    mocked_open = mock_open(read_data=json.dumps({"project": "data"}))
+    monkeypatch.setattr("builtins.open", mocked_open)
+    monkeypatch.setattr(importlib, "import_module", lambda name: fake_knx_module)
+
+    response = client.get("/api/job/abc/preview")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["metadata"]["homekit_enabled"] is False
+    assert seen["general"] == saved_general
+
+
 def test_job_preview_uses_cached_projection_after_password_cleanup(client, monkeypatch):
     """A completed encrypted job can still show its preview without its password."""
     cached_preview = {

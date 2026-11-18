@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import knxproject_to_openhab
 from web_ui.backend.project_preview import build_project_preview
 
 
@@ -82,6 +83,80 @@ def test_build_project_preview_parses_project_when_no_data_is_prepared():
 
     assert preview["metadata"]["total_addresses"] == 0
     assert preview["buildings"] == []
+
+
+def _nonempty_house():
+    return [
+        {
+            "name_long": "Demo home",
+            "Description": "Home",
+            "floors": [
+                {
+                    "Description": "Ground floor",
+                    "rooms": [
+                        {
+                            "Description": "Hall",
+                            "Addresses": [{"Group name": "Light", "Address": "1/2/3"}],
+                            "devices": [{"name": "Switch"}],
+                        }
+                    ],
+                }
+            ],
+        }
+    ]
+
+
+def test_build_project_preview_keeps_real_structure_and_effective_homekit_value():
+    project = {"info": {"comment": "homekit=false"}}
+    house = _nonempty_house()
+    knx_module = SimpleNamespace(
+        create_building=lambda _: pytest.fail("prepared building should be reused"),
+        get_addresses=lambda _: pytest.fail("prepared addresses should be reused"),
+        put_addresses_in_building=lambda *_: pytest.fail("prepared house should be reused"),
+        get_gateway_ip=lambda _: "192.168.1.5",
+        is_homekit_enabled=knxproject_to_openhab.is_homekit_enabled,
+        resolve_homekit_mode=knxproject_to_openhab.resolve_homekit_mode,
+        is_alexa_enabled=lambda _: False,
+    )
+
+    preview = build_project_preview(
+        project,
+        knx_module,
+        parsed=(None, [{"Group name": "Light", "Address": "1/2/3"}], house),
+        general_config={},
+    )
+
+    # A real fixture with a floor and room must not be flattened to [].
+    assert [building["name"] for building in preview["buildings"]] == ["Home"]
+    assert preview["buildings"][0]["description"] == "Demo home"
+    floors = preview["buildings"][0]["floors"]
+    assert [floor["name"] for floor in floors] == ["Ground floor"]
+    rooms = floors[0]["rooms"]
+    assert [room["name"] for room in rooms] == ["Hall"]
+    assert rooms[0]["address_count"] == 1
+    assert rooms[0]["device_count"] == 1
+    assert preview["metadata"]["total_addresses"] == 1
+
+    # Missing override follows ETS; explicit values override it.
+    assert preview["metadata"]["homekit_enabled"] is False
+    assert (
+        build_project_preview(
+            project,
+            knx_module,
+            parsed=(None, [], house),
+            general_config={"homekit_enabled": True},
+        )["metadata"]["homekit_enabled"]
+        is True
+    )
+    assert (
+        build_project_preview(
+            project,
+            knx_module,
+            parsed=(None, [], house),
+            general_config={"homekit_enabled": False},
+        )["metadata"]["homekit_enabled"]
+        is False
+    )
 
 
 def test_job_preview_persists_as_private_data_outside_the_job_record(tmp_path):

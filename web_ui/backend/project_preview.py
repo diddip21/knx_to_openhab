@@ -1,11 +1,21 @@
 """Build the passphrase-free structure preview shown for a KNX project."""
 
 
-def build_project_preview(project, knx_module, parsed=None):
+def _resolve_homekit_mode(knx_module, project, general_config):
+    """Prefer the generator resolver, falling back to ETS-only detection."""
+    resolver = getattr(knx_module, "resolve_homekit_mode", None)
+    if resolver is not None:
+        return resolver(project, general_config)
+    return knx_module.is_homekit_enabled(project)
+
+
+def build_project_preview(project, knx_module, parsed=None, general_config=None):
     """Return the UI preview payload for a parsed KNX project.
 
     ``parsed`` may contain the building, addresses, and house already prepared
     by the generator so the job worker does not repeat the parsing work.
+    ``general_config`` carries the effective generator settings so the preview
+    shows the same HomeKit state that a generation would use.
     """
     if parsed is None:
         building = knx_module.create_building(project)
@@ -38,7 +48,7 @@ def build_project_preview(project, knx_module, parsed=None):
         "metadata": {
             "project_name": project_name,
             "gateway_ip": knx_module.get_gateway_ip(project),
-            "homekit_enabled": knx_module.is_homekit_enabled(project),
+            "homekit_enabled": _resolve_homekit_mode(knx_module, project, general_config),
             "alexa_enabled": knx_module.is_alexa_enabled(project),
             "total_addresses": len(addresses),
             "unknown_items": unknown_items,

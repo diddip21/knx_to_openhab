@@ -196,6 +196,38 @@
                 <span data-i18n="settings.namingInfo">Naming heuristics control how floors/rooms are inferred from ETS. Combine options as needed for your project structure.</span>
               </div>
             </fieldset>
+            <fieldset>
+              <legend data-i18n="settings.homekit">HomeKit (Apple Home)</legend>
+              <div class="form-group">
+                <label data-i18n="settings.homekitMode">HomeKit Mode</label>
+                <div class="checkbox-group">
+                  <div class="checkbox-item">
+                    <label><input type="radio" name="conf-homekit-mode" value="ets"> <span data-i18n="settings.homekitModeEts">Use ETS project setting</span></label>
+                  </div>
+                  <div class="checkbox-item">
+                    <label><input type="radio" name="conf-homekit-mode" value="enabled"> <span data-i18n="settings.homekitModeEnabled">Enabled</span></label>
+                  </div>
+                  <div class="checkbox-item">
+                    <label><input type="radio" name="conf-homekit-mode" value="disabled"> <span data-i18n="settings.homekitModeDisabled">Disabled</span></label>
+                  </div>
+                </div>
+                <div class="checkbox-help" data-i18n="settings.homekitModeHelp">Without an override the ETS project comment decides. Enabled or disabled overrides it for this project.</div>
+              </div>
+              <div class="checkbox-group">
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-homekit-extents"> <span data-i18n="settings.homekitExtents">Send end positions as UP/DOWN</span></label>
+                  <div class="checkbox-help" data-i18n="settings.homekitExtentsHelp">Converts 0%/100% travel commands into UP/DOWN (sendUpDownForExtents). Default: on.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-homekit-stop"> <span data-i18n="settings.homekitStop">Emulate STOP command</span></label>
+                  <div class="checkbox-help" data-i18n="settings.homekitStopHelp">Enables the HomeKit STOP emulation. Default: off.</div>
+                </div>
+                <div class="checkbox-item">
+                  <label><input type="checkbox" id="conf-homekit-stop-same"> <span data-i18n="settings.homekitStopSameDirection">Stop on repeated UP/DOWN</span></label>
+                  <div class="checkbox-help" data-i18n="settings.homekitStopSameDirectionHelp">Allows stopping by sending UP/DOWN again in the same direction. Does not enable STOP by itself. Default: off.</div>
+                </div>
+              </div>
+            </fieldset>
             <div class="form-group">
               <label data-i18n="settings.unknownFloor">Unknown Floor Name</label>
               <input type="text" id="conf-unknown-floor" class="form-control">

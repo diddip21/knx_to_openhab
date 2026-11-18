@@ -54,6 +54,7 @@ def test_build_project_preview_uses_preparsed_project_data():
         "project_name": "Demo home",
         "gateway_ip": "192.168.1.5",
         "homekit_enabled": True,
+        "homekit_ets_enabled": True,
         "alexa_enabled": False,
         "total_addresses": 2,
         "unknown_items": [
@@ -139,6 +140,7 @@ def test_build_project_preview_keeps_real_structure_and_effective_homekit_value(
 
     # Missing override follows ETS; explicit values override it.
     assert preview["metadata"]["homekit_enabled"] is False
+    assert preview["metadata"]["homekit_ets_enabled"] is False
     assert (
         build_project_preview(
             project,

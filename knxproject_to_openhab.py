@@ -746,7 +746,7 @@ def coerce_bool(value):
         return value
     if value is None:
         return None
-    normalized = normalize_string(str(value))
+    normalized = str(value).strip().casefold()
     if normalized in ("yes", "true", "t", "1"):
         return True
     if normalized in ("no", "false", "f", "0"):
@@ -754,19 +754,19 @@ def coerce_bool(value):
     return None
 
 
-def resolve_homekit_mode(project, general_config=None):
-    """Resolve the effective HomeKit mode for a project.
-
-    An explicit ``general.homekit_enabled`` overrides ETS detection. Missing or
-    unrecognized values fall back to the project comment, preserving previous
-    behavior.
-    """
+def resolve_homekit_from_ets(ets_enabled, general_config=None):
+    """Apply the current override to an independently preserved ETS value."""
     if general_config is None:
         general_config = config.get("general", {})
     override = coerce_bool(general_config.get("homekit_enabled"))
     if override is not None:
         return override
-    return is_homekit_enabled(project)
+    return ets_enabled
+
+
+def resolve_homekit_mode(project, general_config=None):
+    """Resolve HomeKit from the current override or the original ETS comment."""
+    return resolve_homekit_from_ets(is_homekit_enabled(project), general_config)
 
 
 def main():

@@ -49,6 +49,9 @@ def build_project_preview(project, knx_module, parsed=None, general_config=None)
             "project_name": project_name,
             "gateway_ip": knx_module.get_gateway_ip(project),
             "homekit_enabled": _resolve_homekit_mode(knx_module, project, general_config),
+            # Keep provenance separate: a later switch back to ETS must not
+            # reuse the override that was active when this cache was built.
+            "homekit_ets_enabled": knx_module.is_homekit_enabled(project),
             "alexa_enabled": knx_module.is_alexa_enabled(project),
             "total_addresses": len(addresses),
             "unknown_items": unknown_items,

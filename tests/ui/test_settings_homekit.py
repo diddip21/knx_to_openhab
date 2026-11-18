@@ -52,9 +52,15 @@ def _saved_general(ui_server_environment) -> dict:
 
 def _maybe_capture_screenshot(page: Page) -> None:
     if os.getenv("SAVE_UI_SCREENSHOTS") == "1":
-        screenshot_dir = Path(__file__).resolve().parents[2] / "docs" / "screenshots"
+        project_root = Path(__file__).resolve().parents[2]
+        screenshot_dir = project_root / "docs" / "screenshots"
         screenshot_dir.mkdir(parents=True, exist_ok=True)
-        page.locator("#tab-general").screenshot(path=str(screenshot_dir / "homekit-settings.png"))
+        screenshot = page.locator("#tab-general").screenshot(
+            path=str(screenshot_dir / "homekit-settings.png")
+        )
+        report_dir = project_root / "test-results" / "screenshots"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        (report_dir / "homekit-settings.png").write_bytes(screenshot)
 
 
 @pytest.mark.ui

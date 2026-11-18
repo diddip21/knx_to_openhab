@@ -40,6 +40,11 @@ def client():
         ("f", False),
         (None, None),
         ("maybe", None),
+        ("f.a.l.s.e", None),
+        ("t.r.u.e", None),
+        ("false!", None),
+        ("-1", None),
+        (" TRUE ", True),
     ],
 )
 def test_coerce_bool_is_strict_and_tri_state(value, expected):
@@ -59,6 +64,8 @@ def test_coerce_bool_is_strict_and_tri_state(value, expected):
         ("homekit=true", "false", False),
         ("homekit=false", "1", True),
         ("homekit=true", "unbekannt", True),
+        ("homekit=true", "f.a.l.s.e", True),
+        ("homekit=false", "t.r.u.e", False),
     ],
 )
 def test_resolve_homekit_mode_prefers_explicit_override(comment, override, expected):

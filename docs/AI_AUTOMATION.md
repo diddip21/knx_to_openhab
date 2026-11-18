@@ -156,6 +156,58 @@ publication. An ambiguous CI dispatch is never retried automatically; inspect
 the actual run before recovery. Only transient continuation-dispatch failures
 receive bounded automatic retries.
 
+## Unattended generation and repair
+
+Implementation and repair run as already authorized, unattended workers in an
+isolated checkout. They create the complete approved patch and end the session.
+They do not ask for another confirmation, restart planning, create worktrees,
+write task ledgers or make commits. Compatible debugging and TDD principles
+remain useful references; interactive skill steps requiring prohibited tools
+or extra files do not apply to this worker. Regression tests are designed first;
+actual execution belongs to the reviewer and CI. A model must report checks it
+could not run, never invent their results.
+
+Both model steps use the trusted `generation_runner.py` with bounded output,
+process lifetime and at most two attempts. A fallback is allowed only to another
+approved free model that passed the router probe in this same run. A successful
+probe from an earlier workflow does not authorize a fallback. After a failed
+first attempt, the runner stops with diagnostics if no second verified model
+is available. A successful first attempt does not require a second model.
+
+| Mode | First attempt | Fallback limit | Total model budget | Job limit |
+|---|---|---|---|---|
+| Implementation | Up to 1,150 seconds | Up to 650 seconds | 1,800 seconds | 40 minutes |
+| CI repair | Up to 750 seconds | Up to 250 seconds | 1,000 seconds | 28 minutes |
+
+The second attempt is also bounded by the remaining total budget. On the Linux
+runner, the controller stops and reaps the attempt's child processes, including
+OpenCode's detached standalone server, before inspecting or restoring files.
+Children that already existed before the attempt are excluded. Prompts enter
+through bounded stdin, avoiding per-argument limits for long UTF-8 input.
+
+Before a fallback starts, the runner restores approved partial changes to
+their original baseline. It does not use a blanket reset or clean to hide
+foreign changes. Changed HEAD, runtime-agent tampering, out-of-scope paths and
+unsafe links stop the run without
+fallback. Repair still cannot create new files. The two-attempt model budget is
+separate from, and does not increase, the limit of two published CI repairs.
+
+After the model step, including a controlled timeout or failure, the workflow
+uploads only `generation-diagnostics.json` as
+`ai-generation-diagnostics-<run-id>-<run-attempt>`. The job and step limits leave
+time to write and upload this report. It contains fixed result codes, verified
+model identifiers, timings, byte/event/tool counters and candidate-file counts.
+Prompts, source code, tool arguments, raw stderr and provider messages are not
+uploaded. Missing or malformed event data is reported explicitly. Runner loss
+or a forced infrastructure termination can still prevent an artifact upload;
+the GitHub job status must therefore be checked as well.
+
+A successful runner means only that a model candidate was produced. The
+existing trusted formatter, bounded artifact collection, independent publisher
+revalidation, complete CI and human review remain mandatory. A diagnostics
+upload cannot turn failed generation into successful publication. Scope or
+authorization violations are not retried by widening permissions.
+
 ## Scope and safeguards
 
 Literal ASCII repository-relative paths only; no wildcard, traversal, hidden

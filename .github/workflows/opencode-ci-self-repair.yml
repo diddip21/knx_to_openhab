@@ -95,7 +95,7 @@ jobs:
       pull-requests: read
       actions: read
     runs-on: ubuntu-latest
-    timeout-minutes: 24
+    timeout-minutes: 28
     steps:
       - uses: actions/checkout@v7
         with:
@@ -149,17 +149,24 @@ jobs:
         working-directory: candidate
         run: python -I ../trusted/scripts/ci_repair.py agent
       - name: Generate bounded repair without GitHub credentials
+        id: generation
         working-directory: candidate
+        timeout-minutes: 18
         env:
           CI: "true"
           MODEL: ${{ steps.model.outputs.model }}
         shell: bash
-        run: |
-          set -euo pipefail
-          timeout --signal=TERM --kill-after=10s 750s \
-            opencode run --standalone --archived --format json \
-            --agent ai-task --model "$MODEL" "$(cat "$RUNNER_TEMP/task-prompt.txt")" \
-            < /dev/null > "$RUNNER_TEMP/task-events.jsonl" 2> "$RUNNER_TEMP/task-stderr.log"
+        run: python -I ../trusted/scripts/automation/generation_runner.py --mode repair
+      - name: Preserve content-free generation diagnostics
+        if: >-
+          always() && (steps.generation.outcome == 'success' ||
+          steps.generation.outcome == 'failure' || steps.generation.outcome == 'cancelled')
+        uses: actions/upload-artifact@v7
+        with:
+          name: ai-generation-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/generation-diagnostics.json
+          if-no-files-found: error
+          retention-days: 3
       - name: Restore runtime agent and validate repair
         working-directory: candidate
         shell: bash

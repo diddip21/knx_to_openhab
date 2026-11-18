@@ -67,6 +67,7 @@ def test_live_diagnostic_has_no_github_write_or_publisher_and_exports_only_metri
         if step.get("uses", "").startswith("actions/checkout"):
             assert step["with"]["persist-credentials"] is False
         if step.get("uses", "").startswith("actions/upload-artifact"):
+            assert "${{ github.run_attempt }}" in step["with"]["name"]
             assert set(step["with"]["path"].splitlines()) == {
                 "${{ runner.temp }}/planner-diagnostics.json",
                 "${{ runner.temp }}/model-router.json",

@@ -56,6 +56,7 @@ def test_cli_is_consistently_pinned_in_every_active_workflow():
                 assert "npm install -g @opencode/cli" not in line, path
     assert set(paths) == {
         "opencode-issue-planner.yml",
+        "ai-planner-diagnostic.yml",
         "ai-issue-implement.yml",
         "opencode-ci-self-repair.yml",
         "opencode-model-router-tests.yml",

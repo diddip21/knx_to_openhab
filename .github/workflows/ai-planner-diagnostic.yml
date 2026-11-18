@@ -70,7 +70,7 @@ jobs:
             const comments = await github.paginate(github.rest.issues.listComments, {...repo, issue_number:number, per_page:100});
             if (comments.length > 2000) throw new Error('Issue history exceeds diagnostic limit');
             const {planningContext} = require(process.env.GITHUB_WORKSPACE + '/trusted/scripts/automation/planning.cjs');
-            const related = await planningContext({github,context:{...context,issue:{number}}});
+            const related = await planningContext({github,context:{repo:context.repo,issue:{number}}});
             const source = {issue,comments,related};
             fs.writeFileSync(process.env.RUNNER_TEMP + '/planner-diagnostic-source.json', JSON.stringify(source));
       - name: Prepare private replay

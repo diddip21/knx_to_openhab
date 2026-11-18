@@ -8,7 +8,8 @@ on:
       - "tests/test_opencode_model_router.py"
       - ".github/workflows/opencode-model-router-tests.yml"
       - ".github/workflows/opencode-issue-planner.yml"
-      - ".github/workflows/opencode-issue-implement.yml"
+      - ".github/workflows/ai-issue-implement.yml"
+      - ".github/workflows/opencode-ci-self-repair.yml"
       - "docs/OPENCODE_MODEL_ROUTER.md"
   workflow_dispatch:
 
@@ -51,6 +52,7 @@ jobs:
       - name: Install OpenCode
         run: npm install --global "@opencode/cli@$(cat .github/opencode-cli-version)"
       - name: Select free model using read-only live probes
+        id: model
         shell: bash
         run: |
           set -euo pipefail
@@ -62,9 +64,11 @@ jobs:
             exit 1
           fi
       - name: Upload probe report
-        if: always()
+        if: >-
+          always() && (steps.model.outcome == 'success' ||
+          steps.model.outcome == 'failure' || steps.model.outcome == 'cancelled')
         uses: actions/upload-artifact@v7
         with:
-          name: model-router-${{ matrix.task }}
+          name: model-router-${{ matrix.task }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/model-router.json
-          if-no-files-found: ignore
+          if-no-files-found: error

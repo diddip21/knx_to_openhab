@@ -111,6 +111,16 @@ Planungen dürfen neuere oder geänderte Anforderungen nicht überschreiben.
 
 ## Planner diagnostics and bounded retries
 
+Model selection has its own diagnostic artifact,
+`ai-model-selection-<run ID>-<attempt>`, uploaded immediately after the router
+in planning, implementation and repair, even if no generation begins. It
+distinguishes discovery errors, an empty catalog, no approved candidates,
+and failed live probes using fixed codes, allowlisted IDs, timings and
+counters only. The pinned CLI is queried with `opencode models --standalone`
+at most twice; model permissions and the approved allowlist are unchanged.
+Selection failure still prevents generation/publication. See
+[model router diagnostics](OPENCODE_MODEL_ROUTER.md#failure-diagnostics).
+
 The planner distinguishes provider/CLI failures, timeouts, truncated or empty
 output, invalid JSON/schema and invalid scope. A provider error event is a
 failure even if the CLI exits zero. Only models that passed this run's approved

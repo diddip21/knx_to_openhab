@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -112,7 +113,7 @@ def test_no_free_model_fails_closed():
 
 def test_discovery_intersects_with_allowlist(monkeypatch):
     def fake_run(args, **kwargs):
-        assert args == ["opencode", "models", "opencode", "--refresh"]
+        assert args == ["opencode", "models", "--standalone"]
         assert kwargs["timeout"] == router.DISCOVERY_TIMEOUT
         return SimpleNamespace(
             returncode=0,
@@ -135,8 +136,8 @@ def test_discovery_fallback_if_first_command_unsupported(monkeypatch):
     monkeypatch.setattr(router.subprocess, "run", fake_run)
     assert router.discover_models() == {"opencode/deepseek-v4.1-flash-free"}
     assert calls == [
-        ["opencode", "models", "opencode", "--refresh"],
-        ["opencode", "models"],
+        ["opencode", "models", "--standalone"],
+        ["opencode", "models", "--standalone"],
     ]
 
 
@@ -180,7 +181,9 @@ def test_prompt_is_bounded_and_has_task_specific_text():
 
 
 def test_main_exports_only_selected_allowlisted_model(tmp_path, monkeypatch):
-    monkeypatch.setattr(router, "discover_models", lambda: set(router.APPROVED_FREE_MODELS))
+    monkeypatch.setattr(
+        router, "discover_models", lambda diagnostics=None: set(router.APPROVED_FREE_MODELS)
+    )
     monkeypatch.setattr(
         router,
         "probe_model",
@@ -206,7 +209,9 @@ def test_main_exports_only_selected_allowlisted_model(tmp_path, monkeypatch):
 
 
 def test_main_refuses_all_failed_models(tmp_path, monkeypatch):
-    monkeypatch.setattr(router, "discover_models", lambda: set(router.APPROVED_FREE_MODELS))
+    monkeypatch.setattr(
+        router, "discover_models", lambda diagnostics=None: set(router.APPROVED_FREE_MODELS)
+    )
     monkeypatch.setattr(
         router,
         "probe_model",
@@ -227,3 +232,212 @@ def test_main_refuses_all_failed_models(tmp_path, monkeypatch):
     )
     assert router.main() == 1
     assert not output.exists()
+
+
+PRIVATE = "private-provider-prompt-error-content-must-not-escape"
+
+
+def configure_main(tmp_path, monkeypatch):
+    report = tmp_path / "model.json"
+    summary = tmp_path / "summary.md"
+    output = tmp_path / "output.txt"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setattr(
+        "sys.argv", ["router", "select", "--task", "implement", "--report", str(report)]
+    )
+    return report, summary, output
+
+
+@pytest.mark.parametrize(
+    "first",
+    ["", "Usage: opencode models\n" + PRIVATE, "other/paid-model\nopencode/unreviewed-free\n"],
+)
+def test_unusable_discovery_retries_native_command_without_selecting_cache(monkeypatch, first):
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=first if len(calls) == 1 else router.APPROVED_FREE_MODELS[1] + "\n",
+            stderr=PRIVATE,
+        )
+
+    monkeypatch.setattr(router.subprocess, "run", fake_run)
+    result = router.discover_models()
+    assert result == {router.APPROVED_FREE_MODELS[1]}
+    assert calls == [["opencode", "models", "--standalone"]] * 2
+
+
+@pytest.mark.parametrize(
+    "catalog,code,attempts",
+    [
+        ("", "empty_catalog", 2),
+        ("Usage: models\n", "empty_catalog", 2),
+        ("other/paid-model\nopencode/unreviewed-free\n", "no_approved_models", 2),
+    ],
+)
+def test_main_distinguishes_empty_catalog_from_no_approved_model(
+    tmp_path, monkeypatch, capsys, catalog, code, attempts
+):
+    report, summary, output = configure_main(tmp_path, monkeypatch)
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        assert args[1] == "models", "No unknown or cached model may be probed"
+        return SimpleNamespace(returncode=0, stdout=catalog, stderr=PRIVATE)
+
+    monkeypatch.setattr(router.subprocess, "run", fake_run)
+    assert router.main() == 1
+    data = json.loads(report.read_text())
+    assert data["failure_code"] == code
+    assert data["status"] == "failure"
+    assert data["selected"] is None
+    assert data["probes"] == []
+    assert len(data["discovery"]["attempts"]) == attempts
+    assert len(calls) == attempts
+    assert not output.exists()
+    combined = report.read_text() + summary.read_text() + capsys.readouterr().out
+    assert PRIVATE not in combined
+    assert "other/paid-model" not in combined
+    assert "opencode/unreviewed-free" not in combined
+    assert code in summary.read_text()
+
+
+@pytest.mark.parametrize(
+    "failure,code",
+    [
+        ("timeout", "discovery_timeout"),
+        ("exit", "discovery_cli_error"),
+        ("oserror", "discovery_cli_error"),
+    ],
+)
+def test_discovery_failure_has_two_bounded_attempts_and_fixed_diagnostics(
+    tmp_path, monkeypatch, capsys, failure, code
+):
+    report, summary, output = configure_main(tmp_path, monkeypatch)
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        assert kwargs["timeout"] == router.DISCOVERY_TIMEOUT
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(args, kwargs["timeout"], output=PRIVATE, stderr=PRIVATE)
+        if failure == "oserror":
+            raise OSError(PRIVATE)
+        return SimpleNamespace(returncode=7, stdout=PRIVATE, stderr=PRIVATE)
+
+    monkeypatch.setattr(router.subprocess, "run", fake_run)
+    assert router.main() == 1
+    data = json.loads(report.read_text())
+    assert data["failure_code"] == code
+    assert len(calls) == 2
+    assert all(attempt["code"] == code for attempt in data["discovery"]["attempts"])
+    assert not output.exists()
+    captured = capsys.readouterr()
+    assert PRIVATE not in report.read_text() + summary.read_text() + captured.out + captured.err
+
+
+def test_provider_error_after_completed_tools_cannot_pass_probe():
+    output = (
+        events()
+        + "\n"
+        + json.dumps({"type": "error", "error": {"type": "unknown", "message": PRIVATE}})
+    )
+    result = router.inspect_events(output, "implement", 1)
+    assert result["passed"] is False
+    assert result["code"] == "provider_error"
+    assert result["read_ok"] and result["skill_ok"]
+    assert result["score"] == 0
+    assert PRIVATE not in json.dumps(result)
+
+
+@pytest.mark.parametrize(
+    "extra,code",
+    [
+        (PRIVATE, "invalid_events"),
+        (
+            json.dumps(
+                {
+                    "type": "tool_use",
+                    "part": {"id": "pending", "tool": "read", "state": {"status": "running"}},
+                }
+            ),
+            "incomplete_probe",
+        ),
+        (
+            json.dumps(
+                {
+                    "type": "tool_use",
+                    "part": {
+                        "id": "failed",
+                        "tool": "read",
+                        "state": {"status": "error", "error": PRIVATE},
+                    },
+                }
+            ),
+            "incomplete_probe",
+        ),
+        (json.dumps({"type": "step_finish", "part": {"reason": "length"}}), "incomplete_probe"),
+    ],
+)
+def test_partial_or_invalid_probe_never_passes_after_an_earlier_marker(extra, code):
+    result = router.inspect_events(events() + "\n" + extra, "plan", 1)
+    assert result["passed"] is False
+    assert result["code"] == code
+    assert PRIVATE not in json.dumps(result)
+
+
+def test_main_failed_provider_probe_preserves_safe_discovery_and_probe_counts(
+    tmp_path, monkeypatch, capsys
+):
+    report, summary, output = configure_main(tmp_path, monkeypatch)
+
+    def fake_run(args, **kwargs):
+        if args[1] == "models":
+            return SimpleNamespace(
+                returncode=0, stdout=router.APPROVED_FREE_MODELS[1] + "\n", stderr=""
+            )
+        return SimpleNamespace(
+            returncode=0,
+            stdout=events() + "\n" + json.dumps({"type": "error", "error": {"message": PRIVATE}}),
+            stderr=PRIVATE,
+        )
+
+    monkeypatch.setattr(router.subprocess, "run", fake_run)
+    assert router.main() == 1
+    data = json.loads(report.read_text())
+    assert data["failure_code"] == "probe_failed"
+    assert data["available"] == [router.APPROVED_FREE_MODELS[1]]
+    assert data["discovery"]["approved_count"] == 1
+    assert data["probes"][0]["code"] == "provider_error"
+    assert data["probes"][0]["stderr_bytes"] == len(PRIVATE)
+    assert not output.exists()
+    captured = capsys.readouterr()
+    assert PRIVATE not in report.read_text() + summary.read_text() + captured.out + captured.err
+    assert "provider_error" in captured.out
+
+
+def test_main_success_report_is_compatible_and_has_discovery_diagnostics(tmp_path, monkeypatch):
+    report, summary, output = configure_main(tmp_path, monkeypatch)
+
+    def fake_run(args, **kwargs):
+        return SimpleNamespace(
+            returncode=0,
+            stdout=router.APPROVED_FREE_MODELS[1] + "\n" if args[1] == "models" else events(),
+            stderr="",
+        )
+
+    monkeypatch.setattr(router.subprocess, "run", fake_run)
+    assert router.main() == 0
+    data = json.loads(report.read_text())
+    assert data["schema_version"] == 1
+    assert data["status"] == "success"
+    assert data["failure_code"] is None
+    assert data["task"] == "implement"
+    assert data["selected"] == router.APPROVED_FREE_MODELS[1]
+    assert data["probes"][0]["passed"] is True
+    assert data["discovery"]["approved_count"] == 1
+    assert output.read_text() == "model=" + router.APPROVED_FREE_MODELS[1] + "\n"

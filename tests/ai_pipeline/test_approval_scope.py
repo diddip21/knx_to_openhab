@@ -108,6 +108,66 @@ def test_newer_questions_invalidate_previous_plan():
         latest_plan(history)
 
 
+@pytest.mark.parametrize("edited", [False, True])
+@pytest.mark.parametrize("reapprove_old_plan", [False, True])
+def test_pending_owner_replan_revokes_old_write_authorization(edited, reapprove_old_plan):
+    issue, history = fixture()
+    command = history[-1]
+    request = {
+        "id": 45,
+        "user": {"login": OWNER.upper()},
+        "body": "  /AI answer Bitte nur neu planen, keine Umsetzung starten.  ",
+        "created_at": "2026-01-01T00:01:00Z",
+        "updated_at": "2026-01-01T00:01:01Z" if edited else "2026-01-01T00:01:00Z",
+    }
+    history.append(request)
+    if reapprove_old_plan:
+        # Even another old-version approval cannot replace the requested new plan.
+        for original in history[1:4]:
+            repeated = copy.deepcopy(original)
+            repeated["id"] += 40
+            history.append(repeated)
+        command = history[-1]
+    with pytest.raises(ValueError, match="planning request is pending"):
+        authorize_task(issue, history, command, OWNER, OWNER, expected_issue_number=89)
+
+
+@pytest.mark.parametrize(
+    "author,body",
+    [
+        ("external", "/ai answer Change everything"),
+        ("github-actions[bot]", "/ai answer Example only"),
+        (OWNER, "/ai answer   "),
+        (OWNER, "Consider the command `/ai answer` later"),
+        (OWNER, "/ai answers This is not a command"),
+    ],
+)
+def test_nonplanning_comments_do_not_revoke_approved_task(author, body):
+    issue, history = fixture()
+    command = history[-1]
+    history.append({"id": 45, "user": {"login": author}, "body": body})
+    approved = authorize_task(issue, history, command, OWNER, OWNER, expected_issue_number=89)
+    assert approved["version"] == 3
+
+
+def test_new_plan_after_replanning_request_needs_new_approval_and_start():
+    issue, history = fixture()
+    history.append(
+        {"id": 45, "user": {"login": OWNER}, "body": "/ai answer Review existing work first"}
+    )
+    _, fresh = fixture(version=4)
+    for comment in fresh:
+        comment["id"] += 50
+    old_command = history[3]
+    history.extend(fresh)
+    with pytest.raises(ValueError, match="Plan version"):
+        authorize_task(issue, history, old_command, OWNER, OWNER, expected_issue_number=89)
+    approved = authorize_task(issue, history, history[-1], OWNER, OWNER, expected_issue_number=89)
+    assert approved["version"] == 4
+    assert approved["plan_comment_id"] == 60
+    assert approved["command_comment_id"] == 90
+
+
 @pytest.mark.parametrize(
     "path",
     [

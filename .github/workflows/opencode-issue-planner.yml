@@ -90,6 +90,31 @@ jobs:
         shell: bash
         run: python ../trusted/scripts/issue_bot.py prepare
 
+      - name: Invalidate the previous approval before replanning
+        if: steps.decision.outputs.operation == 'plan'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('node:fs');
+            const crypto = require('node:crypto');
+            const decision = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/issue-decision.json', 'utf8'));
+            const {assertFreshPlanning} = require(process.env.GITHUB_WORKSPACE + '/trusted/scripts/automation/planning.cjs');
+            await assertFreshPlanning({github, context, snapshot: decision.planning_snapshot});
+            const repo = {owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number};
+            const {data: issue} = await github.rest.issues.get(repo);
+            const labels = new Set(issue.labels.map(x => x.name));
+            const digest = crypto.createHash('sha256')
+              .update(JSON.stringify([issue.title ?? '', issue.body ?? '']), 'utf8').digest('hex');
+            if (issue.state !== 'open' || issue.pull_request || !labels.has('ai:plan') || digest !== decision.digest) {
+              throw new Error('Issue changed before planning; refusing to reuse old approval');
+            }
+            if (labels.has('ai:approved')) {
+              await github.rest.issues.removeLabel({...repo, name: 'ai:approved'});
+            }
+            if (!labels.has('ai:waiting')) {
+              await github.rest.issues.addLabels({...repo, labels: ['ai:waiting']});
+            }
+
       - name: Set up Node.js
         if: steps.decision.outputs.operation == 'plan'
         uses: actions/setup-node@v7
@@ -120,13 +145,18 @@ jobs:
           CI: "true"
         run: |
           set -euo pipefail
-          timeout --signal=TERM --kill-after=10s 660s \
-            opencode run --standalone --archived --format json \
-              --agent issue-planner --model "$MODEL" \
-              "$(cat "$RUNNER_TEMP/issue-prompt.txt")" \
-            < /dev/null > "$RUNNER_TEMP/opencode-events.jsonl" \
-            2> "$RUNNER_TEMP/opencode-stderr.log"
-          python ../trusted/scripts/issue_bot.py finish
+          python -I ../trusted/scripts/automation/planner_runner.py
+
+      - name: Retain content-free planner diagnostics
+        if: always() && steps.decision.outputs.operation == 'plan'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ai-planner-diagnostics-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/planner-diagnostics.json
+            ${{ runner.temp }}/model-router.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Publish plan, questions or approval
         if: >-
@@ -165,6 +195,8 @@ jobs:
               }
             }
             if (result.operation === 'approve') {
+              const {assertFreshPlanning} = require(process.env.GITHUB_WORKSPACE + '/trusted/scripts/automation/planning.cjs');
+              await assertFreshPlanning({github, context, snapshot: result.planning_snapshot, approval: true});
               if (!labels.has('ai:waiting')) {
                 core.setFailed('Approval no longer awaiting human review');
                 return;
@@ -176,6 +208,8 @@ jobs:
                 ...repo, issue_number, name: 'ai:waiting'
               });
             } else if (result.operation === 'plan') {
+              const {assertFreshPlanning} = require(process.env.GITHUB_WORKSPACE + '/trusted/scripts/automation/planning.cjs');
+              await assertFreshPlanning({github, context, snapshot: result.planning_snapshot});
               await github.rest.issues.createComment({
                 ...repo, issue_number, body: result.comment
               });

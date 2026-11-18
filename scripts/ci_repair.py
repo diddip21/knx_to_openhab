@@ -26,17 +26,41 @@ from automation.scope import (  # noqa: E402
 TRUSTED_ROOT = Path(__file__).resolve().parents[1]
 
 
+def source_identity(event: dict[str, Any], owner: str) -> dict[str, Any]:
+    event_name = os.environ.get("GITHUB_EVENT_NAME")
+    if event_name == "workflow_run" and event.get("action") == "completed":
+        return event.get("workflow_run") or {}
+    if event_name != "workflow_dispatch":
+        raise ValueError("Not a supported CI continuation event")
+    default_branch = (event.get("repository") or {}).get("default_branch")
+    if (
+        os.environ.get("GITHUB_ACTOR", "").casefold() not in {owner.casefold(), BOT_LOGIN}
+        or not default_branch
+        or os.environ.get("GITHUB_REF") != f"refs/heads/{default_branch}"
+    ):
+        raise ValueError("CI continuation must run on the default branch for the owner or bot")
+    inputs = event.get("inputs") or {}
+    values = {}
+    for input_name, output_name in (("ci_run_id", "id"), ("ci_run_attempt", "run_attempt")):
+        value = str(inputs.get(input_name, ""))
+        if re.fullmatch(r"[1-9][0-9]*", value) is None:
+            raise ValueError(f"Invalid continuation {input_name}")
+        values[output_name] = int(value)
+    sha = str(inputs.get("ci_head_sha") or "")
+    if SHA.fullmatch(sha) is None:
+        raise ValueError("Invalid continuation CI head SHA")
+    return {**values, "head_sha": sha}
+
+
 def check_authorization(source: dict[str, Any], owner: str) -> dict[str, Any]:
     event = artifacts.load_json(Path(os.environ["GITHUB_EVENT_PATH"]))
-    expected = event.get("workflow_run") or {}
+    expected = source_identity(event, owner)
     run = source.get("run") or {}
     repository = os.environ["GITHUB_REPOSITORY"]
     if (
-        os.environ.get("GITHUB_EVENT_NAME") != "workflow_run"
-        or event.get("action") != "completed"
-        or run.get("id") != expected.get("id")
+        run.get("id") != expected.get("id")
         or run.get("head_sha") != expected.get("head_sha")
-        or run.get("head_branch") != expected.get("head_branch")
+        or (expected.get("head_branch") and run.get("head_branch") != expected["head_branch"])
         or run.get("run_attempt") != expected.get("run_attempt")
         or run.get("status") != "completed"
         or run.get("conclusion") != "failure"
@@ -134,6 +158,7 @@ def prompt_for_failure(context: dict[str, Any], temp: Path) -> str:
             {
                 "issue": context["issue_number"],
                 "plan_version": context["version"],
+                "plan": str(context.get("plan") or "")[:20000],
                 "scope": context["scope"],
                 "attempt": context["attempt"],
                 "max_attempts": MAX_REPAIRS,

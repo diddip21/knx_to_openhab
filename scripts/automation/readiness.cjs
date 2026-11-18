@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const {collectCI, latestDispatchedRun} = require('./ci_evidence.cjs');
 const branchPattern = /^ai\/issue-([1-9][0-9]*)-plan-v([1-9][0-9]*)-run-([1-9][0-9]*)$/;
 
 module.exports = async function snapshot({github, context, core, directory}) {
@@ -30,13 +31,12 @@ module.exports = async function snapshot({github, context, core, directory}) {
     ({data: issue} = await github.rest.issues.get({...repo, issue_number}));
     comments = await github.paginate(github.rest.issues.listComments, {...repo, issue_number, per_page: 100});
   }
-  const [reviews, files, checks] = await Promise.all([
+  const [reviews, files, ci] = await Promise.all([
     github.paginate(github.rest.pulls.listReviews, {...repo, pull_number: number, per_page: 100}),
     github.paginate(github.rest.pulls.listFiles, {...repo, pull_number: number, per_page: 100}),
-    github.paginate(github.rest.checks.listForRef,
-      {...repo, ref: pr.head.sha, per_page: 100, filter: 'latest'})
+    collectCI({github, repo, branch: pr.head.ref, headSha: pr.head.sha})
   ]);
-  if (comments.length > 2000 || files.length > 500 || reviews.length > 2000 || checks.length > 1000) {
+  if (comments.length > 2000 || files.length > 500 || reviews.length > 2000) {
     throw new Error('Snapshot exceeds evidence limits');
   }
   const query = `query($owner:String!, $name:String!, $number:Int!, $after:String) {
@@ -57,6 +57,18 @@ module.exports = async function snapshot({github, context, core, directory}) {
     if (page === 24) throw new Error('Review thread pagination limit exceeded');
     cursor = collection.pageInfo.endCursor;
   }
+  const {data: current} = await github.rest.pulls.get({...repo, pull_number: number});
+  const latest = await latestDispatchedRun({github, repo, branch: pr.head.ref, headSha: pr.head.sha});
+  if (current.head.sha !== pr.head.sha || current.head.ref !== pr.head.ref ||
+      current.head.repo?.full_name !== pr.head.repo?.full_name ||
+      current.base.ref !== pr.base.ref || current.state !== pr.state ||
+      current.draft !== pr.draft || current.body !== pr.body ||
+      (latest?.id || null) !== (ci?.id || null) ||
+      (latest?.run_attempt || null) !== (ci?.run_attempt || null) ||
+      (latest?.status || null) !== (ci?.status || null) ||
+      (latest?.conclusion || null) !== (ci?.conclusion || null)) {
+    throw new Error('PR or CI changed while collecting evidence; refresh the report');
+  }
   const value = {
     owner: repo.owner, repository: `${repo.owner}/${repo.repo}`,
     pr: {number, head_ref: pr.head.ref, head_sha: pr.head.sha,
@@ -65,9 +77,7 @@ module.exports = async function snapshot({github, context, core, directory}) {
     issue, issue_comments: comments, unresolved_threads: unresolved,
     reviews: reviews.map(r => ({user: r.user, state: r.state,
       commit_id: r.commit_id, submitted_at: r.submitted_at})),
-    files: files.map(f => ({filename: f.filename, status: f.status})),
-    checks: checks.map(c => ({id: c.id, name: c.name, head_sha: c.head_sha,
-      started_at: c.started_at, status: c.status, conclusion: c.conclusion, app_slug: c.app?.slug}))
+    files: files.map(f => ({filename: f.filename, status: f.status})), ci
   };
   fs.writeFileSync(path.join(directory, 'merge-readiness-snapshot.json'), JSON.stringify(value));
   core.setOutput('eligible', 'true');

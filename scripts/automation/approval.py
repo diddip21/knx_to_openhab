@@ -10,6 +10,7 @@ from typing import Any
 BOT_LOGIN = "github-actions[bot]"
 COMMAND = re.compile(r"^/ai (?:implement|start) v([1-9][0-9]*)$", re.IGNORECASE)
 PLAN_MARKER = re.compile(r"^<!-- knx-issue-bot-state (\{[^\n]*\}) -->")
+REPLAN_REQUEST = re.compile(r"^/ai answer\s+\S[\s\S]*$", re.IGNORECASE)
 
 
 def digest(issue: dict[str, Any]) -> str:
@@ -62,6 +63,25 @@ def latest_plan(comments: list[dict[str, Any]]) -> dict[str, Any]:
     return {"id": ident, "state": marker, "body": comment["body"]}
 
 
+def pending_replan_request(
+    comments: list[dict[str, Any]], owner: str, plan_comment_id: int
+) -> dict[str, Any] | None:
+    """A new owner planning request suspends the old plan before model execution.
+
+    Do not rely on labels or a successful model response: an unsuccessful replan
+    must not leave the previous implementation command authorized. Edited requests
+    also suspend writes; editing a comment cannot silently restore approval.
+    """
+    requests = [
+        comment
+        for comment in comments
+        if int(comment.get("id") or 0) > plan_comment_id
+        and (comment.get("user") or {}).get("login", "").casefold() == owner.casefold()
+        and REPLAN_REQUEST.fullmatch(str(comment.get("body") or "").strip())
+    ]
+    return max(requests, key=lambda item: int(item["id"])) if requests else None
+
+
 def authorize(
     issue: dict[str, Any],
     comments: list[dict[str, Any]],
@@ -96,6 +116,10 @@ def authorize(
     plan = latest_plan(comments)
     if plan["state"]["version"] != version or plan["state"]["issue_digest"] != digest(issue):
         raise ValueError("Plan version or issue digest is stale")
+    if pending_replan_request(comments, owner, plan["id"]):
+        raise ValueError(
+            "A newer owner planning request is pending; wait for a new plan and approval"
+        )
     cmd_id = int(command_comment["id"])
     live = next((c for c in comments if c.get("id") == cmd_id), None)
     if (

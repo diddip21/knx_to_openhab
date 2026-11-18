@@ -2,8 +2,8 @@
 
 This is repository tooling, not application runtime code. No controller contains
 an issue number, HomeKit prompt, fixed plan version or per-feature write list.
-Issue #89 is a test case, not a production exception. The old #89/#96 executables,
-agents and duplicate guard workflows have been removed.
+The old issue-specific executables, agents and duplicate guard workflows have
+been removed.
 
 ## Activation and migration
 
@@ -49,6 +49,13 @@ Der kurze Start gilt nur für neue Pläne mit strukturiertem Dateiumfang. Bei
 älteren Plänen bleibt `/ai implement vN` mit vollständigem JSON-Block gültig.
 Ein alter Plan wird nicht automatisch auf den kurzen Start umgestellt.
 
+Ein neuer, nicht leerer Owner-Kommentar `/ai answer ...` sperrt die alte
+Freigabe sofort für Umsetzung und Reparatur, auch wenn die neue Planung später
+fehlschlägt. Vor dem Modelllauf entfernt der Planer `ai:approved` und setzt
+`ai:waiting`. Ein erneutes `approve` für den alten Plan hebt diese Sperre nicht
+auf; nötig sind ein neuer Plan sowie dessen Freigabe und Start. Ältere laufende
+Planungen dürfen neuere oder geänderte Anforderungen nicht überschreiben.
+
 ## Normal issue-to-PR sequence
 
 1. Describe the task and acceptance criteria; request planning using `ai:plan`.
@@ -80,23 +87,74 @@ Ein alter Plan wird nicht automatisch auf den kurzen Start umgestellt.
 4. The read-only generation job selects an approved free model, installs the
    pinned OpenCode CLI and builds literal agent permissions from the owner scope.
    Shell, external directories, Code Mode, network tools and subagents stay denied.
-5. Trusted Black/isort format only changed approved Python files with trusted
-   configuration and explicit filenames. No candidate code is executed. Scope,
+5. Trusted Black `26.10.1` and isort `9.0.2` format only changed approved Python
+   files, including tests, with trusted configuration and explicit filenames.
+   These versions match CI's development requirements and both generation and
+   repair jobs. No candidate code is executed during formatting. Scope,
    file modes, creation rights, sizes and diff budgets are checked again after
    formatting. A separate publisher re-fetches the issue and all authorization comments,
    validates the candidate against trusted Git objects, and creates a Draft PR
-   against `dev`. It explicitly dispatches the full existing CI.
+   against `dev`. It explicitly dispatches the full existing CI and binds its
+   continuation to the returned CI run ID.
 6. A failed **dispatched CI** may trigger at most two repairs of the same
    bot-authored, open **Draft** PR, on the exact failed SHA. Repairs cannot add
    files or expand the original owner scope. Normal PR-CI failures, foreign
    repositories, Ready-for-review PRs, stale runs and revoked approval do not
    authorize repair. Manual commits never reset the two-attempt budget.
-7. The read-only readiness workflow checks current plan/scope, current CI,
-   human review, unresolved threads, mergeability and UI screenshot files when
-   UI paths changed. It reruns after CI completion, PR/review events, and via
+7. The read-only readiness workflow checks current plan/scope, one exact CI run
+   and attempt for the current head, human review, unresolved threads,
+   mergeability and UI screenshot files when UI paths changed. It reruns after
+   CI completion, PR/review events, and via
    Actions -> AI merge readiness (read-only) -> Run workflow -> PR number.
 8. The owner reviews evidence, marks the Draft ready, and merges deliberately.
    Release remains a separate reviewed `dev` -> `main` change.
+
+## Planner diagnostics and bounded retries
+
+The planner distinguishes provider/CLI failures, timeouts, truncated or empty
+output, invalid JSON/schema and invalid scope. A provider error event is a
+failure even if the CLI exits zero. Only models that passed this run's approved
+free-model probes may be used. A malformed response gets one corrective retry
+on the same model; a further failure may use the other successfully probed
+model. Provider/runtime failures can move directly to that fallback. There are
+at most three attempts, four minutes per attempt and eleven minutes total.
+Prompt and output sizes are bounded. Invalid or superseded results are never
+published as plans, and a failed replan does not restore the old approval.
+
+The `ai-planner-diagnostics-<run ID>` artifact records model IDs, attempt phases,
+fixed failure codes, event/size counts and durations; the job summary lists the
+attempts and outcome. The artifact is retained for seven days. Raw prompts,
+model replies, stderr, tool
+outputs and environment values are not uploaded as diagnostics. Use the code
+and attempt sequence to distinguish a provider failure from a response that
+failed validation; an artifact's existence does not establish a successful plan.
+
+## Exact CI continuation and recovery
+
+The trusted publisher dispatches `ci.yml` with GitHub API version `2026-03-10`,
+uses that response's `workflow_run_id`, and verifies the run's repository,
+workflow, branch, SHA and attempt. It then explicitly dispatches
+`opencode-ci-self-repair.yml` on the trusted default branch with `ci_run_id`,
+`ci_run_attempt` and `ci_head_sha`. Candidate CI retains read-only permissions;
+it does not publish code or run a privileged continuation step. The existing
+`workflow_run` entrypoint remains supported, but is not the only handoff.
+
+The continuation waits for that exact run, rechecks the current open bot PR,
+and starts the read-only readiness audit. A failed current run can enter the
+bounded repair path; success proceeds to the human gates. Closed PRs, changed
+heads, rerun attempts and newer dispatched runs on the same SHA cannot reuse
+older failure evidence. Duplicate continuations are serialized and superseded
+sources become no-ops. Dispatch inputs identify evidence, not authorization:
+every repair and publication still checks the original live owner approval.
+
+If publication succeeds but continuation dispatch fails, use **Actions ->
+AI CI self-repair -> Run workflow**, select the repository's trusted default
+branch, and enter the exact `ci_run_id`, `ci_run_attempt` and full 40-character
+`ci_head_sha` reported by the publisher. Only the owner or bot may use this
+entrypoint. Do not restart implementation or CI to resume this completed
+publication. An ambiguous CI dispatch is never retried automatically; inspect
+the actual run before recovery. Only transient continuation-dispatch failures
+receive bounded automatic retries.
 
 ## Scope and safeguards
 
@@ -113,8 +171,9 @@ Limits: 20 files, 300 KB per file, 1.25 MB total, 2,500 changed lines initially;
 publisher independently rechecks sizes, file bytes, hashes, original file modes,
 new-file permissions, required files and changed-line counts. It never imports
 or executes candidate code. Python runs isolated (`-I`) from trusted scripts.
-Only the publisher has GitHub write permissions; only AI branches can be moved,
-and repair pushes are fast-forward-only.
+Only trusted publisher jobs may move AI branches, and repair pushes are
+fast-forward-only. Routing and status jobs have only their separate, required
+Actions or issue permissions and never execute candidate code.
 
 The original command, plan and normalized scope are hash-bound into the PR.
 Editing or deleting those comments, changing the issue, replacing the plan,
@@ -141,6 +200,18 @@ Fehler beim Start oder bei der Reparatur werden mit Run-Link und Schrittnamen
 gemeldet; rohe Modelltexte und Logs werden nicht ins Issue kopiert. Der
 Reporter arbeitet nur mit GitHub-APIs und vertrauenswürdigem Code von `main`.
 Er ändert keine Branches, Labels, Freigaben oder Merge-Entscheidungen.
+
+Status und Readiness beziehen sich auf genau einen aktuellen CI-Lauf samt
+Versuch und HEAD-SHA. Alle erforderlichen Jobs müssen in diesem selben Lauf
+erfolgreich sein; grüne Jobs verschiedener Läufe werden nicht kombiniert.
+Nach dem Sammeln der Nachweise werden PR und CI nochmals gelesen, damit ein
+zwischenzeitlich geänderter Stand nicht als geprüft erscheint.
+
+Der Readiness-Aufruf mit `--allow-open` darf einen vollständig ausgeführten Audit
+erfolgreich abschließen, während menschliche Gates noch `OPEN` sind. Der Bericht
+bleibt dann `ready: false` und nennt die offenen Nachweise; ein `FAIL` lässt den
+Aufruf weiterhin fehlschlagen. Ein grüner Audit-Job ersetzt deshalb weder den
+Berichtsinhalt noch Review, Screenshots oder die bewusste Merge-Entscheidung.
 
 Maßgeblich für die automatische Reparatur ist die ausdrücklich gestartete CI
 (`workflow_dispatch`) auf der aktuellen PR-SHA. Ein zusätzlicher PR-Lauf kann
@@ -170,9 +241,12 @@ bleibt separat mit Run-URLs und SHAs nachzuweisen.
 `tests/ai_pipeline/` exercises different issue numbers and plan versions through
 the same authorization, artifact, repair and publisher implementation. Negative
 tests cover forged/edited approvals, scope changes, path escapes, symlinks,
-oversized content, foreign PRs, stale commits and attempts, and repair caps.
+oversized content, pending replans, foreign PRs, stale commits and attempts,
+newer CI runs on the same SHA, duplicate continuations and repair caps.
 Publisher/API tests call the production JavaScript against deterministic API
-fixtures. Contract tests verify permissions, trusted checkouts, triggers and
+fixtures, including dispatch recovery and exact-run readiness. Planner tests
+cover response validation, bounded retries, fallback and content-free diagnostics.
+Contract tests verify permissions, trusted checkouts, triggers and
 absence of retired controllers. Release tests inspect real archives and hashes.
 
 The local end-to-end harness creates isolated Git repositories, deliberately
@@ -180,9 +254,9 @@ produces a failing test, validates a bounded repair, and runs pytest again to
 prove the repaired result. It uses deterministic edits and API fixtures, **not a
 live model or a live GitHub publication**. It never damages the application PR.
 
-After infrastructure review/activation, run a fresh owner-approved task (such as
-#89 with revised software-only acceptance criteria), then another independently
-approved issue without changing controller code. Record actual workflow URLs,
+After infrastructure review and activation on `main`, synchronize `dev`, then
+run a fresh owner-approved task and another independently approved issue
+without changing controller code. Record actual workflow URLs,
 SHA values, generated PRs, full CI and readiness results. A real model repair
 cycle is only proven when it actually occurs. Test intentional failures only in
 an explicitly authorized disposable test repository; never inject faults into

@@ -1,6 +1,7 @@
 """Actual event identity, approval and repair-budget checks for arbitrary issues."""
 
 import copy
+import json
 
 import pytest
 
@@ -124,3 +125,91 @@ def test_logs_are_bounded_untrusted_data(tmp_path):
     assert "UNTRUSTED DATA" in prompt
     assert "weaken tests" in prompt
     assert len(prompt) < 50000
+
+
+def dispatch_event(tmp_path, monkeypatch, source, actor=OWNER):
+    event = {
+        "repository": {"default_branch": "main"},
+        "inputs": {
+            "ci_run_id": str(source["run"]["id"]),
+            "ci_run_attempt": str(source["run"]["run_attempt"]),
+            "ci_head_sha": source["run"]["head_sha"],
+        },
+    }
+    path = tmp_path / "dispatch-event.json"
+    path.write_text(json.dumps(event), encoding="utf-8")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(path))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
+    monkeypatch.setenv("GITHUB_REPOSITORY", f"{OWNER}/sample")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
+    monkeypatch.setenv("GITHUB_ACTOR", actor)
+    return event, path
+
+
+@pytest.mark.parametrize("actor", [OWNER, "github-actions[bot]"])
+def test_explicit_continuation_uses_existing_approval_and_two_round_budget(
+    tmp_path, monkeypatch, actor
+):
+    root = init_repo(tmp_path / "candidate")
+    source = repair_source(root, 1234, 5)
+    dispatch_event(tmp_path, monkeypatch, source, actor)
+    assert ci.check_authorization(source, OWNER)["attempt"] == 1
+    source["commits"].append({"commit": {"message": "fix(ai-ci): issue 1234 plan v5 attempt 1"}})
+    assert ci.check_authorization(source, OWNER)["attempt"] == 2
+    source["commits"].append({"commit": {"message": "A separate manual adjustment"}})
+    source["commits"].append({"commit": {"message": "fix(ai-ci): issue 1234 plan v5 attempt 2"}})
+    with pytest.raises(ValueError, match="Maximum of two"):
+        ci.check_authorization(source, OWNER)
+
+
+@pytest.mark.parametrize(
+    "changed",
+    ["actor", "ref", "id", "attempt", "sha", "success", "foreign", "revoked", "pending_plan"],
+)
+def test_dispatch_inputs_select_evidence_but_cannot_authorize_repairs(
+    tmp_path, monkeypatch, changed
+):
+    root = init_repo(tmp_path / "candidate")
+    source = repair_source(root, 1234, 5)
+    event, path = dispatch_event(tmp_path, monkeypatch, source)
+    if changed == "actor":
+        monkeypatch.setenv("GITHUB_ACTOR", "external")
+    elif changed == "ref":
+        monkeypatch.setenv("GITHUB_REF", "refs/heads/ai/issue-1234-plan-v5-run-1000")
+    elif changed == "id":
+        event["inputs"]["ci_run_id"] = "6001"
+    elif changed == "attempt":
+        event["inputs"]["ci_run_attempt"] = "2"
+    elif changed == "sha":
+        event["inputs"]["ci_head_sha"] = "a" * 40
+    elif changed == "success":
+        source["run"]["conclusion"] = "success"
+    elif changed == "foreign":
+        source["run"]["head_repository"]["full_name"] = "external/repo"
+    elif changed == "revoked":
+        source["issue"]["labels"] = [{"name": "ai:waiting"}]
+    elif changed == "pending_plan":
+        source["comments"].append(
+            {"id": 45, "user": {"login": OWNER}, "body": "/ai answer Please revise the plan"}
+        )
+    path.write_text(json.dumps(event), encoding="utf-8")
+    with pytest.raises(ValueError):
+        ci.check_authorization(source, OWNER)
+
+
+def test_repair_receives_bounded_approved_plan_as_untrusted_context(tmp_path):
+    context = {
+        "issue_number": 1234,
+        "version": 5,
+        "scope": {"files": ["feature.py", "tests/test_feature.py"]},
+        "attempt": 1,
+        "plan": "Keep stored settings compatible. " * 1000,
+    }
+    (tmp_path / "ci-failed.log").write_text("Failure evidence " * 5000, encoding="utf-8")
+    prompt = ci.prompt_for_failure(context, tmp_path)
+    assert "UNTRUSTED DATA" in prompt
+    payload = json.loads(prompt.split("\n\n", 1)[1])
+    assert payload["plan"].startswith("Keep stored settings compatible.")
+    assert len(payload["plan"]) <= 20000
+    assert len(payload["diagnostics"]) <= 48000
+    assert payload["scope"] == context["scope"]

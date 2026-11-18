@@ -56,12 +56,14 @@ jobs:
         run: |
           python -I scripts/ai_merge_readiness.py \
             --snapshot "$RUNNER_TEMP/merge-readiness-snapshot.json" \
-            --report "$RUNNER_TEMP/merge-readiness-report.json"
+            --report "$RUNNER_TEMP/merge-readiness-report.json" --allow-open
       - name: Archive gate results only
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: ai-readiness-${{ github.run_id }}
-          path: ${{ runner.temp }}/merge-readiness-report.json
+          path: |
+            ${{ runner.temp }}/merge-readiness-report.json
+            ${{ runner.temp }}/merge-readiness-report.md
           if-no-files-found: ignore
           retention-days: 14

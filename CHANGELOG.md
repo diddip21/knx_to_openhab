@@ -8,10 +8,12 @@ Notable changes to KNX to OpenHAB are documented here in the [Keep a Changelog](
 
 - Semantic versioning metadata and deterministic source release artifacts.
 - A path-by-path audit of `dev` in `docs/AUDIT_dev.md`.
+- HomeKit rollershutter settings in the Web UI and `general.homekit_*` configuration keys.
 
 ### Changed
 
 - Documentation now distinguishes CLI and Web UI defaults, the actual test commands, and safe uninstallation behavior.
+- HomeKit rollershutters now send `sendUpDownForExtents=true` on the `WindowCovering` group by default; existing configurations without the key inherit the new default, and an explicit `false` opts out.
 
 ### Removed
 

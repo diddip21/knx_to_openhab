@@ -21,6 +21,17 @@ async function apiFetch(resource, options = {}) {
   return response
 }
 
+function configBoolean(value, defaultValue) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (['yes', 'true', 't', '1'].includes(normalized)) return true
+    if (['no', 'false', 'f', '0'].includes(normalized)) return false
+  }
+  return defaultValue
+}
+
 const logoutButton = document.getElementById('logoutButton')
 if (logoutButton) {
   logoutButton.addEventListener('click', async () => {
@@ -1888,6 +1899,32 @@ async function loadConfig() {
     document.getElementById('conf-central-keyword').value = gen.central_function_keyword || 'zentral'
     document.getElementById('conf-central-group').value = gen.central_function_group || 'Base'
     document.getElementById('conf-notification-sensor-keyword').value = gen.notification_sensor_keyword || 'Melden/Sensor'
+    const homekitMode = gen.homekit_enabled
+    let selectedHomekitMode = 'ets'
+    if (typeof homekitMode === 'boolean') {
+      selectedHomekitMode = homekitMode ? 'enabled' : 'disabled'
+    } else if (typeof homekitMode === 'string') {
+      const normalizedHomekitMode = homekitMode.trim().toLowerCase()
+      if (['yes', 'true', 't', '1'].includes(normalizedHomekitMode)) {
+        selectedHomekitMode = 'enabled'
+      } else if (['no', 'false', 'f', '0'].includes(normalizedHomekitMode)) {
+        selectedHomekitMode = 'disabled'
+      }
+    }
+    const homekitModeInput = document.querySelector(`input[name="conf-homekit-mode"][value="${selectedHomekitMode}"]`)
+    if (homekitModeInput) homekitModeInput.checked = true
+    document.getElementById('conf-homekit-extents').checked = configBoolean(
+      gen.homekit_rollershutter_sendUpDownForExtents,
+      true
+    )
+    document.getElementById('conf-homekit-stop').checked = configBoolean(
+      gen.homekit_rollershutter_stop,
+      false
+    )
+    document.getElementById('conf-homekit-stop-same').checked = configBoolean(
+      gen.homekit_rollershutter_stopSameDirection,
+      false
+    )
 
     // Populate Devices Tab
     const dev = currentConfig.devices || {}
@@ -2079,6 +2116,15 @@ async function saveConfig(reprocess = false) {
       item_Floor_nameshort_prefix: currentConfig.general?.item_Floor_nameshort_prefix || "=",
       item_Room_nameshort_prefix: currentConfig.general?.item_Room_nameshort_prefix || "+"
     }
+    const selectedHomekitMode = document.querySelector('input[name="conf-homekit-mode"]:checked')?.value || 'ets'
+    if (selectedHomekitMode === 'ets') {
+      delete newConfig.general.homekit_enabled
+    } else {
+      newConfig.general.homekit_enabled = selectedHomekitMode === 'enabled'
+    }
+    newConfig.general.homekit_rollershutter_sendUpDownForExtents = document.getElementById('conf-homekit-extents').checked
+    newConfig.general.homekit_rollershutter_stop = document.getElementById('conf-homekit-stop').checked
+    newConfig.general.homekit_rollershutter_stopSameDirection = document.getElementById('conf-homekit-stop-same').checked
 
     // Devices
     const gwNames = document.getElementById('conf-gateway-names').value.split(',').map(s => s.trim()).filter(s => s)

@@ -551,6 +551,63 @@ def test_v2_projection_without_token_finish_is_accepted(tmp_path, monkeypatch):
     assert report["attempts"][0]["terminal_finish_seen"] is False
 
 
+def test_v2_final_projection_without_tokens_after_tool_step_is_accepted(tmp_path, monkeypatch):
+    root, temp = setup_runtime(tmp_path, monkeypatch, second=False)
+    calls = fake_cli(
+        tmp_path,
+        monkeypatch,
+        "changed()\nemit({'type': 'step_start'})\n"
+        "emit({'type': 'text', 'part': {'text': 'Working.'}})\n"
+        "emit({'type': 'tool_use', 'part': {'id': 'read-1', 'tool': 'read', 'state': "
+        "{'status': 'completed', 'input': {'filePath': 'feature.py'}}}})\n"
+        "emit({'type': 'step_finish', 'part': {'reason': 'tool-calls'}})\n"
+        "emit({'type': 'step_start'})\n"
+        "emit({'type': 'text', 'part': {'text': 'Completed.'}})",
+    )
+    attempt = runner.run_generation(root, temp, "implement", FIRST)["attempts"][0]
+    assert attempt["pending_tools"] == 0
+    assert attempt["terminal_finish_seen"] is False
+    assert json.loads(calls.read_text()) == [FIRST]
+
+
+def test_v2_new_step_cannot_inherit_text_or_terminal_finish(tmp_path, monkeypatch):
+    root, temp = setup_runtime(tmp_path, monkeypatch, second=False)
+    fake_cli(
+        tmp_path,
+        monkeypatch,
+        "changed()\nemit({'type': 'step_start'})\nvalid()\n" "emit({'type': 'step_start'})",
+    )
+    attempt = fails(root, temp, "empty_response")["attempts"][0]
+    assert attempt["terminal_finish_seen"] is False
+
+
+@pytest.mark.parametrize(
+    "prior_event,expected",
+    [
+        (
+            {
+                "type": "tool_use",
+                "part": {"id": "read-1", "tool": "read", "state": {"status": "running"}},
+            },
+            "incomplete_tools",
+        ),
+        ({"type": "step_finish", "part": {"reason": "length"}}, "output_truncated"),
+        ({"type": "error", "error": {"type": "unknown", "message": PRIVATE}}, "provider_error"),
+        ({"type": "question"}, "tool_policy"),
+    ],
+)
+def test_v2_new_step_preserves_pending_tools_and_sticky_failures(tmp_path, prior_event, expected):
+    metrics = runner.EventMetrics(tmp_path, {"files": ["feature.py"], "create": [], "required": []})
+    sequence = [
+        {"type": "step_start"},
+        prior_event,
+        {"type": "step_start"},
+        {"type": "text", "part": {"text": "Completed."}},
+    ]
+    metrics.feed("".join(json.dumps(event) + "\n" for event in sequence).encode())
+    assert metrics.finish() == expected
+
+
 def test_v2_native_patch_and_skill_id_use_existing_permissions(tmp_path, monkeypatch):
     root, temp = setup_runtime(tmp_path, monkeypatch)
     patch = (

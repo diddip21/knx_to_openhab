@@ -474,6 +474,12 @@ class EventMetrics:
         part = part if isinstance(part, dict) else {}
         if kind in {"permission", "question", "permission_request"}:
             self.reject("tool_policy")
+        elif kind == "step_start":
+            # V2 can project this step's final text without token metadata or
+            # step_finish. Do not inherit an earlier step's finish or text.
+            self.last_finish = None
+            self.has_text = False
+            self.values["terminal_finish_seen"] = False
         elif kind == "error":
             error = event.get("error")
             error = error if isinstance(error, dict) else {}

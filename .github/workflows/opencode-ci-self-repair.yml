@@ -102,6 +102,17 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           path: trusted
           persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Prepare isolated formatter runtime
+        working-directory: trusted
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -I -m pip --isolated install --no-user "black==26.10.1" "isort==9.0.2"
+          python -I -m isort --version-number
+          python -I -m black --version
       - name: Read exact failing source without persisted credentials
         uses: actions/checkout@v7
         with:
@@ -183,7 +194,6 @@ jobs:
         run: |
           set -euo pipefail
           git restore --source=HEAD --worktree -- .opencode/agents/ai-task.md
-          python -m pip install "black==26.10.1" "isort==9.0.2"
           python -I ../trusted/scripts/ci_repair.py format
           python -I ../trusted/scripts/ci_repair.py collect
       - uses: actions/upload-artifact@v7

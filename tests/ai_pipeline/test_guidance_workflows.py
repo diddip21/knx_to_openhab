@@ -1,5 +1,10 @@
 """Permissions and ordering of formatter/reporting jobs stay explicit."""
 
+import os
+import shlex
+import subprocess
+import sys
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
@@ -33,6 +38,87 @@ def test_formatting_happens_after_agent_restore_and_before_final_collection():
         source = (ROOT / ".github/workflows" / name).read_text()
         assert source.index("git restore --source=HEAD") < source.index(f"{command}.py format")
         assert source.index(f"{command}.py format") < source.index(f"{command}.py collect")
+
+
+@pytest.mark.parametrize(
+    ("workflow", "job_name"),
+    [("ai-issue-implement.yml", "implement"), ("opencode-ci-self-repair.yml", "repair")],
+)
+def test_isolated_formatter_runtime_is_ready_before_any_model_work(workflow, job_name, tmp_path):
+    definition = yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())
+    steps = definition["jobs"][job_name]["steps"]
+    runtimes = [
+        (index, step)
+        for index, step in enumerate(steps)
+        if step.get("uses", "").startswith("actions/setup-python@")
+    ]
+    assert len(runtimes) == 1, "The model job needs an explicit shared Python runtime"
+    runtime_index, runtime = runtimes[0]
+    assert runtime["with"]["python-version"] == "3.12"
+
+    python_commands = []
+    for index, step in enumerate(steps):
+        for line in step.get("run", "").replace("\\\n", " ").splitlines():
+            command = shlex.split(line, comments=True)
+            if command and Path(command[0]).name.startswith("python"):
+                python_commands.append((index, command))
+    # Resolve tools through the runtime installed above, not the runner's system Python.
+    assert all(command[0] == "python" for _, command in python_commands)
+    probes = {
+        command[3]: (index, command)
+        for index, command in python_commands
+        if command[:3] == ["python", "-I", "-m"]
+        and len(command) > 3
+        and command[3] in {"isort", "black"}
+    }
+    assert probes.keys() == {"isort", "black"}, "Exercise both modules with isolated imports"
+    bootstrap_index = probes["isort"][0]
+    assert probes["black"][0] == bootstrap_index
+    bootstrap = steps[bootstrap_index]
+    assert bootstrap["working-directory"] == "trusted"
+    assert not bootstrap.get("continue-on-error", False)
+    assert bootstrap.get("if", "success()") == "success()"
+    assert runtime_index < bootstrap_index == min(index for index, _ in python_commands)
+    candidate_checkout = next(
+        index for index, step in enumerate(steps) if step.get("with", {}).get("path") == "candidate"
+    )
+    assert bootstrap_index < candidate_checkout
+    install = [
+        (index, command)
+        for index, command in python_commands
+        if "pip" in command and "install" in command
+    ]
+    assert len(install) == 1, "Do not defer installation until after costly generation"
+    install_index, install_command = install[0]
+    assert install_index == bootstrap_index
+    assert install_command[:5] == ["python", "-I", "-m", "pip", "--isolated"]
+    assert "--no-user" in install_command and "--user" not in install_command
+    pinned = {
+        line.strip()
+        for line in (ROOT / "requirements-dev.txt").read_text().splitlines()
+        if line.startswith(("black==", "isort=="))
+    }
+    assert len(pinned) == 2 and pinned.issubset(install_command)
+
+    # Run the real preflight commands from the workflow, without a network install.
+    # A successful ordinary import is insufficient: -I must ignore injected modules.
+    poison = tmp_path / "untrusted-imports"
+    poison.mkdir()
+    for module in probes:
+        (poison / f"{module}.py").write_text("raise RuntimeError('untrusted formatter import')\n")
+    env = {**os.environ, "PYTHONPATH": str(poison), "PYTHONUSERBASE": str(tmp_path / "user")}
+    for module, (_, command) in probes.items():
+        assert command[4:] == ["--version-number" if module == "isort" else "--version"]
+        result = subprocess.run(
+            [sys.executable, *command[1:]],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+        assert version(module) in result.stdout
 
 
 def test_planning_context_read_permissions_and_trusted_source():

@@ -87,7 +87,13 @@ Planungen dürfen neuere oder geänderte Anforderungen nicht überschreiben.
 4. The read-only generation job selects an approved free model, installs the
    pinned OpenCode CLI and builds literal agent permissions from the owner scope.
    Shell, external directories, Code Mode, network tools and subagents stay denied.
-5. Trusted Black `26.10.1` and isort `9.0.2` format only changed approved Python
+5. Implementation and repair generation jobs select Python `3.12` explicitly before
+   running any Python controller. The pinned formatters are installed from the trusted checkout
+   with `python -I -m pip --isolated install --no-user`; both formatter modules are
+   executed with `-I` before model selection or generation. A missing or inaccessible
+   formatter therefore stops the job before model work. User-site packages are not
+   a fallback because the isolated formatter intentionally cannot import them.
+   Trusted Black `26.10.1` and isort `9.0.2` format only changed approved Python
    files, including tests, with trusted configuration and explicit filenames.
    These versions match CI's development requirements and both generation and
    repair jobs. No candidate code is executed during formatting. Scope,

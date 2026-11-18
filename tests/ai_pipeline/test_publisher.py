@@ -8,11 +8,12 @@ import pytest
 from .helpers import ROOT
 
 
-def test_node_publisher_and_readiness_contracts():
+@pytest.mark.parametrize("test_file", sorted((ROOT / "tests/ai_pipeline").glob("*.test.cjs")))
+def test_node_publisher_and_readiness_contracts(test_file):
     if shutil.which("node") is None:
         pytest.skip("Node.js is required; the dedicated guard workflow installs Node 22")
     result = subprocess.run(
-        ["node", "--test", str(ROOT / "tests/ai_pipeline/publisher.test.cjs")],
+        ["node", "--test", str(test_file)],
         cwd=ROOT,
         capture_output=True,
         text=True,

@@ -4,19 +4,91 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: 'Exact dispatched CI run to continue'
+        type: string
+        required: true
+      ci_run_attempt:
+        description: 'Exact CI run attempt'
+        type: string
+        required: true
+      ci_head_sha:
+        description: 'Exact 40-character commit tested by CI'
+        type: string
+        required: true
 
 permissions: {}
 concurrency:
-  group: ai-ci-repair-${{ github.event.workflow_run.head_branch || github.run_id }}
+  group: ai-ci-repair-${{ github.event.workflow_run.head_sha || inputs.ci_head_sha || github.run_id }}
   cancel-in-progress: false
 
 jobs:
-  repair:
+  route:
     if: >-
-      github.event.workflow_run.conclusion == 'failure' &&
-      github.event.workflow_run.event == 'workflow_dispatch' &&
-      github.event.workflow_run.head_repository.full_name == github.repository &&
-      startsWith(github.event.workflow_run.head_branch, 'ai/issue-')
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+       (github.actor == github.repository_owner || github.actor == 'github-actions[bot]')) ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.event == 'workflow_dispatch' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       startsWith(github.event.workflow_run.head_branch, 'ai/issue-'))
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      eligible: ${{ steps.source.outputs.eligible }}
+      repair: ${{ steps.source.outputs.repair }}
+      head_sha: ${{ steps.source.outputs.head_sha }}
+      ci_run_id: ${{ steps.source.outputs.ci_run_id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Wait for exact CI and dispatch software audit from trusted code
+        id: source
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const {routeContinuation} = require(process.env.GITHUB_WORKSPACE + '/scripts/automation/continuation.cjs');
+            await routeContinuation({github, context, core});
+
+  report:
+    needs: route
+    if: always() && needs.route.result != 'skipped'
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      issues: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/github-script@v9
+        env:
+          CONTINUATION_FAILED: ${{ needs.route.result != 'success' }}
+        with:
+          script: |
+            const {resolveSource} = require(process.env.GITHUB_WORKSPACE + '/scripts/automation/continuation.cjs');
+            const {report} = require(process.env.GITHUB_WORKSPACE + '/scripts/automation/status.cjs');
+            let source = null;
+            try { source = await resolveSource({github, context}); }
+            catch { core.warning('The exact source could not be resolved; reporting only validated failure context.'); }
+            await report({github, context, source, controller:true,
+              phase:process.env.CONTINUATION_FAILED === 'true' ? 'continuation-failure' : undefined});
+
+  repair:
+    needs: route
+    if: needs.route.outputs.repair == 'true'
     permissions:
       contents: read
       issues: read
@@ -33,7 +105,7 @@ jobs:
       - name: Read exact failing source without persisted credentials
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ needs.route.outputs.head_sha }}
           path: candidate
           persist-credentials: false
       - name: Require trusted runtime policy and unchanged CI
@@ -56,7 +128,7 @@ jobs:
       - name: Read failed logs as untrusted diagnostic text
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ID: ${{ needs.route.outputs.ci_run_id }}
         shell: bash
         run: |
           timeout 40s gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed \
@@ -105,7 +177,12 @@ jobs:
           retention-days: 3
 
   publish:
-    needs: repair
+    needs: [route, repair]
+    outputs:
+      ci_run_id: ${{ steps.publication.outputs.ci_run_id }}
+      ci_run_attempt: ${{ steps.publication.outputs.ci_run_attempt }}
+      ci_head_sha: ${{ steps.publication.outputs.ci_head_sha }}
+      continuation_run_id: ${{ steps.publication.outputs.continuation_run_id }}
     permissions:
       contents: write
       pull-requests: read
@@ -122,7 +199,7 @@ jobs:
       - name: Read failing Git objects only; never execute candidate code
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ needs.route.outputs.head_sha }}
           path: target
           persist-credentials: false
       - uses: actions/download-artifact@v8
@@ -139,6 +216,7 @@ jobs:
         working-directory: target
         run: python -I ../trusted/scripts/ci_repair.py recheck
       - name: Fast-forward only and explicitly dispatch full CI
+        id: publication
         uses: actions/github-script@v9
         with:
           script: |
@@ -164,7 +242,20 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - uses: actions/github-script@v9
+        env:
+          RECOVERY_CI_RUN_ID: ${{ needs.publish.outputs.ci_run_id }}
+          RECOVERY_CI_RUN_ATTEMPT: ${{ needs.publish.outputs.ci_run_attempt }}
+          RECOVERY_CI_HEAD_SHA: ${{ needs.publish.outputs.ci_head_sha }}
+          CONTINUATION_RUN_ID: ${{ needs.publish.outputs.continuation_run_id }}
         with:
           script: |
+            const {resolveSource} = require(process.env.GITHUB_WORKSPACE + '/scripts/automation/continuation.cjs');
             const {report} = require(process.env.GITHUB_WORKSPACE + '/scripts/automation/status.cjs');
-            await report({github, context, phase:'repair-failure'});
+            let source = null;
+            try { source = await resolveSource({github, context}); }
+            catch { core.warning('The exact source could not be resolved; reporting only validated failure context.'); }
+            const values = {ci_run_id:process.env.RECOVERY_CI_RUN_ID,
+              ci_run_attempt:process.env.RECOVERY_CI_RUN_ATTEMPT,
+              ci_head_sha:process.env.RECOVERY_CI_HEAD_SHA};
+            const recovery = Object.values(values).every(Boolean) && !process.env.CONTINUATION_RUN_ID ? values : undefined;
+            await report({github, context, source, recovery, controller:true, phase:'repair-failure'});

@@ -4,8 +4,17 @@ on:
   pull_request:
     paths:
       - "scripts/issue_bot.py"
+      - "scripts/automation/model_response.py"
+      - "scripts/automation/planner_runner.py"
+      - "scripts/automation/planning.cjs"
+      - "scripts/automation/approval.py"
+      - "scripts/automation/scope.py"
+      - "scripts/opencode_model_router.py"
       - "tests/test_issue_bot.py"
+      - "tests/test_ai_planner_runner.py"
+      - "tests/ai_pipeline/planning_freshness.test.cjs"
       - ".opencode/agents/issue-planner.md"
+      - ".github/opencode-cli-version"
       - ".github/workflows/opencode-issue-planner.yml"
       - ".github/workflows/opencode-labels.yml"
       - ".github/workflows/ai-issue-planner-tests.yml"
@@ -25,9 +34,14 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
       - name: Install minimal test dependency
         run: python -m pip install "pytest>=8,<10"
       - name: Run controller tests
-        run: python -m pytest tests/test_issue_bot.py -q -o addopts=
+        run: python -m pytest tests/test_issue_bot.py tests/test_ai_planner_runner.py -q -o addopts=
+      - name: Reject stale concurrent planning results
+        run: node --test tests/ai_pipeline/planning_freshness.test.cjs
       - name: Check controller Python syntax
-        run: python -m py_compile scripts/issue_bot.py
+        run: python -m compileall -q scripts/issue_bot.py scripts/automation

@@ -89,6 +89,6 @@ def test_issue_and_repair_publishing_guards_stay_on_dev():
     assert "!pr.draft" in publisher
     assert "workflow_dispatch" in repair
     assert "force: false" in publisher
-    assert "createWorkflowDispatch" in publisher
+    assert "dispatchCiAndContinuation" in publisher
     assert "auto_merge" not in implement + repair + publisher
     assert "pulls.merge" not in publisher

@@ -106,35 +106,58 @@ def evaluate(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     except (KeyError, TypeError, ValueError, StopIteration) as exc:
         approval = gate("Plan und Owner-Freigabe", "OPEN", str(exc) or "Originalbefehl fehlt")
     result.append(approval)
+    ci = snapshot.get("ci")
+    if not isinstance(ci, dict):
+        ci = {}
+    run_valid = (
+        type(ci.get("id")) is int
+        and ci["id"] > 0
+        and type(ci.get("run_attempt")) is int
+        and ci["run_attempt"] > 0
+        and ci.get("head_sha") == sha
+        and ci.get("head_branch") == pr.get("head_ref")
+        and ci.get("head_repo") == snapshot.get("repository")
+        and ci.get("path") == ".github/workflows/ci.yml"
+        and ci.get("event") == "workflow_dispatch"
+    )
     checks: dict[str, dict[str, Any]] = {}
-    for record in snapshot.get("checks") or []:
+    duplicate = set()
+    for record in ci.get("jobs") or []:
         name = record.get("name")
         if (
-            name not in REQUIRED_CI
+            not run_valid
+            or record.get("run_id") != ci.get("id")
+            or record.get("run_attempt") != ci.get("run_attempt")
+            or name not in REQUIRED_CI
             or record.get("head_sha") != sha
-            or record.get("app_slug") != "github-actions"
         ):
             continue
-        previous = checks.get(name)
-        if previous is None or (str(record.get("started_at") or ""), int(record.get("id") or 0)) > (
-            str(previous.get("started_at") or ""),
-            int(previous.get("id") or 0),
-        ):
-            checks[name] = record
+        if name in checks:
+            duplicate.add(name)
+        checks[name] = record
     missing = [name for name in REQUIRED_CI if name not in checks]
     bad = [
         name
         for name, check in checks.items()
         if check.get("status") != "completed" or check.get("conclusion") != "success"
     ]
+    ci_passed = (
+        run_valid
+        and ci.get("status") == "completed"
+        and ci.get("conclusion") == "success"
+        and not (missing or bad or duplicate)
+    )
     result.append(
         gate(
             "CI am aktuellen Commit",
-            "PASS" if not (missing or bad) else "OPEN",
+            "PASS" if ci_passed else "OPEN",
             (
-                f"Alle fuenf GitHub-Actions-Gates erfolgreich auf {sha[:8]}"
-                if not (missing or bad)
-                else f"Fehlend: {missing}; nicht erfolgreich: {bad}"
+                f"CI-Lauf {ci['id']}, Versuch {ci['run_attempt']}: "
+                f"alle fuenf Jobs erfolgreich auf {sha[:8]}"
+                if ci_passed
+                else f"CI-Lauf {ci.get('id')}, Versuch {ci.get('run_attempt')}, "
+                f"Status {ci.get('status')}/{ci.get('conclusion')}; "
+                f"fehlend: {missing}; nicht erfolgreich: {bad}; doppelt: {sorted(duplicate)}"
             ),
         )
     )
@@ -246,6 +269,9 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--snapshot", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument(
+        "--allow-open", action="store_true", help="Report pending human gates without a job failure"
+    )
     args = parser.parse_args()
     snapshot = load_json(args.snapshot)
     gates = evaluate(snapshot)
@@ -253,15 +279,19 @@ def main() -> int:
         "pr": snapshot.get("pr", {}).get("number"),
         "sha": snapshot.get("pr", {}).get("head_sha"),
         "ready": all(g["status"] == "PASS" for g in gates),
+        "ci_run_id": (snapshot.get("ci") or {}).get("id"),
+        "ci_run_attempt": (snapshot.get("ci") or {}).get("run_attempt"),
         "gates": gates,
     }
     write_json(args.report, report)
     summary = summarize(snapshot.get("pr") or {}, gates)
+    args.report.with_suffix(".md").write_text(summary, encoding="utf-8")
     print(summary)
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as out:
             out.write(summary)
-    return 0 if report["ready"] else 1
+    completed_audit = args.allow_open and all(g["status"] != "FAIL" for g in gates)
+    return 0 if report["ready"] or completed_audit else 1
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,3 +41,63 @@ def test_planning_context_read_permissions_and_trusted_source():
     steps = definition["jobs"]["plan"]["steps"]
     source = next(s for s in steps if s.get("name") == "Fetch bot comments")["with"]["script"]
     assert "/trusted/scripts/automation/planning.cjs" in source
+
+
+@pytest.mark.parametrize(
+    ("workflow", "job_name", "mode", "budget_seconds"),
+    [
+        ("ai-issue-implement.yml", "implement", "implement", 1800),
+        ("opencode-ci-self-repair.yml", "repair", "repair", 1000),
+    ],
+)
+def test_generation_diagnostics_survive_failure_without_publishing_partial_code(
+    workflow, job_name, mode, budget_seconds
+):
+    definition = yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())
+    job = definition["jobs"][job_name]
+    assert all(value == "read" for value in job["permissions"].values())
+    # Router discovery/probes can take 320 seconds; repair also fetches a CI log.
+    # Leave at least four more minutes for setup, validation and uploads.
+    preparation_seconds = 320 + (40 if mode == "repair" else 0)
+    assert job["timeout-minutes"] * 60 >= budget_seconds + preparation_seconds + 240
+    steps = job["steps"]
+    generation = next(step for step in steps if step.get("id") == "generation")
+    assert generation["run"] == (
+        f"python -I ../trusted/scripts/automation/generation_runner.py --mode {mode}"
+    )
+    assert generation["working-directory"] == "candidate"
+    assert generation["timeout-minutes"] * 60 > budget_seconds
+    assert generation["env"] == {"CI": "true", "MODEL": "${{ steps.model.outputs.model }}"}
+    assert not generation.get("continue-on-error", False)
+
+    diagnostics = next(
+        step
+        for step in steps
+        if step.get("with", {}).get("path") == "${{ runner.temp }}/generation-diagnostics.json"
+    )
+    assert diagnostics["uses"].startswith("actions/upload-artifact@")
+    assert "always()" in diagnostics["if"]
+    assert "steps.generation.outcome == 'failure'" in diagnostics["if"]
+    assert "steps.generation.outcome == 'success'" in diagnostics["if"]
+    assert "${{ github.run_attempt }}" in diagnostics["with"]["name"]
+    assert diagnostics["with"]["if-no-files-found"] == "error"
+    assert steps.index(generation) < steps.index(diagnostics)
+
+    final_checks = next(
+        step for step in steps if "git restore --source=HEAD" in step.get("run", "")
+    )
+    assert steps.index(diagnostics) < steps.index(final_checks)
+    assert not final_checks.get("continue-on-error", False)
+    assert final_checks.get("if", "success()") == "success()"
+    assert ".py format" in final_checks["run"]
+    assert ".py collect" in final_checks["run"]
+    candidate = next(
+        step
+        for step in steps
+        if step.get("with", {}).get("path") == "${{ runner.temp }}/task-artifact.json"
+    )
+    assert steps.index(final_checks) < steps.index(candidate)
+    assert candidate.get("if", "success()") == "success()"
+    publisher = definition["jobs"]["publish"]
+    assert job_name in publisher["needs"]
+    assert publisher.get("if", "success()") == "success()"

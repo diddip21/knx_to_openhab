@@ -1,5 +1,32 @@
 # Generic owner-approved AI workflow
 
+## Planer erneut prüfen, ohne eine Freigabe zu ersetzen
+
+Der Workflow `AI planner diagnostic (unpublished)` führt den produktiven Planer
+mit aktuellem Issue-/PR-Kontext und denselben Modell-, Zeit- und Antwortprüfungen
+aus. Es gibt keinen Publisher und ausschließlich lesende GitHub-Rechte. Ein
+erzeugter Plan bleibt im temporären Runner-Verzeichnis; weder Labels, Kommentare,
+Freigaben noch Feature-PRs werden geändert. Exportiert werden nur die bestehenden
+inhaltsfreien Router- und Planerdiagnosen. Die technische Gültigkeit einer Antwort
+ist dabei keine fachliche Abnahme des Feature-Codes.
+
+Nach Merge kann der Owner ihn über Actions mit `issue_number` starten. Für die
+Prüfung dieses Diagnose-Workflows selbst kann ein Owner-PR im selben Repository
+genau eine eigene Zeile `AI-Plan-Diagnostic-Issue: <Nummer>` in seiner Beschreibung
+enthalten. Der Lauf verwendet Controller und Agent-Richtlinien vom aktuellen
+`main` sowie die synchronisierten Quellen von `dev`. Fehlt die explizite Nummer,
+ist das Repository fremd oder hat der Owner den Lauf nicht ausgelöst, wird kein
+Diagnoseauftrag angenommen.
+
+Die alten Planfehler vor #122 hinterließen keine Antwortartefakte. Ihr konkreter
+Auslöser (Anbieterfehler, leere/zu lange Antwort, JSON-/Schemafehler) ist deshalb
+rückwirkend nicht belegbar. Die inzwischen behobenen Verarbeitungslücken waren:
+ein gemeinsamer Fehler für unterschiedliche Ursachen, unbeachtete CLI-Fehler-
+und Abschneideereignisse, nicht im Prompt erklärte Längengrenzen sowie fehlende
+begrenzte Korrektur-/Fallback-Versuche. Aktuelle Diagnosecodes und Zähler müssen
+als Nachweis verwendet werden; alte Fehler dürfen nicht nachträglich als eine
+bestimmte Modellursache ausgegeben werden.
+
 This is repository tooling, not application runtime code. No controller contains
 an issue number, HomeKit prompt, fixed plan version or per-feature write list.
 The old issue-specific executables, agents and duplicate guard workflows have

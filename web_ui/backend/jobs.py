@@ -1013,6 +1013,11 @@ class JobManager:
                 job["gateway_ip"] = ip
                 job["detected_gateway_ip"] = detected_ip
                 homekit_enabled = knxmod.is_homekit_enabled(project)
+                homekit_resolver = getattr(knxmod, "resolve_homekit_enabled", None)
+                if homekit_resolver is not None:
+                    homekit_enabled = homekit_resolver(
+                        homekit_enabled, staged_config.get("general")
+                    )
                 alexa_enabled = knxmod.is_alexa_enabled(project)
 
                 etsmod.floors = house[0]["floors"] if house else []

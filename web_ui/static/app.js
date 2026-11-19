@@ -1889,6 +1889,22 @@ async function loadConfig() {
     document.getElementById('conf-central-group').value = gen.central_function_group || 'Base'
     document.getElementById('conf-notification-sensor-keyword').value = gen.notification_sensor_keyword || 'Melden/Sensor'
 
+    // HomeKit: missing mode keeps the ETS project detection (tri-state override).
+    const isTrue = (value) => value === true || value === 'true'
+    const isFalse = (value) => value === false || value === 'false'
+    const homekitMode = isTrue(gen.homekit_enabled)
+      ? 'enabled'
+      : (isFalse(gen.homekit_enabled) ? 'disabled' : 'default')
+    document.getElementById(`conf-homekit-mode-${homekitMode}`).checked = true
+    // Missing sendUpDownForExtents means the documented default (true); only an
+    // explicit false from the stored configuration disables it.
+    document.getElementById('conf-homekit-send-up-down').checked =
+      !isFalse(gen.homekit_rollershutter_sendUpDownForExtents)
+    document.getElementById('conf-homekit-stop').checked =
+      isTrue(gen.homekit_rollershutter_stop)
+    document.getElementById('conf-homekit-stop-same-direction').checked =
+      isTrue(gen.homekit_rollershutter_stopSameDirection)
+
     // Populate Devices Tab
     const dev = currentConfig.devices || {}
     const gw = dev.gateway || {}
@@ -2076,8 +2092,21 @@ async function saveConfig(reprocess = false) {
       central_function_keyword: document.getElementById('conf-central-keyword').value,
       central_function_group: document.getElementById('conf-central-group').value,
       notification_sensor_keyword: document.getElementById('conf-notification-sensor-keyword').value,
+      homekit_rollershutter_sendUpDownForExtents:
+        document.getElementById('conf-homekit-send-up-down').checked,
+      homekit_rollershutter_stop: document.getElementById('conf-homekit-stop').checked,
+      homekit_rollershutter_stopSameDirection:
+        document.getElementById('conf-homekit-stop-same-direction').checked,
       item_Floor_nameshort_prefix: currentConfig.general?.item_Floor_nameshort_prefix || "=",
       item_Room_nameshort_prefix: currentConfig.general?.item_Room_nameshort_prefix || "+"
+    }
+
+    const homekitModeElement = document.querySelector('input[name="conf-homekit-mode"]:checked')
+    const homekitMode = homekitModeElement ? homekitModeElement.value : 'default'
+    if (homekitMode === 'default') {
+      delete newConfig.general.homekit_enabled
+    } else {
+      newConfig.general.homekit_enabled = homekitMode === 'enabled'
     }
 
     // Devices

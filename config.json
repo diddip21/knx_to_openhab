@@ -483,6 +483,9 @@
     "central_function_keyword": "zentral",
     "central_function_group": "Base",
     "notification_sensor_keyword": "Melden/Sensor",
+    "homekit_rollershutter_sendUpDownForExtents": true,
+    "homekit_rollershutter_stop": false,
+    "homekit_rollershutter_stopSameDirection": false,
     "item_Floor_nameshort_prefix": "=",
     "item_Room_nameshort_prefix": "+"
   },

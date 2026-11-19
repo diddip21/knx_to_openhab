@@ -66,6 +66,22 @@ from .upload_security import (
 )
 
 
+def _resolved_homekit_enabled(knx_module, project):
+    """Resolve preview HomeKit state from the *saved* generator configuration.
+
+    The generator module is imported once per Flask process, so its module-level
+    config can lag behind a successful POST /api/config. Read the persisted
+    configuration on each preview instead of returning a stale override.
+    """
+    detected = knx_module.is_homekit_enabled(project)
+    resolver = getattr(knx_module, "resolve_homekit_enabled", None)
+    if resolver is None:
+        return detected
+    config_data = load_generator_config(project_root)
+    general = config_data.get("general") if isinstance(config_data, dict) else None
+    return resolver(detected, general)
+
+
 def _setup_recovery_script(project_root: str, module_file: str | Path) -> Path | None:
     stable_root = Path(project_root).resolve()
     try:
@@ -1343,7 +1359,7 @@ if FLASK_AVAILABLE:
             # Extract metadata
             project_name = house[0].get("name_long") if house else None
             gateway_ip = knxmod.get_gateway_ip(project)
-            homekit_enabled = knxmod.is_homekit_enabled(project)
+            homekit_enabled = _resolved_homekit_enabled(knxmod, project)
             alexa_enabled = knxmod.is_alexa_enabled(project)
 
             # Detect unknown items (addresses without proper room/floor assignments or with default names)
@@ -1504,7 +1520,7 @@ if FLASK_AVAILABLE:
             # Extract metadata
             project_name = house[0].get("name_long") if house else None
             gateway_ip = knxmod.get_gateway_ip(project)
-            homekit_enabled = knxmod.is_homekit_enabled(project)
+            homekit_enabled = _resolved_homekit_enabled(knxmod, project)
             alexa_enabled = knxmod.is_alexa_enabled(project)
 
             # Detect unknown items (addresses without proper room/floor assignments or with default names)

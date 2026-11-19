@@ -1,6 +1,17 @@
 """Build the passphrase-free structure preview shown for a KNX project."""
 
 
+def _resolved_homekit_enabled(knx_module, project):
+    """Return the effective HomeKit state for preview purposes."""
+    detected = knx_module.is_homekit_enabled(project)
+    resolver = getattr(knx_module, "resolve_homekit_enabled", None)
+    if resolver is None:
+        return detected
+    config_data = getattr(knx_module, "config", {})
+    general = config_data.get("general") if isinstance(config_data, dict) else None
+    return resolver(detected, general)
+
+
 def build_project_preview(project, knx_module, parsed=None):
     """Return the UI preview payload for a parsed KNX project.
 
@@ -38,7 +49,7 @@ def build_project_preview(project, knx_module, parsed=None):
         "metadata": {
             "project_name": project_name,
             "gateway_ip": knx_module.get_gateway_ip(project),
-            "homekit_enabled": knx_module.is_homekit_enabled(project),
+            "homekit_enabled": _resolved_homekit_enabled(knx_module, project),
             "alexa_enabled": knx_module.is_alexa_enabled(project),
             "total_addresses": len(addresses),
             "unknown_items": unknown_items,

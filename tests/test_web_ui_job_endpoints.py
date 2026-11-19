@@ -7,6 +7,7 @@ from unittest.mock import Mock, mock_open
 
 import pytest
 
+import knxproject_to_openhab
 from web_ui.backend import app as app_module
 
 
@@ -19,6 +20,49 @@ def client():
         app_module.cfg.setdefault("auth", {})
         app_module.cfg["auth"]["enabled"] = False
     return app_module.app.test_client()
+
+
+@pytest.mark.parametrize(
+    ("detected", "cached", "saved", "expected"),
+    [
+        (False, False, True, True),
+        (True, True, False, False),
+        (True, False, None, True),
+        (False, True, None, False),
+    ],
+)
+def test_project_preview_uses_persisted_homekit_mode_after_config_post(
+    client, monkeypatch, detected, cached, saved, expected
+):
+    """POST /api/config must affect the next preview without restarting Flask."""
+    on_disk = {
+        "yaml_path": "openhab/yaml/knx.yaml",
+        "general": {"homekit_enabled": cached},
+    }
+
+    def save(config, _root):
+        on_disk.clear()
+        on_disk.update(config)
+
+    monkeypatch.setattr(app_module, "load_generator_config", lambda _root: on_disk)
+    monkeypatch.setattr(app_module, "save_generator_config", save)
+
+    # An already imported generator keeps the old config in memory.
+    generator = SimpleNamespace(
+        config={"general": {"homekit_enabled": cached}},
+        is_homekit_enabled=lambda _project: detected,
+        resolve_homekit_enabled=knxproject_to_openhab.resolve_homekit_enabled,
+    )
+    updated = {
+        "yaml_path": "openhab/yaml/knx.yaml",
+        "general": {"homekit_enabled": saved},
+    }
+    response = client.post("/api/config", json=updated)
+
+    assert response.status_code == 200
+    assert on_disk == updated
+    assert generator.config["general"]["homekit_enabled"] is cached
+    assert app_module._resolved_homekit_enabled(generator, {"info": {}}) is expected
 
 
 def test_config_change_provisions_new_yaml_path_with_fixed_root_action(client, monkeypatch):

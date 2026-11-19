@@ -44,8 +44,26 @@ FENSTERKONTAKTE: list[str] = []
 PRJ_NAME = "Our Home"
 
 
+def _config_flag(value: Any, default: bool = False) -> bool:
+    """Read a boolean generator setting, including string values from JSON."""
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return normalize_string(value) in ("yes", "true", "t", "1", "on")
+    return bool(value)
+
+
 def gen_building(include_yaml_model=False):
     """Generates a Building from an ETS Project"""
+
+    general_config = config.get("general", {})
+    homekit_send_up_down_for_extents = _config_flag(
+        general_config.get("homekit_rollershutter_sendUpDownForExtents"), default=True
+    )
+    homekit_stop = _config_flag(general_config.get("homekit_rollershutter_stop"), default=False)
+    homekit_stop_same_direction = _config_flag(
+        general_config.get("homekit_rollershutter_stopSameDirection"), default=False
+    )
 
     def get_co_by_functiontext(cos, config_functiontexts, checkwriteflag=True):
         """
@@ -557,6 +575,15 @@ def gen_building(include_yaml_model=False):
                                 item_icon = "rollershutter"
                                 if B_HOMEKIT:
                                     equip_homekit = 'homekit = "WindowCovering"'
+                                    homekit_options = []
+                                    if homekit_send_up_down_for_extents:
+                                        homekit_options.append('sendUpDownForExtents="true"')
+                                    if homekit_stop:
+                                        homekit_options.append('stop="true"')
+                                    if homekit_stop_same_direction:
+                                        homekit_options.append('stopSameDirection="true"')
+                                    if homekit_options:
+                                        equip_homekit += f" [{', '.join(homekit_options)}]"
                                     meta_homekit = ', homekit = "CurrentPosition, TargetPosition, PositionState"'
                                 if B_ALEXA:
                                     equip_alexa = 'alexa = "Blind"'
@@ -797,7 +824,28 @@ def gen_building(include_yaml_model=False):
                             if item_label not in equipments:
                                 equipments[item_label] = item_name
                                 if equip_homekit:
-                                    equip_homekit += f" [Instance={homekit_instance}]"
+                                    instance_option = f"Instance={homekit_instance}"
+                                    if equip_homekit.endswith("]"):
+                                        options_start = equip_homekit.rfind("[")
+                                        existing_options = equip_homekit[
+                                            options_start + 1 : -1
+                                        ].strip()
+                                        if existing_options:
+                                            equip_homekit = (
+                                                equip_homekit[: options_start + 1]
+                                                + instance_option
+                                                + ", "
+                                                + existing_options
+                                                + "]"
+                                            )
+                                        else:
+                                            equip_homekit = (
+                                                equip_homekit[: options_start + 1]
+                                                + instance_option
+                                                + "]"
+                                            )
+                                    else:
+                                        equip_homekit += f" [{instance_option}]"
                                     grp_metadata += equip_homekit
                                 if equip_alexa:
                                     if grp_metadata:

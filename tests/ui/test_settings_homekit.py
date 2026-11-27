@@ -1,4 +1,4 @@
-"""Browser regression tests for the HomeKit settings in the General tab."""
+"""Browser regression tests for the HomeKit settings in their own tab."""
 
 import json
 import os
@@ -12,7 +12,7 @@ KEY_STOP = "homekit_rollershutter_stop"
 KEY_STOP_SAME_DIRECTION = "homekit_rollershutter_stopSameDirection"
 
 
-def _open_general_settings(page: Page, base_url: str) -> None:
+def _open_homekit_settings(page: Page, base_url: str) -> None:
     page.goto(base_url)
     if page.locator("input[name='username']").count() > 0:
         username = os.getenv("UI_AUTH_USER")
@@ -34,7 +34,7 @@ def _open_general_settings(page: Page, base_url: str) -> None:
     if not settings_content.is_visible():
         settings_section.locator(".card-header").click()
     expect(settings_content).to_be_visible()
-    page.get_by_role("button", name="General").click()
+    page.get_by_role("button", name="HomeKit", exact=True).click()
     expect(page.locator("#conf-homekit-extents")).to_be_visible(timeout=10000)
 
 
@@ -55,7 +55,7 @@ def _maybe_capture_screenshot(page: Page) -> None:
         project_root = Path(__file__).resolve().parents[2]
         screenshot_dir = project_root / "docs" / "screenshots"
         screenshot_dir.mkdir(parents=True, exist_ok=True)
-        screenshot = page.locator("#tab-general").screenshot(
+        screenshot = page.locator("#settings-section").screenshot(
             path=str(screenshot_dir / "homekit-settings.png")
         )
         report_dir = project_root / "test-results" / "screenshots"
@@ -67,7 +67,7 @@ def _maybe_capture_screenshot(page: Page) -> None:
 def test_homekit_defaults_and_optional_stops_round_trip(
     page: Page, flask_server, ui_server_environment
 ):
-    _open_general_settings(page, flask_server)
+    _open_homekit_settings(page, flask_server)
 
     expect(page.locator('input[name="conf-homekit-mode"][value="ets"]')).to_be_checked()
     expect(page.locator("#conf-homekit-extents")).to_be_checked()
@@ -94,7 +94,7 @@ def test_homekit_defaults_and_optional_stops_round_trip(
 
 @pytest.mark.ui
 def test_homekit_mode_override_round_trip(page: Page, flask_server, ui_server_environment):
-    _open_general_settings(page, flask_server)
+    _open_homekit_settings(page, flask_server)
 
     page.locator('input[name="conf-homekit-mode"][value="disabled"]').check()
     _save_and_reload(page)

@@ -155,7 +155,7 @@ to opt out. `general.homekit_rollershutter_stop` and
 `general.homekit_rollershutter_stopSameDirection` are independent optional settings and
 default to off. `general.homekit_enabled` overrides ETS project-comment detection when
 set to `true` or `false`; omit it to keep the ETS setting. Configure these values in
-**Settings → General → HomeKit (Apple Home)**. Real actuator behavior remains
+**Settings → HomeKit**. The HomeKit card in the project preview also opens this tab. Real actuator behavior remains
 unverified without a hardware test.
 
 ## Configuration

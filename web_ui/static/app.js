@@ -2302,7 +2302,10 @@ function displayBuildingPreview(preview) {
     metadataHtml += `<div class="metadata-card gateway-missing"><strong>${window.I18N.t('preview.gatewayIp')}</strong> <span class="missing">${window.I18N.t('preview.gatewayMissing')}</span></div>`
   }
   metadataHtml += `<div class="metadata-card"><strong>${window.I18N.t('preview.totalAddresses')}</strong> ${preview.metadata.total_addresses}</div>`
-  metadataHtml += `<div class="metadata-card"><strong>HomeKit:</strong> ${preview.metadata.homekit_enabled ? '✓ ' + window.I18N.t('preview.enabled') : '✗ ' + window.I18N.t('preview.disabled')}</div>`
+  metadataHtml += `<button type="button" id="preview-homekit-settings" class="metadata-card metadata-card-action" aria-controls="tab-homekit">
+    <strong>HomeKit</strong>
+    <span>${preview.metadata.homekit_enabled ? '✓ ' + window.I18N.t('preview.enabled') : '✗ ' + window.I18N.t('preview.disabled')}</span>
+  </button>`
   metadataHtml += `<div class="metadata-card"><strong>Alexa:</strong> ${preview.metadata.alexa_enabled ? '✓ ' + window.I18N.t('preview.enabled') : '✗ ' + window.I18N.t('preview.disabled')}</div>`
 
   // Check for unknown items in metadata
@@ -2312,6 +2315,14 @@ function displayBuildingPreview(preview) {
 
   metadataHtml += '</div>'
   metadataEl.innerHTML = metadataHtml
+  metadataEl.querySelector('#preview-homekit-settings').addEventListener('click', () => {
+    const settings = document.getElementById('settings-content')
+    if (settings.style.display === 'none') toggleSection('settings-content')
+    switchTab('homekit')
+    const tab = document.getElementById('homekit-tab-button')
+    tab.focus({ preventScroll: true })
+    tab.scrollIntoView({ block: 'start' })
+  })
 
   // Display building tree
   let treeHtml = preview.buildings.length

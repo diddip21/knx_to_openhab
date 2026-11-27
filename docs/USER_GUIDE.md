@@ -232,7 +232,7 @@ Some complex items require specific naming conventions to be detected correctly,
   `general.homekit_rollershutter_stopSameDirection` are independent and off by default.
   `general.homekit_enabled` (`true`/`false`) overrides the ETS project comment; when the
   key is absent the ETS setting is used. These options are available under
-  **Settings → General → HomeKit (Apple Home)**. Real actuator behavior is only confirmed
+  **Settings → HomeKit**. The HomeKit card in the project preview also opens this tab. Real actuator behavior is only confirmed
   by a hardware test.
 
 #### Dimmers

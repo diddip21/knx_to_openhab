@@ -1106,6 +1106,19 @@ dialog:not([open]) {
   transform: translateY(-2px);
 }
 
+.metadata-card-action {
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  border: 0;
+  border-inline-start: 4px solid var(--primary-blue);
+}
+
+.metadata-card-action:focus-visible {
+  outline: 2px solid var(--primary-blue);
+  outline-offset: 3px;
+}
+
 .metadata-card strong {
   display: block;
   color: var(--dark-gray);

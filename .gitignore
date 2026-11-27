@@ -8,9 +8,24 @@ openhab/*
 example.ini
 .vscode/*
 __pycache__/
+*.py[cod]
 .pytest_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 .venv*/
 venv/
+/.worktree-*/
+
+# Local generator overrides and temporary copies
+private_persistence
+*.bak
+*.old
+*_copy
+*_copy.*
+*.log
 
 # Web UI runtime data
 var/lib/knx_to_openhab/

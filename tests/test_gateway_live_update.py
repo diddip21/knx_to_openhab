@@ -6,6 +6,7 @@ import importlib
 import json
 import queue
 import re
+import subprocess
 import threading
 from copy import deepcopy
 from pathlib import Path
@@ -1384,7 +1385,7 @@ def test_live_apply_does_not_call_service_or_network_clients(tmp_path, monkeypat
         pytest.fail("live gateway apply must not invoke external service or network clients")
 
     monkeypatch.setattr(jobs_module, "package_version", unexpected_external_call)
-    monkeypatch.setattr(jobs_module.subprocess, "run", unexpected_external_call)
+    monkeypatch.setattr(subprocess, "run", unexpected_external_call)
 
     result = manager.apply_gateway_ip("192.168.20.99")
 

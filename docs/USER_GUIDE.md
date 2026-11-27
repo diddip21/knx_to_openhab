@@ -32,9 +32,15 @@ python knxproject_to_openhab.py --file_path "MyHouse.knxproj"
 
 **Parameters:**
 
-- `--file_path`: Path to your `.knxproj` file (or `.json` dump). If omitted, a file picker opens.
+- `--file_path`: Path to your `.knxproj` file or JSON dump. If omitted, a file picker opens.
 - `--knxPW`: Password for protected KNX project files.
 - `--readDump`: Read from JSON dump instead of `.knxproj`.
+
+For an explicitly named JSON file, `--readDump` is required. The CLI detects `.json` automatically only when you choose it through the file picker:
+
+```bash
+python knxproject_to_openhab.py --file_path "project.knxproj.json" --readDump
+```
 
 **Example with password:**
 
@@ -94,8 +100,10 @@ The `config.json` file controls global settings for the generator.
   - If running on the OpenHAB server, this might point to `/etc/openhab`.
 
 - **`general.auto_place_unknown`**: Automatically creates missing floors/rooms for unknown group addresses.
-  - `false` (default): Unknowns remain in the report so you can fix naming/structure in ETS.
-  - `true`: Unknowns get auto-placed into newly created floor/room nodes.
+  - The Web UI default is `false` (`web_ui/backend/storage.py`). Unknowns remain in the report so you can fix naming/structure in ETS.
+  - The checked-in CLI `config.json` default is `true` (`config.json`). Unknowns get auto-placed into newly created floor/room nodes.
+
+- **`general.homekit_*`**: HomeKit metadata controls. `homekit_enabled` (`true`/`false`) overrides ETS project-comment detection; when absent, ETS decides. `homekit_rollershutter_sendUpDownForExtents` defaults to `true` even when missing, converting 0%/100% position commands into UP/DOWN. `homekit_rollershutter_stop` and `homekit_rollershutter_stopSameDirection` are independent, optional, and off by default.
 
 - **`dimmer`**: Configuration for dimmer detection.
   - `absolut_suffix`: Suffixes in the GA name identifying the absolute dimming value (e.g., "Dimmen absolut", "Helligkeitswert").
@@ -217,6 +225,15 @@ Some complex items require specific naming conventions to be detected correctly,
   - **Stop**: "Stop", "Stopp", "Lamellenverstellung / Stopp" (DPST-1-10, DPST-1-9, DPST-1-7)
   - **Absolute Position**: "absolute Position" (DPST-5-1)
   - **Status**: "Status", "Rückmeldung", "Status aktuelle Position" (DPST-5-1)
+- **HomeKit metadata**: generated `WindowCovering` groups use
+  `sendUpDownForExtents=true` by default, even for existing configurations without the
+  key. Set `general.homekit_rollershutter_sendUpDownForExtents` to `false` to disable
+  it. `general.homekit_rollershutter_stop` and
+  `general.homekit_rollershutter_stopSameDirection` are independent and off by default.
+  `general.homekit_enabled` (`true`/`false`) overrides the ETS project comment; when the
+  key is absent the ETS setting is used. These options are available under
+  **Settings → HomeKit**. The HomeKit card in the project preview also opens this tab. Real actuator behavior is only confirmed
+  by a hardware test.
 
 #### Dimmers
 

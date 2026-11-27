@@ -111,6 +111,38 @@ logger = logging.getLogger(__name__)
 cfg = load_config()
 
 
+def _preview_general_config(project_root):
+    try:
+        return load_generator_config(project_root).get("general", {})
+    except Exception:
+        return {}
+
+
+def _preview_homekit_enabled(knx_module, project, project_root):
+    """Resolve the effective preview HomeKit state from freshly saved settings."""
+    general_config = _preview_general_config(project_root)
+    resolver = getattr(knx_module, "resolve_homekit_mode", None)
+    if resolver is not None:
+        return resolver(project, general_config)
+    return knx_module.is_homekit_enabled(project)
+
+
+def _refresh_cached_preview_homekit(preview, project_root):
+    """Overlay current settings without changing or decrypting the cached project."""
+    metadata = preview.get("metadata")
+    if not isinstance(metadata, dict):
+        return preview
+    # Caches from before the override feature stored the original ETS flag in
+    # homekit_enabled. New caches keep that provenance explicitly.
+    ets_enabled = metadata.get("homekit_ets_enabled", metadata.get("homekit_enabled"))
+    if not isinstance(ets_enabled, bool):
+        return preview
+    from knxproject_to_openhab import resolve_homekit_from_ets
+
+    effective = resolve_homekit_from_ets(ets_enabled, _preview_general_config(project_root))
+    return {**preview, "metadata": {**metadata, "homekit_enabled": effective}}
+
+
 def _parse_origin(value: str, *, allow_url_path: bool = False):
     """Return a normalized HTTP(S) origin, rejecting malformed URLs."""
     if not isinstance(value, str) or not value or value != value.strip():
@@ -1343,7 +1375,7 @@ if FLASK_AVAILABLE:
             # Extract metadata
             project_name = house[0].get("name_long") if house else None
             gateway_ip = knxmod.get_gateway_ip(project)
-            homekit_enabled = knxmod.is_homekit_enabled(project)
+            homekit_enabled = _preview_homekit_enabled(knxmod, project, project_root)
             alexa_enabled = knxmod.is_alexa_enabled(project)
 
             # Detect unknown items (addresses without proper room/floor assignments or with default names)
@@ -1469,7 +1501,7 @@ if FLASK_AVAILABLE:
         # its passphrase has been cleared. Prefer the safe, cached projection.
         cached_preview = job_mgr.get_job_preview(job_id)
         if isinstance(cached_preview, dict):
-            return jsonify(cached_preview)
+            return jsonify(_refresh_cached_preview_homekit(cached_preview, project_root))
 
         input_path = job.get("input")
         if not input_path or not os.path.exists(input_path):
@@ -1504,7 +1536,7 @@ if FLASK_AVAILABLE:
             # Extract metadata
             project_name = house[0].get("name_long") if house else None
             gateway_ip = knxmod.get_gateway_ip(project)
-            homekit_enabled = knxmod.is_homekit_enabled(project)
+            homekit_enabled = _preview_homekit_enabled(knxmod, project, project_root)
             alexa_enabled = knxmod.is_alexa_enabled(project)
 
             # Detect unknown items (addresses without proper room/floor assignments or with default names)

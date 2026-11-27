@@ -1,7 +1,6 @@
 import fcntl
 import grp
 import os
-import pty
 import select
 import shutil
 import subprocess
@@ -10,12 +9,20 @@ from pathlib import Path
 
 import pytest
 
+if os.name == "posix":
+    import pty
+else:
+    pty = None  # type: ignore[assignment]
+
 ROOT = Path(__file__).resolve().parents[1]
 UNINSTALLER = ROOT / "uninstall.sh"
 MAINTENANCE_HELPER = ROOT / "installer" / "maintenance_lock.sh"
 QUIESCE_HELPER = ROOT / "installer" / "quiesce_systemd_unit.sh"
 REMOVE_UNIT_HELPER = ROOT / "installer" / "uninstall_unit_files.sh"
-pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="Bash is required")
+pytestmark = pytest.mark.skipif(
+    os.name != "posix" or shutil.which("bash") is None,
+    reason="uninstaller shell integration tests require a POSIX Bash environment",
+)
 
 
 def test_uninstaller_removes_the_transactional_update_unit():

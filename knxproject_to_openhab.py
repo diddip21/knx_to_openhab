@@ -736,6 +736,39 @@ def str2bool(v):
     return normalize_string(v) in ("yes", "true", "t", "1")
 
 
+def coerce_bool(value):
+    """Return a boolean for known configuration values, otherwise ``None``.
+
+    The tri-state result lets callers distinguish an explicit ``false`` from an
+    absent key that should fall back to project detection.
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    normalized = str(value).strip().casefold()
+    if normalized in ("yes", "true", "t", "1"):
+        return True
+    if normalized in ("no", "false", "f", "0"):
+        return False
+    return None
+
+
+def resolve_homekit_from_ets(ets_enabled, general_config=None):
+    """Apply the current override to an independently preserved ETS value."""
+    if general_config is None:
+        general_config = config.get("general", {})
+    override = coerce_bool(general_config.get("homekit_enabled"))
+    if override is not None:
+        return override
+    return ets_enabled
+
+
+def resolve_homekit_mode(project, general_config=None):
+    """Resolve HomeKit from the current override or the original ETS comment."""
+    return resolve_homekit_from_ets(is_homekit_enabled(project), general_config)
+
+
 def main():
     """Main function"""
     logging.basicConfig(level=logging.INFO)
@@ -781,7 +814,7 @@ def main():
     house = put_addresses_in_building(building, addresses, project)
     prj_name = house[0]["name_long"]
     ip = get_gateway_ip(project)
-    homekit_enabled = is_homekit_enabled(project)
+    homekit_enabled = resolve_homekit_mode(project, config.get("general"))
     alexa_enabled = is_alexa_enabled(project)
 
     ets_to_openhab.floors = house[0]["floors"]

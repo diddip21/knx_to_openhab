@@ -101,6 +101,93 @@ def test_provider_error_with_zero_exit_skips_format_retry_and_retains_no_content
     assert len(saved) < 5000
 
 
+def timeout_attempts(monkeypatch, outputs):
+    calls = []
+
+    def execute(model, prompt, timeout):
+        calls.append((model, prompt, timeout))
+        output = outputs[len(calls) - 1]
+        return output or "", {
+            "code": "timeout" if output is None else None,
+            "exit_code": -9 if output is None else 0,
+            "elapsed_seconds": timeout if output is None else 0.01,
+            "stdout_bytes": len(output or ""),
+            "stderr_bytes": 0,
+        }
+
+    monkeypatch.setattr(runner, "execute", execute)
+    return calls
+
+
+def test_single_model_timeout_retries_once_and_publishes(runtime, monkeypatch):
+    monkeypatch.setattr(runner, "refresh_alternate", lambda model, remaining: None)
+    calls = timeout_attempts(monkeypatch, [None, event()])
+
+    report = runner.run_plan(runtime, FIRST, router_report(second_passed=False))
+
+    assert [c[0] for c in calls] == [FIRST, FIRST]
+    assert [c[2] for c in calls] == [300, 300]
+    assert [a["phase"] for a in report["attempts"]] == ["initial", "timeout_retry"]
+    assert report["status"] == "success"
+    assert (runtime / "issue-result.json").exists()
+
+
+def test_single_model_second_timeout_stops_without_publishing(runtime, monkeypatch):
+    monkeypatch.setattr(runner, "refresh_alternate", lambda model, remaining: None)
+    calls = timeout_attempts(monkeypatch, [None, None])
+
+    with pytest.raises(ValueError, match="timeout"):
+        runner.run_plan(runtime, FIRST, router_report(second_passed=False))
+
+    assert len(calls) == 2
+    assert not (runtime / "issue-result.json").exists()
+
+
+def test_timeout_refresh_can_use_newly_verified_alternate(runtime, monkeypatch):
+    monkeypatch.setattr(runner, "discover_models", lambda **kwargs: {FIRST, SECOND, "bad/model"})
+    probes = []
+
+    def probe(model, task, **kwargs):
+        probes.append((model, task, kwargs))
+        return {"passed": True}
+
+    monkeypatch.setattr(runner, "probe_model", probe)
+    calls = timeout_attempts(monkeypatch, [None, event()])
+
+    report = runner.run_plan(runtime, FIRST, router_report(second_passed=False))
+
+    assert [c[0] for c in calls] == [FIRST, SECOND]
+    assert probes == [(SECOND, "plan", {"timeout": 30})]
+    assert report["attempts"][1]["phase"] == "fallback"
+
+
+def test_refresh_never_uses_failed_or_unapproved_model(monkeypatch):
+    monkeypatch.setattr(runner, "discover_models", lambda **kwargs: {SECOND, "bad/model"})
+    monkeypatch.setattr(runner, "probe_model", lambda *args, **kwargs: {"passed": False})
+
+    assert runner.refresh_alternate(FIRST, 360) is None
+
+
+def test_refresh_does_not_consume_full_retry_budget(monkeypatch):
+    def unexpected(**kwargs):
+        pytest.fail("Discovery must not consume reserved retry time")
+
+    monkeypatch.setattr(runner, "discover_models", unexpected)
+
+    assert runner.refresh_alternate(FIRST, 344) is None
+
+
+def test_timeout_retry_uses_only_remaining_budget(runtime, monkeypatch):
+    times = iter([0, 0, 500, 500, 501])
+    monkeypatch.setattr(runner.time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(runner, "refresh_alternate", lambda model, remaining: None)
+    calls = timeout_attempts(monkeypatch, [None, event()])
+
+    runner.run_plan(runtime, FIRST, router_report(second_passed=False))
+
+    assert [c[2] for c in calls] == [300, 160]
+
+
 def test_provider_diagnostics_keep_only_a_numeric_http_status():
     output = json.dumps(
         {"type": "error", "error": {"data": {"statusCode": 429, "message": "private-data"}}}

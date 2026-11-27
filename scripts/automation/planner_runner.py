@@ -21,10 +21,19 @@ from automation.model_response import (  # noqa: E402
     inspect_events,
     parse_response,
 )
-from opencode_model_router import APPROVED_FREE_MODELS, isolated_environment  # noqa: E402
+from opencode_model_router import (  # noqa: E402
+    APPROVED_FREE_MODELS,
+    RouterError,
+    discover_models,
+    isolated_environment,
+    probe_model,
+)
 
 TOTAL_SECONDS = 660
-ATTEMPT_SECONDS = 240
+ATTEMPT_SECONDS = 300
+REFRESH_DISCOVERY_SECONDS = 15
+REFRESH_PROBE_SECONDS = 30
+PROGRESS_SECONDS = 60
 MAX_STDERR_BYTES = 64_000
 MAX_PROMPT_BYTES = 110_000
 FORMAT_ERRORS = {
@@ -58,6 +67,25 @@ def verified_models(model: str, report: dict[str, Any]) -> list[str]:
     if model not in passed:
         raise ModelResponseError("invalid_router_report")
     return [model] + [other for other in APPROVED_FREE_MODELS if other != model and other in passed]
+
+
+def refresh_alternate(model: str, remaining: float) -> str | None:
+    """Only re-discover and probe an allowlisted alternate if a full retry fits."""
+    if remaining < ATTEMPT_SECONDS + REFRESH_DISCOVERY_SECONDS + REFRESH_PROBE_SECONDS:
+        return None
+    try:
+        available = discover_models(timeout=REFRESH_DISCOVERY_SECONDS, max_attempts=1)
+    except RouterError as error:
+        print(f"Planner model refresh: {error.code}", flush=True)
+        return None
+    for alternate in APPROVED_FREE_MODELS:
+        if alternate != model and alternate in available:
+            probe = probe_model(alternate, "plan", timeout=REFRESH_PROBE_SECONDS)
+            if probe.get("passed") is True:
+                print(f"Planner model refresh: verified {alternate}", flush=True)
+                return alternate
+    print("Planner model refresh: no verified alternate", flush=True)
+    return None
 
 
 def corrected_prompt(prompt: str, code: str) -> str:
@@ -103,6 +131,7 @@ def execute(model: str, prompt: str, timeout: float) -> tuple[str, dict[str, Any
         except OSError:
             return "", {"code": "cli_unavailable", "exit_code": None, "elapsed_seconds": 0}
         code = None
+        next_progress = PROGRESS_SECONDS
         while process.poll() is None:
             if time.monotonic() - started >= timeout:
                 code = "timeout"
@@ -113,6 +142,15 @@ def execute(model: str, prompt: str, timeout: float) -> tuple[str, dict[str, Any
             ):
                 code = "output_limit"
                 break
+            elapsed = time.monotonic() - started
+            if elapsed >= next_progress:
+                print(
+                    f"Planner progress: seconds={int(elapsed)}, "
+                    f"stdout_bytes={os.fstat(stdout.fileno()).st_size}, "
+                    f"stderr_bytes={os.fstat(stderr.fileno()).st_size}",
+                    flush=True,
+                )
+                next_progress += PROGRESS_SECONDS
             time.sleep(0.05)
         if code:
             try:
@@ -177,9 +215,13 @@ def run_plan(temp: Path, model: str, router: dict[str, Any]) -> dict[str, Any]:
             remaining = TOTAL_SECONDS - (time.monotonic() - started)
             if remaining <= 0:
                 raise ModelResponseError("budget_exhausted")
-            output, metrics = execute(
-                attempt_model, attempt_prompt, min(ATTEMPT_SECONDS, remaining)
+            timeout = min(ATTEMPT_SECONDS, remaining)
+            print(
+                f"Planner attempt {len(report['attempts']) + 1}: "
+                f"phase={phase}, model={attempt_model}, timeout={timeout:.1f}s",
+                flush=True,
             )
+            output, metrics = execute(attempt_model, attempt_prompt, timeout)
             attempt = {
                 "attempt": len(report["attempts"]) + 1,
                 "model": attempt_model,
@@ -211,6 +253,17 @@ def run_plan(temp: Path, model: str, router: dict[str, Any]) -> dict[str, Any]:
                 elif phase != "fallback" and len(models) > 1:
                     phase = "fallback"
                     attempt_model = models[1]
+                    attempt_prompt = corrected_prompt(prompt, error.code)
+                elif error.code == "timeout" and phase in {"initial", "format_retry"}:
+                    # The first verified model can time out on a real plan despite
+                    # passing the short probe. Reserve time for a full fresh attempt.
+                    remaining = TOTAL_SECONDS - (time.monotonic() - started)
+                    alternate = refresh_alternate(attempt_model, remaining)
+                    if alternate is not None:
+                        phase = "fallback"
+                        attempt_model = alternate
+                    else:
+                        phase = "timeout_retry"
                     attempt_prompt = corrected_prompt(prompt, error.code)
                 else:
                     raise

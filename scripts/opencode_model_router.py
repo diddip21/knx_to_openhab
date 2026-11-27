@@ -79,7 +79,12 @@ def parse_catalog(stdout: str) -> set[str]:
     return {line.strip() for line in stdout.splitlines() if MODEL_LINE.fullmatch(line.strip())}
 
 
-def discover_models(diagnostics: dict[str, Any] | None = None) -> set[str]:
+def discover_models(
+    diagnostics: dict[str, Any] | None = None,
+    *,
+    timeout: float = DISCOVERY_TIMEOUT,
+    max_attempts: int = 2,
+) -> set[str]:
     """Use V2's native catalog command, with at most one fresh retry.
 
     No catalog text, unapproved model identifiers, stderr or exception strings
@@ -90,7 +95,7 @@ def discover_models(diagnostics: dict[str, Any] | None = None) -> set[str]:
     trace = diagnostics if diagnostics is not None else {}
     trace.update(attempts=[], catalog_count=0, approved_count=0, status="failure")
     code = "empty_catalog"
-    for number in (1, 2):
+    for number in range(1, max_attempts + 1):
         start = time.monotonic()
         record: dict[str, Any] = {
             "attempt": number,
@@ -108,7 +113,7 @@ def discover_models(diagnostics: dict[str, Any] | None = None) -> set[str]:
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=DISCOVERY_TIMEOUT,
+                timeout=timeout,
                 env=environment,
             )
         except subprocess.TimeoutExpired as error:
@@ -282,7 +287,7 @@ def inspect_events(output: str, task: str, seconds: float) -> dict[str, Any]:
     }
 
 
-def probe_model(model: str, task: str) -> dict[str, Any]:
+def probe_model(model: str, task: str, *, timeout: float = PROBE_TIMEOUT) -> dict[str, Any]:
     if model not in APPROVED_FREE_MODELS:
         raise ValueError("Model is not approved")
     start = time.monotonic()
@@ -306,7 +311,7 @@ def probe_model(model: str, task: str) -> dict[str, Any]:
             capture_output=True,
             text=True,
             check=False,
-            timeout=PROBE_TIMEOUT,
+            timeout=timeout,
             env=isolated_environment(),
         )
     except subprocess.TimeoutExpired as error:

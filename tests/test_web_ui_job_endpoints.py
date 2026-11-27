@@ -2,6 +2,8 @@ import importlib
 import json
 import subprocess
 import threading
+from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, mock_open
 
@@ -242,6 +244,70 @@ def test_job_preview_success(client, monkeypatch):
     assert payload["metadata"]["unknown_items"]
 
 
+def test_job_preview_uses_saved_homekit_general_config(client, monkeypatch):
+    job_mgr = Mock()
+    job_mgr.get_job.return_value = {
+        "id": "abc",
+        "input": "/tmp/input.json",
+        "password": None,
+    }
+    monkeypatch.setattr(app_module, "job_mgr", job_mgr)
+    monkeypatch.setattr(app_module.os.path, "exists", lambda path: path == "/tmp/input.json")
+
+    saved_general = {
+        "homekit_enabled": False,
+        "homekit_rollershutter_sendUpDownForExtents": False,
+    }
+    monkeypatch.setattr(
+        app_module,
+        "load_generator_config",
+        lambda _root: {"general": saved_general},
+    )
+
+    seen = {}
+
+    def resolve_homekit_mode(_project, general):
+        seen["general"] = general
+        return general.get("homekit_enabled") is not False
+
+    fake_knx_module = SimpleNamespace(
+        create_building=lambda project: {"building": True},
+        get_addresses=lambda project: [
+            {"Group name": "Shutter", "Address": "1/2/1", "Floor": "EG", "Room": "RM1"}
+        ],
+        put_addresses_in_building=lambda building, addresses, project: [
+            {
+                "name_long": "Project",
+                "floors": [
+                    {
+                        "rooms": [
+                            {
+                                "Addresses": [{"Group name": "Shutter", "Address": "1/2/1"}],
+                                "devices": [],
+                            }
+                        ]
+                    }
+                ],
+            }
+        ],
+        get_gateway_ip=lambda project: "1.2.3.4",
+        is_homekit_enabled=lambda project: True,
+        resolve_homekit_mode=resolve_homekit_mode,
+        is_alexa_enabled=lambda project: False,
+    )
+
+    mocked_open = mock_open(read_data=json.dumps({"project": "data"}))
+    monkeypatch.setattr("builtins.open", mocked_open)
+    monkeypatch.setattr(importlib, "import_module", lambda name: fake_knx_module)
+
+    response = client.get("/api/job/abc/preview")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["metadata"]["homekit_enabled"] is False
+    assert seen["general"] == saved_general
+
+
 def test_job_preview_uses_cached_projection_after_password_cleanup(client, monkeypatch):
     """A completed encrypted job can still show its preview without its password."""
     cached_preview = {
@@ -258,6 +324,118 @@ def test_job_preview_uses_cached_projection_after_password_cleanup(client, monke
     assert response.status_code == 200
     assert response.get_json() == cached_preview
     job_mgr.get_job_preview.assert_called_once_with("abc")
+
+
+@pytest.mark.parametrize("ets_enabled", [False, True])
+@pytest.mark.parametrize("cache_mode", ["memory", "disk"])
+@pytest.mark.parametrize("seed_mode", ["ets", "opposite", "legacy"])
+def test_cached_job_preview_tracks_current_config_without_reopening_project(
+    client, monkeypatch, tmp_path, ets_enabled, cache_mode, seed_mode
+):
+    import knxproject_to_openhab as knx_module
+    from web_ui.backend.jobs import JobManager
+    from web_ui.backend.project_preview import build_project_preview
+    from web_ui.backend.storage import save_jobs
+
+    monkeypatch.setenv("KNXOH_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("KNXOH_DATA_DIR", str(tmp_path / "data"))
+    config = json.loads(Path(knx_module.__file__).with_name("config.json").read_text())
+    config["general"]["central_function_keyword"] = "cache-sibling"
+    config["general"].pop("homekit_enabled", None)
+    if seed_mode == "opposite":
+        config["general"]["homekit_enabled"] = not ets_enabled
+    app_module.save_generator_config(config)
+    project = {"info": {"comment": f"homekit={str(ets_enabled).lower()}"}}
+    addresses = [{"Group name": "Blind", "Address": "1/2/3", "Floor": "EG", "Room": "Hall"}]
+    house = [
+        {
+            "name_long": "Demo home",
+            "Description": "House",
+            "floors": [
+                {
+                    "Description": "EG",
+                    "rooms": [
+                        {
+                            "Description": "Hall",
+                            "Addresses": addresses,
+                            "devices": [{"name": "Blind"}],
+                        }
+                    ],
+                }
+            ],
+        }
+    ]
+    preview_module = SimpleNamespace(
+        get_gateway_ip=lambda _: "192.168.1.5",
+        is_alexa_enabled=lambda _: False,
+        is_homekit_enabled=knx_module.is_homekit_enabled,
+        resolve_homekit_mode=knx_module.resolve_homekit_mode,
+    )
+    preview = build_project_preview(
+        project,
+        preview_module,
+        parsed=(None, addresses, house),
+        general_config=config["general"],
+    )
+    # Before overrides were introduced this field held the original ETS value.
+    if seed_mode == "legacy":
+        preview["metadata"].pop("homekit_ets_enabled", None)
+    original = deepcopy(preview)
+    manager_config = {
+        "jobs_dir": str(tmp_path / "jobs"),
+        "backups_dir": str(tmp_path / "backups"),
+    }
+    managers = [JobManager(manager_config)]
+    manager = managers[0]
+    manager._jobs["cached"] = {
+        "id": "cached",
+        "status": "completed",
+        "input": str(tmp_path / "removed-encrypted.knxproj"),
+    }
+    save_jobs(manager.jobs_dir, manager._jobs)
+    manager.save_job_preview("cached", preview)
+    preview_path = tmp_path / "jobs" / "cached" / "project-preview.json"
+    original_bytes = preview_path.read_bytes()
+    monkeypatch.setattr(
+        "xknxproject.xknxproj.XKNXProj",
+        lambda *a, **kw: pytest.fail("cached preview must not reopen the encrypted archive"),
+    )
+    try:
+        for mode, override, expected in (
+            ("ETS", None, ets_enabled),
+            ("off", False, False),
+            ("on", True, True),
+            ("string-off", "false", False),
+            ("ETS-return", None, ets_enabled),
+        ):
+            if cache_mode == "disk":
+                manager = JobManager(manager_config)
+                managers.append(manager)
+                assert not manager._preview_cache
+            monkeypatch.setattr(app_module, "job_mgr", manager)
+            desired = deepcopy(config)
+            desired["general"].pop("homekit_enabled", None)
+            if override is not None:
+                desired["general"]["homekit_enabled"] = override
+            assert client.post("/api/config", json=desired).status_code == 200
+            response = client.get("/api/job/cached/preview")
+            assert response.status_code == 200
+            payload = response.get_json()
+            assert payload["metadata"]["homekit_enabled"] is expected, mode
+            assert client.get("/api/config").get_json() == desired
+            assert app_module.load_generator_config() == desired
+            assert not getattr(manager, "_passwords", {})
+            # Compare independent snapshots: mutation of a cached dict must not
+            # also mutate this oracle and hide structure/provenance loss.
+            payload["metadata"]["homekit_enabled"] = original["metadata"]["homekit_enabled"]
+            assert payload == original
+            assert manager.get_job_preview("cached") == original
+            assert preview_path.read_bytes() == original_bytes
+        if seed_mode != "legacy":
+            assert original["metadata"]["homekit_ets_enabled"] is ets_enabled
+    finally:
+        for manager in managers:
+            manager.executor.shutdown(wait=True)
 
 
 def test_gateway_state_returns_active_format_detected_source_and_unverified_status(

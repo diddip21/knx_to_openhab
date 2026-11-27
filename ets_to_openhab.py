@@ -43,6 +43,28 @@ equipments: dict[str, Any] = {}
 FENSTERKONTAKTE: list[str] = []
 PRJ_NAME = "Our Home"
 
+HOMEKIT_KEY_EXTENTS = "homekit_rollershutter_sendUpDownForExtents"
+HOMEKIT_KEY_STOP = "homekit_rollershutter_stop"
+HOMEKIT_KEY_STOP_SAME_DIRECTION = "homekit_rollershutter_stopSameDirection"
+
+
+def general_bool(value, default):
+    """Interpret a general configuration value as a strict boolean.
+
+    ``None`` and unrecognized values fall back to ``default`` so existing
+    configurations keep working when a new key is introduced.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().casefold()
+    if normalized in ("yes", "true", "t", "1"):
+        return True
+    if normalized in ("no", "false", "f", "0"):
+        return False
+    return default
+
 
 def gen_building(include_yaml_model=False):
     """Generates a Building from an ETS Project"""
@@ -401,6 +423,7 @@ def gen_building(include_yaml_model=False):
                     equipment = ""
                     equip_homekit = ""
                     equip_alexa = ""
+                    homekit_equipment_options = []
                     grp_metadata = ""
                     floor_grp = None
                     define = None
@@ -558,6 +581,19 @@ def gen_building(include_yaml_model=False):
                                 if B_HOMEKIT:
                                     equip_homekit = 'homekit = "WindowCovering"'
                                     meta_homekit = ', homekit = "CurrentPosition, TargetPosition, PositionState"'
+                                    homekit_general = config.get("general", {})
+                                    homekit_equipment_options = []
+                                    if general_bool(homekit_general.get(HOMEKIT_KEY_EXTENTS), True):
+                                        homekit_equipment_options.append(
+                                            "sendUpDownForExtents=true"
+                                        )
+                                    if general_bool(homekit_general.get(HOMEKIT_KEY_STOP), False):
+                                        homekit_equipment_options.append("stop=true")
+                                    if general_bool(
+                                        homekit_general.get(HOMEKIT_KEY_STOP_SAME_DIRECTION),
+                                        False,
+                                    ):
+                                        homekit_equipment_options.append("stopSameDirection=true")
                                 if B_ALEXA:
                                     equip_alexa = 'alexa = "Blind"'
                                     meta_alexa = ', alexa = "PositionState"'
@@ -797,7 +833,9 @@ def gen_building(include_yaml_model=False):
                             if item_label not in equipments:
                                 equipments[item_label] = item_name
                                 if equip_homekit:
-                                    equip_homekit += f" [Instance={homekit_instance}]"
+                                    group_options = [f"Instance={homekit_instance}"]
+                                    group_options.extend(homekit_equipment_options)
+                                    equip_homekit += f" [{', '.join(group_options)}]"
                                     grp_metadata += equip_homekit
                                 if equip_alexa:
                                     if grp_metadata:

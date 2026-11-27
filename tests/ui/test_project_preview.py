@@ -211,9 +211,15 @@ class TestProjectPreview:
         expect(page.locator(".building-node")).to_have_count(0)
         expect(page.locator("#buildingTree")).to_contain_text("No building structure available.")
 
-    def test_preview_homekit_alexa_indicators(self, page: Page, base_url, flask_server):
+    def test_preview_homekit_card_opens_settings(self, page: Page, base_url, flask_server):
         self._click_preview(page, base_url)
         expect(page.locator("#preview-section")).to_be_visible(timeout=20000)
 
         metadata = page.locator(".metadata-cards")
-        expect(metadata).to_contain_text(re.compile(r"HomeKit|homekit", re.IGNORECASE))
+        homekit_card = metadata.get_by_role("button", name=re.compile("HomeKit"))
+        expect(homekit_card).to_be_visible()
+        expect(page.locator("#settings-content")).to_be_hidden()
+        homekit_card.press("Enter")
+        expect(page.locator("#homekit-tab-button")).to_be_focused()
+        expect(page.locator("#tab-homekit")).to_be_visible()
+        expect(page.locator("#tab-general")).to_be_hidden()

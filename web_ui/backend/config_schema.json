@@ -91,6 +91,29 @@
           "title": "Notification Sensor Keyword",
           "description": "Keyword used to identify notification sensors (e.g., 'Melden/Sensor')",
           "default": "Melden/Sensor"
+        },
+        "homekit_enabled": {
+          "type": "boolean",
+          "title": "HomeKit Enabled Override",
+          "description": "Optional override for ETS project comment detection. Omit to use the ETS setting."
+        },
+        "homekit_rollershutter_sendUpDownForExtents": {
+          "type": "boolean",
+          "title": "Send Up/Down for Rollershutter Extents",
+          "description": "Convert 0%/100% HomeKit position commands into UP/DOWN (sendUpDownForExtents). Defaults to true when the key is missing.",
+          "default": true
+        },
+        "homekit_rollershutter_stop": {
+          "type": "boolean",
+          "title": "Emulate HomeKit STOP",
+          "description": "Enable the HomeKit STOP emulation (stop). Independent and off by default.",
+          "default": false
+        },
+        "homekit_rollershutter_stopSameDirection": {
+          "type": "boolean",
+          "title": "Stop on Repeated Direction",
+          "description": "Allow stopping by sending UP/DOWN again in the same direction (stopSameDirection). Does not enable STOP by itself.",
+          "default": false
         }
       }
     },

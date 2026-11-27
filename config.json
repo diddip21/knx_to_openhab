@@ -484,7 +484,10 @@
     "central_function_group": "Base",
     "notification_sensor_keyword": "Melden/Sensor",
     "item_Floor_nameshort_prefix": "=",
-    "item_Room_nameshort_prefix": "+"
+    "item_Room_nameshort_prefix": "+",
+    "homekit_rollershutter_sendUpDownForExtents": true,
+    "homekit_rollershutter_stop": false,
+    "homekit_rollershutter_stopSameDirection": false
   },
   "influx_path": "openhab/persistence/influxdb.persist",
   "items_path": "openhab/items/knx.items",

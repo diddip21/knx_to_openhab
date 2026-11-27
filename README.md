@@ -14,7 +14,7 @@ Includes a **Web UI** for browser-based management and a **CLI** for automated w
 - **Reports** — Unknown addresses, partial items, completeness checks (missing required channels)
 - **Auto-Placement** — Optional: automatically create missing floors/rooms for unmatched addresses
 - **Semantic Model** — Auto-tags items for OpenHAB's semantic model
-- **HomeKit / Alexa** — Auto-generates metadata when enabled in ETS project comments
+- **HomeKit / Alexa** — Auto-generates metadata when enabled in ETS project comments; the Web UI can override HomeKit mode and rollershutter options
 - **InfluxDB Support** — Auto-configure persistence via ETS description tags
 - **Self-Update** — Check for and apply updates from GitHub directly in the UI
 - **Service Management** — Restart OpenHAB from the Web UI
@@ -143,6 +143,20 @@ The UI surfaces reports for anything that couldn't be fully placed:
 - **`completeness_report.json`** — Web job report for generated Things missing required channels
 
 The Web UI starts with `general.auto_place_unknown = false` (`web_ui/backend/storage.py`). The checked-in CLI generator config has it set to `true` (`config.json`). Set the value explicitly for the workflow you use.
+
+### HomeKit Rollershutters
+
+When HomeKit output is active, generated `WindowCovering` group accessories receive
+`sendUpDownForExtents=true` by default. This converts openHAB's 0%/100% travel
+commands into UP/DOWN so HomeKit position commands do not leave the slat position
+unexpectedly. The default also applies to existing configurations that do not yet
+contain the key. Set `general.homekit_rollershutter_sendUpDownForExtents` to `false`
+to opt out. `general.homekit_rollershutter_stop` and
+`general.homekit_rollershutter_stopSameDirection` are independent optional settings and
+default to off. `general.homekit_enabled` overrides ETS project-comment detection when
+set to `true` or `false`; omit it to keep the ETS setting. Configure these values in
+**Settings → HomeKit**. The HomeKit card in the project preview also opens this tab. Real actuator behavior remains
+unverified without a hardware test.
 
 ## Configuration
 

@@ -42,6 +42,7 @@ EXCLUDED_NAMES = {
     "pytest.ini",
     "requirements-dev.txt",
     "secrets.env",
+    "openhab_api_token",
 }
 # Keep development/install helpers, but do not ship GitHub/AI controllers.
 EXCLUDED_AUTOMATION_FILES = frozenset(

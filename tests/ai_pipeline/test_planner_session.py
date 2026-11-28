@@ -77,7 +77,7 @@ def test_verify_rejects_foreign_or_modified_session(tmp_path, monkeypatch, chang
 
         def __init__(self, args, **kwargs):
             assert args[-1] == "/api/session/ses_test"
-            kwargs["stdout"].write(json.dumps(info).encode())
+            kwargs["stdout"].write(json.dumps({"data": info}).encode())
 
         def wait(self, timeout):
             return 0
@@ -192,7 +192,7 @@ record = state / 'history.json'
 if sys.argv[1] == 'api':
     saved = json.loads(record.read_text())
     assert saved['interrupted']
-    print(json.dumps({{'id': sid, 'agent': 'issue-planner', 'model': {{'providerID': {FIRST.split('/')[0]!r}, 'id': {FIRST.split('/')[1]!r}}}, 'location': {{'directory': os.getcwd()}}}}))
+    print(json.dumps({{'data': {{'id': sid, 'agent': 'issue-planner', 'model': {{'providerID': {FIRST.split('/')[0]!r}, 'id': {FIRST.split('/')[1]!r}}}, 'location': {{'directory': os.getcwd()}}}}}}))
     sys.exit(0)
 if not record.exists():
     def stop(*args):

@@ -101,7 +101,9 @@ def verify(session: str, state: Path, model: str, timeout: float) -> None:
             raw = output.read(64_001)
             if process.returncode or len(raw) > 64_000:
                 raise ModelResponseError("resume_unavailable")
-            info = json.loads(raw)
+            # The raw HTTP/CLI wire response is {data: Session.Info}; the JS
+            # client's session.get() unwraps it. Validate the pinned wire contract.
+            info = json.loads(raw)["data"]
         provider, model_id = model.split("/", 1)
         if (
             info.get("id") != session

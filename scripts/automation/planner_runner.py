@@ -322,6 +322,13 @@ def run_plan(
             except ModelResponseError as error:
                 attempt["code"] = error.code
                 attempt.update(error.diagnostics)
+                print(
+                    f"Planner validation: code={error.code}, "
+                    f"auth={metrics.get('auth_errors', 0)}, quota={metrics.get('quota_errors', 0)}, "
+                    f"setup={metrics.get('setup_errors', 0)}, model={metrics.get('model_errors', 0)}, "
+                    f"session={metrics.get('session_errors', 0)}",
+                    flush=True,
+                )
                 if error.code in {"context_changed", "resume_unavailable"} or (
                     error.code == "timeout" and not metrics.get("graceful_stop", False)
                 ):

@@ -374,7 +374,9 @@ calls = json.loads(state.read_text()) if state.exists() else []
 calls.append(sys.argv[sys.argv.index('--model') + 1])
 state.write_text(json.dumps(calls))
 payloads = {payloads!r}
-print(json.dumps(payloads[len(calls) - 1]))
+payload = dict(payloads[len(calls) - 1])
+payload['sessionID'] = sys.argv[sys.argv.index('--session') + 1]
+print(json.dumps(payload))
 print('fake-secret-on-stderr', file=sys.stderr)
 """,
     )

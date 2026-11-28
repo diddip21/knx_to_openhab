@@ -60,6 +60,7 @@ def test_cli_is_consistently_pinned_in_every_active_workflow():
         "opencode-ci-self-repair.yml",
         "opencode-model-router-tests.yml",
         "opencode-free-smoke.yml",
+        "ai-planner-live-tests.yml",
     }
 
 

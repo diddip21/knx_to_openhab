@@ -148,6 +148,11 @@ def observations(output: str, expected_session: str | None = None) -> dict[str, 
         "session_mismatch": False,
         "input_tokens": 0,
         "output_tokens": 0,
+        "auth_errors": 0,
+        "quota_errors": 0,
+        "setup_errors": 0,
+        "model_errors": 0,
+        "session_errors": 0,
     }
     for line in output[:MAX_EVENT_BYTES].splitlines():
         try:
@@ -165,6 +170,26 @@ def observations(output: str, expected_session: str | None = None) -> dict[str, 
         kind = event.get("type")
         if kind == "error":
             stats["error_events"] += 1
+            # Provider/CLI strings remain private; retain only fixed categories.
+            error = json.dumps(event.get("error", {})).casefold()
+            if any(
+                term in error
+                for term in ("unauthorized", "authentication", "api key", "credential")
+            ):
+                stats["auth_errors"] += 1
+            elif any(
+                term in error for term in ("quota", "rate limit", "usage limit", "freeusage", "429")
+            ):
+                stats["quota_errors"] += 1
+            elif "session" in error:
+                stats["session_errors"] += 1
+            elif any(term in error for term in ("model not", "modelnot", "unknown model")):
+                stats["model_errors"] += 1
+            elif any(
+                term in error
+                for term in ("sqlite", "database", "agent", "config", "invalid", "not found")
+            ):
+                stats["setup_errors"] += 1
         if kind == "tool_use":
             state = part.get("state") or {}
             if not isinstance(state, dict):

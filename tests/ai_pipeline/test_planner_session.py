@@ -172,6 +172,7 @@ def test_evidence_coverage_counts_only_completed_actual_reads(tmp_path, monkeypa
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX signal/process-group integration")
 def test_real_cli_cancellation_resumes_persisted_history_and_validates_plan(tmp_path, monkeypatch):
+    monkeypatch.setattr(runner, "refresh_alternate", lambda *args: None)
     (tmp_path / "issue-prompt.txt").write_text("Research the synthetic source completely")
     (tmp_path / "issue-decision.json").write_text(
         json.dumps(

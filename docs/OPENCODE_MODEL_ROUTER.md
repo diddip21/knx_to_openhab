@@ -115,12 +115,19 @@ implementer's file-write scope.
   fails or hits a later rate limit. The bounded planner/generation runners
   may use only another model verified for that task by this same router run.
   Planning preserves and verifies its source-bound research session when switching
-  models. A request-rate limit receives a 60-second cooldown, then the next verified
+  models. A request-rate limit receives at least a 60-second cooldown (or the
+  provider's longer `retryAfterMs` if it fits the remaining budget), then the next verified
   candidate if available, otherwise one same-model continuation. Authentication,
   shared/account/daily quota and request-size failures stop; model rotation cannot
   fix those conditions. Implementation
   and repair restore allowed partial changes before their one fallback;
   policy or scope violations stop the run. See [AI automation](AI_AUTOMATION.md).
+- Pinned OpenCode V2's `provider.free-limit` and `provider.model-budget-limit`
+  explicitly recommend switching models. These model allowances permit only an
+  untried verified alternate, never another identity or a blind retry of the exhausted
+  model. `provider.quota`, `provider.budget-limit` and `provider.go-limit` stop.
+  See the [upstream error mapping](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/core/src/session/to-session-error.ts)
+  and [wire schema](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/schema/src/session-error.ts).
 - A retired model can remain in an upstream cache or bundled snapshot.
   Discovery alone never selects it: the independent live read/skill probe
   remains mandatory. Two unsuccessful discovery attempts or no passing

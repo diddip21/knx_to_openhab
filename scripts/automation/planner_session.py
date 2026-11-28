@@ -157,6 +157,9 @@ def observations(output: str, expected_session: str | None = None) -> dict[str, 
         "output_tokens": 0,
         "auth_errors": 0,
         "quota_errors": 0,
+        "model_limit_errors": 0,
+        "provider_http_status": 0,
+        "retry_after_seconds": 0,
         "shared_limit_errors": 0,
         "rate_limit_errors": 0,
         "daily_limit_errors": 0,
@@ -184,11 +187,18 @@ def observations(output: str, expected_session: str | None = None) -> dict[str, 
             # Provider/CLI strings remain private; retain only fixed categories.
             error = json.dumps(event.get("error", {})).casefold()
             policy = classify(event.get("error", {}))
+            stats["provider_http_status"] = (
+                policy["provider_http_status"] or stats["provider_http_status"]
+            )
+            stats["retry_after_seconds"] = max(
+                stats["retry_after_seconds"], policy["retry_after_seconds"]
+            )
             stats["shared_limit_errors"] += int(policy["provider_failure"] == "shared_limit")
+            stats["model_limit_errors"] += int(policy["provider_failure"] == "model_limit")
             category = policy["provider_failure"]
             if category == "auth":
                 stats["auth_errors"] += 1
-            elif category in {"shared_limit", "rate_limit", "request_size"}:
+            elif category in {"shared_limit", "model_limit", "rate_limit", "request_size"}:
                 stats["quota_errors"] += 1
                 stats["rate_limit_errors"] += int(category == "rate_limit")
                 stats["daily_limit_errors"] += int(

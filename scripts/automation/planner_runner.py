@@ -350,6 +350,13 @@ def run_plan(
                     raise
                 if metrics.get("auth_errors") or metrics.get("request_size_errors"):
                     raise
+                if metrics.get("model_limit_errors") and not metrics.get("shared_limit_errors"):
+                    alternate = next((m for m in models if m not in tried_models), None)
+                    if alternate is None or len(report["attempts"]) >= 3:
+                        raise
+                    phase, attempt_model = "fallback", alternate
+                    attempt_prompt = corrected_prompt("", error.code)
+                    continue
                 if metrics.get("quota_errors"):
                     # Shared/account quotas stop the run. A request-rate window gets
                     # one delayed retry, then an independently verified alternate.
@@ -369,17 +376,20 @@ def run_plan(
                         attempt_prompt = corrected_prompt("", error.code)
                         continue
                     remaining = TOTAL_SECONDS - (time.monotonic() - started)
-                    if remaining < RATE_LIMIT_BACKOFF_SECONDS + FINALIZE_RESERVE_SECONDS:
+                    cooldown = max(
+                        RATE_LIMIT_BACKOFF_SECONDS, metrics.get("retry_after_seconds", 0)
+                    )
+                    if remaining < cooldown + FINALIZE_RESERVE_SECONDS:
                         raise ModelResponseError("budget_exhausted") from None
                     rate_retry_used = True
                     phase = "fallback" if alternate is not None else "rate_limit_retry"
                     if alternate is not None:
                         attempt_model = alternate
                     print(
-                        "Planner rate limit: waiting 60s before a verified same-session continuation",
+                        f"Planner rate limit: waiting {cooldown}s before a verified same-session continuation",
                         flush=True,
                     )
-                    time.sleep(RATE_LIMIT_BACKOFF_SECONDS)
+                    time.sleep(cooldown)
                     attempt_prompt = (
                         "Setze denselben ursprünglichen Rechercheauftrag in dieser Sitzung fort. "
                         "Der Anbieter hat den vorigen Aufruf zeitlich begrenzt; der Controller "

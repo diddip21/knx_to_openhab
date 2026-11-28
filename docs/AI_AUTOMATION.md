@@ -176,11 +176,15 @@ Text silence alone is not treated as a stall: the pinned CLI emits some text onl
 after a completed section. Source text, session identifiers and provider messages
 remain private. Provider delays cannot be diagnosed from byte counts alone.
 An explicit request-rate error allows a same-session continuation after a
-60-second backoff within the same total budget. The next ranked, verified model
+backoff of at least 60 seconds, respecting the provider's longer retry delay,
+within the same total budget. The next ranked, verified model
 is preferred if available; otherwise one same-model retry is allowed.
 Authentication, account/shared/daily quota and request-size failures stop the
 run. Repeated rate errors stop when no untried verified model remains; there is
 no identity rotation or shared-quota bypass.
+The pinned CLI's explicit `provider.free-limit` and `provider.model-budget-limit`
+signals allow an untried verified alternate without retrying the exhausted model.
+Its `provider.quota`, `provider.budget-limit` and `provider.go-limit` signals stop.
 
 ### Versioned research evidence and unpublished replay
 

@@ -390,6 +390,61 @@ def test_provider_diagnostics_keep_only_a_numeric_http_status():
     assert "private-data" not in str(caught.value)
 
 
+def test_provider_diagnostics_read_pinned_v2_flat_status():
+    output = json.dumps({"type": "error", "error": {"status": 429, "message": "private-data"}})
+    with pytest.raises(response_module.ModelResponseError) as caught:
+        response_module.inspect_events(output)
+    assert caught.value.diagnostics["provider_http_status"] == 429
+
+
+@pytest.mark.parametrize("delay,succeeds", [(121, True), (3600, False)])
+def test_retry_after_is_respected_without_exceeding_budget(runtime, monkeypatch, delay, succeeds):
+    calls = []
+    waits = []
+    monkeypatch.setattr(runner.time, "sleep", waits.append)
+
+    def execute(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return json.dumps({"type": "error"}), {
+                "code": None,
+                "exit_code": 1,
+                "quota_errors": 1,
+                "rate_limit_errors": 1,
+                "retry_after_seconds": delay,
+            }
+        return event(), {"code": None, "exit_code": 0}
+
+    monkeypatch.setattr(runner, "execute", execute)
+    if succeeds:
+        runner.run_plan(runtime, FIRST, router_report())
+        assert waits == [121] and len(calls) == 2
+    else:
+        with pytest.raises(ValueError, match="budget_exhausted"):
+            runner.run_plan(runtime, FIRST, router_report())
+        assert waits == [] and len(calls) == 1
+
+
+def test_exhausted_model_allowance_switches_once_instead_of_retrying_it(runtime, monkeypatch):
+    calls = []
+
+    def execute(model, *args, **kwargs):
+        calls.append(model)
+        if len(calls) == 1:
+            return json.dumps({"type": "error"}), {
+                "code": None,
+                "exit_code": 1,
+                "quota_errors": 1,
+                "model_limit_errors": 1,
+                "retry_after_seconds": 86400,
+            }
+        return event(), {"code": None, "exit_code": 0}
+
+    monkeypatch.setattr(runner, "execute", execute)
+    runner.run_plan(runtime, FIRST, router_report())
+    assert calls == [FIRST, SECOND]
+
+
 def test_invalid_scope_is_never_published_even_after_all_attempts(runtime, monkeypatch):
     invalid = {**VALID, "scope": {"files": [".github/workflows/ci.yml"]}}
     calls = fake_attempts(monkeypatch, [event(invalid)] * 3)

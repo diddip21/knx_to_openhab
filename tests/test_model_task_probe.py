@@ -90,3 +90,43 @@ def test_provider_policy_does_not_cycle_shared_limits_or_leak_errors(error, code
     assert result["provider_failure"] == code
     assert provider_policy.permits_fallback(result) is allowed
     assert "private" not in json.dumps(result)
+
+
+@pytest.mark.parametrize(
+    "kind,code,allowed",
+    [
+        ("provider.auth", "auth", False),
+        ("provider.free-limit", "model_limit", True),
+        ("provider.model-budget-limit", "model_limit", True),
+        ("provider.budget-limit", "shared_limit", False),
+        ("provider.quota", "shared_limit", False),
+        ("provider.go-limit", "shared_limit", False),
+        ("provider.rate-limit", "rate_limit", True),
+    ],
+)
+def test_pinned_v2_error_types_and_server_cooldown(kind, code, allowed):
+    result = provider_policy.classify({"type": kind, "status": 429, "retryAfterMs": 120_001})
+    assert result["provider_failure"] == code
+    assert result["retry_after_seconds"] == 121
+    assert result["provider_http_status"] == 429
+    assert provider_policy.permits_fallback(result) is allowed
+
+
+@pytest.mark.parametrize("delay", [True, "60000", -1, float("inf"), float("nan"), 10**30])
+def test_invalid_retry_delays_are_not_trusted(delay):
+    assert provider_policy.classify({"retryAfterMs": delay})["retry_after_seconds"] == 0
+
+
+def test_explicit_model_scope_and_account_scope_take_precedence_over_generic_429():
+    assert (
+        provider_policy.classify(
+            {"type": "provider.free-limit", "status": 429, "message": "model daily allowance used"}
+        )["provider_failure"]
+        == "model_limit"
+    )
+    assert (
+        provider_policy.classify(
+            {"type": "provider.free-limit", "status": 429, "message": "account limit reached"}
+        )["provider_failure"]
+        == "shared_limit"
+    )

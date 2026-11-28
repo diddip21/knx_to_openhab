@@ -20,6 +20,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from automation import task_probe  # noqa: E402
+from automation.provider_policy import classify, permits_fallback  # noqa: E402
 
 # Audited 2026-11-28 against the official free-model pricing/privacy catalog:
 # both are free, zero-retention and no-training. Live probes still must pass.
@@ -200,6 +201,11 @@ def inspect_events(output: str, task: str, seconds: float) -> dict[str, Any]:
     texts = []
     event_count = invalid = provider_errors = tool_errors = 0
     incomplete = False
+    policy: dict[str, Any] = {
+        "provider_failure": "none",
+        "provider_http_status": 0,
+        "retry_after_seconds": 0,
+    }
     for line in output.splitlines():
         if not line.strip():
             continue
@@ -215,6 +221,8 @@ def inspect_events(output: str, task: str, seconds: float) -> dict[str, Any]:
         kind = event["type"]
         if kind == "error":
             provider_errors += 1
+            if permits_fallback(policy):
+                policy = classify(event.get("error"))
         if kind in {"question", "permission", "permission_request"}:
             incomplete = True
         part = event.get("part")
@@ -286,6 +294,7 @@ def inspect_events(output: str, task: str, seconds: float) -> dict[str, Any]:
         "tool_errors": tool_errors,
         "pending_tools": len(pending),
         **capability,
+        **policy,
     }
 
 

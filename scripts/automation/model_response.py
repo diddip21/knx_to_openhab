@@ -77,7 +77,9 @@ def inspect_events(output: str) -> tuple[str, dict[str, int]]:
             error = error if isinstance(error, dict) else {}
             data = error.get("data")
             data = data if isinstance(data, dict) else {}
-            status = data.get("statusCode", error.get("statusCode"))
+            status = data.get(
+                "statusCode", data.get("status", error.get("statusCode", error.get("status")))
+            )
             if type(status) is int and 100 <= status <= 599:
                 stats["provider_http_status"] = status
         elif event.get("type") == "text" and isinstance(part.get("text"), str):

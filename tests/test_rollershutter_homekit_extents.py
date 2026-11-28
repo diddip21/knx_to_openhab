@@ -282,6 +282,7 @@ def _generate(project, general):
         ets_to_openhab.PRJ_NAME = house[0]["name_long"]
         ets_to_openhab.used_addresses = []
         ets_to_openhab.equipments = {}
+        ets_to_openhab.FENSTERKONTAKTE = []
         ets_to_openhab.export_to_influx = []
         ets_to_openhab.partial_dimmers = []
         ets_to_openhab.partial_unknowns = []

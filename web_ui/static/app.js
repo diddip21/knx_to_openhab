@@ -2052,6 +2052,61 @@ function renderRegexSettings(patterns) {
   })
 }
 
+async function homekitBridgeRequest(count = null) {
+  const message = document.getElementById('homekit-bridge-message')
+  const buttons = ['homekit-bridge-status', 'homekit-bridge-setup'].map(id => document.getElementById(id))
+  buttons.forEach(button => { button.disabled = true })
+  setLocalizedMessage(message, 'settings.homekitWorking')
+  try {
+    const response = await apiFetch('/api/homekit/bridges', count === null ? {} : {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count })
+    })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      const code = ['credentials', 'addon_missing', 'invalid_count', 'not_verified', 'connection', 'file_managed'].includes(result.code)
+        ? result.code : 'unavailable'
+      setLocalizedMessage(message, `settings.homekitError.${code}`, {}, 'status-message error')
+      return null
+    }
+    return result
+  } catch (error) {
+    setLocalizedMessage(message, 'settings.homekitError.unavailable', {}, 'status-message error')
+    return null
+  } finally {
+    buttons.forEach(button => { button.disabled = false })
+  }
+}
+
+async function checkHomekitBridges() {
+  const result = await homekitBridgeRequest()
+  if (result) setLocalizedMessage(document.getElementById('homekit-bridge-message'), 'settings.homekitChecked', {
+    count: result.configured_count, first: result.first_port, last: result.last_port
+  }, 'status-message success')
+}
+
+async function setupHomekitBridges() {
+  const input = document.getElementById('conf-homekit-bridges')
+  const count = Number(input.value)
+  const message = document.getElementById('homekit-bridge-message')
+  if (!input.reportValidity() || !Number.isSafeInteger(count) || count < 1) {
+    setLocalizedMessage(message, 'settings.homekitBridgesInvalid', {}, 'status-message error')
+    return
+  }
+  const result = await homekitBridgeRequest(count)
+  if (!result) return
+  const buttons = ['homekit-bridge-status', 'homekit-bridge-setup'].map(id => document.getElementById(id))
+  buttons.forEach(button => { button.disabled = true })
+  // Create/verify bridges first. If saving fails, leave the additional bridges
+  // intact so a concurrent Apple Home pairing is never deleted by rollback.
+  const saved = await saveConfig(false)
+  buttons.forEach(button => { button.disabled = false })
+  setLocalizedMessage(message, saved ? 'settings.homekitSetupDone' : 'settings.homekitSetupSaveFailed', {
+    count: result.configured_count, first: result.first_port, last: result.last_port
+  }, saved ? 'status-message success' : 'status-message error')
+}
+
 async function saveConfig(reprocess = false) {
   const configStatus = document.getElementById('configStatus')
 
@@ -2227,6 +2282,7 @@ async function saveConfig(reprocess = false) {
       }
     }
 
+    return true
   } catch (e) {
     console.error('Error saving configuration:', e);
     setLocalizedMessage(configStatus, 'config.saveError', {

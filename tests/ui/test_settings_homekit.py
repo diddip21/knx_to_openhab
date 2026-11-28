@@ -50,17 +50,17 @@ def _saved_general(ui_server_environment) -> dict:
     return config["general"]
 
 
-def _maybe_capture_screenshot(page: Page) -> None:
+def _maybe_capture_screenshot(page: Page, filename="homekit-settings.png") -> None:
     if os.getenv("SAVE_UI_SCREENSHOTS") == "1":
         project_root = Path(__file__).resolve().parents[2]
         screenshot_dir = project_root / "docs" / "screenshots"
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         screenshot = page.locator("#settings-section").screenshot(
-            path=str(screenshot_dir / "homekit-settings.png")
+            path=str(screenshot_dir / filename)
         )
         report_dir = project_root / "test-results" / "screenshots"
         report_dir.mkdir(parents=True, exist_ok=True)
-        (report_dir / "homekit-settings.png").write_bytes(screenshot)
+        (report_dir / filename).write_bytes(screenshot)
 
 
 @pytest.mark.ui
@@ -146,3 +146,103 @@ def test_homekit_mode_override_round_trip(page: Page, flask_server, ui_server_en
     general = _saved_general(ui_server_environment)
     assert "homekit_enabled" not in general
     assert general["central_function_keyword"] == "zentral"
+
+
+@pytest.mark.ui
+def test_bridge_setup_checks_openhab_then_saves_siblings(
+    page: Page, flask_server, ui_server_environment
+):
+    """Emulate the openHAB adapter; keep actual Flask configuration writes."""
+    calls = []
+
+    def bridges(route):
+        request = route.request
+        calls.append((request.method, request.post_data_json if request.method == "POST" else None))
+        route.fulfill(
+            json={
+                "requested_count": 2,
+                "configured_count": 2,
+                "previous_count": 1,
+                "changed": request.method == "POST",
+                "first_port": 9123,
+                "last_port": 9124,
+                "runtime_status": "not_checked",
+            }
+        )
+
+    page.route("**/api/homekit/bridges", bridges)
+    _open_homekit_settings(page, flask_server)
+    page.locator("#conf-homekit-bridges").fill("2")
+    page.locator("#conf-homekit-extents").uncheck()
+    page.locator("#conf-homekit-stop").check()
+    page.locator("#conf-homekit-stop-same").check()
+    page.locator("#homekit-bridge-status").click()
+    expect(page.locator("#homekit-bridge-message")).to_contain_text("2 bridges configured")
+    page.locator("#homekit-bridge-setup").click()
+    expect(page.locator("#homekit-bridge-message")).to_contain_text("generator setting saved")
+    assert calls == [("GET", None), ("POST", {"count": 2})]
+    general = _saved_general(ui_server_environment)
+    assert general["homekit_bridge_count"] == 2
+    assert general[KEY_EXTENTS] is False and general[KEY_STOP] is True
+    assert general[KEY_STOP_SAME_DIRECTION] is True
+    assert general["central_function_keyword"] == "zentral"
+    expect(page.locator("#homekit-bridge-message")).to_contain_text("Pair additional bridges")
+    _maybe_capture_screenshot(page, "homekit-bridge-setup.png")
+
+
+@pytest.mark.ui
+@pytest.mark.parametrize("code", ["credentials", "addon_missing", "unavailable", "file_managed"])
+def test_bridge_setup_failure_does_not_save_generator_settings(
+    page: Page, flask_server, ui_server_environment, code
+):
+    _open_homekit_settings(page, flask_server)
+    before = ui_server_environment["generator_config_file"].read_bytes()
+    page.route(
+        "**/api/homekit/bridges", lambda route: route.fulfill(status=503, json={"code": code})
+    )
+    page.locator("#conf-homekit-bridges").fill("2")
+    page.locator("#homekit-bridge-setup").click()
+    expect(page.locator("#homekit-bridge-message")).to_have_class("status-message error")
+    expect(page.locator("#homekit-bridge-setup")).to_be_enabled()
+    assert ui_server_environment["generator_config_file"].read_bytes() == before
+
+
+@pytest.mark.ui
+def test_setup_reports_partial_success_if_generator_save_fails(page: Page, flask_server):
+    _open_homekit_settings(page, flask_server)
+    page.route(
+        "**/api/homekit/bridges",
+        lambda route: route.fulfill(
+            json={
+                "configured_count": 2,
+                "first_port": 9123,
+                "last_port": 9124,
+                "runtime_status": "not_checked",
+            }
+        ),
+    )
+    page.route(
+        "**/api/config",
+        lambda route: (
+            route.fulfill(status=500, json={"error": "test save failure"})
+            if route.request.method == "POST"
+            else route.continue_()
+        ),
+    )
+    page.locator("#conf-homekit-bridges").fill("2")
+    page.locator("#homekit-bridge-setup").click()
+    expect(page.locator("#homekit-bridge-message")).to_contain_text(
+        "generator setting could not be saved"
+    )
+    expect(page.locator("#homekit-bridge-message")).to_contain_text("bridges are retained")
+
+
+@pytest.mark.ui
+def test_setup_rejects_invalid_input_before_contacting_openhab(page: Page, flask_server):
+    _open_homekit_settings(page, flask_server)
+    calls = []
+    page.route("**/api/homekit/bridges", lambda route: calls.append(route.request.method))
+    page.locator("#conf-homekit-bridges").fill("0")
+    page.locator("#homekit-bridge-setup").click()
+    expect(page.locator("#homekit-bridge-message")).to_contain_text("positive whole number")
+    assert calls == []

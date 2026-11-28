@@ -1,5 +1,18 @@
 {
   "paths": {
+    "/api/homekit/bridges": {
+      "get": {"description": "Read sanitized configured HomeKit bridge count and port range from the local openHAB API. Does not verify mDNS/Apple Home visibility."},
+      "post": {
+        "description": "JSON {count: positive integer}. Add missing HomeKit bridges with a partial instances update, never deliberately decrease the observed count. Verify the saved count. Does not save generator configuration or pair Apple Home accessories.",
+        "responses": {
+          "200": {"description": "Configured count verified; runtime_status=not_checked. No PIN/token or other service configuration returned."},
+          "400": {"description": "Invalid count or port range."},
+          "409": {"description": "HomeKit add-on missing, instances are file-managed, or requested count not retained."},
+          "502": {"description": "Local openHAB unavailable or invalid response; success not confirmed."},
+          "503": {"description": "Local connection or API administrator credentials require setup."}
+        }
+      }
+    },
     "/api/config": {
       "get": {"description": "Read generator configuration, including optional general.homekit_bridge_count (default 1)."},
       "post": {

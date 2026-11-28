@@ -18,6 +18,7 @@ htmlcov/
 .venv*/
 venv/
 /.worktree-*/
+/.planner-evidence/
 
 # Local generator overrides and temporary copies
 private_persistence

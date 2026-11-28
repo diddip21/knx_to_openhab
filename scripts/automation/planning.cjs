@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const PATCH_BUDGET_BYTES = 32000;
+const {collectEvidence} = require('./research.cjs');
 
 function utf8Prefix(text, budget) {
   let result = '';
@@ -72,7 +73,7 @@ async function assertFreshPlanning({github, context, snapshot, approval = false}
 }
 
 // Same-repository API snapshots only. Content is untrusted reference data.
-async function planningContext({github, context}) {
+async function planningContext({github, context, evidenceDirectory, fetchDocument}) {
   const repo = {owner: context.repo.owner, repo: context.repo.repo};
   const {data: issue} = await github.rest.issues.get({...repo, issue_number: context.issue.number});
   const text = `${issue.title || ''}\n${issue.body || ''}`;
@@ -81,8 +82,21 @@ async function planningContext({github, context}) {
   const linked = prs.filter(p => links.includes(p.number) ||
     new RegExp(`#${issue.number}(?![0-9])`).test(p.body || '') ||
     p.head.ref.startsWith(`ai/issue-${issue.number}-`));
+  const missing = [];
+  // An issue link may refer to an already merged/closed PR, which list(open) omits.
+  for (const number of [...new Set(links)].slice(0, 10)) {
+    if (linked.some(pr => pr.number === number)) continue;
+    try {
+      const {data} = await github.rest.pulls.get({...repo, pull_number: number});
+      linked.push(data);
+    } catch {
+      missing.push(number);
+    }
+  }
   const result = {pull_requests: [], omitted_prs: Math.max(0, linked.length - 5),
-    patch_budget_bytes: PATCH_BUDGET_BYTES, patch_bytes_omitted: 0};
+    patch_budget_bytes: PATCH_BUDGET_BYTES, patch_bytes_omitted: 0,
+    unresolved_pr_links: missing, omitted_pr_links: Math.max(0, new Set(links).size - 10)};
+  result.evidence = await collectEvidence({github, repo, text, evidenceDirectory, fetchDocument});
   let remainingBytes = PATCH_BUDGET_BYTES;
   for (const pr of linked.slice(0, 5)) {
     const files = await github.paginate(github.rest.pulls.listFiles,
@@ -90,6 +104,7 @@ async function planningContext({github, context}) {
     let budget = 16000;
     const body = utf8Prefix(pr.body || '', 2500);
     result.pull_requests.push({number: pr.number, head_sha: pr.head.sha, base: pr.base.ref,
+      state: pr.state, merged: pr.merged === true,
       title: pr.title, body, body_incomplete: body !== (pr.body || ''), draft: pr.draft,
       files: files.slice(0, 40).map(f => {
         const patch = utf8Prefix(f.patch || '', Math.max(0, Math.min(budget, remainingBytes)));

@@ -81,7 +81,8 @@ jobs:
             });
             fs.writeFileSync(process.env.OUT_FILE, JSON.stringify(comments));
             const {planningContext} = require(process.env.GITHUB_WORKSPACE + '/trusted/scripts/automation/planning.cjs');
-            const related = await planningContext({github, context});
+            const related = await planningContext({github, context,
+              evidenceDirectory: process.env.GITHUB_WORKSPACE + '/candidate/.planner-evidence'});
             fs.writeFileSync(process.env.RUNNER_TEMP + '/planning-context.json', JSON.stringify(related));
 
       - name: Decide operation and prepare prompt

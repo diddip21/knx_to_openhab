@@ -139,9 +139,18 @@ The rejected text is supplied privately as untrusted data for format correction,
 within the existing prompt-size bound. It is never published or uploaded as
 diagnostics. The corrected response passes the full JSON, schema and scope checks.
 A further failure may use the other successfully probed model. Provider/runtime
-failures can move directly to that fallback; a timeout can retry once on the same
-model when no verified alternate is available. There are at most three attempts,
-five minutes per attempt and eleven minutes total.
+failures can move directly to that fallback. All attempts share one explicitly
+identified private session and eleven-minute total budget, with at most three
+model calls. The first research call can use 570 seconds, reserving time for
+continuation or format correction. Research is not restarted after five minutes.
+The CLI first receives SIGTERM and eight seconds to interrupt and save its work;
+only then may the controller kill its process group. A hard-killed timeout cannot
+be resumed. Before continuation, the controller checks the stored session's
+directory, model, agent, parent and permission overrides through the pinned CLI's
+read-only session API. A missing session fails rather than silently starting over.
+Checkout identity, tracked changes, request, policy and collected source files
+are bound to the session; any change prevents continuation/publication. The CLI
+receives the real checkout as PWD, never an inherited stale directory.
 Prompt and output sizes are bounded. Invalid or superseded results are never
 published as plans, and a failed replan does not restore the old approval.
 
@@ -152,6 +161,38 @@ model replies, stderr, tool
 outputs and environment values are not uploaded as diagnostics. Use the code
 and attempt sequence to distinguish a provider failure from a response that
 failed validation; an artifact's existence does not establish a successful plan.
+
+Progress observations are also retained after a timeout: completed reads,
+searches, skills, model steps, token counts and provider retry/wait counts.
+Text silence alone is not treated as a stall: the pinned CLI emits some text only
+after a completed section. Source text, session identifiers and provider messages
+remain private. Provider delays cannot be diagnosed from byte counts alone.
+
+### Versioned research evidence and unpublished replay
+
+The controller includes explicitly linked closed/merged PRs as well as related
+open PRs. It collects bounded same-repository commit diffs, pinned GitHub files
+(full commit SHA or version tag resolved to a SHA), and official openHAB add-on
+documentation without passing credentials to those documentation requests or
+following redirects. Whole sources are saved as untrusted reference files under
+the ignored `.planner-evidence/` directory, outside the prompt-size budget.
+Unavailable, oversized, unversioned, incomplete and omitted evidence is identified
+in the manifest; it is never silently presented as complete. The agent still
+researches affected source and tests and must identify further missing evidence.
+
+For an owner-authored same-repository controller PR, opt into the read-only
+`Unpublished planner research replay` workflow with one standalone PR-body marker
+`<!-- ai-planner-diagnostic: N -->`, replacing N with the target issue number.
+The workflow uses the production prompt and source collector, deliberately
+interrupts real research after 90 seconds, verifies the saved session and resumes
+it. Success requires a validated plan, completed reads before interruption and
+completed reads of every available supplied source across the resumed history.
+Reference presence is counted separately and does not prove semantic correctness.
+Only numeric/fixed-code diagnostics and the normal model-selection report are
+uploaded; the reply and session history stay private. There is no publisher and
+no issue, label, approval or PR mutation in this replay. Review the real evidence
+before merging a controller change; simulations alone do not establish that the
+pinned CLI/provider can preserve research across an interruption.
 
 ## Exact CI continuation and recovery
 

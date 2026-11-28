@@ -29,6 +29,9 @@ ERROR_MESSAGES = {
     "budget_exhausted": "The total planner time budget was exhausted",
     "invalid_router_report": "The selected model is not approved and verified by this router run",
     "prompt_limit": "The planning prompt exceeds the safe command argument limit",
+    "context_changed": "The checkout, request, policy or research evidence changed",
+    "resume_unavailable": "The exact private planning session cannot be safely resumed",
+    "diagnostic_incomplete": "The private replay did not prove interruption, resume and evidence reading",
 }
 
 

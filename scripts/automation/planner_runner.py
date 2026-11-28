@@ -5,16 +5,17 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import issue_bot  # noqa: E402
+from automation import planner_session  # noqa: E402
 from automation.model_response import (  # noqa: E402
     MAX_EVENT_BYTES,
     ModelResponseError,
@@ -25,12 +26,13 @@ from opencode_model_router import (  # noqa: E402
     APPROVED_FREE_MODELS,
     RouterError,
     discover_models,
-    isolated_environment,
     probe_model,
 )
 
 TOTAL_SECONDS = 660
 ATTEMPT_SECONDS = 300
+FINALIZE_RESERVE_SECONDS = 90
+CANCEL_GRACE_SECONDS = 8
 REFRESH_DISCOVERY_SECONDS = 15
 REFRESH_PROBE_SECONDS = 30
 PROGRESS_SECONDS = 60
@@ -118,7 +120,14 @@ def corrected_prompt(prompt: str, code: str, response_text: str = "") -> str:
     return correction
 
 
-def execute(model: str, prompt: str, timeout: float) -> tuple[str, dict[str, Any]]:
+def execute(
+    model: str,
+    prompt: str,
+    timeout: float,
+    *,
+    session_id: str | None = None,
+    state_dir: Path | None = None,
+) -> tuple[str, dict[str, Any]]:
     """Capture to private temp files, killing runaway output before reading bounded bytes."""
     command = [
         "opencode",
@@ -131,17 +140,23 @@ def execute(model: str, prompt: str, timeout: float) -> tuple[str, dict[str, Any
         "issue-planner",
         "--model",
         model,
-        prompt,
     ]
+    if session_id:
+        command.extend(["--session", session_id])
+    command.append(prompt)
     started = time.monotonic()
-    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+    with (
+        tempfile.TemporaryDirectory() as capture,
+        (Path(capture) / "stdout").open("w+b") as stdout,
+        (Path(capture) / "stderr").open("w+b") as stderr,
+    ):
         try:
             process = subprocess.Popen(
                 command,
                 stdin=subprocess.DEVNULL,
                 stdout=stdout,
                 stderr=stderr,
-                env=isolated_environment(),
+                env=planner_session.environment(state_dir),
                 start_new_session=True,
             )
         except OSError:
@@ -160,20 +175,25 @@ def execute(model: str, prompt: str, timeout: float) -> tuple[str, dict[str, Any
                 break
             elapsed = time.monotonic() - started
             if elapsed >= next_progress:
+                with (Path(capture) / "stdout").open("rb") as reader:
+                    trace = planner_session.observations(
+                        reader.read(MAX_EVENT_BYTES).decode("utf-8", errors="replace"), session_id
+                    )
                 print(
                     f"Planner progress: seconds={int(elapsed)}, "
                     f"stdout_bytes={os.fstat(stdout.fileno()).st_size}, "
-                    f"stderr_bytes={os.fstat(stderr.fileno()).st_size}",
+                    f"stderr_bytes={os.fstat(stderr.fileno()).st_size}, "
+                    f"reads={trace['completed_reads']}, steps={trace['completed_steps']}, "
+                    f"provider_retries={trace['provider_retries']}",
                     flush=True,
                 )
                 next_progress += PROGRESS_SECONDS
             time.sleep(0.05)
+        graceful_stop = True
         if code:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            process.wait(timeout=5)
+            graceful_stop = planner_session.stop(
+                process, min(CANCEL_GRACE_SECONDS, timeout) if code == "timeout" else 0
+            )
         stdout_bytes = os.fstat(stdout.fileno()).st_size
         stderr_bytes = os.fstat(stderr.fileno()).st_size
         if stdout_bytes > MAX_EVENT_BYTES or stderr_bytes > MAX_STDERR_BYTES:
@@ -186,6 +206,8 @@ def execute(model: str, prompt: str, timeout: float) -> tuple[str, dict[str, Any
             "elapsed_seconds": round(time.monotonic() - started, 2),
             "stdout_bytes": stdout_bytes,
             "stderr_bytes": stderr_bytes,
+            "graceful_stop": graceful_stop,
+            **planner_session.observations(output, session_id),
         }
 
 
@@ -215,10 +237,24 @@ def write_diagnostics(temp: Path, report: dict[str, Any]) -> None:
             target.write("\n".join(lines) + "\n")
 
 
-def run_plan(temp: Path, model: str, router: dict[str, Any]) -> dict[str, Any]:
+def run_plan(
+    temp: Path,
+    model: str,
+    router: dict[str, Any],
+    *,
+    checkpoint_seconds: float | None = None,
+) -> dict[str, Any]:
     report: dict[str, Any] = {"schema_version": 1, "status": "failure", "attempts": []}
     started = time.monotonic()
     (temp / "issue-result.json").unlink(missing_ok=True)
+    # Each run owns a private data directory and explicit session; never --continue.
+    session_id = "ses_" + uuid.uuid4().hex
+    state_dir = temp / ("planner-state-" + uuid.uuid4().hex)
+    context = planner_session.binding(temp)
+    session_model = model
+    sources = planner_session.evidence_paths(temp)
+    read_sources: set[str] = set()
+    report["evidence_available"] = len(sources)
     try:
         models = verified_models(model, router)
         prompt = (temp / "issue-prompt.txt").read_text(encoding="utf-8")
@@ -229,25 +265,46 @@ def run_plan(temp: Path, model: str, router: dict[str, Any]) -> dict[str, Any]:
         attempt_model = models[0]
         attempt_prompt = prompt
         while len(report["attempts"]) < 3:
+            if planner_session.binding(temp) != context:
+                raise ModelResponseError("context_changed")
             remaining = TOTAL_SECONDS - (time.monotonic() - started)
-            if remaining <= 0:
+            if remaining <= CANCEL_GRACE_SECONDS:
                 raise ModelResponseError("budget_exhausted")
-            timeout = min(ATTEMPT_SECONDS, remaining)
+            resumed = bool(report["attempts"])
+            if resumed:
+                planner_session.verify(session_id, state_dir, session_model, min(15, remaining))
+                remaining = TOTAL_SECONDS - (time.monotonic() - started)
+            # Spend the budget on one research history, leaving time for final formatting.
+            timeout = max(0, remaining - CANCEL_GRACE_SECONDS)
+            if phase == "initial":
+                timeout = min(timeout, TOTAL_SECONDS - FINALIZE_RESERVE_SECONDS)
+                if checkpoint_seconds is not None:
+                    timeout = min(timeout, checkpoint_seconds)
+            if timeout <= 0:
+                raise ModelResponseError("budget_exhausted")
             print(
                 f"Planner attempt {len(report['attempts']) + 1}: "
                 f"phase={phase}, model={attempt_model}, timeout={timeout:.1f}s",
                 flush=True,
             )
-            output, metrics = execute(attempt_model, attempt_prompt, timeout)
+            output, metrics = execute(
+                attempt_model, attempt_prompt, timeout, session_id=session_id, state_dir=state_dir
+            )
+            session_model = attempt_model
+            read_sources.update(planner_session.evidence_reads(output, sources))
+            report["evidence_read"] = len(read_sources)
             attempt = {
                 "attempt": len(report["attempts"]) + 1,
                 "model": attempt_model,
                 "phase": phase,
                 **metrics,
+                "resumed": resumed,
             }
             report["attempts"].append(attempt)
             text = ""
             try:
+                if metrics.get("session_mismatch"):
+                    raise ModelResponseError("resume_unavailable")
                 if metrics.get("code"):
                     raise ModelResponseError(metrics["code"])
                 # Check error events even when the CLI exits zero, before considering text.
@@ -265,6 +322,10 @@ def run_plan(temp: Path, model: str, router: dict[str, Any]) -> dict[str, Any]:
             except ModelResponseError as error:
                 attempt["code"] = error.code
                 attempt.update(error.diagnostics)
+                if error.code in {"context_changed", "resume_unavailable"} or (
+                    error.code == "timeout" and not metrics.get("graceful_stop", False)
+                ):
+                    raise
                 if (
                     error.code in FORMAT_ERRORS
                     and not format_retry_used
@@ -272,11 +333,11 @@ def run_plan(temp: Path, model: str, router: dict[str, Any]) -> dict[str, Any]:
                 ):
                     format_retry_used = True
                     phase = "format_retry"
-                    attempt_prompt = corrected_prompt(prompt, error.code, text)
+                    attempt_prompt = corrected_prompt("", error.code, text)
                 elif phase != "fallback" and len(models) > 1:
                     phase = "fallback"
                     attempt_model = models[1]
-                    attempt_prompt = corrected_prompt(prompt, error.code)
+                    attempt_prompt = corrected_prompt("", error.code)
                 elif error.code == "timeout" and phase in {"initial", "format_retry"}:
                     # The first verified model can time out on a real plan despite
                     # passing the short probe. Reserve time for a full fresh attempt.
@@ -287,11 +348,21 @@ def run_plan(temp: Path, model: str, router: dict[str, Any]) -> dict[str, Any]:
                         attempt_model = alternate
                     else:
                         phase = "timeout_retry"
-                    attempt_prompt = corrected_prompt(prompt, error.code)
+                    if not metrics.get("graceful_stop", False):
+                        raise ModelResponseError("resume_unavailable")
+                    attempt_prompt = (
+                        "Setze denselben Rechercheauftrag mit dem vorhandenen Kontext fort. "
+                        "Der Controller hat den vorigen Abschnitt zeitlich unterbrochen. "
+                        "Nutze bereits gelesene Belege weiter und recherchiere verbleibende "
+                        "offene Punkte vollständig. Antworte abschließend im ursprünglich "
+                        "angeforderten JSON-Format mit kind, markdown und scope bei einem Plan."
+                    )
                 else:
                     raise
                 continue
             attempt["code"] = "valid_response"
+            if planner_session.binding(temp) != context:
+                raise ModelResponseError("context_changed")
             # finish independently revalidates the envelope, schema and scope before writing.
             (temp / "opencode-events.jsonl").write_text(output, encoding="utf-8")
             issue_bot.finish(temp)

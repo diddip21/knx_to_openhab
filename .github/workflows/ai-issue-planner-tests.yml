@@ -6,6 +6,9 @@ on:
       - "scripts/issue_bot.py"
       - "scripts/automation/model_response.py"
       - "scripts/automation/planner_runner.py"
+      - "scripts/automation/planner_session.py"
+      - "scripts/automation/planner_diagnostic.py"
+      - "scripts/automation/research.cjs"
       - "scripts/automation/planning.cjs"
       - "scripts/automation/approval.py"
       - "scripts/automation/scope.py"
@@ -13,6 +16,7 @@ on:
       - "tests/test_issue_bot.py"
       - "tests/test_ai_planner_runner.py"
       - "tests/ai_pipeline/planning_freshness.test.cjs"
+      - "tests/ai_pipeline/research.test.cjs"
       - ".opencode/agents/issue-planner.md"
       - ".github/opencode-cli-version"
       - ".github/workflows/opencode-issue-planner.yml"
@@ -42,6 +46,6 @@ jobs:
       - name: Run controller tests
         run: python -m pytest tests/test_issue_bot.py tests/test_ai_planner_runner.py -q -o addopts=
       - name: Reject stale concurrent planning results
-        run: node --test tests/ai_pipeline/planning_freshness.test.cjs
+        run: node --test tests/ai_pipeline/planning_freshness.test.cjs tests/ai_pipeline/research.test.cjs
       - name: Check controller Python syntax
         run: python -m compileall -q scripts/issue_bot.py scripts/automation

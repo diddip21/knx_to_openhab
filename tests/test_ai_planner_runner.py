@@ -34,6 +34,8 @@ def router_report(second_passed=True):
 @pytest.fixture
 def runtime(tmp_path, monkeypatch):
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    monkeypatch.setattr(runner.planner_session, "binding", lambda temp: "stable-test-context")
+    monkeypatch.setattr(runner.planner_session, "verify", lambda *args: None)
     (tmp_path / "issue-prompt.txt").write_text("Private issue context must not enter diagnostics")
     (tmp_path / "issue-decision.json").write_text(
         json.dumps(
@@ -52,7 +54,7 @@ def runtime(tmp_path, monkeypatch):
 def fake_attempts(monkeypatch, outputs, exit_code=0):
     calls = []
 
-    def execute(model, prompt, timeout):
+    def execute(model, prompt, timeout, **kwargs):
         calls.append((model, prompt, timeout))
         return outputs[len(calls) - 1], {
             "code": None,
@@ -104,7 +106,7 @@ def test_provider_error_with_zero_exit_skips_format_retry_and_retains_no_content
 def timeout_attempts(monkeypatch, outputs):
     calls = []
 
-    def execute(model, prompt, timeout):
+    def execute(model, prompt, timeout, **kwargs):
         calls.append((model, prompt, timeout))
         output = outputs[len(calls) - 1]
         return output or "", {
@@ -113,6 +115,7 @@ def timeout_attempts(monkeypatch, outputs):
             "elapsed_seconds": timeout if output is None else 0.01,
             "stdout_bytes": len(output or ""),
             "stderr_bytes": 0,
+            "graceful_stop": True,
         }
 
     monkeypatch.setattr(runner, "execute", execute)
@@ -126,7 +129,7 @@ def test_single_model_timeout_retries_once_and_publishes(runtime, monkeypatch):
     report = runner.run_plan(runtime, FIRST, router_report(second_passed=False))
 
     assert [c[0] for c in calls] == [FIRST, FIRST]
-    assert [c[2] for c in calls] == [300, 300]
+    assert [c[2] for c in calls] == [570, pytest.approx(652, abs=2)]
     assert [a["phase"] for a in report["attempts"]] == ["initial", "timeout_retry"]
     assert report["status"] == "success"
     assert (runtime / "issue-result.json").exists()
@@ -144,17 +147,19 @@ def test_single_model_second_timeout_stops_without_publishing(runtime, monkeypat
 
 
 def test_timeout_then_invalid_json_gets_one_private_format_repair(runtime, monkeypatch):
-    times = iter([0, 0, 300, 302, 524, 525])
+    times = iter([0, 0, 300, 302, 302, 524, 524, 525])
     monkeypatch.setattr(runner.time, "monotonic", lambda: next(times))
     monkeypatch.setattr(runner, "refresh_alternate", lambda model, remaining: None)
     malformed = '{"kind":"plan","markdown":"Private draft with "unescaped" quotes"}'
     bad = json.dumps({"type": "text", "part": {"text": malformed}})
     calls = timeout_attempts(monkeypatch, [None, bad, event()])
 
-    report = runner.run_plan(runtime, FIRST, router_report(second_passed=False))
+    report = runner.run_plan(
+        runtime, FIRST, router_report(second_passed=False), checkpoint_seconds=300
+    )
 
     assert [c[0] for c in calls] == [FIRST, FIRST, FIRST]
-    assert [c[2] for c in calls] == [300, 300, 136]
+    assert [c[2] for c in calls] == [300, 350, 128]
     assert [a["phase"] for a in report["attempts"]] == ["initial", "timeout_retry", "format_retry"]
     assert json.dumps(malformed, ensure_ascii=False) in calls[2][1]
     assert "UNVERTRAUENSWÜRDIGE ANTWORTDATEN" in calls[2][1]
@@ -231,14 +236,14 @@ def test_refresh_does_not_consume_full_retry_budget(monkeypatch):
 
 
 def test_timeout_retry_uses_only_remaining_budget(runtime, monkeypatch):
-    times = iter([0, 0, 500, 500, 501])
+    times = iter([0, 0, 500, 500, 501, 502])
     monkeypatch.setattr(runner.time, "monotonic", lambda: next(times))
     monkeypatch.setattr(runner, "refresh_alternate", lambda model, remaining: None)
     calls = timeout_attempts(monkeypatch, [None, event()])
 
     runner.run_plan(runtime, FIRST, router_report(second_passed=False))
 
-    assert [c[2] for c in calls] == [300, 160]
+    assert [c[2] for c in calls] == [570, 151]
 
 
 def test_provider_diagnostics_keep_only_a_numeric_http_status():

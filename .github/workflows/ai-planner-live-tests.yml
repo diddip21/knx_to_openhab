@@ -1,0 +1,73 @@
+name: Unpublished planner research replay
+
+on:
+  pull_request:
+    paths:
+      - "scripts/automation/planner*.py"
+      - "scripts/automation/research.cjs"
+      - "scripts/automation/planning.cjs"
+      - "scripts/issue_bot.py"
+      - ".github/workflows/ai-planner-live-tests.yml"
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  replay:
+    # Explicit owner opt-in, same-repository PR, no publisher and no secrets for the model.
+    if: >-
+      github.event.pull_request.user.login == github.repository_owner &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.body, '<!-- ai-planner-diagnostic:')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Read issue and versioned research sources without modifying GitHub
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('node:fs');
+            const matches = [...context.payload.pull_request.body.matchAll(/^<!-- ai-planner-diagnostic: ([1-9][0-9]*) -->$/gm)];
+            if (matches.length !== 1) throw new Error('Exactly one owner diagnostic target is required');
+            const number = Number(matches[0][1]);
+            if (!Number.isSafeInteger(number)) throw new Error('Invalid issue number');
+            const repo = {...context.repo, issue_number: number};
+            const {data: issue} = await github.rest.issues.get(repo);
+            const comments = await github.paginate(github.rest.issues.listComments, {...repo, per_page: 100});
+            const {planningContext} = require(process.env.GITHUB_WORKSPACE + '/scripts/automation/planning.cjs');
+            const related = await planningContext({github,
+              context: {repo: context.repo, issue: {number}},
+              evidenceDirectory: process.env.GITHUB_WORKSPACE + '/.planner-evidence'});
+            fs.writeFileSync(process.env.RUNNER_TEMP + '/planning-context.json', JSON.stringify(related));
+            fs.writeFileSync(process.env.RUNNER_TEMP + '/planner-diagnostic-source.json',
+              JSON.stringify({issue, comments, owner: context.repo.owner}));
+      - name: Prepare production-equivalent private prompt
+        run: python -I scripts/automation/planner_diagnostic.py prepare
+      - name: Install pinned OpenCode
+        run: npm install --global "@opencode/cli@$(cat .github/opencode-cli-version)"
+      - name: Select an approved working free model
+        run: python scripts/opencode_model_router.py select --task plan --report "$RUNNER_TEMP/model-router.json"
+      - name: Prove real interruption and same-session continuation
+        run: python -I scripts/automation/planner_diagnostic.py run
+      - name: Retain content-free diagnostics only
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unpublished-planner-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/planner-diagnostics.json
+            ${{ runner.temp }}/model-router.json
+          if-no-files-found: ignore
+          retention-days: 7

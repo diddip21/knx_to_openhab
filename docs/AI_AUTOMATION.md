@@ -143,6 +143,8 @@ failures can move directly to that fallback. All attempts share one explicitly
 identified private session and eleven-minute total budget, with at most three
 model calls. The first research call can use 570 seconds, reserving time for
 continuation or format correction. Research is not restarted after five minutes.
+Model discovery/probes and planning share the same run-private data directory;
+probe conversations remain separate because planning always uses its explicit ID.
 The CLI first receives SIGTERM and eight seconds to interrupt and save its work;
 only then may the controller kill its process group. A hard-killed timeout cannot
 be resumed. Before continuation, the controller checks the stored session's

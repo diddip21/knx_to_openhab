@@ -20,6 +20,8 @@ concurrency:
 
 jobs:
   replay:
+    env:
+      XDG_DATA_HOME: ${{ runner.temp }}/planner-data
     # Explicit owner opt-in, same-repository PR, no publisher and no secrets for the model.
     if: >-
       github.event.pull_request.user.login == github.repository_owner &&

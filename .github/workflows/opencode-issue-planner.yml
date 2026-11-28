@@ -18,6 +18,8 @@ concurrency:
 
 jobs:
   plan:
+    env:
+      XDG_DATA_HOME: ${{ runner.temp }}/planner-data
     if: >-
       github.event.issue.state == 'open' &&
       !github.event.issue.pull_request &&

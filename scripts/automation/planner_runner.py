@@ -250,7 +250,9 @@ def run_plan(
     (temp / "issue-result.json").unlink(missing_ok=True)
     # Each run owns a private data directory and explicit session; never --continue.
     session_id = "ses_" + uuid.uuid4().hex
-    state_dir = temp / ("planner-state-" + uuid.uuid4().hex)
+    # Router and real planning use the same run-private provider/catalog state.
+    # Explicit session IDs keep probe conversations separate from task history.
+    state_dir = temp / "planner-data"
     context = planner_session.binding(temp)
     session_model = model
     sources = planner_session.evidence_paths(temp)

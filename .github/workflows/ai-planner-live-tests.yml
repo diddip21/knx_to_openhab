@@ -20,8 +20,6 @@ concurrency:
 
 jobs:
   replay:
-    env:
-      XDG_DATA_HOME: ${{ runner.temp }}/planner-data
     # Explicit owner opt-in, same-repository PR, no publisher and no secrets for the model.
     if: >-
       github.event.pull_request.user.login == github.repository_owner &&
@@ -64,8 +62,12 @@ jobs:
       - name: Install pinned OpenCode
         run: npm install --global "@opencode/cli@$(cat .github/opencode-cli-version)"
       - name: Select an approved working free model
+        env:
+          XDG_DATA_HOME: ${{ runner.temp }}/planner-data
         run: python scripts/opencode_model_router.py select --task plan --report "$RUNNER_TEMP/model-router.json"
       - name: Prove real interruption and same-session continuation
+        env:
+          XDG_DATA_HOME: ${{ runner.temp }}/planner-data
         run: python -I scripts/automation/planner_diagnostic.py run
       - name: Retain content-free diagnostics only
         if: always()

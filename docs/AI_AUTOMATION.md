@@ -134,9 +134,14 @@ The planner distinguishes provider/CLI failures, timeouts, truncated or empty
 output, invalid JSON/schema and invalid scope. A provider error event is a
 failure even if the CLI exits zero. Only models that passed this run's approved
 free-model probes may be used. A malformed response gets one corrective retry
-on the same model; a further failure may use the other successfully probed
-model. Provider/runtime failures can move directly to that fallback. There are
-at most three attempts, four minutes per attempt and eleven minutes total.
+on the same model, including after a timeout retry if an attempt and time remain.
+The rejected text is supplied privately as untrusted data for format correction,
+within the existing prompt-size bound. It is never published or uploaded as
+diagnostics. The corrected response passes the full JSON, schema and scope checks.
+A further failure may use the other successfully probed model. Provider/runtime
+failures can move directly to that fallback; a timeout can retry once on the same
+model when no verified alternate is available. There are at most three attempts,
+five minutes per attempt and eleven minutes total.
 Prompt and output sizes are bounded. Invalid or superseded results are never
 published as plans, and a failed replan does not restore the old approval.
 

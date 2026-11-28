@@ -1,5 +1,15 @@
 {
   "paths": {
+    "/api/config": {
+      "get": {"description": "Read generator configuration, including optional general.homekit_bridge_count (default 1)."},
+      "post": {
+        "description": "Replace generator configuration. Preserve sibling fields when sending the full object. general.homekit_bridge_count must be a positive JSON integer for already configured bridges 1 to N.",
+        "responses": {
+          "200": {"description": "Configuration saved."},
+          "400": {"description": "Invalid configuration object, general object or HomeKit bridge count; configuration is not saved."}
+        }
+      }
+    },
     "/api/upload": {"post": {"description": "Upload .knxproj/.knxprojarchive file", "consumes": ["multipart/form-data"]}},
     "/api/jobs": {"get": {"description": "List jobs"}},
     "/api/job/{id}": {"get": {"description": "Job detail"}},

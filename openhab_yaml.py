@@ -101,7 +101,16 @@ def parse_metadata(*fragments: str) -> dict[str, dict[str, Any]]:
             config_fragment = match.group("config")
             entry: dict[str, Any] = {"value": value}
             if config_fragment:
-                entry["config"] = parse_assignments(config_fragment)
+                config: dict[str, Any] = parse_assignments(config_fragment)
+                if namespace == "homekit":
+                    for parameter in _ASSIGNMENT.finditer(config_fragment):
+                        # Preserve quoted values and every other metadata parameter.
+                        number = parameter.group("unquoted") or ""
+                        if parameter.group("key") == "instance" and re.fullmatch(
+                            r"[1-9][0-9]*", number
+                        ):
+                            config["instance"] = int(number)
+                entry["config"] = config
             metadata[namespace] = entry
     return metadata
 

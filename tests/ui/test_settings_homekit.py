@@ -73,10 +73,12 @@ def test_homekit_defaults_and_optional_stops_round_trip(
     expect(page.locator("#conf-homekit-extents")).to_be_checked()
     expect(page.locator("#conf-homekit-stop")).not_to_be_checked()
     expect(page.locator("#conf-homekit-stop-same")).not_to_be_checked()
+    expect(page.locator("#conf-homekit-bridges")).to_have_value("1")
 
     page.locator("#conf-homekit-extents").uncheck()
     page.locator("#conf-homekit-stop").check()
     page.locator("#conf-homekit-stop-same").check()
+    page.locator("#conf-homekit-bridges").fill("2")
     _save_and_reload(page)
 
     expect(page.locator('input[name="conf-homekit-mode"][value="ets"]')).to_be_checked()
@@ -88,8 +90,40 @@ def test_homekit_defaults_and_optional_stops_round_trip(
     assert general[KEY_EXTENTS] is False
     assert general[KEY_STOP] is True
     assert general[KEY_STOP_SAME_DIRECTION] is True
+    assert general["homekit_bridge_count"] == 2
+    expect(page.locator("#conf-homekit-bridges")).to_have_value("2")
     assert general["central_function_keyword"] == "zentral"
     _maybe_capture_screenshot(page)
+
+
+@pytest.mark.ui
+@pytest.mark.parametrize("invalid", ["0", "-1", "1.5", ""])
+def test_invalid_bridge_count_is_not_saved(
+    page: Page, flask_server, ui_server_environment, invalid
+):
+    _open_homekit_settings(page, flask_server)
+    before = ui_server_environment["generator_config_file"].read_bytes()
+    page.locator("#conf-homekit-bridges").fill(invalid)
+    page.get_by_role("button", name="Save Config").click()
+    expect(page.locator("#configStatus")).to_contain_text("positive whole number")
+    assert ui_server_environment["generator_config_file"].read_bytes() == before
+
+
+@pytest.mark.ui
+def test_config_api_rejects_invalid_bridge_counts_without_writing(
+    page: Page, flask_server, ui_server_environment
+):
+    _open_homekit_settings(page, flask_server)
+    config_path = ui_server_environment["generator_config_file"]
+    before = config_path.read_bytes()
+    invalid_values: tuple[object, ...] = (0, -1, True, "2", 1.5, None, [], {})
+    for invalid in invalid_values:
+        config = json.loads(before)
+        config["general"]["homekit_bridge_count"] = invalid
+        response = page.request.post(f"{flask_server}/api/config", data=config)
+        assert response.status == 400
+        assert "homekit_bridge_count" in response.json()["error"]
+        assert config_path.read_bytes() == before
 
 
 @pytest.mark.ui

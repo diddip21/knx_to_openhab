@@ -220,6 +220,11 @@
           </div>
 
           <div id="tab-homekit" class="tab-content">
+            <div class="form-group">
+              <label for="conf-homekit-bridges" data-i18n="settings.homekitBridges">Configured HomeKit bridges</label>
+              <input type="number" id="conf-homekit-bridges" class="form-control" min="1" step="1" required value="1" aria-describedby="homekit-bridges-help">
+              <div id="homekit-bridges-help" class="checkbox-help" data-i18n="settings.homekitBridgesHelp">Default: 1, all accessories stay on bridge 1. Increase only after setting up bridges 1 to N in openHAB. With multiple bridges, distribute 130 accessories per bridge; generation fails if capacity is exceeded.</div>
+            </div>
             <fieldset>
               <legend data-i18n="settings.homekitMode">HomeKit Mode</legend>
               <div class="form-group">

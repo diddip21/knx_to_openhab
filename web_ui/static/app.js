@@ -1913,6 +1913,7 @@ async function loadConfig() {
     }
     const homekitModeInput = document.querySelector(`input[name="conf-homekit-mode"][value="${selectedHomekitMode}"]`)
     if (homekitModeInput) homekitModeInput.checked = true
+    document.getElementById('conf-homekit-bridges').value = gen.homekit_bridge_count ?? 1
     document.getElementById('conf-homekit-extents').checked = configBoolean(
       gen.homekit_rollershutter_sendUpDownForExtents,
       true
@@ -2055,6 +2056,12 @@ async function saveConfig(reprocess = false) {
   const configStatus = document.getElementById('configStatus')
 
   try {
+    const bridgeInput = document.getElementById('conf-homekit-bridges')
+    const homekitBridgeCount = Number(bridgeInput.value)
+    if (!bridgeInput.reportValidity() || !Number.isSafeInteger(homekitBridgeCount) || homekitBridgeCount < 1) {
+      setLocalizedMessage(configStatus, 'settings.homekitBridgesInvalid', {}, 'status-message error')
+      return
+    }
     const selectedOutputFormat = document.getElementById('conf-output-format').value || 'legacy'
     const versionMatch = String(installedOpenhabVersion || '').match(/^(\d+)\.(\d+)/)
     const versionAtLeast52 = Boolean(
@@ -2125,6 +2132,7 @@ async function saveConfig(reprocess = false) {
     newConfig.general.homekit_rollershutter_sendUpDownForExtents = document.getElementById('conf-homekit-extents').checked
     newConfig.general.homekit_rollershutter_stop = document.getElementById('conf-homekit-stop').checked
     newConfig.general.homekit_rollershutter_stopSameDirection = document.getElementById('conf-homekit-stop-same').checked
+    newConfig.general.homekit_bridge_count = homekitBridgeCount
 
     // Devices
     const gwNames = document.getElementById('conf-gateway-names').value.split(',').map(s => s.trim()).filter(s => s)

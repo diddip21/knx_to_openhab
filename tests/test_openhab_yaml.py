@@ -320,9 +320,25 @@ def test_metadata_conversion_preserves_value_and_configuration():
     }
 
 
-def test_metadata_conversion_preserves_unquoted_homekit_instance():
-    assert parse_metadata(', homekit="Switchable" [Instance=2]') == {
-        "homekit": {"value": "Switchable", "config": {"Instance": "2"}}
+def test_metadata_conversion_preserves_numeric_homekit_instance():
+    assert parse_metadata(', homekit="Switchable" [instance=2]') == {
+        "homekit": {"value": "Switchable", "config": {"instance": 2}}
+    }
+
+
+def test_only_unquoted_homekit_instance_changes_type():
+    assert parse_metadata(
+        'homekit="Thermostat" [instance=2, OFF="4", stop=true, Instance=3], '
+        'other="value" [instance=2]'
+    ) == {
+        "homekit": {
+            "value": "Thermostat",
+            "config": {"instance": 2, "OFF": "4", "stop": "true", "Instance": "3"},
+        },
+        "other": {"value": "value", "config": {"instance": "2"}},
+    }
+    assert parse_metadata('homekit="Switchable" [instance="2"]')["homekit"]["config"] == {
+        "instance": "2"
     }
 
 

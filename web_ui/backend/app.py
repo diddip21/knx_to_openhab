@@ -1248,6 +1248,16 @@ if FLASK_AVAILABLE:
             if not isinstance(new_config, dict):
                 return jsonify({"error": "Config must be a JSON object"}), 400
 
+            from homekit_config import bridge_count
+
+            general = new_config.get("general", {})
+            if not isinstance(general, dict):
+                return jsonify({"error": "general must be a JSON object"}), 400
+            try:
+                bridge_count(general)
+            except ValueError as error:
+                return jsonify({"error": str(error)}), 400
+
             with job_mgr.operation_lock, job_mgr.gateway_state_lock:
                 # Keep provisioning serialized with live gateway edits and deployments.
                 previous_config = load_generator_config(project_root)

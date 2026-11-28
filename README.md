@@ -146,6 +146,11 @@ The Web UI starts with `general.auto_place_unknown = false` (`web_ui/backend/sto
 
 ### HomeKit Rollershutters
 
+HomeKit bridge selection uses numeric lowercase `instance` in both exports.
+The default keeps all accessories on bridge 1. Set the number of **already
+configured** bridges in the HomeKit tab or `general.homekit_bridge_count` to
+enable distribution. See [bridge setup, migration and remaining runtime checks](docs/HOMEKIT_BRIDGES.md).
+
 When HomeKit output is active, generated `WindowCovering` group accessories receive
 `sendUpDownForExtents=true` by default. This converts openHAB's 0%/100% travel
 commands into UP/DOWN so HomeKit position commands do not leave the slat position

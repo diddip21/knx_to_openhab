@@ -135,6 +135,40 @@ def test_single_model_timeout_retries_once_and_publishes(runtime, monkeypatch):
     assert (runtime / "issue-result.json").exists()
 
 
+@pytest.mark.parametrize("daily", [False, True])
+def test_rate_limit_waits_once_without_switching_models_or_ignoring_daily_quota(
+    runtime, monkeypatch, daily
+):
+    waits = []
+    calls = []
+    monkeypatch.setattr(runner.time, "sleep", waits.append)
+
+    def execute(model, prompt, timeout, **kwargs):
+        calls.append((model, kwargs["session_id"]))
+        if len(calls) == 1:
+            return json.dumps({"type": "error", "error": {"message": "rate limit"}}), {
+                "code": None,
+                "exit_code": 1,
+                "elapsed_seconds": 1,
+                "quota_errors": 1,
+                "rate_limit_errors": 1,
+                "daily_limit_errors": int(daily),
+            }
+        return event(), {"code": None, "exit_code": 0, "elapsed_seconds": 1}
+
+    monkeypatch.setattr(runner, "execute", execute)
+    if daily:
+        with pytest.raises(ValueError, match="provider_error"):
+            runner.run_plan(runtime, FIRST, router_report())
+        assert waits == [] and len(calls) == 1
+    else:
+        report = runner.run_plan(runtime, FIRST, router_report())
+        assert report["status"] == "success"
+        assert waits == [60]
+        assert calls[0] == calls[1]
+        assert report["attempts"][1]["phase"] == "rate_limit_retry"
+
+
 def test_single_model_second_timeout_stops_without_publishing(runtime, monkeypatch):
     monkeypatch.setattr(runner, "refresh_alternate", lambda model, remaining: None)
     calls = timeout_attempts(monkeypatch, [None, None])

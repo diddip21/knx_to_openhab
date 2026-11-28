@@ -33,6 +33,7 @@ TOTAL_SECONDS = 660
 ATTEMPT_SECONDS = 300
 FINALIZE_RESERVE_SECONDS = 90
 CANCEL_GRACE_SECONDS = 8
+RATE_LIMIT_BACKOFF_SECONDS = 60
 REFRESH_DISCOVERY_SECONDS = 15
 REFRESH_PROBE_SECONDS = 30
 PROGRESS_SECONDS = 60
@@ -262,6 +263,8 @@ def run_plan(
             raise ModelResponseError("prompt_limit")
         phase = "initial"
         format_retry_used = False
+        rate_retry_used = False
+        checkpoint_pending = checkpoint_seconds is not None
         attempt_model = models[0]
         attempt_prompt = prompt
         while len(report["attempts"]) < 3:
@@ -278,8 +281,8 @@ def run_plan(
             timeout = max(0, remaining - CANCEL_GRACE_SECONDS)
             if phase == "initial":
                 timeout = min(timeout, TOTAL_SECONDS - FINALIZE_RESERVE_SECONDS)
-                if checkpoint_seconds is not None:
-                    timeout = min(timeout, checkpoint_seconds)
+            if checkpoint_pending and checkpoint_seconds is not None:
+                timeout = min(timeout, checkpoint_seconds)
             if timeout <= 0:
                 raise ModelResponseError("budget_exhausted")
             print(
@@ -291,6 +294,8 @@ def run_plan(
                 attempt_model, attempt_prompt, timeout, session_id=session_id, state_dir=state_dir
             )
             session_model = attempt_model
+            if metrics.get("code") == "timeout":
+                checkpoint_pending = False
             read_sources.update(planner_session.evidence_reads(output, sources))
             report["evidence_read"] = len(read_sources)
             attempt = {
@@ -336,7 +341,34 @@ def run_plan(
                     error.code == "timeout" and not metrics.get("graceful_stop", False)
                 ):
                     raise
-                if (
+                if metrics.get("quota_errors"):
+                    # Do not switch identities/models or loop through a daily/shared quota.
+                    # One delayed continuation can recover a short request-rate window.
+                    if (
+                        rate_retry_used
+                        or metrics.get("daily_limit_errors")
+                        or metrics.get("request_size_errors")
+                        or not metrics.get("rate_limit_errors")
+                        or len(report["attempts"]) >= 3
+                    ):
+                        raise
+                    remaining = TOTAL_SECONDS - (time.monotonic() - started)
+                    if remaining < RATE_LIMIT_BACKOFF_SECONDS + FINALIZE_RESERVE_SECONDS:
+                        raise ModelResponseError("budget_exhausted") from None
+                    rate_retry_used = True
+                    phase = "rate_limit_retry"
+                    print(
+                        "Planner rate limit: waiting 60s before one same-session continuation",
+                        flush=True,
+                    )
+                    time.sleep(RATE_LIMIT_BACKOFF_SECONDS)
+                    attempt_prompt = (
+                        "Setze denselben ursprünglichen Rechercheauftrag in dieser Sitzung fort. "
+                        "Der Anbieter hat den vorigen Aufruf zeitlich begrenzt; der Controller "
+                        "hat vor diesem Versuch gewartet. Alle bisherigen Belege und Vorgaben "
+                        "bleiben erhalten. Recherchiere vollständig und liefere das angeforderte JSON."
+                    )
+                elif (
                     error.code in FORMAT_ERRORS
                     and not format_retry_used
                     and len(report["attempts"]) < 3

@@ -170,6 +170,9 @@ searches, skills, model steps, token counts and provider retry/wait counts.
 Text silence alone is not treated as a stall: the pinned CLI emits some text only
 after a completed section. Source text, session identifiers and provider messages
 remain private. Provider delays cannot be diagnosed from byte counts alone.
+An explicit rate-limit error allows one same-session continuation after a
+60-second backoff within the same total budget. Daily/size limits and a repeated
+rate-limit error stop the run; no identity or model rotation bypasses the quota.
 
 ### Versioned research evidence and unpublished replay
 

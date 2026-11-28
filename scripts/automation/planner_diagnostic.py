@@ -41,13 +41,17 @@ def run(temp: Path) -> None:
     # No publisher exists in this workflow. The normal JSON/scope/finish gates still ran.
     result = json.loads((temp / "issue-result.json").read_text(encoding="utf-8"))
     resumed = any(attempt["resumed"] for attempt in report["attempts"])
-    interrupted = report["attempts"][0]["code"] == "timeout"
-    reads_before = report["attempts"][0].get("completed_reads", 0)
+    interrupted = any(
+        attempt["code"] == "timeout"
+        and attempt.get("graceful_stop")
+        and attempt.get("completed_reads", 0) > 0
+        and any(later["resumed"] for later in report["attempts"][index + 1 :])
+        for index, attempt in enumerate(report["attempts"])
+    )
     if (
         result["kind"] != "plan"
         or not resumed
         or not interrupted
-        or not reads_before
         or not report["evidence_available"]
         or report["evidence_read"] != report["evidence_available"]
     ):

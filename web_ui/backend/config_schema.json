@@ -92,6 +92,13 @@
           "description": "Keyword used to identify notification sensors (e.g., 'Melden/Sensor')",
           "default": "Melden/Sensor"
         },
+        "homekit_bridge_count": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "title": "Configured HomeKit Bridges",
+          "description": "Existing consecutive openHAB HomeKit bridges 1 to N. Default 1 keeps all accessories on bridge 1; multiple bridges distribute 130 accessory roots per bridge and reject capacity overflow."
+        },
         "homekit_enabled": {
           "type": "boolean",
           "title": "HomeKit Enabled Override",

@@ -220,6 +220,17 @@
           </div>
 
           <div id="tab-homekit" class="tab-content">
+            <div class="form-group">
+              <label for="conf-homekit-bridges" data-i18n="settings.homekitBridges">Configured HomeKit bridges</label>
+              <input type="number" id="conf-homekit-bridges" class="form-control" min="1" step="1" required value="1" aria-describedby="homekit-bridges-help">
+              <small id="homekit-bridges-help" data-i18n="settings.homekitBridgesHelp">Default: 1, all accessories stay on bridge 1. Increase only after setting up bridges 1 to N in openHAB. With multiple bridges, distribute 130 accessories per bridge; generation fails if capacity is exceeded.</small>
+              <div class="form-actions">
+                <button type="button" id="homekit-bridge-status" class="btn-secondary" onclick="checkHomekitBridges()" data-i18n="settings.homekitCheck">Check openHAB bridges</button>
+                <button type="button" id="homekit-bridge-setup" class="btn-primary" onclick="setupHomekitBridges()" data-i18n="settings.homekitSetup">Set up bridges &amp; save</button>
+              </div>
+              <small data-i18n="settings.homekitSetupHelp">Adds missing bridges in the installed HomeKit integration. Existing bridges, PIN and network settings are retained. Pair each additional bridge in Apple Home, then generate and deploy the Items.</small>
+              <div id="homekit-bridge-message" class="status-message" role="status" aria-live="polite"></div>
+            </div>
             <fieldset>
               <legend data-i18n="settings.homekitMode">HomeKit Mode</legend>
               <div class="form-group">

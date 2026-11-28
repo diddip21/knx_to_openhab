@@ -1160,6 +1160,29 @@ if FLASK_AVAILABLE:
         except Exception as e:
             return jsonify({"error": f"failed to read file: {str(e)}"}), 500
 
+    @app.route("/api/homekit/bridges", methods=["GET", "POST"])
+    def homekit_bridges():
+        from homekit_config import bridge_count
+
+        from .homekit_bridges import HomekitBridgeError, configured_client
+
+        try:
+            if request.method == "GET":
+                return jsonify(configured_client(cfg.get("openhab_path")).status())
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict) or "count" not in payload:
+                return jsonify({"error": "count is required", "code": "invalid_count"}), 400
+            count = bridge_count({"homekit_bridge_count": payload["count"]})
+            with job_mgr.operation_lock:
+                return jsonify(configured_client(cfg.get("openhab_path")).ensure_count(count))
+        except HomekitBridgeError as error:
+            return jsonify({"error": str(error), "code": error.code}), error.status
+        except ValueError:
+            return (
+                jsonify({"error": "count must be a positive integer", "code": "invalid_count"}),
+                400,
+            )
+
     @app.route("/api/config", methods=["GET"])
     def get_config():
         """Get the current configuration."""
@@ -1247,6 +1270,16 @@ if FLASK_AVAILABLE:
             # Validate that it's a dict
             if not isinstance(new_config, dict):
                 return jsonify({"error": "Config must be a JSON object"}), 400
+
+            from homekit_config import bridge_count
+
+            general = new_config.get("general", {})
+            if not isinstance(general, dict):
+                return jsonify({"error": "general must be a JSON object"}), 400
+            try:
+                bridge_count(general)
+            except ValueError as error:
+                return jsonify({"error": str(error)}), 400
 
             with job_mgr.operation_lock, job_mgr.gateway_state_lock:
                 # Keep provisioning serialized with live gateway edits and deployments.

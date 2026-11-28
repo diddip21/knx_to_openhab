@@ -8,6 +8,7 @@ from typing import Any
 
 from config import config, datapoint_mappings, normalize_string
 from ets_helpers import flags_match, get_co_flags, get_dpt_from_dco
+from homekit_config import bridge_count
 from openhab_yaml import (
     add_channel,
     add_item,
@@ -333,8 +334,30 @@ def gen_building(include_yaml_model=False):
     yaml_model = new_model(PRJ_NAME, GWIP, config.get("sitemap_label", "MiCasa"))
     yaml_sitemap_widgets = yaml_model["sitemaps"]["knx"]["widgets"]
     floor_nr = 0
-    homekit_instance = 1
-    homekit_accessorie = 0
+    homekit_bridges = bridge_count(config.get("general", {}))
+    homekit_accessories = 0
+
+    def next_homekit_instance():
+        """Allocate once per accessory root, never per group characteristic."""
+        nonlocal homekit_accessories
+        homekit_accessories += 1
+        if homekit_bridges == 1:
+            if homekit_accessories == HOMEKIT_MAX_ACCESSORIES_PER_INSTANCE + 1:
+                logger.warning(
+                    "HomeKit: more than %s accessories remain on bridge 1; check bridge capacity "
+                    "and configure homekit_bridge_count only for existing bridges",
+                    HOMEKIT_MAX_ACCESSORIES_PER_INSTANCE,
+                )
+            return 1
+        instance = (homekit_accessories - 1) // HOMEKIT_MAX_ACCESSORIES_PER_INSTANCE + 1
+        if instance > homekit_bridges:
+            raise ValueError(
+                f"HomeKit bridge capacity exceeded ({homekit_bridges} bridges × "
+                f"{HOMEKIT_MAX_ACCESSORIES_PER_INSTANCE} accessories); configure additional "
+                "existing bridges or reduce HomeKit accessories"
+            )
+        return instance
+
     for floor in floors:
         floor_nr += 1
         floor_configuration, floor_name, floor_variables = generate_floor_configuration(
@@ -833,7 +856,7 @@ def gen_building(include_yaml_model=False):
                             if item_label not in equipments:
                                 equipments[item_label] = item_name
                                 if equip_homekit:
-                                    group_options = [f"Instance={homekit_instance}"]
+                                    group_options = [f"instance={next_homekit_instance()}"]
                                     group_options.extend(homekit_equipment_options)
                                     equip_homekit += f" [{', '.join(group_options)}]"
                                     grp_metadata += equip_homekit
@@ -862,14 +885,19 @@ def gen_building(include_yaml_model=False):
                         if item_label in equipments:
                             root = f"equipment_{equipments[item_label]}"
                         if B_HOMEKIT and meta_homekit:
-                            if "]" in meta_homekit:
-                                meta_homekit = meta_homekit.replace(
-                                    "]", f" ,Instance={homekit_instance}]"
-                                )
-                            else:
-                                meta_homekit += f" [Instance={homekit_instance}]"
+                            # The add-on selects the bridge on the root group only.
+                            root_homekit = (
+                                yaml_model["items"][root].get("metadata", {}).get("homekit")
+                            )
+                            if not root_homekit:
+                                instance = next_homekit_instance()
+                                if "]" in meta_homekit:
+                                    meta_homekit = meta_homekit.replace(
+                                        "]", f" ,instance={instance}]"
+                                    )
+                                else:
+                                    meta_homekit += f" [instance={instance}]"
                             metadata += meta_homekit
-                            homekit_accessorie += 1
                         if B_ALEXA and meta_alexa:
                             metadata += meta_alexa
                         if floor_grp:
@@ -898,9 +926,6 @@ def gen_building(include_yaml_model=False):
                             yaml_widget["visibilityRules"] = visibility
                         yaml_room_widget.setdefault("widgets", []).append(yaml_widget)
 
-                        if homekit_accessorie >= HOMEKIT_MAX_ACCESSORIES_PER_INSTANCE:
-                            homekit_accessorie = 0
-                            homekit_instance += 1
                         if "influx" in address["Description"]:
                             export_to_influx.append(item_name)
                     while used_addresses:

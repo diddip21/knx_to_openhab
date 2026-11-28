@@ -28,6 +28,7 @@ private_persistence
 *.log
 
 # Web UI runtime data
+openhab_api_token
 var/lib/knx_to_openhab/
 var/backups/knx_to_openhab/
 

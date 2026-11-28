@@ -29,6 +29,7 @@ def _repository(tmp_path):
         "openhab/items/knx.items": "generated output\n",
         ".env": "TOKEN=not-for-release\n",
         "installer/secrets.env": "TOKEN=not-for-release\n",
+        "web_ui/backend/openhab_api_token": "test-token-not-for-release\n",
         "customer.knxproj": "ETS input\n",
     }
     for relative, content in files.items():
@@ -111,6 +112,7 @@ def test_builds_deterministic_archive_and_matching_sha256(tmp_path):
         "openhab/items/knx.items",
         ".env",
         "installer/secrets.env",
+        "web_ui/backend/openhab_api_token",
         "customer.knxproj",
         "untracked-secret.txt",
     ):

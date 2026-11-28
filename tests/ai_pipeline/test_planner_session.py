@@ -229,7 +229,10 @@ def test_private_replay_has_no_publisher_and_exports_only_numeric_diagnostics():
     workflow = yaml.safe_load((root / ".github/workflows/ai-planner-live-tests.yml").read_text())
     assert set(workflow["permissions"].values()) == {"read"}
     assert "github.repository_owner" in workflow["jobs"]["replay"]["if"]
+    assert "github.event_name == 'workflow_dispatch'" in workflow["jobs"]["replay"]["if"]
     for step in workflow["jobs"]["replay"]["steps"]:
+        if "OPENROUTER_API_KEY" in step.get("env", {}):
+            assert "github.event_name == 'workflow_dispatch'" in step["env"]["OPENROUTER_API_KEY"]
         if step.get("uses", "").startswith("actions/upload-artifact"):
             assert set(step["with"]["path"].splitlines()) == {
                 "${{ runner.temp }}/planner-diagnostics.json",

@@ -184,7 +184,11 @@ run. Repeated rate errors stop when no untried verified model remains; there is
 no identity rotation or shared-quota bypass.
 The pinned CLI's explicit `provider.free-limit` and `provider.model-budget-limit`
 signals allow an untried verified alternate without retrying the exhausted model.
-Its `provider.quota`, `provider.budget-limit` and `provider.go-limit` signals stop.
+Its `provider.quota`, `provider.budget-limit` and `provider.go-limit` signals
+block that provider. A separately authorized, currently verified independent
+free provider may be used. Exhausted accounts are not re-entered in the same run.
+Optional OpenRouter routes enforce zero-price ceilings and exact free IDs; see
+[setup, privacy and unpublished validation](OPENCODE_MODEL_ROUTER.md#independent-optional-openrouter-route).
 
 ### Versioned research evidence and unpublished replay
 

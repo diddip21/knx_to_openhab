@@ -44,6 +44,14 @@ Setup for the owner:
    unpublished PR replay remain secret-free. Production owner-authorized planning,
    implementation and repair expose this one key only to selection/generation steps;
    the isolated subprocess receives it only when its selected model is OpenRouter.
+   To include the full unpublished research/resume test, set repository Actions
+   variable `AI_PLANNER_DIAGNOSTIC_ISSUE` to the authorized open issue number
+   (for example `113`) before dispatch. Only the owner may start that replay.
+   The reusable workflow is loaded from the same reviewed branch, so this works
+   before merging it into main. Its results are never published to the issue.
+   With that variable set, parallel smoke jobs stay on anonymous routes, leaving
+   the optional key's free allowance for the full research test. Clear it when
+   testing only the three task-specific external probes.
 
 No OpenRouter account or secret has been created by this change. Its real capacity
 and privacy-compatible free endpoints must be checked after setup; no passing
@@ -79,7 +87,7 @@ does not authorize substituting a different provider or another free model.
 
 Each planning, approved implementation or CI-repair run:
 
-1. Starts OpenCode on a GitHub-hosted runner without an API key.
+1. Starts OpenCode on a GitHub-hosted runner; anonymous routes need no API key.
 2. Calls `opencode models --standalone`, the supported command for the pinned
    OpenCode 2.3.0 CLI. It uses at most two discovery attempts, each limited to
    50 seconds. CLI failures, empty catalogs, and catalogs without approved models
@@ -90,7 +98,8 @@ Each planning, approved implementation or CI-repair run:
    and [native catalog smoke test](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/cli/script/catalog-smoke.ts).
 3. Keeps only complete model IDs in the audited allowlist.
 4. Invokes a bounded read-only `ci-smoke` agent for each candidate, without
-   `GITHUB_TOKEN` or provider keys. A successful probe must complete a
+   `GITHUB_TOKEN` or unrelated keys. Only an OpenRouter process receives its
+   explicitly configured key. A successful probe must complete a
    Superpowers `skill` tool call, a repository `read` tool call, and produce
    the standalone `ROUTER_OK` marker without a provider or tool failure.
    It must also solve the stage-specific synthetic task:

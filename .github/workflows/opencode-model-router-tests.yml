@@ -24,6 +24,19 @@ permissions:
   contents: read
 
 jobs:
+  manual-research:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.actor == github.repository_owner && vars.AI_PLANNER_DIAGNOSTIC_ISSUE != ''
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    uses: ./.github/workflows/ai-planner-live-tests.yml
+    with:
+      issue_number: ${{ vars.AI_PLANNER_DIAGNOSTIC_ISSUE }}
+    secrets:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
   unit:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -63,7 +76,7 @@ jobs:
       - name: Select free model using read-only live probes
         id: model
         env:
-          OPENROUTER_API_KEY: ${{ github.event_name == 'workflow_dispatch' && secrets.OPENROUTER_API_KEY || '' }}
+          OPENROUTER_API_KEY: ${{ github.event_name == 'workflow_dispatch' && vars.AI_PLANNER_DIAGNOSTIC_ISSUE == '' && secrets.OPENROUTER_API_KEY || '' }}
         shell: bash
         run: |
           set -euo pipefail

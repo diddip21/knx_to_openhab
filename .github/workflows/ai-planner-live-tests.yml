@@ -1,6 +1,14 @@
 name: Unpublished planner research replay
 
 on:
+  workflow_call:
+    inputs:
+      issue_number:
+        required: true
+        type: string
+    secrets:
+      OPENROUTER_API_KEY:
+        required: false
   pull_request:
     paths:
       - "scripts/automation/planner*.py"
@@ -15,16 +23,17 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: private-planner-${{ github.event.pull_request.number }}
+  group: private-planner-${{ github.event.pull_request.number || inputs.issue_number }}
   cancel-in-progress: true
 
 jobs:
   replay:
-    # Explicit owner opt-in, same-repository PR, no publisher and no secrets for the model.
+    # PR replays are secret-free; only explicit owner dispatch may use the provider key.
     if: >-
-      github.event.pull_request.user.login == github.repository_owner &&
+      (github.event_name == 'workflow_dispatch' && github.actor == github.repository_owner) ||
+      (github.event.pull_request.user.login == github.repository_owner &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      contains(github.event.pull_request.body, '<!-- ai-planner-diagnostic:')
+      contains(github.event.pull_request.body, '<!-- ai-planner-diagnostic:'))
     runs-on: ubuntu-latest
     timeout-minutes: 24
     steps:
@@ -40,13 +49,15 @@ jobs:
           python-version: "3.12"
       - name: Read issue and versioned research sources without modifying GitHub
         uses: actions/github-script@v9
+        env:
+          DIAGNOSTIC_ISSUE: ${{ inputs.issue_number }}
         with:
           script: |
             const fs = require('node:fs');
-            const matches = [...context.payload.pull_request.body.matchAll(/^<!-- ai-planner-diagnostic: ([1-9][0-9]*) -->$/gm)];
-            if (matches.length !== 1) throw new Error('Exactly one owner diagnostic target is required');
-            const number = Number(matches[0][1]);
-            if (!Number.isSafeInteger(number)) throw new Error('Invalid issue number');
+            const matches = [...(context.payload.pull_request?.body || '').matchAll(/^<!-- ai-planner-diagnostic: ([1-9][0-9]*) -->$/gm)];
+            if (!process.env.DIAGNOSTIC_ISSUE && matches.length !== 1) throw new Error('Exactly one owner diagnostic target is required');
+            const number = Number(process.env.DIAGNOSTIC_ISSUE || matches[0][1]);
+            if (!Number.isSafeInteger(number) || number <= 0) throw new Error('Invalid issue number');
             const repo = {...context.repo, issue_number: number};
             const {data: issue} = await github.rest.issues.get(repo);
             const comments = await github.paginate(github.rest.issues.listComments, {...repo, per_page: 100});
@@ -64,10 +75,12 @@ jobs:
       - name: Select an approved working free model
         env:
           XDG_DATA_HOME: ${{ runner.temp }}/planner-data
+          OPENROUTER_API_KEY: ${{ github.event_name == 'workflow_dispatch' && secrets.OPENROUTER_API_KEY || '' }}
         run: python scripts/opencode_model_router.py select --task plan --report "$RUNNER_TEMP/model-router.json"
       - name: Prove real interruption and same-session continuation
         env:
           XDG_DATA_HOME: ${{ runner.temp }}/planner-data
+          OPENROUTER_API_KEY: ${{ github.event_name == 'workflow_dispatch' && secrets.OPENROUTER_API_KEY || '' }}
         run: python -I scripts/automation/planner_diagnostic.py run
       - name: Retain content-free diagnostics only
         if: always()

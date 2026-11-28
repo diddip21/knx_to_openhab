@@ -44,6 +44,8 @@ def test_nonzero_unknown_missing_or_invalid_price_never_qualifies(price):
         {"context_length": 1000},
         {"context_length": "100000"},
         {"supported_parameters": []},
+        {"supported_parameters": "tools"},
+        {"supported_parameters": 42},
     ],
 )
 def test_catalog_claim_cannot_expand_eligibility(changes):

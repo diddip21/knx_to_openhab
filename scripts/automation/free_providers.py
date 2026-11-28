@@ -69,9 +69,11 @@ def eligible_catalog(data: object) -> set[str]:
         except (InvalidOperation, KeyError, ValueError):
             continue
         context = model.get("context_length")
+        parameters = model.get("supported_parameters")
         if (
             zero
-            and "tools" in (model.get("supported_parameters") or [])
+            and isinstance(parameters, list)
+            and "tools" in parameters
             and type(context) is int
             and context >= 65536
         ):

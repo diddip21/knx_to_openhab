@@ -69,6 +69,18 @@ def test_off_by_one_repair_is_rejected():
     assert not result["task_correct"] and result["task_cases_passed"] < 6
 
 
+def test_plan_preserves_meaning_across_casing_and_an_extra_ui_stage():
+    answer = {
+        "default_count": 1,
+        "preserves_false": True,
+        "rejects_bool": True,
+        "flow": ["UI", "config", "API", "generation", "Legacy", "YAML"],
+    }
+    assert task_probe.assess("ROUTER_TASK " + json.dumps(answer), "plan")["task_correct"]
+    answer["preserves_false"] = False
+    assert not task_probe.assess("ROUTER_TASK " + json.dumps(answer), "plan")["task_correct"]
+
+
 @pytest.mark.parametrize(
     "error,code,allowed",
     [

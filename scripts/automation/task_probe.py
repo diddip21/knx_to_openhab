@@ -8,7 +8,7 @@ PREFIX = "ROUTER_TASK "
 
 def prompt(task: str) -> str:
     tasks = {
-        "plan": "Plan a generic optional setting with default count 1, explicit enabled=false preserved, positive integer counts only (not bool). Return fields default_count, preserves_false, rejects_bool and flow listing config, api, generation, legacy, yaml.",
+        "plan": "Plan a generic optional setting with default count 1, explicit enabled=false preserved, positive integer counts only (not bool). Return a JSON object with these exact fields: default_count (the numeric default); preserves_false (true if an explicitly saved enabled=false must stay false); rejects_bool (true if count=True/False must be rejected); flow (an array of strings naming at least config, api, generation, legacy, yaml). The two boolean fields describe required behavior, not the stored enabled value.",
         "implement": "Return field expression: a Python expression normalizing value: None becomes 1; positive non-bool integers are unchanged; all other inputs become None.",
         "repair": "A list guard incorrectly uses index > len(values). Negative indices must also be rejected. Return field expression: a Python expression that is True exactly for invalid integer indices.",
     }
@@ -82,7 +82,9 @@ def assess(text: str, task: str) -> dict:
                 type(data.get("default_count")) is int and data["default_count"] == 1,
                 data.get("preserves_false") is True,
                 data.get("rejects_bool") is True,
-                set(data.get("flow", [])) == {"config", "api", "generation", "legacy", "yaml"},
+                {"config", "api", "generation", "legacy", "yaml"}.issubset(
+                    {stage.casefold() for stage in data.get("flow", []) if isinstance(stage, str)}
+                ),
             ]
         elif task == "implement":
             examples: list[tuple[object, object]] = [

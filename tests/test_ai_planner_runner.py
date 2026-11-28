@@ -180,6 +180,43 @@ def test_single_model_second_timeout_stops_without_publishing(runtime, monkeypat
     assert not (runtime / "issue-result.json").exists()
 
 
+def test_rate_limit_then_research_checkpoint_still_resumes_same_history(runtime, monkeypatch):
+    monkeypatch.setattr(runner.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(runner, "refresh_alternate", lambda *args: None)
+    calls = []
+
+    def execute(model, prompt, timeout, **kwargs):
+        calls.append(kwargs["session_id"])
+        if len(calls) == 1:
+            return json.dumps({"type": "error"}), {
+                "code": None,
+                "exit_code": 1,
+                "quota_errors": 1,
+                "rate_limit_errors": 1,
+                "elapsed_seconds": 1,
+            }
+        if len(calls) == 2:
+            return "", {
+                "code": "timeout",
+                "exit_code": 0,
+                "graceful_stop": True,
+                "elapsed_seconds": timeout,
+            }
+        return event(), {"code": None, "exit_code": 0, "elapsed_seconds": 1}
+
+    monkeypatch.setattr(runner, "execute", execute)
+    report = runner.run_plan(
+        runtime, FIRST, router_report(second_passed=False), checkpoint_seconds=90
+    )
+    assert report["status"] == "success"
+    assert len(set(calls)) == 1 and len(calls) == 3
+    assert [a["phase"] for a in report["attempts"]] == [
+        "initial",
+        "rate_limit_retry",
+        "timeout_retry",
+    ]
+
+
 def test_timeout_then_invalid_json_gets_one_private_format_repair(runtime, monkeypatch):
     times = iter([0, 0, 300, 302, 302, 524, 524, 525])
     monkeypatch.setattr(runner.time, "monotonic", lambda: next(times))

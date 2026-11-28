@@ -380,7 +380,11 @@ def run_plan(
                     phase = "fallback"
                     attempt_model = models[1]
                     attempt_prompt = corrected_prompt("", error.code)
-                elif error.code == "timeout" and phase in {"initial", "format_retry"}:
+                elif error.code == "timeout" and phase in {
+                    "initial",
+                    "format_retry",
+                    "rate_limit_retry",
+                }:
                     # The first verified model can time out on a real plan despite
                     # passing the short probe. Reserve time for a full fresh attempt.
                     remaining = TOTAL_SECONDS - (time.monotonic() - started)

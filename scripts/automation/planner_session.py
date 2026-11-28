@@ -16,8 +16,8 @@ from .model_response import MAX_EVENT_BYTES, ModelResponseError
 from .provider_policy import classify
 
 
-def environment(state: Path | None = None) -> dict[str, str]:
-    result = isolated_environment()
+def environment(state: Path | None = None, model: str | None = None) -> dict[str, str]:
+    result = isolated_environment(model)
     # CLI 2.3.0 resolves its directory from PWD before process.cwd().
     result["PWD"] = str(Path.cwd().resolve())
     if state is not None:

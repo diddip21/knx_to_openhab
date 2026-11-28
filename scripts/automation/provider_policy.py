@@ -68,3 +68,19 @@ def classify(error: object) -> dict:
 
 def permits_fallback(metrics: dict) -> bool:
     return metrics.get("provider_failure") not in {"auth", "shared_limit", "request_size"}
+
+
+def fallback_model(models: list[str], current: str, tried: set[str], metrics: dict) -> str | None:
+    """An account failure blocks that provider, not an independent authorized account."""
+    failure = metrics.get("provider_failure")
+    if failure == "request_size":
+        return None
+    candidates = [model for model in models if model not in tried]
+    independent = [
+        model for model in candidates if model.split("/", 1)[0] != current.split("/", 1)[0]
+    ]
+    if failure in {"auth", "shared_limit"}:
+        candidates = independent
+    elif metrics.get("provider_http_status", 0) >= 500:
+        candidates = independent or candidates
+    return candidates[0] if candidates else None

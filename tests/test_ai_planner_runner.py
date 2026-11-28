@@ -445,6 +445,36 @@ def test_exhausted_model_allowance_switches_once_instead_of_retrying_it(runtime,
     assert calls == [FIRST, SECOND]
 
 
+@pytest.mark.parametrize("recover", [True, False])
+def test_account_failure_uses_independent_provider_without_reentering_blocked_account(
+    runtime, monkeypatch, recover
+):
+    alternate = runner.ALL_APPROVED_MODELS[2]
+    selection = router_report()
+    selection["probes"].append({"model": alternate, "passed": True})
+    calls = []
+
+    def execute(model, *args, **kwargs):
+        calls.append((model, kwargs["session_id"]))
+        if len(calls) == 2 and recover:
+            return event(), {"code": None, "exit_code": 0}
+        return json.dumps({"type": "error"}), {
+            "code": None,
+            "exit_code": 1,
+            "quota_errors": 1,
+            "shared_limit_errors": 1,
+        }
+
+    monkeypatch.setattr(runner, "execute", execute)
+    if recover:
+        assert runner.run_plan(runtime, FIRST, selection)["status"] == "success"
+    else:
+        with pytest.raises(ValueError, match="provider_error"):
+            runner.run_plan(runtime, FIRST, selection)
+    assert [model for model, _ in calls] == [FIRST, alternate]
+    assert len({session for _, session in calls}) == 1
+
+
 def test_invalid_scope_is_never_published_even_after_all_attempts(runtime, monkeypatch):
     invalid = {**VALID, "scope": {"files": [".github/workflows/ci.yml"]}}
     calls = fake_attempts(monkeypatch, [event(invalid)] * 3)

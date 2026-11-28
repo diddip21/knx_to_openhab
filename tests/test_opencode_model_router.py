@@ -213,6 +213,17 @@ def test_prompt_is_bounded_and_has_task_specific_text():
         router.probe_prompt("merge")
 
 
+def test_provider_key_is_isolated_from_git_and_other_provider_processes(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "private-test-key")
+    monkeypatch.setenv("GITHUB_TOKEN", "private-github-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "private-paid-key")
+    assert "OPENROUTER_API_KEY" not in router.isolated_environment()
+    assert "OPENROUTER_API_KEY" not in router.isolated_environment(router.APPROVED_FREE_MODELS[0])
+    result = router.isolated_environment(router.ALL_APPROVED_MODELS[2])
+    assert result["OPENROUTER_API_KEY"] == "private-test-key"
+    assert "GITHUB_TOKEN" not in result and "OPENAI_API_KEY" not in result
+
+
 def test_main_exports_only_selected_allowlisted_model(tmp_path, monkeypatch):
     monkeypatch.setattr(
         router, "discover_models", lambda diagnostics=None: set(router.APPROVED_FREE_MODELS)
@@ -220,7 +231,7 @@ def test_main_exports_only_selected_allowlisted_model(tmp_path, monkeypatch):
     monkeypatch.setattr(
         router,
         "probe_model",
-        lambda model, task: {
+        lambda model, task, **kwargs: {
             "model": model,
             "passed": True,
             "factual": True,
@@ -249,7 +260,7 @@ def test_main_refuses_all_failed_models(tmp_path, monkeypatch):
     monkeypatch.setattr(
         router,
         "probe_model",
-        lambda model, task: {"model": model, "passed": False, "score": 0},
+        lambda model, task, **kwargs: {"model": model, "passed": False, "score": 0},
     )
     output = tmp_path / "github-output.txt"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))

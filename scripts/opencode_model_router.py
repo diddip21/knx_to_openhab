@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from automation import task_probe  # noqa: E402
+from automation import free_providers, task_probe  # noqa: E402
 from automation.provider_policy import classify, permits_fallback  # noqa: E402
 
 # Audited 2026-11-28 against the official free-model pricing/privacy catalog:
@@ -28,6 +28,7 @@ APPROVED_FREE_MODELS = (
     "opencode/hy4-flash-free",
     "opencode/deepseek-v4.1-flash-free",
 )
+ALL_APPROVED_MODELS = APPROVED_FREE_MODELS + free_providers.OPENROUTER_MODELS
 TASKS = ("plan", "implement", "repair")
 DISCOVERY_TIMEOUT = 50
 PROBE_TIMEOUT = 110
@@ -59,7 +60,7 @@ def byte_count(value: Any) -> int:
     return len(value.encode("utf-8")) if isinstance(value, str) else 0
 
 
-def isolated_environment() -> dict[str, str]:
+def isolated_environment(model: str | None = None) -> dict[str, str]:
     """Give the model no GitHub token, provider key or unrelated credentials."""
     allowed = (
         "PATH",
@@ -75,7 +76,7 @@ def isolated_environment() -> dict[str, str]:
     )
     environment = {key: os.environ[key] for key in allowed if key in os.environ}
     environment["CI"] = "true"
-    return environment
+    return free_providers.credentials(environment, model)
 
 
 def parse_catalog(stdout: str) -> set[str]:
@@ -299,7 +300,7 @@ def inspect_events(output: str, task: str, seconds: float) -> dict[str, Any]:
 
 
 def probe_model(model: str, task: str, *, timeout: float = PROBE_TIMEOUT) -> dict[str, Any]:
-    if model not in APPROVED_FREE_MODELS:
+    if model not in ALL_APPROVED_MODELS:
         raise ValueError("Model is not approved")
     start = time.monotonic()
     cmd = [
@@ -323,7 +324,7 @@ def probe_model(model: str, task: str, *, timeout: float = PROBE_TIMEOUT) -> dic
             text=True,
             check=False,
             timeout=timeout,
-            env=isolated_environment(),
+            env=isolated_environment(model),
         )
     except subprocess.TimeoutExpired as error:
         return {
@@ -374,7 +375,7 @@ def rank_models(probes: list[dict[str, Any]]) -> list[dict[str, Any]]:
         probe
         for probe in probes
         if isinstance(probe, dict)
-        and probe.get("model") in APPROVED_FREE_MODELS
+        and probe.get("model") in ALL_APPROVED_MODELS
         and probe.get("passed") is True
     ]
     # The allowlist order is a stable tie-breaker; scores derive from this run.
@@ -382,7 +383,7 @@ def rank_models(probes: list[dict[str, Any]]) -> list[dict[str, Any]]:
         acceptable,
         key=lambda probe: (
             probe.get("score", 0) if type(probe.get("score", 0)) is int else 0,
-            -APPROVED_FREE_MODELS.index(probe["model"]),
+            -ALL_APPROVED_MODELS.index(probe["model"]),
         ),
         reverse=True,
     )
@@ -409,7 +410,7 @@ def write_summary(
     lines = [
         "### OpenCode free-model router",
         "",
-        f"Task: `{task}`. Only the two audited zero-retention free models are eligible.",
+        f"Task: `{task}`. Only reviewed free models with enforced provider policy are eligible.",
         "",
         f"Result: `{failure_code or 'selected'}`.",
         "",
@@ -465,15 +466,22 @@ def main() -> int:
         "discovery": discovery,
     }
     try:
-        available = discover_models(discovery)
+        # One provider's discovery failure cannot suppress an independent route.
+        try:
+            available = discover_models(discovery)
+        except RouterError:
+            available = set()
+        external: dict[str, Any] = {}
+        report["openrouter_discovery"] = external
+        available |= free_providers.discover(external)
         # Never probe other providers, paid IDs or newly advertised free IDs.
-        ordered = [model for model in APPROVED_FREE_MODELS if model in available]
+        ordered = [model for model in ALL_APPROVED_MODELS if model in available]
         report["available"] = ordered
         if not ordered:
             report["failure_code"] = discovery.get("code", "no_approved_models")
         else:
             for model in ordered:
-                probe = probe_model(model, args.task)
+                probe = probe_model(model, args.task, timeout=60)
                 report["probes"].append(probe)
                 code = probe.get(
                     "code", "probe_passed" if probe.get("passed") else "incomplete_probe"

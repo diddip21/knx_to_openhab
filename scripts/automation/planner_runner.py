@@ -22,7 +22,9 @@ from automation.model_response import (  # noqa: E402
     inspect_events,
     parse_response,
 )
+from automation.provider_policy import fallback_model  # noqa: E402
 from opencode_model_router import (  # noqa: E402
+    ALL_APPROVED_MODELS,
     APPROVED_FREE_MODELS,
     RouterError,
     discover_models,
@@ -53,7 +55,7 @@ FORMAT_ERRORS = {
 
 def verified_models(model: str, report: dict[str, Any]) -> list[str]:
     if (
-        model not in APPROVED_FREE_MODELS
+        model not in ALL_APPROVED_MODELS
         or not isinstance(report, dict)
         or report.get("selected") != model
         or report.get("task") != "plan"
@@ -67,7 +69,7 @@ def verified_models(model: str, report: dict[str, Any]) -> list[str]:
         for probe in probes
         if isinstance(probe, dict)
         and probe.get("passed") is True
-        and probe.get("model") in APPROVED_FREE_MODELS
+        and probe.get("model") in ALL_APPROVED_MODELS
     }
     if model not in passed:
         raise ModelResponseError("invalid_router_report")
@@ -160,7 +162,7 @@ def execute(
                 stdin=subprocess.DEVNULL,
                 stdout=stdout,
                 stderr=stderr,
-                env=planner_session.environment(state_dir),
+                env=planner_session.environment(state_dir, model),
                 start_new_session=True,
             )
         except OSError:
@@ -271,6 +273,7 @@ def run_plan(
         rate_retry_used = False
         checkpoint_pending = checkpoint_seconds is not None
         tried_models = set()
+        blocked_providers = set()
         attempt_model = models[0]
         attempt_prompt = prompt
         while len(report["attempts"]) < 3:
@@ -348,7 +351,30 @@ def run_plan(
                     error.code == "timeout" and not metrics.get("graceful_stop", False)
                 ):
                     raise
-                if metrics.get("auth_errors") or metrics.get("request_size_errors"):
+                if (
+                    metrics.get("auth_errors")
+                    or metrics.get("shared_limit_errors")
+                    or metrics.get("daily_limit_errors")
+                ):
+                    blocked_provider = attempt_model.split("/", 1)[0]
+                    blocked_providers.add(blocked_provider)
+                    models = [m for m in models if m.split("/", 1)[0] != blocked_provider]
+                    alternate = fallback_model(
+                        models,
+                        attempt_model,
+                        tried_models,
+                        {
+                            "provider_failure": (
+                                "auth" if metrics.get("auth_errors") else "shared_limit"
+                            )
+                        },
+                    )
+                    if alternate is None or len(report["attempts"]) >= 3:
+                        raise
+                    phase, attempt_model = "fallback", alternate
+                    attempt_prompt = corrected_prompt("", error.code)
+                    continue
+                if metrics.get("request_size_errors"):
                     raise
                 if metrics.get("model_limit_errors") and not metrics.get("shared_limit_errors"):
                     alternate = next((m for m in models if m not in tried_models), None)
@@ -417,7 +443,9 @@ def run_plan(
                     # The first verified model can time out on a real plan despite
                     # passing the short probe. Reserve time for a full fresh attempt.
                     remaining = TOTAL_SECONDS - (time.monotonic() - started)
-                    alternate = refresh_alternate(attempt_model, remaining)
+                    alternate = (
+                        None if blocked_providers else refresh_alternate(attempt_model, remaining)
+                    )
                     if alternate is not None:
                         phase = "fallback"
                         attempt_model = alternate

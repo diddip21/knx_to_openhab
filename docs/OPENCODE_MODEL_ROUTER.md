@@ -7,6 +7,56 @@ checks, not a claim to identify the world's strongest model.
 
 ## Eligible models and privacy
 
+### Independent optional OpenRouter route
+
+The owner authorized additional API providers on 2026-11-28, strictly free.
+OpenRouter is optional: without `OPENROUTER_API_KEY`, anonymous OpenCode routes
+continue working and no OpenRouter catalog/probe request is made.
+
+Reviewed candidates are currently `nvidia/nemotron-3-ultra-550b-a55b:free`,
+`nvidia/nemotron-3.5-lightning:free` and `google/gemma-4-31b-it:free` under
+`openrouter/`. Each run checks the public catalog for zero prompt/completion
+and other advertised charges, tool support and at least 65,536 context tokens.
+Unknown, paid, malformed or unreviewed entries are excluded. All candidates
+still need the task-specific live probe; model size is not a ranking score.
+
+Every OpenRouter process receives a controller-built V2 configuration with
+`provider.max_price` set to zero for prompt, completion, request, image and audio,
+`data_collection: deny`, `zdr: true`, required parameter support, no paid plugins,
+and a model-fallback list containing only the exact selected free model.
+The pinned CLI HTTP contract is verified against a local mock endpoint, without
+real credentials or a paid request. See [OpenRouter price ceilings](https://openrouter.ai/docs/guides/routing/provider-selection#max-price)
+and the [pinned OpenCode request-body schema](https://github.com/anomalyco/opencode/blob/v2.3.0/packages/schema/src/config/provider.ts).
+
+Setup for the owner:
+
+1. Create an [OpenRouter API key](https://openrouter.ai/settings/keys) with a zero
+   spending limit. Do not enable automatic top-ups or paid fallback routes.
+2. In [OpenRouter privacy settings](https://openrouter.ai/settings/privacy), enforce
+   **ZDR only** for every model group and disable prompt/completion logging.
+   Request-level `zdr: true` follows the account's Safety Retention choice; it does
+   not independently exclude that tier. See [the current ZDR policy](https://openrouter.ai/docs/guides/features/zdr).
+3. Add the key as repository Actions secret `OPENROUTER_API_KEY` in
+   [repository secrets](https://github.com/diddip21/knx_to_openhab/settings/secrets/actions).
+   Do not paste the key into issues, comments, commits or chat.
+4. Manually run **OpenCode free-model router tests** on the reviewed branch.
+   Its `workflow_dispatch` run may use this secret. PR-triggered probes and the
+   unpublished PR replay remain secret-free. Production owner-authorized planning,
+   implementation and repair expose this one key only to selection/generation steps;
+   the isolated subprocess receives it only when its selected model is OpenRouter.
+
+No OpenRouter account or secret has been created by this change. Its real capacity
+and privacy-compatible free endpoints must be checked after setup; no passing
+live OpenRouter inference is claimed without that evidence. Empty free/ZDR
+capacity is an availability failure, never permission to spend or weaken privacy.
+
+Provider account/authentication failures exclude all remaining models on that
+provider. A separately authorized independent provider can be tried; the original
+provider is not re-entered during the same planning run. Request-size and policy
+violations still stop without truncating the research request.
+
+### Anonymous OpenCode routes
+
 Only the audited allowlist is eligible:
 
 - `opencode/hy4-flash-free`

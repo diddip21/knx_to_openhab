@@ -33,7 +33,7 @@ jobs:
       )
       )
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 24
     steps:
       - name: Checkout trusted default-branch controllers
         uses: actions/checkout@v7
@@ -135,6 +135,7 @@ jobs:
         shell: bash
         env:
           XDG_DATA_HOME: ${{ runner.temp }}/planner-data
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           set -euo pipefail
           python ../trusted/scripts/opencode_model_router.py select --task plan --report "$RUNNER_TEMP/model-router.json"
@@ -157,6 +158,7 @@ jobs:
         env:
           MODEL: ${{ steps.model.outputs.model }}
           CI: "true"
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           XDG_DATA_HOME: ${{ runner.temp }}/planner-data
         run: |
           set -euo pipefail

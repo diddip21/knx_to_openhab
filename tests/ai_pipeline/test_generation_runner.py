@@ -13,7 +13,7 @@ from automation import generation_runner as runner
 
 from .helpers import ROOT, context, git, init_repo
 
-FIRST, SECOND = runner.APPROVED_FREE_MODELS
+FIRST, SECOND = runner.ALL_APPROVED_MODELS[:2]
 PRIVATE = "never-publish-private-prompt-source-provider-value"
 
 
@@ -189,6 +189,29 @@ def test_repair_rejects_an_implementation_probe_report(tmp_path, monkeypatch):
     report["task"] = "implement"
     (temp / "model.json").write_text(json.dumps(report))
     fails(root, temp, "invalid_router_report", "repair")
+
+
+@pytest.mark.parametrize("mode", ["implement", "repair"])
+def test_shared_limit_rolls_back_and_uses_independent_provider(tmp_path, monkeypatch, mode):
+    root, temp = setup_runtime(tmp_path, monkeypatch, mode=mode)
+    alternate = runner.ALL_APPROVED_MODELS[2]
+    selection = json.loads((temp / "model.json").read_text())
+    selection["probes"].append({"model": alternate, "passed": True})
+    (temp / "model.json").write_text(json.dumps(selection))
+    calls = fake_cli(
+        tmp_path,
+        monkeypatch,
+        "if len(calls) == 1:\n"
+        "    Path('feature.py').write_text('partial = 9\\n')\n"
+        "    emit({'type': 'error', 'error': {'type': 'provider.quota', 'status': 429}})\n"
+        "else:\n"
+        "    assert Path('feature.py').read_text() == 'value = 0\\n'\n"
+        "    changed()\n    valid()",
+    )
+    report = runner.run_generation(root, temp, mode, FIRST)
+    assert report["status"] == "success"
+    assert json.loads(calls.read_text()) == [FIRST, alternate]
+    assert report["attempts"][0]["scoped_rollback"]
 
 
 def test_timeout_with_partial_output_and_scoped_changes_falls_back(tmp_path, monkeypatch):

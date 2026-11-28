@@ -142,9 +142,9 @@ def test_generation_diagnostics_survive_failure_without_publishing_partial_code(
     definition = yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())
     job = definition["jobs"][job_name]
     assert all(value == "read" for value in job["permissions"].values())
-    # Router discovery/probes can take 320 seconds; repair also fetches a CI log.
+    # Two catalogs and five bounded probes; repair also fetches a CI log.
     # Leave at least four more minutes for setup, validation and uploads.
-    preparation_seconds = 320 + (40 if mode == "repair" else 0)
+    preparation_seconds = 415 + (40 if mode == "repair" else 0)
     assert job["timeout-minutes"] * 60 >= budget_seconds + preparation_seconds + 240
     steps = job["steps"]
     generation = next(step for step in steps if step.get("id") == "generation")
@@ -153,7 +153,11 @@ def test_generation_diagnostics_survive_failure_without_publishing_partial_code(
     )
     assert generation["working-directory"] == "candidate"
     assert generation["timeout-minutes"] * 60 > budget_seconds
-    assert generation["env"] == {"CI": "true", "MODEL": "${{ steps.model.outputs.model }}"}
+    assert generation["env"] == {
+        "CI": "true",
+        "MODEL": "${{ steps.model.outputs.model }}",
+        "OPENROUTER_API_KEY": "${{ secrets.OPENROUTER_API_KEY }}",
+    }
     assert not generation.get("continue-on-error", False)
 
     diagnostics = next(

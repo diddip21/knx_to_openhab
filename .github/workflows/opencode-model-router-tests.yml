@@ -10,6 +10,9 @@ on:
       - "tests/test_opencode_model_router.py"
       - "tests/test_model_task_probe.py"
       - "scripts/automation/provider_policy.py"
+      - "scripts/automation/free_providers.py"
+      - "scripts/automation/provider_contract.py"
+      - "tests/test_free_providers.py"
       - ".github/workflows/opencode-model-router-tests.yml"
       - ".github/workflows/opencode-issue-planner.yml"
       - ".github/workflows/ai-issue-implement.yml"
@@ -34,7 +37,7 @@ jobs:
       - name: Install unit test runner
         run: python -m pip install "pytest>=8,<10"
       - name: Test allowlist, probe scoring and failure paths
-        run: python -m pytest tests/test_opencode_model_router.py tests/test_model_task_probe.py -q -o addopts=
+        run: python -m pytest tests/test_opencode_model_router.py tests/test_model_task_probe.py tests/test_free_providers.py -q -o addopts=
       - name: Check Python syntax
         run: python -m py_compile scripts/opencode_model_router.py
 
@@ -55,13 +58,17 @@ jobs:
           node-version: "22"
       - name: Install OpenCode
         run: npm install --global "@opencode/cli@$(cat .github/opencode-cli-version)"
+      - name: Verify actual zero-price HTTP request against local test server
+        run: python -I scripts/automation/provider_contract.py
       - name: Select free model using read-only live probes
         id: model
+        env:
+          OPENROUTER_API_KEY: ${{ github.event_name == 'workflow_dispatch' && secrets.OPENROUTER_API_KEY || '' }}
         shell: bash
         run: |
           set -euo pipefail
           if python scripts/opencode_model_router.py select --task "${{ matrix.task }}" --report "$RUNNER_TEMP/model-router.json"; then
-            python -c 'import json,os; data=json.load(open(os.environ["RUNNER_TEMP"]+"/model-router.json")); assert data["selected"] in ("opencode/hy4-flash-free","opencode/deepseek-v4.1-flash-free")'
+            PYTHONPATH=scripts python -c 'import json,os; from opencode_model_router import ALL_APPROVED_MODELS; data=json.load(open(os.environ["RUNNER_TEMP"]+"/model-router.json")); assert data["selected"] in ALL_APPROVED_MODELS'
           else
             echo "Free-model selection diagnostics (no prompts, tokens or secrets):"
             cat "$RUNNER_TEMP/model-router.json"

@@ -29,7 +29,7 @@ from typing import Any
 # python -I must import controllers from this trusted checkout, never candidate.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from automation import artifacts  # noqa: E402
-from automation.provider_policy import classify, permits_fallback  # noqa: E402
+from automation.provider_policy import classify, fallback_model, permits_fallback  # noqa: E402
 from automation.scope import (  # noqa: E402
     MAX_CHANGED_LINES,
     MAX_FILE_BYTES,
@@ -43,7 +43,7 @@ from automation.scope import (  # noqa: E402
     normalize_scope,
 )
 from opencode_model_router import (  # noqa: E402
-    APPROVED_FREE_MODELS,
+    ALL_APPROVED_MODELS,
     isolated_environment,
     rank_models,
 )
@@ -214,7 +214,7 @@ def verified_models(
     model: str, report: Any, task: str = "implement"
 ) -> tuple[list[str], list[dict[str, Any]]]:
     if (
-        model not in APPROVED_FREE_MODELS
+        model not in ALL_APPROVED_MODELS
         or not isinstance(report, dict)
         or report.get("task") != task
         or report.get("selected") != model
@@ -223,7 +223,7 @@ def verified_models(
         raise GenerationError("invalid_router_report")
     probes: dict[str, bool] = {}
     for probe in report["probes"]:
-        if not isinstance(probe, dict) or probe.get("model") not in APPROVED_FREE_MODELS:
+        if not isinstance(probe, dict) or probe.get("model") not in ALL_APPROVED_MODELS:
             continue
         name = probe["model"]
         if name in probes or type(probe.get("passed")) is not bool:
@@ -232,9 +232,7 @@ def verified_models(
     if not probes.get(model):
         raise GenerationError("invalid_router_report")
     models = [model] + [p["model"] for p in rank_models(report["probes"]) if p["model"] != model]
-    return models[:2], [
-        {"model": m, "passed": probes[m]} for m in APPROVED_FREE_MODELS if m in probes
-    ]
+    return models, [{"model": m, "passed": probes[m]} for m in ALL_APPROVED_MODELS if m in probes]
 
 
 class CandidateBoundary:
@@ -709,7 +707,7 @@ def execute(
                 model,
             ],
             cwd=root,
-            env=isolated_environment(),
+            env=isolated_environment(model),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -940,11 +938,12 @@ def run_generation(root: Path, temp: Path, mode: str, model: str) -> dict[str, A
                     flush=True,
                 )
                 continue
-            if code not in RETRYABLE or len(models) < 2 or not permits_fallback(metrics):
+            alternate = fallback_model(models, candidate_model, {candidate_model}, metrics)
+            if code not in RETRYABLE or alternate is None:
                 raise GenerationError(code)
             boundary.rollback()
             attempt["scoped_rollback"] = True
-            candidate_model, phase, attempt_prompt = models[1], "fallback", prompt
+            candidate_model, phase, attempt_prompt = alternate, "fallback", prompt
             print(
                 f"AI generation fallback: prior_code={code}, restored_files={len(changed)}",
                 flush=True,

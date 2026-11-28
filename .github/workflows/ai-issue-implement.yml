@@ -43,7 +43,7 @@ jobs:
       contents: read
       issues: read
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 43
     steps:
       - uses: actions/checkout@v7
         with:
@@ -96,6 +96,8 @@ jobs:
       - name: Select approved free model
         id: model
         working-directory: candidate
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: python ../trusted/scripts/opencode_model_router.py select --task implement --report "$RUNNER_TEMP/model.json"
       - name: Preserve content-free model selection diagnostics
         if: >-
@@ -117,6 +119,7 @@ jobs:
         env:
           CI: "true"
           MODEL: ${{ steps.model.outputs.model }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         shell: bash
         run: python -I ../trusted/scripts/automation/generation_runner.py --mode implement
       - name: Preserve content-free generation diagnostics

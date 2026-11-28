@@ -334,7 +334,7 @@ def gen_building(include_yaml_model=False):
     yaml_model = new_model(PRJ_NAME, GWIP, config.get("sitemap_label", "MiCasa"))
     yaml_sitemap_widgets = yaml_model["sitemaps"]["knx"]["widgets"]
     floor_nr = 0
-    homekit_bridges = bridge_count(config.get("general", {})) if B_HOMEKIT else 1
+    homekit_bridges = bridge_count(config.get("general", {}))
     homekit_accessories = 0
 
     def next_homekit_instance():

@@ -500,6 +500,8 @@ def _bridge_project(simple_count, complex_count=0):
         address = f"3/{index // 250}/{index % 250}"
         project["communication_objects"][co_id] = {
             "device_address": "1.1.1",
+            "channel": f"sensor{index}",
+            "text": f"Sensor {index}",
             "dpts": [{"main": 1, "sub": 19}],
             "flags": _flags(read=True, transmit=True),
             "group_address_links": [address],

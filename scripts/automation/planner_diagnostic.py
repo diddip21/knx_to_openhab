@@ -30,7 +30,9 @@ def prepare(temp: Path) -> None:
         "related_prs": json.loads((temp / "planning-context.json").read_text(encoding="utf-8")),
     }
     (temp / "issue-decision.json").write_text(json.dumps(decision), encoding="utf-8")
-    (temp / "issue-prompt.txt").write_text(issue_bot.make_prompt(decision), encoding="utf-8")
+    (temp / "issue-prompt.txt").write_text(
+        issue_bot.prepare_research_prompt(decision), encoding="utf-8"
+    )
 
 
 def run(temp: Path) -> None:
@@ -64,7 +66,7 @@ def run(temp: Path) -> None:
     planner_runner.write_diagnostics(temp, report)
     print(
         f"Private plan validated after same-session resume; "
-        f"evidence read={len(available)}, referenced={cited}. "
+        f"evidence read={report['evidence_read']}, external references={cited}/{len(available)}. "
         "No issue, label, approval or PR was changed. Semantic plan review remains separate."
     )
     (temp / "issue-result.json").unlink()

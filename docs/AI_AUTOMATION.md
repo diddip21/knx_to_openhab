@@ -151,6 +151,9 @@ read-only session API. A missing session fails rather than silently starting ove
 Checkout identity, tracked changes, request, policy and collected source files
 are bound to the session; any change prevents continuation/publication. The CLI
 receives the real checkout as PWD, never an inherited stale directory.
+Previous plans and full collected PR snapshots are supplied in a local reference
+file rather than repeated in the initial model request. Diffs retain real line
+breaks so read-tool line limits do not clip a single JSON-escaped patch line.
 Prompt and output sizes are bounded. Invalid or superseded results are never
 published as plans, and a failed replan does not restore the old approval.
 

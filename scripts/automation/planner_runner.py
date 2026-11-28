@@ -326,7 +326,10 @@ def run_plan(
                     f"Planner validation: code={error.code}, "
                     f"auth={metrics.get('auth_errors', 0)}, quota={metrics.get('quota_errors', 0)}, "
                     f"setup={metrics.get('setup_errors', 0)}, model={metrics.get('model_errors', 0)}, "
-                    f"session={metrics.get('session_errors', 0)}",
+                    f"session={metrics.get('session_errors', 0)}, "
+                    f"daily_limit={metrics.get('daily_limit_errors', 0)}, "
+                    f"rate_limit={metrics.get('rate_limit_errors', 0)}, "
+                    f"request_size={metrics.get('request_size_errors', 0)}",
                     flush=True,
                 )
                 if error.code in {"context_changed", "resume_unavailable"} or (

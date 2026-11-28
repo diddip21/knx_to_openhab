@@ -237,4 +237,4 @@ def test_private_replay_has_no_publisher_and_exports_only_numeric_diagnostics():
             }
     script = (root / "scripts/automation/planner_diagnostic.py").read_text()
     assert "checkpoint_seconds=90" in script
-    assert "issue_bot.make_prompt" in script
+    assert "issue_bot.prepare_research_prompt" in script

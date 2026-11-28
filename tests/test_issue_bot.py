@@ -396,6 +396,25 @@ def test_new_plan_prompt_states_markdown_limit():
     assert "16000" in bot.make_prompt(decide("issues", "labeled"))
 
 
+def test_full_background_is_preserved_in_research_file_without_bloating_start_prompt(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    decision = decide("issues", "labeled")
+    decision["previous"] = "Entire previous plan\n" * 1000
+    patch = "Full diff\n" * 5000
+    decision["related_prs"] = {
+        "pull_requests": [{"number": 12, "files": [{"path": "feature.py", "patch": patch}]}]
+    }
+    prompt = bot.prepare_research_prompt(decision)
+    saved = (tmp_path / ".planner-evidence/request-context.txt").read_text(encoding="utf-8")
+    assert decision["previous"] in saved
+    assert patch in saved
+    assert ".planner-evidence/request-context.txt" in prompt
+    assert "Entire previous plan" not in prompt and "Full diff" not in prompt
+    assert len(prompt) < 10000
+
+
 def test_approval_refuses_an_old_plan_after_a_failed_replanning_request():
     comments = [
         state_comment(),

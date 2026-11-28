@@ -50,7 +50,7 @@ async function documentation(url, fetchDocument) {
     chunks.push(chunk);
   }
   // Store the whole response, including its version context; never silently clip it.
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks).toString('utf8').replace(/></g, '>\n<');
 }
 
 async function collectEvidence({github, repo, text, evidenceDirectory, fetchDocument = fetch}) {
@@ -67,7 +67,9 @@ async function collectEvidence({github, repo, text, evidenceDirectory, fetchDocu
         if (data.sha !== source.ref) throw new Error('unavailable');
         record.revision = data.sha;
         record.incomplete = !Array.isArray(data.files) || data.files.some(file => !file.patch) || data.files.length >= 100;
-        content = JSON.stringify({sha: data.sha, message: data.commit.message, files: data.files});
+        content = [`Commit ${data.sha}`, data.commit.message,
+          ...(data.files || []).flatMap(file => [`File: ${file.filename} (${file.status})`,
+            file.patch || '[Patch unavailable: incomplete evidence]'])].join('\n\n');
       } else if (source.kind === 'file') {
         const target = {owner: source.owner, repo: source.repo};
         const {data: commit} = await github.rest.repos.getCommit({...target, ref: source.ref});

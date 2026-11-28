@@ -50,11 +50,15 @@ def evidence_paths(temp: Path) -> set[str]:
     if not manifest.exists():
         return set()
     context = json.loads(manifest.read_text(encoding="utf-8"))
-    return {
+    paths = {
         str(Path(source["file"]).resolve())
         for source in context.get("evidence", {}).get("sources", [])
         if source.get("status") == "available"
     }
+    background = Path(".planner-evidence/request-context.txt")
+    if background.exists():
+        paths.add(str(background.resolve()))
+    return paths
 
 
 def evidence_reads(output: str, paths: set[str]) -> set[str]:
@@ -150,6 +154,9 @@ def observations(output: str, expected_session: str | None = None) -> dict[str, 
         "output_tokens": 0,
         "auth_errors": 0,
         "quota_errors": 0,
+        "rate_limit_errors": 0,
+        "daily_limit_errors": 0,
+        "request_size_errors": 0,
         "setup_errors": 0,
         "model_errors": 0,
         "session_errors": 0,
@@ -181,6 +188,16 @@ def observations(output: str, expected_session: str | None = None) -> dict[str, 
                 term in error for term in ("quota", "rate limit", "usage limit", "freeusage", "429")
             ):
                 stats["quota_errors"] += 1
+                stats["rate_limit_errors"] += int("rate limit" in error or "429" in error)
+                stats["daily_limit_errors"] += int(
+                    any(term in error for term in ("daily", "today", "per day"))
+                )
+                stats["request_size_errors"] += int(
+                    any(
+                        term in error
+                        for term in ("too large", "too long", "context length", "tokens per")
+                    )
+                )
             elif "session" in error:
                 stats["session_errors"] += 1
             elif any(term in error for term in ("model not", "modelnot", "unknown model")):

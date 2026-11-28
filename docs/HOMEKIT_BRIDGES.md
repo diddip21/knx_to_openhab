@@ -70,6 +70,14 @@ Deployment den Export prüfen; Apple-Home-Räume und Automationen nachprüfen.
 Keine automatische Pairing-Löschung oder Änderung der Add-on-Konfiguration.
 Endlagen-, Lamellen- und Stop-Optionen bleiben eigenständig erhalten.
 
+## Oberfläche
+
+Der Screenshot zeigt den echten Flask-Testserver nach Speichern und Neuladen:
+zwei ausdrücklich konfigurierte Bridges, Endlagen aus und beide Stop-Optionen an.
+Er verwendet isolierte Testkonfiguration ohne persönliche Projektdaten.
+
+![HomeKit-Einstellungen mit Bridge-Anzahl und unabhängigen Rollladenoptionen](screenshots/homekit-settings.png)
+
 ## Noch offene Laufzeitprüfung
 
 Quellenanalyse und Exporttests belegen keine erfolgreiche reale Bridge-Zuordnung.

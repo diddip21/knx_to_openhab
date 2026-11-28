@@ -126,7 +126,10 @@ in planning, implementation and repair, even if no generation begins. It
 distinguishes discovery errors, an empty catalog, no approved candidates,
 and failed live probes using fixed codes, allowlisted IDs, timings and
 counters only. The pinned CLI is queried with `opencode models --standalone`
-at most twice; model permissions and the approved allowlist are unchanged.
+at most twice. Planning, implementation and repair each use a stage-specific
+correctness probe and rank all passing candidates. Only audited free,
+zero-retention models are eligible; the current catalog and live probes must
+confirm availability in every run.
 Selection failure still prevents generation/publication. See
 [model router diagnostics](OPENCODE_MODEL_ROUTER.md#failure-diagnostics).
 
@@ -172,9 +175,12 @@ searches, skills, model steps, token counts and provider retry/wait counts.
 Text silence alone is not treated as a stall: the pinned CLI emits some text only
 after a completed section. Source text, session identifiers and provider messages
 remain private. Provider delays cannot be diagnosed from byte counts alone.
-An explicit rate-limit error allows one same-session continuation after a
-60-second backoff within the same total budget. Daily/size limits and a repeated
-rate-limit error stop the run; no identity or model rotation bypasses the quota.
+An explicit request-rate error allows a same-session continuation after a
+60-second backoff within the same total budget. The next ranked, verified model
+is preferred if available; otherwise one same-model retry is allowed.
+Authentication, account/shared/daily quota and request-size failures stop the
+run. Repeated rate errors stop when no untried verified model remains; there is
+no identity rotation or shared-quota bypass.
 
 ### Versioned research evidence and unpublished replay
 
@@ -256,7 +262,9 @@ without a third invocation or a subsequent fallback to another model. CI repair 
 not use this completion path.
 
 For other retryable failures, a fallback is allowed only to another approved
-free model that passed the router probe in this same run. A successful probe
+free model that passed the correct task's router probe in this same run. Repair
+cannot use an implementation-only probe report. Authentication, shared/account/
+daily quota and request-size failures stop rather than switching models. A successful probe
 from an earlier workflow does not authorize a fallback. If that second verified
 model is unavailable, the runner stops with diagnostics. Policy and boundary
 violations still stop immediately.

@@ -18,13 +18,16 @@ import time
 from pathlib import Path
 from typing import Any
 
-# Both models are free (as of 2026-11-15), worked in our anonymous CI smoke,
-# and have an explicit zero-retention statement in the OpenCode model catalog.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from automation import task_probe  # noqa: E402
+
+# Audited 2026-11-28 against the official free-model pricing/privacy catalog:
+# both are free, zero-retention and no-training. Live probes still must pass.
 APPROVED_FREE_MODELS = (
-    "opencode/glm-5.3-flash-free",
+    "opencode/hy4-flash-free",
     "opencode/deepseek-v4.1-flash-free",
 )
-TASKS = ("plan", "implement")
+TASKS = ("plan", "implement", "repair")
 DISCOVERY_TIMEOUT = 50
 PROBE_TIMEOUT = 110
 MAX_CAPTURE = 1_500_000
@@ -175,18 +178,18 @@ def probe_prompt(task: str) -> str:
     """Benchmark a small, fixed factual task with actual read/skill tools."""
     if task not in TASKS:
         raise ValueError("Invalid router task")
-    focus = (
-        "You are choosing a model for planning an issue."
-        if task == "plan"
-        else "You are choosing a model for an approved README-only implementation."
-    )
+    focus = {
+        "plan": "You are choosing a model for planning an issue.",
+        "implement": "You are choosing a model for an approved implementation.",
+        "repair": "You are choosing a model for repairing a failing implementation.",
+    }[task]
     return (
         f"{focus} This is only a read-only CI probe, not an issue task. "
         "Use the skill tool to load Superpowers brainstorming. Read AGENTS.md. "
         "Only after both tools succeed, write a standalone line exactly ROUTER_OK "
         "and one short sentence identifying knx_to_openhab and its two output "
         "formats, legacy and yaml. If any tool fails, do not write ROUTER_OK. "
-        "Never edit a file, run shell commands or start subagents."
+        "Never edit a file, run shell commands or start subagents." + task_probe.prompt(task)
     )
 
 
@@ -241,7 +244,8 @@ def inspect_events(output: str, task: str, seconds: float) -> dict[str, Any]:
                 incomplete = True
     answer = "\n".join(texts)
     marker_ok = bool(MARKER.search(answer))
-    passed = successful_tools == {"read", "skill"} and marker_ok
+    capability = task_probe.assess(answer, task)
+    passed = successful_tools == {"read", "skill"} and marker_ok and capability["task_correct"]
     code = (
         "provider_error"
         if provider_errors
@@ -261,15 +265,12 @@ def inspect_events(output: str, task: str, seconds: float) -> dict[str, Any]:
         and "yaml" in answer.casefold()
         and ("knx_to_openhab" in answer.casefold() or "knx to openhab" in answer.casefold())
     )
-    # A live agent-tool probe is not a rigorous coding benchmark. Give priority
-    # to correct tool use, then the factual check, and only then speed.
+    # Correct task results and safe tool use are mandatory. Factual quality
+    # outweighs the entire speed bonus; latency cannot redeem a wrong answer.
     score = 0
     if passed:
-        speed_bonus = max(0, 20 - int(seconds / 3))
-        score = 70 + (20 if factual else 0) + speed_bonus
-        # Small tie-breaker backed by the actual issue #96 end-to-end runs.
-        if task == "implement":
-            score += 2
+        speed_bonus = max(0, 9 - int(seconds / 10))
+        score = 100 + (20 if factual else 0) + speed_bonus
     return {
         "passed": passed,
         "code": code,
@@ -284,6 +285,7 @@ def inspect_events(output: str, task: str, seconds: float) -> dict[str, Any]:
         "provider_errors": provider_errors,
         "tool_errors": tool_errors,
         "pending_tools": len(pending),
+        **capability,
     }
 
 
@@ -358,22 +360,30 @@ def probe_model(model: str, task: str, *, timeout: float = PROBE_TIMEOUT) -> dic
     return {**metadata, **inspected}
 
 
-def choose_model(probes: list[dict[str, Any]]) -> dict[str, Any]:
+def rank_models(probes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     acceptable = [
         probe
         for probe in probes
-        if probe.get("model") in APPROVED_FREE_MODELS and probe.get("passed") is True
+        if isinstance(probe, dict)
+        and probe.get("model") in APPROVED_FREE_MODELS
+        and probe.get("passed") is True
     ]
-    if not acceptable:
-        raise RuntimeError("No approved free model passed the read/skill probe")
     # The allowlist order is a stable tie-breaker; scores derive from this run.
-    return max(
+    return sorted(
         acceptable,
         key=lambda probe: (
-            float(probe["score"]),
+            probe.get("score", 0) if type(probe.get("score", 0)) is int else 0,
             -APPROVED_FREE_MODELS.index(probe["model"]),
         ),
+        reverse=True,
     )
+
+
+def choose_model(probes: list[dict[str, Any]]) -> dict[str, Any]:
+    ranked = rank_models(probes)
+    if not ranked:
+        raise RuntimeError("No approved free model passed the task/read/skill probe")
+    return ranked[0]
 
 
 def write_summary(
@@ -405,15 +415,16 @@ def write_summary(
     lines.extend(
         [
             "",
-            "| Candidate | Probe code | Fact check | Seconds | Score |",
-            "|---|---|---|---:|---:|",
+            "| Candidate | Probe code | Task check | Fact check | Seconds | Score |",
+            "|---|---|---|---|---:|---:|",
         ]
     )
     for model in models:
         lines.append(
-            "| `{}` | {} | {} | {} | {} |".format(
+            "| `{}` | {} | {} | {} | {} | {} |".format(
                 model["model"],
                 model.get("code", "probe_passed" if model.get("passed") else "incomplete_probe"),
+                "pass" if model.get("task_correct") else "fail",
                 "pass" if model.get("factual") else "n/a",
                 model.get("elapsed_seconds", "n/a"),
                 model.get("score", 0),
@@ -440,6 +451,7 @@ def main() -> int:
         "failure_code": None,
         "available": [],
         "selected": None,
+        "ranked": [],
         "probes": [],
         "discovery": discovery,
     }
@@ -465,6 +477,7 @@ def main() -> int:
                 )
             try:
                 report["selected"] = choose_model(report["probes"])["model"]
+                report["ranked"] = [probe["model"] for probe in rank_models(report["probes"])]
                 report["status"] = "success"
             except RuntimeError:
                 report["failure_code"] = "probe_failed"

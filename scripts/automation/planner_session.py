@@ -13,6 +13,7 @@ from typing import Any
 from opencode_model_router import isolated_environment
 
 from .model_response import MAX_EVENT_BYTES, ModelResponseError
+from .provider_policy import classify
 
 
 def environment(state: Path | None = None) -> dict[str, str]:
@@ -156,6 +157,7 @@ def observations(output: str, expected_session: str | None = None) -> dict[str, 
         "output_tokens": 0,
         "auth_errors": 0,
         "quota_errors": 0,
+        "shared_limit_errors": 0,
         "rate_limit_errors": 0,
         "daily_limit_errors": 0,
         "request_size_errors": 0,
@@ -181,25 +183,18 @@ def observations(output: str, expected_session: str | None = None) -> dict[str, 
             stats["error_events"] += 1
             # Provider/CLI strings remain private; retain only fixed categories.
             error = json.dumps(event.get("error", {})).casefold()
-            if any(
-                term in error
-                for term in ("unauthorized", "authentication", "api key", "credential")
-            ):
+            policy = classify(event.get("error", {}))
+            stats["shared_limit_errors"] += int(policy["provider_failure"] == "shared_limit")
+            category = policy["provider_failure"]
+            if category == "auth":
                 stats["auth_errors"] += 1
-            elif any(
-                term in error for term in ("quota", "rate limit", "usage limit", "freeusage", "429")
-            ):
+            elif category in {"shared_limit", "rate_limit", "request_size"}:
                 stats["quota_errors"] += 1
-                stats["rate_limit_errors"] += int("rate limit" in error or "429" in error)
+                stats["rate_limit_errors"] += int(category == "rate_limit")
                 stats["daily_limit_errors"] += int(
                     any(term in error for term in ("daily", "today", "per day"))
                 )
-                stats["request_size_errors"] += int(
-                    any(
-                        term in error
-                        for term in ("too large", "too long", "context length", "tokens per")
-                    )
-                )
+                stats["request_size_errors"] += int(category == "request_size")
             elif "session" in error:
                 stats["session_errors"] += 1
             elif any(term in error for term in ("model not", "modelnot", "unknown model")):

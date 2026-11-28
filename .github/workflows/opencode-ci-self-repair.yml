@@ -155,7 +155,7 @@ jobs:
       - name: Select approved free model
         id: model
         working-directory: candidate
-        run: python ../trusted/scripts/opencode_model_router.py select --task implement --report "$RUNNER_TEMP/model.json"
+        run: python ../trusted/scripts/opencode_model_router.py select --task repair --report "$RUNNER_TEMP/model.json"
       - name: Preserve content-free model selection diagnostics
         if: >-
           always() && (steps.model.outcome == 'success' ||

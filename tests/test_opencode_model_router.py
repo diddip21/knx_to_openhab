@@ -16,8 +16,21 @@ router = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(router)
 
 
-def events(text="ROUTER_OK\nknx_to_openhab supports legacy and yaml."):
+def events(text="ROUTER_OK\nknx_to_openhab supports legacy and yaml.", task="plan"):
     """Include genuinely completed skill/read tool calls."""
+    payloads = {
+        "plan": {
+            "default_count": 1,
+            "preserves_false": True,
+            "rejects_bool": True,
+            "flow": ["config", "api", "generation", "legacy", "yaml"],
+        },
+        "implement": {
+            "expression": "1 if value is None else value if type(value) is int and value > 0 else None"
+        },
+        "repair": {"expression": "index < 0 or index >= len(values)"},
+    }
+    text += "\nROUTER_TASK " + json.dumps(payloads[task])
     return "\n".join(
         json.dumps(event)
         for event in [
@@ -38,24 +51,24 @@ def test_allowlisted_free_ids_only():
     found = router.parse_catalog(
         "\n".join(
             [
-                "opencode/glm-5.3-flash-free",
+                "opencode/hy4-flash-free",
                 "opencode/deepseek-v4.1-flash-free",
                 "opencode/some-unknown-free",
                 "opencode/glm-5.3-flash",
                 "openai/gpt-6",
                 "not-opencode/foo-free",
-                "opencode/glm-5.3-flash-free --some flag",
+                "opencode/hy4-flash-free --some flag",
             ]
         )
     )
-    assert "opencode/glm-5.3-flash-free" in found
+    assert "opencode/hy4-flash-free" in found
     assert "opencode/deepseek-v4.1-flash-free" in found
     assert "opencode/glm-5.3-flash" not in found
     assert "openai/gpt-6" not in found
-    assert "opencode/glm-5.3-flash-free --some flag" not in found
+    assert "opencode/hy4-flash-free --some flag" not in found
     assert "opencode/some-unknown-free" in found
     assert set(router.APPROVED_FREE_MODELS) == {
-        "opencode/glm-5.3-flash-free",
+        "opencode/hy4-flash-free",
         "opencode/deepseek-v4.1-flash-free",
     }
 
@@ -67,6 +80,26 @@ def test_probe_requires_completed_read_and_skill():
     assert result["skill_ok"] is True
     assert result["factual"] is True
     assert result["score"] > 0
+
+
+@pytest.mark.parametrize("task", router.TASKS)
+def test_correct_task_probe_can_pass_for_each_stage(task):
+    assert router.inspect_events(events(task=task), task, 20)["passed"]
+
+
+def test_fast_wrong_task_answer_cannot_beat_correct_slow_answer():
+    wrong = events(task="repair")
+    failed = router.inspect_events(wrong, "implement", 1)
+    passed = router.inspect_events(events(task="implement"), "implement", 90)
+    assert failed["passed"] is False and failed["score"] == 0
+    assert passed["passed"] and passed["score"] > 0
+
+
+def test_factual_quality_outweighs_entire_speed_bonus():
+    fast = router.inspect_events(events(text="ROUTER_OK"), "plan", 1)
+    slow = router.inspect_events(events(), "plan", 100)
+    assert fast["passed"] and slow["passed"]
+    assert slow["score"] > fast["score"]
 
 
 @pytest.mark.parametrize(
@@ -117,11 +150,11 @@ def test_discovery_intersects_with_allowlist(monkeypatch):
         assert kwargs["timeout"] == router.DISCOVERY_TIMEOUT
         return SimpleNamespace(
             returncode=0,
-            stdout=("opencode/glm-5.3-flash-free\n" "opencode/fake-free\n" "openai/gpt-6\n"),
+            stdout=("opencode/hy4-flash-free\n" "opencode/fake-free\n" "openai/gpt-6\n"),
         )
 
     monkeypatch.setattr(router.subprocess, "run", fake_run)
-    assert router.discover_models() == {"opencode/glm-5.3-flash-free"}
+    assert router.discover_models() == {"opencode/hy4-flash-free"}
 
 
 def test_discovery_fallback_if_first_command_unsupported(monkeypatch):
@@ -148,7 +181,7 @@ def test_probes_are_bounded_and_read_only(monkeypatch):
         assert args[args.index("--model") + 1] == router.APPROVED_FREE_MODELS[0]
         assert kwargs["timeout"] == router.PROBE_TIMEOUT
         assert "GITHUB_TOKEN" not in kwargs["env"]
-        return SimpleNamespace(returncode=0, stdout=events())
+        return SimpleNamespace(returncode=0, stdout=events(task="implement"))
 
     monkeypatch.setenv("GITHUB_TOKEN", "a-test-value")
     monkeypatch.setattr(router.subprocess, "run", fake_run)
@@ -206,6 +239,7 @@ def test_main_exports_only_selected_allowlisted_model(tmp_path, monkeypatch):
     assert output.read_text().strip() == "model=opencode/deepseek-v4.1-flash-free"
     result = json.loads(report.read_text())
     assert result["selected"] == "opencode/deepseek-v4.1-flash-free"
+    assert result["ranked"] == list(reversed(router.APPROVED_FREE_MODELS))
 
 
 def test_main_refuses_all_failed_models(tmp_path, monkeypatch):
@@ -426,7 +460,11 @@ def test_main_success_report_is_compatible_and_has_discovery_diagnostics(tmp_pat
     def fake_run(args, **kwargs):
         return SimpleNamespace(
             returncode=0,
-            stdout=router.APPROVED_FREE_MODELS[1] + "\n" if args[1] == "models" else events(),
+            stdout=(
+                router.APPROVED_FREE_MODELS[1] + "\n"
+                if args[1] == "models"
+                else events(task="implement")
+            ),
             stderr="",
         )
 

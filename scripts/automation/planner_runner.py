@@ -27,6 +27,7 @@ from opencode_model_router import (  # noqa: E402
     RouterError,
     discover_models,
     probe_model,
+    rank_models,
 )
 
 TOTAL_SECONDS = 660
@@ -55,6 +56,7 @@ def verified_models(model: str, report: dict[str, Any]) -> list[str]:
         model not in APPROVED_FREE_MODELS
         or not isinstance(report, dict)
         or report.get("selected") != model
+        or report.get("task") != "plan"
     ):
         raise ModelResponseError("invalid_router_report")
     probes = report.get("probes")
@@ -69,7 +71,8 @@ def verified_models(model: str, report: dict[str, Any]) -> list[str]:
     }
     if model not in passed:
         raise ModelResponseError("invalid_router_report")
-    return [model] + [other for other in APPROVED_FREE_MODELS if other != model and other in passed]
+    ranked = [probe["model"] for probe in rank_models(probes)]
+    return [model] + [other for other in ranked if other != model]
 
 
 def refresh_alternate(model: str, remaining: float) -> str | None:
@@ -267,6 +270,7 @@ def run_plan(
         format_retry_used = False
         rate_retry_used = False
         checkpoint_pending = checkpoint_seconds is not None
+        tried_models = set()
         attempt_model = models[0]
         attempt_prompt = prompt
         while len(report["attempts"]) < 3:
@@ -295,6 +299,7 @@ def run_plan(
             output, metrics = execute(
                 attempt_model, attempt_prompt, timeout, session_id=session_id, state_dir=state_dir
             )
+            tried_models.add(attempt_model)
             session_model = attempt_model
             if metrics.get("code") == "timeout":
                 checkpoint_pending = False
@@ -343,24 +348,35 @@ def run_plan(
                     error.code == "timeout" and not metrics.get("graceful_stop", False)
                 ):
                     raise
+                if metrics.get("auth_errors") or metrics.get("request_size_errors"):
+                    raise
                 if metrics.get("quota_errors"):
-                    # Do not switch identities/models or loop through a daily/shared quota.
-                    # One delayed continuation can recover a short request-rate window.
+                    # Shared/account quotas stop the run. A request-rate window gets
+                    # one delayed retry, then an independently verified alternate.
                     if (
-                        rate_retry_used
-                        or metrics.get("daily_limit_errors")
+                        metrics.get("daily_limit_errors")
+                        or metrics.get("shared_limit_errors")
                         or metrics.get("request_size_errors")
                         or not metrics.get("rate_limit_errors")
                         or len(report["attempts"]) >= 3
                     ):
                         raise
+                    alternate = next((m for m in models if m not in tried_models), None)
+                    if rate_retry_used:
+                        if alternate is None:
+                            raise
+                        phase, attempt_model = "fallback", alternate
+                        attempt_prompt = corrected_prompt("", error.code)
+                        continue
                     remaining = TOTAL_SECONDS - (time.monotonic() - started)
                     if remaining < RATE_LIMIT_BACKOFF_SECONDS + FINALIZE_RESERVE_SECONDS:
                         raise ModelResponseError("budget_exhausted") from None
                     rate_retry_used = True
-                    phase = "rate_limit_retry"
+                    phase = "fallback" if alternate is not None else "rate_limit_retry"
+                    if alternate is not None:
+                        attempt_model = alternate
                     print(
-                        "Planner rate limit: waiting 60s before one same-session continuation",
+                        "Planner rate limit: waiting 60s before a verified same-session continuation",
                         flush=True,
                     )
                     time.sleep(RATE_LIMIT_BACKOFF_SECONDS)
@@ -378,14 +394,15 @@ def run_plan(
                     format_retry_used = True
                     phase = "format_retry"
                     attempt_prompt = corrected_prompt("", error.code, text)
-                elif phase != "fallback" and len(models) > 1:
+                elif any(m not in tried_models for m in models):
                     phase = "fallback"
-                    attempt_model = models[1]
+                    attempt_model = next(m for m in models if m not in tried_models)
                     attempt_prompt = corrected_prompt("", error.code)
                 elif error.code == "timeout" and phase in {
                     "initial",
                     "format_retry",
                     "rate_limit_retry",
+                    "fallback",
                 }:
                     # The first verified model can time out on a real plan despite
                     # passing the short probe. Reserve time for a full fresh attempt.

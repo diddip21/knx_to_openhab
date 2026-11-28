@@ -12,7 +12,7 @@ pull request that changes its files, and can be launched with
 Each matrix job uses a fresh GitHub-hosted Ubuntu runner, installs OpenCode V2,
 and selects **one specific free model** without configuring an API key:
 
-- `opencode/glm-5.3-flash-free`
+- `opencode/hy4-flash-free`
 - `opencode/deepseek-v4.1-flash-free`
 
 Superpowers is installed as an OpenCode V2 plugin from the pinned upstream

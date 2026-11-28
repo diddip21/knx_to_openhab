@@ -27,7 +27,7 @@ jobs:
       fail-fast: false
       matrix:
         model:
-          - opencode/glm-5.3-flash-free
+          - opencode/hy4-flash-free
           - opencode/deepseek-v4.1-flash-free
 
     steps:
@@ -163,7 +163,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: opencode-smoke-${{ matrix.model == 'opencode/glm-5.3-flash-free' && 'glm' || 'deepseek' }}
+          name: opencode-smoke-${{ matrix.model == 'opencode/hy4-flash-free' && 'hy4' || 'deepseek' }}
           path: |
             ${{ runner.temp }}/models.txt
             ${{ runner.temp }}/opencode-events.jsonl

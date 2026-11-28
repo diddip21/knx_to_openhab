@@ -29,6 +29,7 @@ from typing import Any
 # python -I must import controllers from this trusted checkout, never candidate.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from automation import artifacts  # noqa: E402
+from automation.provider_policy import classify, permits_fallback  # noqa: E402
 from automation.scope import (  # noqa: E402
     MAX_CHANGED_LINES,
     MAX_FILE_BYTES,
@@ -41,7 +42,11 @@ from automation.scope import (  # noqa: E402
     no_duplicates,
     normalize_scope,
 )
-from opencode_model_router import APPROVED_FREE_MODELS, isolated_environment  # noqa: E402
+from opencode_model_router import (  # noqa: E402
+    APPROVED_FREE_MODELS,
+    isolated_environment,
+    rank_models,
+)
 
 MODE_LIMITS = {"implement": (1150.0, 1800.0), "repair": (750.0, 1000.0)}
 MAX_STDOUT_BYTES = 8_000_000
@@ -205,11 +210,13 @@ def _manifest(root: Path, *, git_metadata: bool = False) -> dict[str, tuple[Any,
     return result
 
 
-def verified_models(model: str, report: Any) -> tuple[list[str], list[dict[str, Any]]]:
+def verified_models(
+    model: str, report: Any, task: str = "implement"
+) -> tuple[list[str], list[dict[str, Any]]]:
     if (
         model not in APPROVED_FREE_MODELS
         or not isinstance(report, dict)
-        or report.get("task") != "implement"
+        or report.get("task") != task
         or report.get("selected") != model
         or not isinstance(report.get("probes"), list)
     ):
@@ -224,7 +231,7 @@ def verified_models(model: str, report: Any) -> tuple[list[str], list[dict[str, 
         probes[name] = probe["passed"]
     if not probes.get(model):
         raise GenerationError("invalid_router_report")
-    models = [model] + [m for m in APPROVED_FREE_MODELS if m != model and probes.get(m)]
+    models = [model] + [p["model"] for p in rank_models(report["probes"]) if p["model"] != model]
     return models[:2], [
         {"model": m, "passed": probes[m]} for m in APPROVED_FREE_MODELS if m in probes
     ]
@@ -431,6 +438,7 @@ class EventMetrics:
             "tool_errors": 0,
             "pending_tools": 0,
             "provider_http_status": 0,
+            "provider_failure": "none",
             "terminal_finish_seen": False,
         }
 
@@ -483,8 +491,11 @@ class EventMetrics:
             self.has_text = False
             self.values["terminal_finish_seen"] = False
         elif kind == "error":
+            policy = classify(event.get("error"))
             error = event.get("error")
             error = error if isinstance(error, dict) else {}
+            if permits_fallback(self.values):
+                self.values.update(policy)
             self.reject(
                 "tool_policy"
                 if error.get("name")
@@ -875,7 +886,7 @@ def run_generation(root: Path, temp: Path, mode: str, model: str) -> dict[str, A
         router = json.loads(inputs["model.json"], object_pairs_hook=no_duplicates)
         if not isinstance(context, dict):
             raise GenerationError("invalid_context")
-        models, probes = verified_models(model, router)
+        models, probes = verified_models(model, router, mode)
         report["router_probes"] = probes
         if len(inputs["task-prompt.txt"]) > MAX_PROMPT_BYTES:
             raise GenerationError("prompt_limit")
@@ -929,7 +940,7 @@ def run_generation(root: Path, temp: Path, mode: str, model: str) -> dict[str, A
                     flush=True,
                 )
                 continue
-            if code not in RETRYABLE or len(models) < 2:
+            if code not in RETRYABLE or len(models) < 2 or not permits_fallback(metrics):
                 raise GenerationError(code)
             boundary.rollback()
             attempt["scoped_rollback"] = True

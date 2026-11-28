@@ -212,7 +212,7 @@ else:
     report = runner.run_plan(
         tmp_path,
         FIRST,
-        {"selected": FIRST, "probes": [{"model": FIRST, "passed": True}]},
+        {"task": "plan", "selected": FIRST, "probes": [{"model": FIRST, "passed": True}]},
         checkpoint_seconds=0.3,
     )
     assert report["status"] == "success"

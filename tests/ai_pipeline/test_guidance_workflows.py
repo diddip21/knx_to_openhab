@@ -203,6 +203,7 @@ def test_router_failure_has_its_own_diagnostics_before_generation(
     definition = yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())
     steps = definition["jobs"][job_name]["steps"]
     selection = next(step for step in steps if step.get("id") == "model")
+    assert "--task " + job_name in selection["run"]
     diagnostics = next(
         step
         for step in steps

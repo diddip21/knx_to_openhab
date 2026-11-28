@@ -4,8 +4,12 @@ on:
   pull_request:
     paths:
       - "scripts/opencode_model_router.py"
+      - "scripts/automation/task_probe.py"
+      - ".opencode/agents/ci-smoke.md"
       - ".github/opencode-cli-version"
       - "tests/test_opencode_model_router.py"
+      - "tests/test_model_task_probe.py"
+      - "scripts/automation/provider_policy.py"
       - ".github/workflows/opencode-model-router-tests.yml"
       - ".github/workflows/opencode-issue-planner.yml"
       - ".github/workflows/ai-issue-implement.yml"
@@ -30,7 +34,7 @@ jobs:
       - name: Install unit test runner
         run: python -m pip install "pytest>=8,<10"
       - name: Test allowlist, probe scoring and failure paths
-        run: python -m pytest tests/test_opencode_model_router.py -q -o addopts=
+        run: python -m pytest tests/test_opencode_model_router.py tests/test_model_task_probe.py -q -o addopts=
       - name: Check Python syntax
         run: python -m py_compile scripts/opencode_model_router.py
 
@@ -41,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        task: [plan, implement]
+        task: [plan, implement, repair]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -57,7 +61,7 @@ jobs:
         run: |
           set -euo pipefail
           if python scripts/opencode_model_router.py select --task "${{ matrix.task }}" --report "$RUNNER_TEMP/model-router.json"; then
-            python -c 'import json,os; data=json.load(open(os.environ["RUNNER_TEMP"]+"/model-router.json")); assert data["selected"] in ("opencode/glm-5.3-flash-free","opencode/deepseek-v4.1-flash-free")'
+            python -c 'import json,os; data=json.load(open(os.environ["RUNNER_TEMP"]+"/model-router.json")); assert data["selected"] in ("opencode/hy4-flash-free","opencode/deepseek-v4.1-flash-free")'
           else
             echo "Free-model selection diagnostics (no prompts, tokens or secrets):"
             cat "$RUNNER_TEMP/model-router.json"

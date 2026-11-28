@@ -26,6 +26,7 @@ def event(response=VALID):
 
 def router_report(second_passed=True):
     return {
+        "task": "plan",
         "selected": FIRST,
         "probes": [{"model": FIRST, "passed": True}, {"model": SECOND, "passed": second_passed}],
     }
@@ -162,11 +163,71 @@ def test_rate_limit_waits_once_without_switching_models_or_ignoring_daily_quota(
             runner.run_plan(runtime, FIRST, router_report())
         assert waits == [] and len(calls) == 1
     else:
-        report = runner.run_plan(runtime, FIRST, router_report())
+        report = runner.run_plan(runtime, FIRST, router_report(second_passed=False))
         assert report["status"] == "success"
         assert waits == [60]
         assert calls[0] == calls[1]
         assert report["attempts"][1]["phase"] == "rate_limit_retry"
+
+
+def test_rate_limited_primary_uses_verified_alternate_without_losing_session(runtime, monkeypatch):
+    calls = []
+    waits = []
+    monkeypatch.setattr(runner.time, "sleep", waits.append)
+
+    def execute(model, prompt, timeout, **kwargs):
+        calls.append((model, kwargs["session_id"]))
+        if len(calls) == 1:
+            return json.dumps({"type": "error"}), {
+                "code": None,
+                "exit_code": 1,
+                "quota_errors": 1,
+                "rate_limit_errors": 1,
+                "elapsed_seconds": 1,
+            }
+        if len(calls) == 2:
+            return "", {
+                "code": "timeout",
+                "exit_code": 0,
+                "graceful_stop": True,
+                "elapsed_seconds": timeout,
+            }
+        return event(), {"code": None, "exit_code": 0, "elapsed_seconds": 1}
+
+    monkeypatch.setattr(runner, "execute", execute)
+    monkeypatch.setattr(runner, "refresh_alternate", lambda *args: None)
+    report = runner.run_plan(runtime, FIRST, router_report(), checkpoint_seconds=90)
+    assert report["status"] == "success"
+    assert [model for model, _ in calls] == [FIRST, SECOND, SECOND]
+    assert len({session for _, session in calls}) == 1
+    assert waits == [60]
+    assert [attempt["phase"] for attempt in report["attempts"]] == [
+        "initial",
+        "fallback",
+        "timeout_retry",
+    ]
+
+
+@pytest.mark.parametrize("flag", ["auth_errors", "shared_limit_errors", "request_size_errors"])
+def test_global_failures_never_switch_models(runtime, monkeypatch, flag):
+    calls = []
+
+    def execute(*args, **kwargs):
+        calls.append(1)
+        return json.dumps({"type": "error"}), {
+            "code": None,
+            "exit_code": 1,
+            flag: 1,
+            "quota_errors": 1,
+            "rate_limit_errors": 1,
+            "elapsed_seconds": 1,
+        }
+
+    monkeypatch.setattr(runner, "execute", execute)
+    with pytest.raises(ValueError, match="provider_error"):
+        runner.run_plan(runtime, FIRST, router_report())
+    assert len(calls) == 1
+    assert not (runtime / "issue-result.json").exists()
 
 
 def test_single_model_second_timeout_stops_without_publishing(runtime, monkeypatch):

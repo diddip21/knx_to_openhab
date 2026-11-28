@@ -19,11 +19,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from automation.approval import pending_replan_request  # noqa: E402
 from automation.model_response import MAX_PLAN_CHARS, parse_response, read_events  # noqa: E402
 from automation.scope import normalize_scope, plan_scope  # noqa: E402
+from opencode_model_router import APPROVED_FREE_MODELS  # noqa: E402
 
 MARKER = re.compile(r"^<!-- knx-issue-bot-state (\{[^\n]*\}) -->")
 ANSWER = re.compile(r"^/ai answer(?:\s+([\s\S]+))?$", re.IGNORECASE)
 APPROVE = re.compile(r"^/ai approve v([1-9][0-9]*)\s*$", re.IGNORECASE)
-ALLOWED_MODELS = frozenset({"opencode/glm-5.3-flash-free", "opencode/deepseek-v4.1-flash-free"})
+ALLOWED_MODELS = frozenset(APPROVED_FREE_MODELS)
 BOT_LOGIN = "github-actions[bot]"
 MAX_ISSUE_CHARS = 12000
 MAX_REPLY_CHARS = 4000

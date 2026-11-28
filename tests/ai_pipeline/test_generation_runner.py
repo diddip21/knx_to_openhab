@@ -30,7 +30,7 @@ def setup_runtime(tmp_path, monkeypatch, *, scope=None, mode="implement", second
     (temp / "model.json").write_text(
         json.dumps(
             {
-                "task": "implement",
+                "task": mode,
                 "selected": FIRST,
                 "probes": [{"model": FIRST, "passed": True}, {"model": SECOND, "passed": second}],
             }
@@ -163,6 +163,32 @@ def test_fallback_restores_only_authorized_changes_including_new_files(tmp_path,
         == json.loads((temp / "task-context.json").read_text())["base_commit_sha"]
     )
     diagnostics(temp)
+
+
+@pytest.mark.parametrize("mode", ["implement", "repair"])
+@pytest.mark.parametrize("failure", ["auth", "shared_limit", "request_size"])
+def test_provider_global_failures_stop_even_with_verified_backup(
+    tmp_path, monkeypatch, mode, failure
+):
+    root, temp = setup_runtime(tmp_path, monkeypatch, mode=mode)
+    calls = []
+
+    def execute(*args, **kwargs):
+        calls.append(1)
+        return {"code": "provider_error", "provider_failure": failure}
+
+    monkeypatch.setattr(runner, "execute", execute)
+    report = fails(root, temp, "provider_error", mode)
+    assert len(calls) == 1
+    assert report["attempts"][0]["provider_failure"] == failure
+
+
+def test_repair_rejects_an_implementation_probe_report(tmp_path, monkeypatch):
+    root, temp = setup_runtime(tmp_path, monkeypatch, mode="repair")
+    report = json.loads((temp / "model.json").read_text())
+    report["task"] = "implement"
+    (temp / "model.json").write_text(json.dumps(report))
+    fails(root, temp, "invalid_router_report", "repair")
 
 
 def test_timeout_with_partial_output_and_scoped_changes_falls_back(tmp_path, monkeypatch):

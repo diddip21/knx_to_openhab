@@ -81,6 +81,6 @@ def fallback_model(models: list[str], current: str, tried: set[str], metrics: di
     ]
     if failure in {"auth", "shared_limit"}:
         candidates = independent
-    elif metrics.get("provider_http_status", 0) >= 500:
+    elif failure in {"model_limit", "rate_limit"} or metrics.get("provider_http_status", 0) >= 500:
         candidates = independent or candidates
     return candidates[0] if candidates else None

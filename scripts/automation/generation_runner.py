@@ -900,7 +900,7 @@ def run_generation(root: Path, temp: Path, mode: str, model: str) -> dict[str, A
             remaining = total - (time.monotonic() - started)
             if remaining <= 0 or INTERRUPTED:
                 raise GenerationError("interrupted" if INTERRUPTED else "budget_exhausted")
-            limit = min(primary if number == 1 else total - primary, remaining)
+            limit = min(primary, remaining) if number == 1 else remaining
             attempt: dict[str, Any] = {
                 "attempt": number,
                 "model": candidate_model,

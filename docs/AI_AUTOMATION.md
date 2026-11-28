@@ -279,8 +279,13 @@ violations still stop immediately.
 
 | Mode | First invocation | Second invocation limit | Total model budget | Job limit |
 |---|---|---|---|---|
-| Implementation | Up to 1,150 seconds | Up to 650 seconds | 1,800 seconds | 40 minutes |
-| CI repair | Up to 750 seconds | Up to 250 seconds | 1,000 seconds | 28 minutes |
+| Implementation | Up to 1,150 seconds | Remaining total budget | 1,800 seconds | 43 minutes |
+| CI repair | Up to 750 seconds | Remaining total budget | 1,000 seconds | 30 minutes |
+
+An early provider failure does not consume the primary time allocation: its
+unspent time remains available for the one permitted fallback/completion.
+Capacity failures prefer a currently verified independent provider when available;
+account failures exclude other models on the exhausted provider.
 
 The second invocation, whether completion or fallback, is also
 bounded by the remaining total budget. On the Linux runner, the controller stops

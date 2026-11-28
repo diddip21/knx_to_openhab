@@ -81,3 +81,15 @@ def test_provider_failure_skips_other_models_on_same_account(failure):
         fallback_model(models, models[0], {models[0]}, {"provider_failure": failure}) == models[2]
     )
     assert fallback_model(models[:2], models[0], {models[0]}, {"provider_failure": failure}) is None
+
+
+@pytest.mark.parametrize("failure", ["model_limit", "rate_limit"])
+def test_capacity_failure_prefers_an_independent_verified_pool(failure):
+    models = ["opencode/a-free", "opencode/b-free", free.OPENROUTER_MODELS[0]]
+    assert (
+        fallback_model(models, models[0], {models[0]}, {"provider_failure": failure}) == models[2]
+    )
+    assert (
+        fallback_model(models[:2], models[0], {models[0]}, {"provider_failure": failure})
+        == models[1]
+    )

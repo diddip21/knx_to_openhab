@@ -351,6 +351,8 @@ def run_plan(
                     error.code == "timeout" and not metrics.get("graceful_stop", False)
                 ):
                     raise
+                if metrics.get("request_size_errors"):
+                    raise
                 if (
                     metrics.get("auth_errors")
                     or metrics.get("shared_limit_errors")
@@ -374,10 +376,10 @@ def run_plan(
                     phase, attempt_model = "fallback", alternate
                     attempt_prompt = corrected_prompt("", error.code)
                     continue
-                if metrics.get("request_size_errors"):
-                    raise
                 if metrics.get("model_limit_errors") and not metrics.get("shared_limit_errors"):
-                    alternate = next((m for m in models if m not in tried_models), None)
+                    alternate = fallback_model(
+                        models, attempt_model, tried_models, {"provider_failure": "model_limit"}
+                    )
                     if alternate is None or len(report["attempts"]) >= 3:
                         raise
                     phase, attempt_model = "fallback", alternate
@@ -394,7 +396,9 @@ def run_plan(
                         or len(report["attempts"]) >= 3
                     ):
                         raise
-                    alternate = next((m for m in models if m not in tried_models), None)
+                    alternate = fallback_model(
+                        models, attempt_model, tried_models, {"provider_failure": "rate_limit"}
+                    )
                     if rate_retry_used:
                         if alternate is None:
                             raise
@@ -430,9 +434,11 @@ def run_plan(
                     format_retry_used = True
                     phase = "format_retry"
                     attempt_prompt = corrected_prompt("", error.code, text)
-                elif any(m not in tried_models for m in models):
+                elif (
+                    alternate := fallback_model(models, attempt_model, tried_models, metrics)
+                ) is not None:
                     phase = "fallback"
-                    attempt_model = next(m for m in models if m not in tried_models)
+                    attempt_model = alternate
                     attempt_prompt = corrected_prompt("", error.code)
                 elif error.code == "timeout" and phase in {
                     "initial",

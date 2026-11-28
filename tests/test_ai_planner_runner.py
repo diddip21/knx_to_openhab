@@ -445,6 +445,30 @@ def test_exhausted_model_allowance_switches_once_instead_of_retrying_it(runtime,
     assert calls == [FIRST, SECOND]
 
 
+@pytest.mark.parametrize("flag", ["model_limit_errors", "rate_limit_errors"])
+def test_capacity_failure_prefers_independent_research_continuation(runtime, monkeypatch, flag):
+    alternate = runner.ALL_APPROVED_MODELS[2]
+    selection = router_report()
+    selection["probes"].append({"model": alternate, "passed": True})
+    calls = []
+    monkeypatch.setattr(runner.time, "sleep", lambda seconds: None)
+
+    def execute(model, *args, **kwargs):
+        calls.append(model)
+        if len(calls) == 1:
+            return json.dumps({"type": "error"}), {
+                "code": None,
+                "exit_code": 1,
+                "quota_errors": 1,
+                flag: 1,
+            }
+        return event(), {"code": None, "exit_code": 0}
+
+    monkeypatch.setattr(runner, "execute", execute)
+    runner.run_plan(runtime, FIRST, selection)
+    assert calls == [FIRST, alternate]
+
+
 @pytest.mark.parametrize("recover", [True, False])
 def test_account_failure_uses_independent_provider_without_reentering_blocked_account(
     runtime, monkeypatch, recover

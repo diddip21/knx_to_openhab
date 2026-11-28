@@ -214,6 +214,30 @@ def test_shared_limit_rolls_back_and_uses_independent_provider(tmp_path, monkeyp
     assert report["attempts"][0]["scoped_rollback"]
 
 
+def test_early_provider_failure_leaves_unspent_time_for_real_fallback_work(tmp_path, monkeypatch):
+    root, temp = setup_runtime(tmp_path, monkeypatch)
+    calls = []
+
+    def execute(_root, model, _prompt, limit, _events):
+        calls.append((model, limit))
+        if len(calls) == 1:
+            (root / "feature.py").write_text("partial = 9\n")
+            return {"code": "provider_error"}
+        assert (root / "feature.py").read_text() == "value = 0\n"
+        (root / "feature.py").write_text("value = 17\n")
+        (root / "tests/test_feature.py").write_text(
+            "from feature import value\n\ndef test_value():\n    assert value == 17\n"
+        )
+        return {"code": None}
+
+    monkeypatch.setattr(runner, "execute", execute)
+    report = runner.run_generation(root, temp, "implement", FIRST)
+    assert report["status"] == "success"
+    assert calls[0][1] <= 3
+    assert 3 < calls[1][1] <= 6
+    assert report["elapsed_seconds"] <= 6
+
+
 def test_timeout_with_partial_output_and_scoped_changes_falls_back(tmp_path, monkeypatch):
     root, temp = setup_runtime(tmp_path, monkeypatch)
     monkeypatch.setattr(runner, "MODE_LIMITS", {"implement": (0.4, 0.9)})
@@ -646,7 +670,7 @@ def test_completion_keeps_original_boundary_for_cumulative_change_limits(tmp_pat
     assert (root / "feature.py").read_text() == "value = 17\n"
 
 
-def test_completion_uses_only_existing_secondary_budget(tmp_path, monkeypatch):
+def test_completion_reuses_unspent_primary_time_within_total_budget(tmp_path, monkeypatch):
     root, temp = setup_runtime(tmp_path, monkeypatch)
     monkeypatch.setattr(runner, "MODE_LIMITS", {"implement": (0.8, 1.1)})
     calls = fake_cli(
@@ -662,7 +686,7 @@ def test_completion_uses_only_existing_secondary_budget(tmp_path, monkeypatch):
     report = fails(root, temp, "timeout")
     assert json.loads(calls.read_text()) == [FIRST, FIRST]
     assert report["attempts"][1]["phase"] == "completion"
-    assert report["attempts"][1]["limit_seconds"] <= 0.3
+    assert 0.3 < report["attempts"][1]["limit_seconds"] < 1.1
     assert report["total_limit_seconds"] == 1.1
     assert report["elapsed_seconds"] < 1.5
 

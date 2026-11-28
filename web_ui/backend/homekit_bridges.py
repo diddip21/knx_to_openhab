@@ -214,7 +214,12 @@ class HomekitBridgeClient:
         }
 
 
-def configured_client(openhab_root=None):
+def configured_client(fallback_root=None):
+    # Use the same effective root as generation/deploy (openhab-cli detection
+    # can override the backend's repository-local development fallback).
+    from config import config as generator_config
+
+    openhab_root = generator_config.get("openhab_path") or fallback_root
     return HomekitBridgeClient(
         os.environ.get("KNXOH_OPENHAB_REST_URL", "http://127.0.0.1:8080"),
         get_paths().config_dir / "openhab_api_token",

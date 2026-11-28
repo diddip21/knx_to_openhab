@@ -287,3 +287,13 @@ def test_cli_uses_same_additive_client_and_sanitized_output(openhab, monkeypatch
     assert result["configured_count"] == 2
     assert "secret" not in json.dumps(result)
     assert state["config"]["instances"] == 2
+
+
+def test_factory_checks_the_effective_generator_root_not_the_web_fallback(tmp_path, monkeypatch):
+    from config import config
+    from web_ui.backend.homekit_bridges import configured_client
+
+    actual = tmp_path / "actual-openhab"
+    monkeypatch.setitem(config, "openhab_path", str(actual))
+    client = configured_client(tmp_path / "wrong-web-fallback")
+    assert client.openhab_root == actual
